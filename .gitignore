@@ -1,3 +1,4 @@
 config/db.php
+config/db.local.php
 uploads/
 *.log
