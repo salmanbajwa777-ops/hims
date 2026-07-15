@@ -1,0 +1,450 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================================================
+// USERS, AUTH & PERMISSIONS  (Phase 1)
+// =========================================================
+
+model User {
+  id                 String    @id @default(cuid())
+  name               String
+  email              String?   @unique
+  phone              String?   @unique
+  password           String // hashed
+  baseRole           String // ADMIN, DOCTOR, ACCOUNTANT, NURSE, MANAGER, RECEPTIONIST
+  status             String    @default("active") // active, inactive, archived
+  mustChangePassword Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relations
+  doctorProfile       DoctorProfile?
+  staffRole           StaffRole?
+  shiftAssignments    ShiftAssignment[]
+  vitalsRecorded      Vitals[]
+  eventsRecorded      ShortStayEvent[]
+  auditLogs           AuditLog[]
+  visitsAsDoctor      Visit[]                  @relation("VisitDoctor")
+  expensesCreated     Expense[]
+  feedbackCollected   PatientFeedback[]
+  permissionOverrides UserPermissionOverride[]
+  resetTokens         PasswordResetToken[]
+  tasksAssigned       Task[]                   @relation("TaskAssignedTo")
+  tasksCreated        Task[]                   @relation("TaskCreatedBy")
+}
+
+model Permission {
+  id        String   @id @default(cuid())
+  key       String   @unique // "vitals.record", "audit.view", "staff.manage"
+  label     String // human-readable, shown in UI
+  category  String // "clinical" | "financial" | "admin"
+  createdAt DateTime @default(now())
+
+  rolePermissions RolePermission[]
+  overrides       UserPermissionOverride[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  baseRole     String // ADMIN, DOCTOR, MANAGER, ACCOUNTANT, NURSE, RECEPTIONIST
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([baseRole, permissionId])
+}
+
+model UserPermissionOverride {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  granted      Boolean // true = add on top of role, false = revoke from role
+  createdAt    DateTime   @default(now())
+
+  @@unique([userId, permissionId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Ad-hoc staff/doctor task assignment (new module, not tied to a visit)
+model Task {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?
+  assignedToId String
+  assignedTo   User      @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  createdById  String
+  createdBy    User      @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  status       String    @default("pending") // pending, in_progress, done, cancelled
+  dueDate      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+// STAFF ROLE (For on-duty roster)
+model StaffRole {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPrimaryRole Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+// SHIFT ASSIGNMENTS (Receptionist mode, nurse retains nursing access)
+model ShiftAssignment {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime
+  slot        String // MORNING, EVENING, NIGHT
+  roleContext String // RECEPTIONIST (hybrid with NURSE base role)
+  active      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+// NURSE ROTATION (On-Duty List for Short-Stay)
+model NurseRotation {
+  id               String   @id @default(cuid())
+  date             DateTime
+  slot             String // MORNING, EVENING, NIGHT
+  nurse1Id         String? // First on-duty nurse
+  nurse2Id         String? // Second on-duty nurse
+  currentlyEngaged String? // nurse1Id or nurse2Id (who is currently with patient)
+  createdAt        DateTime @default(now())
+}
+
+// AUDIT LOGS (write path active from Phase 1)
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  action     String // "procedure_recorded", "bill_generated", "financial_term_updated", ...
+  entityType String // "Procedure", "Visit", "Bill", "DoctorFinancialTerm", ...
+  entityId   String // ID of the entity
+  metadata   String? // JSON: {old_value, new_value, reason, ...}
+  status     String // success, failed
+  error      String? // Error message if status = failed
+  timestamp  DateTime @default(now())
+}
+
+// =========================================================
+// PATIENTS & VISITS  (Phase 2+, included for FK completeness)
+// =========================================================
+
+model Patient {
+  id         String    @id @default(cuid())
+  name       String
+  fatherName String
+  dob        DateTime?
+  phone      String
+  createdAt  DateTime  @default(now())
+  visits     Visit[]
+}
+
+model Visit {
+  id          String    @id @default(cuid())
+  patientId   String
+  patient     Patient   @relation(fields: [patientId], references: [id])
+  doctorId    String
+  doctor      User      @relation("VisitDoctor", fields: [doctorId], references: [id])
+  paymentMode String // CASH, DIGITAL
+  disposition String // OPD, SHORT_STAY
+  visitDate   DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  // Consultation (folded into Visit — one visit is one consultation, no separate table)
+  consultationNotes String?
+  diagnosis         String?
+  consultedAt       DateTime?
+  updatedAt         DateTime  @updatedAt
+
+  vitals             Vitals?
+  procedures         Procedure[]
+  prescriptionScan   PrescriptionScan?
+  shortStayAdmission ShortStayAdmission?
+  shortStayEvents    ShortStayEvent[]
+  bill               Bill?
+  qaAssessments      QAAssessment[]
+  consentForms       ConsentForm[]
+  patientFeedback    PatientFeedback?
+}
+
+model Vitals {
+  id           String   @id @default(cuid())
+  visitId      String   @unique
+  visit        Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  height       Decimal?
+  weight       Decimal?
+  bpSystolic   Int?
+  bpDiastolic  Int?
+  temperature  Decimal?
+  heartRate    Int?
+  o2Sat        Int?
+  rr           Int?
+  recordedById String
+  recordedBy   User     @relation(fields: [recordedById], references: [id])
+  recordedAt   DateTime @default(now())
+}
+
+model PrescriptionScan {
+  id        String   @id @default(cuid())
+  visitId   String   @unique
+  visit     Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  fileUrl   String
+  createdAt DateTime @default(now())
+}
+
+// =========================================================
+// PROCEDURES & CONSENT  (Phase 3)
+// =========================================================
+
+model ProcedureMaster {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  baseCharge         Decimal
+  doctorSharePercent Decimal // Default %; can be overridden at recording
+  mandatoryConsent   Boolean  @default(false)
+  consentTemplate    String? // Rich text with placeholders
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  procedures Procedure[]
+}
+
+model Procedure {
+  id                 String           @id @default(cuid())
+  visitId            String
+  visit              Visit            @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  procedureMasterId  String
+  procedureMaster    ProcedureMaster  @relation(fields: [procedureMasterId], references: [id])
+  doctorId           String
+  baseCharge         Decimal // Locked at recording
+  doctorSharePercent Decimal // Locked at recording (can differ from master)
+  doctorEarns        Decimal // Calculated: baseCharge * (doctorSharePercent/100)
+  clinicEarns        Decimal // Calculated: baseCharge * ((100-doctorSharePercent)/100)
+  consentFormId      String?
+  consentForm        ConsentForm?
+  status             String           @default("pending") // pending, finalized
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+}
+
+model ConsentForm {
+  id                   String    @id @default(cuid())
+  visitId              String
+  visit                Visit     @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  procedureId          String?   @unique
+  procedure            Procedure? @relation(fields: [procedureId], references: [id])
+  templateUsed         String // Stored filled form
+  consentGiverName     String?
+  consentGiverRelation String? // Patient, Parent, Guardian, Relative
+  consentDate          DateTime  @default(now())
+  status               String    @default("generated") // generated, signed, scanned
+  scannedFileUrl       String?
+  createdAt            DateTime  @default(now())
+}
+
+// =========================================================
+// SHORT-STAY / BEDS  (Phase 5)
+// =========================================================
+
+model ShortStayAdmission {
+  id            String    @id @default(cuid())
+  visitId       String    @unique
+  visit         Visit     @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  bedId         String
+  bed           Bed       @relation(fields: [bedId], references: [id])
+  admissionDate DateTime
+  admissionTime String // HH:MM format
+  dischargeDate DateTime?
+  dischargeTime String? // HH:MM format
+  hoursStayed   Int? // Calculated at discharge
+  bedCharge     Decimal? // Calculated at discharge
+  reason        String?
+  createdAt     DateTime  @default(now())
+
+  events ShortStayEvent[]
+}
+
+model Bed {
+  id          String   @id @default(cuid())
+  bedCode     String   @unique // BED001, EMG001, etc.
+  bedType     String // indoor, emergency
+  ratePerHour Decimal
+  status      String   @default("vacant") // vacant, occupied
+  createdAt   DateTime @default(now())
+
+  admissions ShortStayAdmission[]
+}
+
+model ShortStayEvent {
+  id                    String              @id @default(cuid())
+  visitId               String
+  visit                 Visit               @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  shortStayAdmissionId  String?
+  shortStayAdmission    ShortStayAdmission? @relation(fields: [shortStayAdmissionId], references: [id])
+  eventType             String // injection, drip, service, procedure
+  description            String
+  quantity               Int                 @default(1)
+  durationMin             Int?
+  rateId                  String
+  rateUsed                RateMaster          @relation(fields: [rateId], references: [id])
+  recordedById            String
+  recordedBy              User                @relation(fields: [recordedById], references: [id])
+  recordedAt              DateTime            @default(now())
+}
+
+// =========================================================
+// FINANCIAL: DOCTOR TERMS, RATES, TAX  (Phase 4)
+// =========================================================
+
+model DoctorProfile {
+  id             String                 @id @default(cuid())
+  userId         String                 @unique
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents      DoctorDocument[]
+  financialTerms DoctorFinancialTerm[]
+  createdAt      DateTime               @default(now())
+}
+
+model DoctorDocument {
+  id         String        @id @default(cuid())
+  doctorId   String
+  doctor     DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  type       String // qualification, certificate, license
+  fileUrl    String
+  uploadedAt DateTime      @default(now())
+}
+
+// Dated/versioned — never overwrite, always insert a new row
+model DoctorFinancialTerm {
+  id              String        @id @default(cuid())
+  doctorId        String
+  doctor          DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  consultationFee Decimal
+  effectiveFrom   DateTime
+  createdAt       DateTime      @default(now())
+}
+
+// Dated/versioned — never overwrite, always insert a new row
+model RateMaster {
+  id                 String   @id @default(cuid())
+  serviceType        String // injection, drip, stitches, cannulation, etc.
+  name               String // Friendly name
+  baseRate           Decimal // Amount charged to patient
+  doctorSharePercent Decimal // e.g., 40
+  clinicSharePercent Decimal // e.g., 60 (should sum to 100)
+  effectiveFrom      DateTime
+  createdAt          DateTime @default(now())
+
+  events ShortStayEvent[]
+}
+
+// Dated/versioned — never overwrite, always insert a new row
+model TaxConfig {
+  id                   String   @id @default(cuid())
+  flatSalesTaxPct      Decimal // e.g., 5
+  consolidationRatePct Decimal // e.g., 2
+  effectiveFrom        DateTime
+  createdAt            DateTime @default(now())
+}
+
+model ExpenseCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  status    String    @default("active") // active, inactive
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  expenses Expense[]
+}
+
+model Expense {
+  id             String          @id @default(cuid())
+  categoryId     String
+  category       ExpenseCategory @relation(fields: [categoryId], references: [id])
+  amount         Decimal
+  description    String?
+  receiptFileUrl String?
+  expenseDate    DateTime
+  createdById    String
+  createdBy      User            @relation(fields: [createdById], references: [id])
+  createdAt      DateTime        @default(now())
+}
+
+model Bill {
+  id                  String    @id @default(cuid())
+  visitId             String    @unique
+  visit               Visit     @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  subtotal            Decimal // Sum of all line items
+  flatTaxAmount       Decimal // Subtotal * flatTaxPct
+  consolidationAmount Decimal // Subtotal * consolidationRatePct
+  total               Decimal // subtotal + flatTaxAmount + consolidationAmount
+  doctorShareTotal    Decimal // Sum of doctor shares from procedures
+  clinicShareTotal    Decimal // Subtotal - doctorShareTotal
+  paymentMode         String // CASH, DIGITAL
+  status              String    @default("pending") // pending, paid, partial
+  generatedAt         DateTime  @default(now())
+  paidAt              DateTime?
+}
+
+model DoctorSettlement {
+  id                String    @id @default(cuid())
+  doctorId          String
+  settlementMonth   DateTime // Year-Month
+  totalEarned       Decimal
+  paymentMode       String? // CASH, DIGITAL
+  paymentDate       DateTime?
+  paymentReference  String?
+  status            String    @default("pending") // pending, paid
+  createdAt         DateTime  @default(now())
+}
+
+// =========================================================
+// QA & FEEDBACK  (Phase 6)
+// =========================================================
+
+model QAAssessment {
+  id                   String   @id @default(cuid())
+  visitId              String
+  visit                Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  nurseId              String
+  assessorId           String
+  canulationTechnique  Int? // 1-5
+  patientCommunication Int? // 1-5
+  procedureAdherence   Int? // 1-5
+  bedsideManner        Int? // 1-5
+  other                String? // Free text
+  notes                String?
+  isRandomCheck        Boolean  @default(true)
+  assessedAt           DateTime @default(now())
+}
+
+model PatientFeedback {
+  id                   String   @id @default(cuid())
+  visitId              String   @unique
+  visit                Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  collectedById        String
+  collectedBy          User     @relation(fields: [collectedById], references: [id])
+  satisfaction         Int? // 1-5
+  communicationClarity Int? // 1-5
+  comfort              Int? // 1-5
+  improvements         String?
+  notes                String?
+  collectedAt          DateTime @default(now())
+}
