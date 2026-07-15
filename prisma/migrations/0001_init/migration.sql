@@ -1,572 +1,538 @@
 -- CreateTable
-CREATE TABLE "User" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "email" TEXT,
-    "phone" TEXT,
-    "password" TEXT NOT NULL,
-    "baseRole" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'active',
-    "mustChangePassword" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE `User` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `email` VARCHAR(191) NULL,
+    `phone` VARCHAR(191) NULL,
+    `password` VARCHAR(191) NOT NULL,
+    `baseRole` VARCHAR(191) NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'active',
+    `mustChangePassword` BOOLEAN NOT NULL DEFAULT false,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
 
-    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "Permission" (
-    "id" TEXT NOT NULL,
-    "key" TEXT NOT NULL,
-    "label" TEXT NOT NULL,
-    "category" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "Permission_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `User_email_key`(`email`),
+    UNIQUE INDEX `User_phone_key`(`phone`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "RolePermission" (
-    "id" TEXT NOT NULL,
-    "baseRole" TEXT NOT NULL,
-    "permissionId" TEXT NOT NULL,
+CREATE TABLE `Permission` (
+    `id` VARCHAR(191) NOT NULL,
+    `key` VARCHAR(191) NOT NULL,
+    `label` VARCHAR(191) NOT NULL,
+    `category` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "RolePermission_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "UserPermissionOverride" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "permissionId" TEXT NOT NULL,
-    "granted" BOOLEAN NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "UserPermissionOverride_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `Permission_key_key`(`key`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "PasswordResetToken" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "token" TEXT NOT NULL,
-    "expiresAt" TIMESTAMP(3) NOT NULL,
-    "usedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `RolePermission` (
+    `id` VARCHAR(191) NOT NULL,
+    `baseRole` VARCHAR(191) NOT NULL,
+    `permissionId` VARCHAR(191) NOT NULL,
 
-    CONSTRAINT "PasswordResetToken_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `RolePermission_baseRole_permissionId_key`(`baseRole`, `permissionId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Task" (
-    "id" TEXT NOT NULL,
-    "title" TEXT NOT NULL,
-    "description" TEXT,
-    "assignedToId" TEXT NOT NULL,
-    "createdById" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'pending',
-    "dueDate" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE `UserPermissionOverride` (
+    `id` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `permissionId` VARCHAR(191) NOT NULL,
+    `granted` BOOLEAN NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "Task_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `UserPermissionOverride_userId_permissionId_key`(`userId`, `permissionId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "StaffRole" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "isPrimaryRole" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `PasswordResetToken` (
+    `id` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `token` VARCHAR(191) NOT NULL,
+    `expiresAt` DATETIME(3) NOT NULL,
+    `usedAt` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "StaffRole_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ShiftAssignment" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "date" TIMESTAMP(3) NOT NULL,
-    "slot" TEXT NOT NULL,
-    "roleContext" TEXT NOT NULL,
-    "active" BOOLEAN NOT NULL DEFAULT false,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "ShiftAssignment_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `PasswordResetToken_token_key`(`token`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "NurseRotation" (
-    "id" TEXT NOT NULL,
-    "date" TIMESTAMP(3) NOT NULL,
-    "slot" TEXT NOT NULL,
-    "nurse1Id" TEXT,
-    "nurse2Id" TEXT,
-    "currentlyEngaged" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `Task` (
+    `id` VARCHAR(191) NOT NULL,
+    `title` VARCHAR(191) NOT NULL,
+    `description` VARCHAR(191) NULL,
+    `assignedToId` VARCHAR(191) NOT NULL,
+    `createdById` VARCHAR(191) NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'pending',
+    `dueDate` DATETIME(3) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
 
-    CONSTRAINT "NurseRotation_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "AuditLog" (
-    "id" TEXT NOT NULL,
-    "actorId" TEXT NOT NULL,
-    "action" TEXT NOT NULL,
-    "entityType" TEXT NOT NULL,
-    "entityId" TEXT NOT NULL,
-    "metadata" TEXT,
-    "status" TEXT NOT NULL,
-    "error" TEXT,
-    "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
-);
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Patient" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "fatherName" TEXT NOT NULL,
-    "dob" TIMESTAMP(3),
-    "phone" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `StaffRole` (
+    `id` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `isPrimaryRole` BOOLEAN NOT NULL DEFAULT true,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "Patient_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "Visit" (
-    "id" TEXT NOT NULL,
-    "patientId" TEXT NOT NULL,
-    "doctorId" TEXT NOT NULL,
-    "paymentMode" TEXT NOT NULL,
-    "disposition" TEXT NOT NULL,
-    "visitDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "consultationNotes" TEXT,
-    "diagnosis" TEXT,
-    "consultedAt" TIMESTAMP(3),
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "Visit_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `StaffRole_userId_key`(`userId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Vitals" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "height" DECIMAL(65,30),
-    "weight" DECIMAL(65,30),
-    "bpSystolic" INTEGER,
-    "bpDiastolic" INTEGER,
-    "temperature" DECIMAL(65,30),
-    "heartRate" INTEGER,
-    "o2Sat" INTEGER,
-    "rr" INTEGER,
-    "recordedById" TEXT NOT NULL,
-    "recordedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `ShiftAssignment` (
+    `id` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL,
+    `slot` VARCHAR(191) NOT NULL,
+    `roleContext` VARCHAR(191) NOT NULL,
+    `active` BOOLEAN NOT NULL DEFAULT false,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "Vitals_pkey" PRIMARY KEY ("id")
-);
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "PrescriptionScan" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "fileUrl" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `NurseRotation` (
+    `id` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL,
+    `slot` VARCHAR(191) NOT NULL,
+    `nurse1Id` VARCHAR(191) NULL,
+    `nurse2Id` VARCHAR(191) NULL,
+    `currentlyEngaged` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "PrescriptionScan_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "ProcedureMaster" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "baseCharge" DECIMAL(65,30) NOT NULL,
-    "doctorSharePercent" DECIMAL(65,30) NOT NULL,
-    "mandatoryConsent" BOOLEAN NOT NULL DEFAULT false,
-    "consentTemplate" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "ProcedureMaster_pkey" PRIMARY KEY ("id")
-);
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Procedure" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "procedureMasterId" TEXT NOT NULL,
-    "doctorId" TEXT NOT NULL,
-    "baseCharge" DECIMAL(65,30) NOT NULL,
-    "doctorSharePercent" DECIMAL(65,30) NOT NULL,
-    "doctorEarns" DECIMAL(65,30) NOT NULL,
-    "clinicEarns" DECIMAL(65,30) NOT NULL,
-    "consentFormId" TEXT,
-    "status" TEXT NOT NULL DEFAULT 'pending',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE `AuditLog` (
+    `id` VARCHAR(191) NOT NULL,
+    `actorId` VARCHAR(191) NOT NULL,
+    `action` VARCHAR(191) NOT NULL,
+    `entityType` VARCHAR(191) NOT NULL,
+    `entityId` VARCHAR(191) NOT NULL,
+    `metadata` VARCHAR(191) NULL,
+    `status` VARCHAR(191) NOT NULL,
+    `error` VARCHAR(191) NULL,
+    `timestamp` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "Procedure_pkey" PRIMARY KEY ("id")
-);
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "ConsentForm" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "procedureId" TEXT,
-    "templateUsed" TEXT NOT NULL,
-    "consentGiverName" TEXT,
-    "consentGiverRelation" TEXT,
-    "consentDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "status" TEXT NOT NULL DEFAULT 'generated',
-    "scannedFileUrl" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `Patient` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `fatherName` VARCHAR(191) NOT NULL,
+    `dob` DATETIME(3) NULL,
+    `phone` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "ConsentForm_pkey" PRIMARY KEY ("id")
-);
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "ShortStayAdmission" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "bedId" TEXT NOT NULL,
-    "admissionDate" TIMESTAMP(3) NOT NULL,
-    "admissionTime" TEXT NOT NULL,
-    "dischargeDate" TIMESTAMP(3),
-    "dischargeTime" TEXT,
-    "hoursStayed" INTEGER,
-    "bedCharge" DECIMAL(65,30),
-    "reason" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `Visit` (
+    `id` VARCHAR(191) NOT NULL,
+    `patientId` VARCHAR(191) NOT NULL,
+    `doctorId` VARCHAR(191) NOT NULL,
+    `paymentMode` VARCHAR(191) NOT NULL,
+    `disposition` VARCHAR(191) NOT NULL,
+    `visitDate` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `consultationNotes` VARCHAR(191) NULL,
+    `diagnosis` VARCHAR(191) NULL,
+    `consultedAt` DATETIME(3) NULL,
+    `updatedAt` DATETIME(3) NOT NULL,
 
-    CONSTRAINT "ShortStayAdmission_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "Bed" (
-    "id" TEXT NOT NULL,
-    "bedCode" TEXT NOT NULL,
-    "bedType" TEXT NOT NULL,
-    "ratePerHour" DECIMAL(65,30) NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'vacant',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "Bed_pkey" PRIMARY KEY ("id")
-);
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "ShortStayEvent" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "shortStayAdmissionId" TEXT,
-    "eventType" TEXT NOT NULL,
-    "description" TEXT NOT NULL,
-    "quantity" INTEGER NOT NULL DEFAULT 1,
-    "durationMin" INTEGER,
-    "rateId" TEXT NOT NULL,
-    "recordedById" TEXT NOT NULL,
-    "recordedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `Vitals` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `height` DECIMAL(5, 2) NULL,
+    `weight` DECIMAL(5, 2) NULL,
+    `bpSystolic` INTEGER NULL,
+    `bpDiastolic` INTEGER NULL,
+    `temperature` DECIMAL(4, 1) NULL,
+    `heartRate` INTEGER NULL,
+    `o2Sat` INTEGER NULL,
+    `rr` INTEGER NULL,
+    `recordedById` VARCHAR(191) NOT NULL,
+    `recordedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "ShortStayEvent_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "DoctorProfile" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "DoctorProfile_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `Vitals_visitId_key`(`visitId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "DoctorDocument" (
-    "id" TEXT NOT NULL,
-    "doctorId" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
-    "fileUrl" TEXT NOT NULL,
-    "uploadedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `PrescriptionScan` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `fileUrl` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "DoctorDocument_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "DoctorFinancialTerm" (
-    "id" TEXT NOT NULL,
-    "doctorId" TEXT NOT NULL,
-    "consultationFee" DECIMAL(65,30) NOT NULL,
-    "effectiveFrom" TIMESTAMP(3) NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "DoctorFinancialTerm_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `PrescriptionScan_visitId_key`(`visitId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "RateMaster" (
-    "id" TEXT NOT NULL,
-    "serviceType" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "baseRate" DECIMAL(65,30) NOT NULL,
-    "doctorSharePercent" DECIMAL(65,30) NOT NULL,
-    "clinicSharePercent" DECIMAL(65,30) NOT NULL,
-    "effectiveFrom" TIMESTAMP(3) NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `ProcedureMaster` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `baseCharge` DECIMAL(10, 2) NOT NULL,
+    `doctorSharePercent` DECIMAL(5, 2) NOT NULL,
+    `mandatoryConsent` BOOLEAN NOT NULL DEFAULT false,
+    `consentTemplate` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
 
-    CONSTRAINT "RateMaster_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "TaxConfig" (
-    "id" TEXT NOT NULL,
-    "flatSalesTaxPct" DECIMAL(65,30) NOT NULL,
-    "consolidationRatePct" DECIMAL(65,30) NOT NULL,
-    "effectiveFrom" TIMESTAMP(3) NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "TaxConfig_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `ProcedureMaster_name_key`(`name`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "ExpenseCategory" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'active',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
+CREATE TABLE `Procedure` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `procedureMasterId` VARCHAR(191) NOT NULL,
+    `doctorId` VARCHAR(191) NOT NULL,
+    `baseCharge` DECIMAL(10, 2) NOT NULL,
+    `doctorSharePercent` DECIMAL(5, 2) NOT NULL,
+    `doctorEarns` DECIMAL(10, 2) NOT NULL,
+    `clinicEarns` DECIMAL(10, 2) NOT NULL,
+    `consentFormId` VARCHAR(191) NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'pending',
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
 
-    CONSTRAINT "ExpenseCategory_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "Expense" (
-    "id" TEXT NOT NULL,
-    "categoryId" TEXT NOT NULL,
-    "amount" DECIMAL(65,30) NOT NULL,
-    "description" TEXT,
-    "receiptFileUrl" TEXT,
-    "expenseDate" TIMESTAMP(3) NOT NULL,
-    "createdById" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "Expense_pkey" PRIMARY KEY ("id")
-);
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "Bill" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "subtotal" DECIMAL(65,30) NOT NULL,
-    "flatTaxAmount" DECIMAL(65,30) NOT NULL,
-    "consolidationAmount" DECIMAL(65,30) NOT NULL,
-    "total" DECIMAL(65,30) NOT NULL,
-    "doctorShareTotal" DECIMAL(65,30) NOT NULL,
-    "clinicShareTotal" DECIMAL(65,30) NOT NULL,
-    "paymentMode" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'pending',
-    "generatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "paidAt" TIMESTAMP(3),
+CREATE TABLE `ConsentForm` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `procedureId` VARCHAR(191) NULL,
+    `templateUsed` VARCHAR(191) NOT NULL,
+    `consentGiverName` VARCHAR(191) NULL,
+    `consentGiverRelation` VARCHAR(191) NULL,
+    `consentDate` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `status` VARCHAR(191) NOT NULL DEFAULT 'generated',
+    `scannedFileUrl` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "Bill_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "DoctorSettlement" (
-    "id" TEXT NOT NULL,
-    "doctorId" TEXT NOT NULL,
-    "settlementMonth" TIMESTAMP(3) NOT NULL,
-    "totalEarned" DECIMAL(65,30) NOT NULL,
-    "paymentMode" TEXT,
-    "paymentDate" TIMESTAMP(3),
-    "paymentReference" TEXT,
-    "status" TEXT NOT NULL DEFAULT 'pending',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "DoctorSettlement_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `ConsentForm_procedureId_key`(`procedureId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "QAAssessment" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "nurseId" TEXT NOT NULL,
-    "assessorId" TEXT NOT NULL,
-    "canulationTechnique" INTEGER,
-    "patientCommunication" INTEGER,
-    "procedureAdherence" INTEGER,
-    "bedsideManner" INTEGER,
-    "other" TEXT,
-    "notes" TEXT,
-    "isRandomCheck" BOOLEAN NOT NULL DEFAULT true,
-    "assessedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `ShortStayAdmission` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `bedId` VARCHAR(191) NOT NULL,
+    `admissionDate` DATETIME(3) NOT NULL,
+    `admissionTime` VARCHAR(191) NOT NULL,
+    `dischargeDate` DATETIME(3) NULL,
+    `dischargeTime` VARCHAR(191) NULL,
+    `hoursStayed` INTEGER NULL,
+    `bedCharge` DECIMAL(10, 2) NULL,
+    `reason` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "QAAssessment_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `ShortStayAdmission_visitId_key`(`visitId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE "PatientFeedback" (
-    "id" TEXT NOT NULL,
-    "visitId" TEXT NOT NULL,
-    "collectedById" TEXT NOT NULL,
-    "satisfaction" INTEGER,
-    "communicationClarity" INTEGER,
-    "comfort" INTEGER,
-    "improvements" TEXT,
-    "notes" TEXT,
-    "collectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE `Bed` (
+    `id` VARCHAR(191) NOT NULL,
+    `bedCode` VARCHAR(191) NOT NULL,
+    `bedType` VARCHAR(191) NOT NULL,
+    `ratePerHour` DECIMAL(10, 2) NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'vacant',
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    CONSTRAINT "PatientFeedback_pkey" PRIMARY KEY ("id")
-);
+    UNIQUE INDEX `Bed_bedCode_key`(`bedCode`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+-- CreateTable
+CREATE TABLE `ShortStayEvent` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `shortStayAdmissionId` VARCHAR(191) NULL,
+    `eventType` VARCHAR(191) NOT NULL,
+    `description` VARCHAR(191) NOT NULL,
+    `quantity` INTEGER NOT NULL DEFAULT 1,
+    `durationMin` INTEGER NULL,
+    `rateId` VARCHAR(191) NOT NULL,
+    `recordedById` VARCHAR(191) NOT NULL,
+    `recordedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
--- CreateIndex
-CREATE UNIQUE INDEX "User_phone_key" ON "User"("phone");
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "Permission_key_key" ON "Permission"("key");
+-- CreateTable
+CREATE TABLE `DoctorProfile` (
+    `id` VARCHAR(191) NOT NULL,
+    `userId` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
--- CreateIndex
-CREATE UNIQUE INDEX "RolePermission_baseRole_permissionId_key" ON "RolePermission"("baseRole", "permissionId");
+    UNIQUE INDEX `DoctorProfile_userId_key`(`userId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "UserPermissionOverride_userId_permissionId_key" ON "UserPermissionOverride"("userId", "permissionId");
+-- CreateTable
+CREATE TABLE `DoctorDocument` (
+    `id` VARCHAR(191) NOT NULL,
+    `doctorId` VARCHAR(191) NOT NULL,
+    `type` VARCHAR(191) NOT NULL,
+    `fileUrl` VARCHAR(191) NOT NULL,
+    `uploadedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
--- CreateIndex
-CREATE UNIQUE INDEX "PasswordResetToken_token_key" ON "PasswordResetToken"("token");
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "StaffRole_userId_key" ON "StaffRole"("userId");
+-- CreateTable
+CREATE TABLE `DoctorFinancialTerm` (
+    `id` VARCHAR(191) NOT NULL,
+    `doctorId` VARCHAR(191) NOT NULL,
+    `consultationFee` DECIMAL(10, 2) NOT NULL,
+    `effectiveFrom` DATETIME(3) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
--- CreateIndex
-CREATE UNIQUE INDEX "Vitals_visitId_key" ON "Vitals"("visitId");
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "PrescriptionScan_visitId_key" ON "PrescriptionScan"("visitId");
+-- CreateTable
+CREATE TABLE `RateMaster` (
+    `id` VARCHAR(191) NOT NULL,
+    `serviceType` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `baseRate` DECIMAL(10, 2) NOT NULL,
+    `doctorSharePercent` DECIMAL(5, 2) NOT NULL,
+    `clinicSharePercent` DECIMAL(5, 2) NOT NULL,
+    `effectiveFrom` DATETIME(3) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
--- CreateIndex
-CREATE UNIQUE INDEX "ProcedureMaster_name_key" ON "ProcedureMaster"("name");
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "ConsentForm_procedureId_key" ON "ConsentForm"("procedureId");
+-- CreateTable
+CREATE TABLE `TaxConfig` (
+    `id` VARCHAR(191) NOT NULL,
+    `flatSalesTaxPct` DECIMAL(5, 2) NOT NULL,
+    `consolidationRatePct` DECIMAL(5, 2) NOT NULL,
+    `effectiveFrom` DATETIME(3) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
--- CreateIndex
-CREATE UNIQUE INDEX "ShortStayAdmission_visitId_key" ON "ShortStayAdmission"("visitId");
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "Bed_bedCode_key" ON "Bed"("bedCode");
+-- CreateTable
+CREATE TABLE `ExpenseCategory` (
+    `id` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'active',
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
 
--- CreateIndex
-CREATE UNIQUE INDEX "DoctorProfile_userId_key" ON "DoctorProfile"("userId");
+    UNIQUE INDEX `ExpenseCategory_name_key`(`name`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "ExpenseCategory_name_key" ON "ExpenseCategory"("name");
+-- CreateTable
+CREATE TABLE `Expense` (
+    `id` VARCHAR(191) NOT NULL,
+    `categoryId` VARCHAR(191) NOT NULL,
+    `amount` DECIMAL(10, 2) NOT NULL,
+    `description` VARCHAR(191) NULL,
+    `receiptFileUrl` VARCHAR(191) NULL,
+    `expenseDate` DATETIME(3) NOT NULL,
+    `createdById` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
--- CreateIndex
-CREATE UNIQUE INDEX "Bill_visitId_key" ON "Bill"("visitId");
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateIndex
-CREATE UNIQUE INDEX "PatientFeedback_visitId_key" ON "PatientFeedback"("visitId");
+-- CreateTable
+CREATE TABLE `Bill` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `subtotal` DECIMAL(10, 2) NOT NULL,
+    `flatTaxAmount` DECIMAL(10, 2) NOT NULL,
+    `consolidationAmount` DECIMAL(10, 2) NOT NULL,
+    `total` DECIMAL(10, 2) NOT NULL,
+    `doctorShareTotal` DECIMAL(10, 2) NOT NULL,
+    `clinicShareTotal` DECIMAL(10, 2) NOT NULL,
+    `paymentMode` VARCHAR(191) NOT NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'pending',
+    `generatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `paidAt` DATETIME(3) NULL,
+
+    UNIQUE INDEX `Bill_visitId_key`(`visitId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `DoctorSettlement` (
+    `id` VARCHAR(191) NOT NULL,
+    `doctorId` VARCHAR(191) NOT NULL,
+    `settlementMonth` DATETIME(3) NOT NULL,
+    `totalEarned` DECIMAL(10, 2) NOT NULL,
+    `paymentMode` VARCHAR(191) NULL,
+    `paymentDate` DATETIME(3) NULL,
+    `paymentReference` VARCHAR(191) NULL,
+    `status` VARCHAR(191) NOT NULL DEFAULT 'pending',
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `QAAssessment` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `nurseId` VARCHAR(191) NOT NULL,
+    `assessorId` VARCHAR(191) NOT NULL,
+    `canulationTechnique` INTEGER NULL,
+    `patientCommunication` INTEGER NULL,
+    `procedureAdherence` INTEGER NULL,
+    `bedsideManner` INTEGER NULL,
+    `other` VARCHAR(191) NULL,
+    `notes` VARCHAR(191) NULL,
+    `isRandomCheck` BOOLEAN NOT NULL DEFAULT true,
+    `assessedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `PatientFeedback` (
+    `id` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `collectedById` VARCHAR(191) NOT NULL,
+    `satisfaction` INTEGER NULL,
+    `communicationClarity` INTEGER NULL,
+    `comfort` INTEGER NULL,
+    `improvements` VARCHAR(191) NULL,
+    `notes` VARCHAR(191) NULL,
+    `collectedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `PatientFeedback_visitId_key`(`visitId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- AddForeignKey
-ALTER TABLE "RolePermission" ADD CONSTRAINT "RolePermission_permissionId_fkey" FOREIGN KEY ("permissionId") REFERENCES "Permission"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `RolePermission` ADD CONSTRAINT `RolePermission_permissionId_fkey` FOREIGN KEY (`permissionId`) REFERENCES `Permission`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserPermissionOverride" ADD CONSTRAINT "UserPermissionOverride_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `UserPermissionOverride` ADD CONSTRAINT `UserPermissionOverride_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "UserPermissionOverride" ADD CONSTRAINT "UserPermissionOverride_permissionId_fkey" FOREIGN KEY ("permissionId") REFERENCES "Permission"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `UserPermissionOverride` ADD CONSTRAINT `UserPermissionOverride_permissionId_fkey` FOREIGN KEY (`permissionId`) REFERENCES `Permission`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PasswordResetToken" ADD CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `PasswordResetToken` ADD CONSTRAINT `PasswordResetToken_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Task" ADD CONSTRAINT "Task_assignedToId_fkey" FOREIGN KEY ("assignedToId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Task` ADD CONSTRAINT `Task_assignedToId_fkey` FOREIGN KEY (`assignedToId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Task" ADD CONSTRAINT "Task_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Task` ADD CONSTRAINT `Task_createdById_fkey` FOREIGN KEY (`createdById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "StaffRole" ADD CONSTRAINT "StaffRole_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `StaffRole` ADD CONSTRAINT `StaffRole_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShiftAssignment" ADD CONSTRAINT "ShiftAssignment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `ShiftAssignment` ADD CONSTRAINT `ShiftAssignment_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `AuditLog` ADD CONSTRAINT `AuditLog_actorId_fkey` FOREIGN KEY (`actorId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Visit" ADD CONSTRAINT "Visit_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Visit` ADD CONSTRAINT `Visit_patientId_fkey` FOREIGN KEY (`patientId`) REFERENCES `Patient`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Visit" ADD CONSTRAINT "Visit_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Visit` ADD CONSTRAINT `Visit_doctorId_fkey` FOREIGN KEY (`doctorId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Vitals" ADD CONSTRAINT "Vitals_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `Vitals` ADD CONSTRAINT `Vitals_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Vitals" ADD CONSTRAINT "Vitals_recordedById_fkey" FOREIGN KEY ("recordedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Vitals` ADD CONSTRAINT `Vitals_recordedById_fkey` FOREIGN KEY (`recordedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PrescriptionScan" ADD CONSTRAINT "PrescriptionScan_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `PrescriptionScan` ADD CONSTRAINT `PrescriptionScan_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Procedure" ADD CONSTRAINT "Procedure_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `Procedure` ADD CONSTRAINT `Procedure_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Procedure" ADD CONSTRAINT "Procedure_procedureMasterId_fkey" FOREIGN KEY ("procedureMasterId") REFERENCES "ProcedureMaster"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Procedure` ADD CONSTRAINT `Procedure_procedureMasterId_fkey` FOREIGN KEY (`procedureMasterId`) REFERENCES `ProcedureMaster`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ConsentForm" ADD CONSTRAINT "ConsentForm_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `ConsentForm` ADD CONSTRAINT `ConsentForm_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ConsentForm" ADD CONSTRAINT "ConsentForm_procedureId_fkey" FOREIGN KEY ("procedureId") REFERENCES "Procedure"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `ConsentForm` ADD CONSTRAINT `ConsentForm_procedureId_fkey` FOREIGN KEY (`procedureId`) REFERENCES `Procedure`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortStayAdmission" ADD CONSTRAINT "ShortStayAdmission_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `ShortStayAdmission` ADD CONSTRAINT `ShortStayAdmission_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortStayAdmission" ADD CONSTRAINT "ShortStayAdmission_bedId_fkey" FOREIGN KEY ("bedId") REFERENCES "Bed"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `ShortStayAdmission` ADD CONSTRAINT `ShortStayAdmission_bedId_fkey` FOREIGN KEY (`bedId`) REFERENCES `Bed`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortStayEvent" ADD CONSTRAINT "ShortStayEvent_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `ShortStayEvent` ADD CONSTRAINT `ShortStayEvent_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortStayEvent" ADD CONSTRAINT "ShortStayEvent_shortStayAdmissionId_fkey" FOREIGN KEY ("shortStayAdmissionId") REFERENCES "ShortStayAdmission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `ShortStayEvent` ADD CONSTRAINT `ShortStayEvent_shortStayAdmissionId_fkey` FOREIGN KEY (`shortStayAdmissionId`) REFERENCES `ShortStayAdmission`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortStayEvent" ADD CONSTRAINT "ShortStayEvent_rateId_fkey" FOREIGN KEY ("rateId") REFERENCES "RateMaster"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `ShortStayEvent` ADD CONSTRAINT `ShortStayEvent_rateId_fkey` FOREIGN KEY (`rateId`) REFERENCES `RateMaster`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortStayEvent" ADD CONSTRAINT "ShortStayEvent_recordedById_fkey" FOREIGN KEY ("recordedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `ShortStayEvent` ADD CONSTRAINT `ShortStayEvent_recordedById_fkey` FOREIGN KEY (`recordedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "DoctorProfile" ADD CONSTRAINT "DoctorProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `DoctorProfile` ADD CONSTRAINT `DoctorProfile_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "DoctorDocument" ADD CONSTRAINT "DoctorDocument_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "DoctorProfile"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `DoctorDocument` ADD CONSTRAINT `DoctorDocument_doctorId_fkey` FOREIGN KEY (`doctorId`) REFERENCES `DoctorProfile`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "DoctorFinancialTerm" ADD CONSTRAINT "DoctorFinancialTerm_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "DoctorProfile"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `DoctorFinancialTerm` ADD CONSTRAINT `DoctorFinancialTerm_doctorId_fkey` FOREIGN KEY (`doctorId`) REFERENCES `DoctorProfile`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Expense" ADD CONSTRAINT "Expense_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "ExpenseCategory"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Expense` ADD CONSTRAINT `Expense_categoryId_fkey` FOREIGN KEY (`categoryId`) REFERENCES `ExpenseCategory`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Expense" ADD CONSTRAINT "Expense_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `Expense` ADD CONSTRAINT `Expense_createdById_fkey` FOREIGN KEY (`createdById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Bill" ADD CONSTRAINT "Bill_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `Bill` ADD CONSTRAINT `Bill_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "QAAssessment" ADD CONSTRAINT "QAAssessment_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `QAAssessment` ADD CONSTRAINT `QAAssessment_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PatientFeedback" ADD CONSTRAINT "PatientFeedback_visitId_fkey" FOREIGN KEY ("visitId") REFERENCES "Visit"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `PatientFeedback` ADD CONSTRAINT `PatientFeedback_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `Visit`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PatientFeedback" ADD CONSTRAINT "PatientFeedback_collectedById_fkey" FOREIGN KEY ("collectedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `PatientFeedback` ADD CONSTRAINT `PatientFeedback_collectedById_fkey` FOREIGN KEY (`collectedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 

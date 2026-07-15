@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -188,11 +188,11 @@ model Vitals {
   id           String   @id @default(cuid())
   visitId      String   @unique
   visit        Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  height       Decimal?
-  weight       Decimal?
+  height       Decimal? @db.Decimal(5, 2)
+  weight       Decimal? @db.Decimal(5, 2)
   bpSystolic   Int?
   bpDiastolic  Int?
-  temperature  Decimal?
+  temperature  Decimal? @db.Decimal(4, 1)
   heartRate    Int?
   o2Sat        Int?
   rr           Int?
@@ -216,8 +216,8 @@ model PrescriptionScan {
 model ProcedureMaster {
   id                 String   @id @default(cuid())
   name               String   @unique
-  baseCharge         Decimal
-  doctorSharePercent Decimal // Default %; can be overridden at recording
+  baseCharge         Decimal  @db.Decimal(10, 2)
+  doctorSharePercent Decimal  @db.Decimal(5, 2) // Default %; can be overridden at recording
   mandatoryConsent   Boolean  @default(false)
   consentTemplate    String? // Rich text with placeholders
   createdAt          DateTime @default(now())
@@ -233,10 +233,10 @@ model Procedure {
   procedureMasterId  String
   procedureMaster    ProcedureMaster  @relation(fields: [procedureMasterId], references: [id])
   doctorId           String
-  baseCharge         Decimal // Locked at recording
-  doctorSharePercent Decimal // Locked at recording (can differ from master)
-  doctorEarns        Decimal // Calculated: baseCharge * (doctorSharePercent/100)
-  clinicEarns        Decimal // Calculated: baseCharge * ((100-doctorSharePercent)/100)
+  baseCharge         Decimal          @db.Decimal(10, 2) // Locked at recording
+  doctorSharePercent Decimal          @db.Decimal(5, 2) // Locked at recording (can differ from master)
+  doctorEarns        Decimal          @db.Decimal(10, 2) // Calculated: baseCharge * (doctorSharePercent/100)
+  clinicEarns        Decimal          @db.Decimal(10, 2) // Calculated: baseCharge * ((100-doctorSharePercent)/100)
   consentFormId      String?
   consentForm        ConsentForm?
   status             String           @default("pending") // pending, finalized
@@ -274,7 +274,7 @@ model ShortStayAdmission {
   dischargeDate DateTime?
   dischargeTime String? // HH:MM format
   hoursStayed   Int? // Calculated at discharge
-  bedCharge     Decimal? // Calculated at discharge
+  bedCharge     Decimal?  @db.Decimal(10, 2) // Calculated at discharge
   reason        String?
   createdAt     DateTime  @default(now())
 
@@ -285,7 +285,7 @@ model Bed {
   id          String   @id @default(cuid())
   bedCode     String   @unique // BED001, EMG001, etc.
   bedType     String // indoor, emergency
-  ratePerHour Decimal
+  ratePerHour Decimal  @db.Decimal(10, 2)
   status      String   @default("vacant") // vacant, occupied
   createdAt   DateTime @default(now())
 
@@ -336,7 +336,7 @@ model DoctorFinancialTerm {
   id              String        @id @default(cuid())
   doctorId        String
   doctor          DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  consultationFee Decimal
+  consultationFee Decimal       @db.Decimal(10, 2)
   effectiveFrom   DateTime
   createdAt       DateTime      @default(now())
 }
@@ -346,9 +346,9 @@ model RateMaster {
   id                 String   @id @default(cuid())
   serviceType        String // injection, drip, stitches, cannulation, etc.
   name               String // Friendly name
-  baseRate           Decimal // Amount charged to patient
-  doctorSharePercent Decimal // e.g., 40
-  clinicSharePercent Decimal // e.g., 60 (should sum to 100)
+  baseRate           Decimal  @db.Decimal(10, 2) // Amount charged to patient
+  doctorSharePercent Decimal  @db.Decimal(5, 2) // e.g., 40
+  clinicSharePercent Decimal  @db.Decimal(5, 2) // e.g., 60 (should sum to 100)
   effectiveFrom      DateTime
   createdAt          DateTime @default(now())
 
@@ -358,8 +358,8 @@ model RateMaster {
 // Dated/versioned — never overwrite, always insert a new row
 model TaxConfig {
   id                   String   @id @default(cuid())
-  flatSalesTaxPct      Decimal // e.g., 5
-  consolidationRatePct Decimal // e.g., 2
+  flatSalesTaxPct      Decimal  @db.Decimal(5, 2) // e.g., 5
+  consolidationRatePct Decimal  @db.Decimal(5, 2) // e.g., 2
   effectiveFrom        DateTime
   createdAt            DateTime @default(now())
 }
@@ -378,7 +378,7 @@ model Expense {
   id             String          @id @default(cuid())
   categoryId     String
   category       ExpenseCategory @relation(fields: [categoryId], references: [id])
-  amount         Decimal
+  amount         Decimal         @db.Decimal(10, 2)
   description    String?
   receiptFileUrl String?
   expenseDate    DateTime
@@ -391,12 +391,12 @@ model Bill {
   id                  String    @id @default(cuid())
   visitId             String    @unique
   visit               Visit     @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  subtotal            Decimal // Sum of all line items
-  flatTaxAmount       Decimal // Subtotal * flatTaxPct
-  consolidationAmount Decimal // Subtotal * consolidationRatePct
-  total               Decimal // subtotal + flatTaxAmount + consolidationAmount
-  doctorShareTotal    Decimal // Sum of doctor shares from procedures
-  clinicShareTotal    Decimal // Subtotal - doctorShareTotal
+  subtotal            Decimal   @db.Decimal(10, 2) // Sum of all line items
+  flatTaxAmount       Decimal   @db.Decimal(10, 2) // Subtotal * flatTaxPct
+  consolidationAmount Decimal   @db.Decimal(10, 2) // Subtotal * consolidationRatePct
+  total               Decimal   @db.Decimal(10, 2) // subtotal + flatTaxAmount + consolidationAmount
+  doctorShareTotal    Decimal   @db.Decimal(10, 2) // Sum of doctor shares from procedures
+  clinicShareTotal    Decimal   @db.Decimal(10, 2) // Subtotal - doctorShareTotal
   paymentMode         String // CASH, DIGITAL
   status              String    @default("pending") // pending, paid, partial
   generatedAt         DateTime  @default(now())
@@ -407,7 +407,7 @@ model DoctorSettlement {
   id                String    @id @default(cuid())
   doctorId          String
   settlementMonth   DateTime // Year-Month
-  totalEarned       Decimal
+  totalEarned       Decimal   @db.Decimal(10, 2)
   paymentMode       String? // CASH, DIGITAL
   paymentDate       DateTime?
   paymentReference  String?

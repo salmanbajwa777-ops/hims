@@ -3,7 +3,9 @@
 **Parent spec:** Unified HMIS Specification (functional) + Premium UI/UX Design Guide (visual).
 This document is the actionable Phase 1 plan reconciling both, plus decisions made 2026-07-15.
 
-**Stack:** Next.js, TypeScript, Tailwind CSS, PostgreSQL, Prisma, GitHub Actions → AWS EC2
+**Stack:** Next.js, TypeScript, Tailwind CSS, MySQL, Prisma, GitHub Actions → AWS EC2
+
+*(Switched from PostgreSQL to MySQL 2026-07-15 — hosting environment is MySQL-only.)*
 
 ---
 
