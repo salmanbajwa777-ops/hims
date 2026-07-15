@@ -17,6 +17,37 @@ $mustChangePassword = (bool) $user['must_change_password'];
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 $hour = (int) date('G');
 $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good Evening');
+
+function icon(string $name, int $size = 18): string {
+    $paths = [
+        'grid' => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+        'users' => '<path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+        'stethoscope' => '<path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/>',
+        'calendar' => '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+        'bed' => '<path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20"/><path d="M6 8V6a2 2 0 0 1 2-2h3"/>',
+        'clipboard' => '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/>',
+        'card' => '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
+        'wallet' => '<path d="M20 12V8a2 2 0 0 0-2-2H5a2 2 0 0 1 0-4h13a2 2 0 0 1 2 2v3"/><path d="M3 5v14a2 2 0 0 0 2 2h15a2 2 0 0 0 2-2v-4"/><circle cx="17" cy="14" r="1.5"/>',
+        'bar-chart' => '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
+        'user-group' => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+        'lock' => '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        'box' => '<path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.3 7.6L12 12l8.7-4.4M12 12v9"/>',
+        'trending-up' => '<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
+        'file-text' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
+        'settings' => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+        'search' => '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>',
+        'bell' => '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+        'mail' => '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 6 10-6"/>',
+        'plus' => '<path d="M12 5v14M5 12h14"/>',
+        'download' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/>',
+        'alert-triangle' => '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/>',
+        'check-circle' => '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/>',
+        'dollar-sign' => '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+        'droplet' => '<path d="M12 2.69s5.66 5.86 5.66 10.31A5.66 5.66 0 1 1 6.34 13C6.34 8.55 12 2.69 12 2.69z"/>',
+    ];
+    $p = $paths[$name] ?? '';
+    return '<svg width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -148,10 +179,11 @@ a { text-decoration: none; color: inherit; }
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
     flex-shrink: 0;
+    color: var(--text-secondary);
 }
-.nav-item.active .nav-icon { background: #fff; }
+.nav-icon svg { width: 15px; height: 15px; }
+.nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
 
 /* ---------- Header ---------- */
 .header {
@@ -183,7 +215,8 @@ a { text-decoration: none; color: inherit; }
     color: var(--text);
 }
 .search-box input:focus { outline: none; border-color: var(--primary); background: #fff; }
-.search-box .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 14px; }
+.search-box .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-muted); display: flex; }
+.search-box .icon svg { width: 15px; height: 15px; }
 .search-box .kbd {
     position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
     font-size: 11px; color: var(--text-muted); background: #fff; border: 1px solid var(--border);
@@ -193,10 +226,12 @@ a { text-decoration: none; color: inherit; }
 .icon-btn {
     width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border);
     background: #fff; display: flex; align-items: center; justify-content: center;
-    font-size: 15px; color: var(--text-secondary); position: relative; cursor: pointer;
+    color: var(--text-secondary); position: relative; cursor: pointer;
 }
+.icon-btn svg { width: 17px; height: 17px; }
 .icon-btn .dot {
     position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--red);
+    border: 1.5px solid #fff;
 }
 .header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
 .avatar {
@@ -251,8 +286,9 @@ a { text-decoration: none; color: inherit; }
 .kpi-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .kpi-icon {
     width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
-    font-size: 18px; background: var(--primary-light); color: var(--primary-dark);
+    background: var(--primary-light); color: var(--primary-dark);
 }
+.kpi-icon svg { width: 20px; height: 20px; }
 .kpi-trend { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 8px; }
 .kpi-trend.up { color: #047857; background: #ECFDF5; }
 .kpi-trend.down { color: #B91C1C; background: #FEF2F2; }
@@ -283,7 +319,8 @@ a { text-decoration: none; color: inherit; }
     box-shadow: var(--shadow-md);
     background: linear-gradient(160deg, #fff, var(--primary-light));
 }
-.action-tile .icon { font-size: 22px; }
+.action-tile .icon { color: var(--primary-dark); }
+.action-tile .icon svg { width: 24px; height: 24px; }
 .action-tile .label { font-size: 12.5px; font-weight: 600; color: var(--text); }
 
 /* ---------- Section shell ---------- */
@@ -380,7 +417,11 @@ tabular { font-variant-numeric: tabular-nums; }
 .notif-list { display: flex; flex-direction: column; gap: 4px; }
 .notif-item { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
 .notif-item:last-child { border-bottom: none; }
-.notif-emoji { font-size: 18px; }
+.notif-icon {
+    width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.notif-icon svg { width: 16px; height: 16px; }
 .notif-text { flex: 1; font-size: 13px; font-weight: 500; }
 .notif-action { font-size: 12px; font-weight: 600; color: var(--primary); }
 
@@ -431,41 +472,41 @@ tabular { font-variant-numeric: tabular-nums; }
 
         <div class="nav-group">
             <div class="nav-group-label">Overview</div>
-            <a class="nav-item active" href="dashboard.php"><span class="nav-icon">&#9635;</span> Dashboard</a>
+            <a class="nav-item active" href="dashboard.php"><span class="nav-icon"><?= icon('grid') ?></span> Dashboard</a>
         </div>
 
         <div class="nav-group">
             <div class="nav-group-label">Operations</div>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128100;</span> Patients</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#129658;</span> Doctors</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128197;</span> Appointments</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#127973;</span> Admissions</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#129502;</span> Procedures</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('users') ?></span> Patients</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('stethoscope') ?></span> Doctors</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('calendar') ?></span> Appointments</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('bed') ?></span> Admissions</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('clipboard') ?></span> Procedures</a>
         </div>
 
         <div class="nav-group">
             <div class="nav-group-label">Finance</div>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128179;</span> Billing</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128176;</span> Payments</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128202;</span> Settlements</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('card') ?></span> Billing</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('wallet') ?></span> Payments</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('bar-chart') ?></span> Settlements</a>
         </div>
 
         <div class="nav-group">
             <div class="nav-group-label">Management</div>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128101;</span> Staff</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128274;</span> Permissions</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128230;</span> Inventory</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('user-group') ?></span> Staff</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('lock') ?></span> Permissions</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('box') ?></span> Inventory</a>
         </div>
 
         <div class="nav-group">
             <div class="nav-group-label">Analytics</div>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128200;</span> Reports</a>
-            <a class="nav-item" href="#"><span class="nav-icon">&#128220;</span> Audit Logs</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('trending-up') ?></span> Reports</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('file-text') ?></span> Audit Logs</a>
         </div>
 
         <div class="nav-group">
             <div class="nav-group-label">System</div>
-            <a class="nav-item" href="#"><span class="nav-icon">&#9881;</span> Settings</a>
+            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('settings') ?></span> Settings</a>
         </div>
     </aside>
 
@@ -477,14 +518,14 @@ tabular { font-variant-numeric: tabular-nums; }
             </div>
 
             <div class="search-box">
-                <span class="icon">&#128269;</span>
+                <span class="icon"><?= icon('search') ?></span>
                 <input type="text" placeholder="Search patients, invoices, staff...">
                 <span class="kbd">Ctrl K</span>
             </div>
 
             <div class="header-right">
-                <button class="icon-btn">&#128276;<span class="dot"></span></button>
-                <button class="icon-btn">&#9993;</button>
+                <button class="icon-btn"><?= icon('bell', 17) ?><span class="dot"></span></button>
+                <button class="icon-btn"><?= icon('mail', 17) ?></button>
                 <span class="header-date"><?= date('D, d M Y') ?></span>
                 <div class="avatar"><?= strtoupper(substr($firstName, 0, 1)) ?></div>
                 <a class="logout-link" href="logout.php">Logout</a>
@@ -519,7 +560,7 @@ tabular { font-variant-numeric: tabular-nums; }
             <div class="grid-4">
                 <div class="kpi-card">
                     <div class="kpi-top">
-                        <div class="kpi-icon">&#129658;</div>
+                        <div class="kpi-icon"><?= icon('stethoscope', 20) ?></div>
                         <div class="kpi-trend up">&#9650; +2%</div>
                     </div>
                     <div class="kpi-value">5</div>
@@ -528,7 +569,7 @@ tabular { font-variant-numeric: tabular-nums; }
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-top">
-                        <div class="kpi-icon">&#128100;</div>
+                        <div class="kpi-icon"><?= icon('users', 20) ?></div>
                         <div class="kpi-trend up">&#9650; +8%</div>
                     </div>
                     <div class="kpi-value">145</div>
@@ -537,7 +578,7 @@ tabular { font-variant-numeric: tabular-nums; }
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-top">
-                        <div class="kpi-icon" style="background:#FFFBEB;color:#92400E;">&#128274;</div>
+                        <div class="kpi-icon" style="background:#FFFBEB;color:#92400E;"><?= icon('lock', 20) ?></div>
                         <div class="kpi-trend down">&#9660; -1</div>
                     </div>
                     <div class="kpi-value">2</div>
@@ -546,7 +587,7 @@ tabular { font-variant-numeric: tabular-nums; }
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-top">
-                        <div class="kpi-icon" style="background:#ECFDF5;color:#047857;">&#9989;</div>
+                        <div class="kpi-icon" style="background:#ECFDF5;color:#047857;"><?= icon('check-circle', 20) ?></div>
                         <div class="kpi-trend up">Stable</div>
                     </div>
                     <div class="kpi-value">99.9%</div>
@@ -560,14 +601,14 @@ tabular { font-variant-numeric: tabular-nums; }
                 <div class="section-title">Quick Actions</div>
                 <div class="section-sub">Jump straight into the most common tasks</div>
                 <div class="quick-actions">
-                    <div class="action-tile"><span class="icon">&#10133;</span><span class="label">Add Staff</span></div>
-                    <div class="action-tile"><span class="icon">&#129658;</span><span class="label">Add Doctor</span></div>
-                    <div class="action-tile"><span class="icon">&#128274;</span><span class="label">Permissions</span></div>
-                    <div class="action-tile"><span class="icon">&#128202;</span><span class="label">Settlement</span></div>
-                    <div class="action-tile"><span class="icon">&#128230;</span><span class="label">Inventory</span></div>
-                    <div class="action-tile"><span class="icon">&#128220;</span><span class="label">Reports</span></div>
-                    <div class="action-tile"><span class="icon">&#11015;</span><span class="label">Export</span></div>
-                    <div class="action-tile"><span class="icon">&#9881;</span><span class="label">Settings</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('plus', 24) ?></span><span class="label">Add Staff</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('stethoscope', 24) ?></span><span class="label">Add Doctor</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('lock', 24) ?></span><span class="label">Permissions</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('bar-chart', 24) ?></span><span class="label">Settlement</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('box', 24) ?></span><span class="label">Inventory</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('file-text', 24) ?></span><span class="label">Reports</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('download', 24) ?></span><span class="label">Export</span></div>
+                    <div class="action-tile"><span class="icon"><?= icon('settings', 24) ?></span><span class="label">Settings</span></div>
                 </div>
             </div>
 
@@ -749,10 +790,10 @@ tabular { font-variant-numeric: tabular-nums; }
                     <div class="section-title">Notifications</div>
                     <div class="section-sub">Needs your attention</div>
                     <div class="notif-list">
-                        <div class="notif-item"><span class="notif-emoji">&#9888;&#65039;</span><span class="notif-text">2 Permission Requests</span><span class="notif-action">Approve</span></div>
-                        <div class="notif-item"><span class="notif-emoji">&#128176;</span><span class="notif-text">Settlement Ready</span><span class="notif-action">Open</span></div>
-                        <div class="notif-item"><span class="notif-emoji">&#128719;</span><span class="notif-text">Emergency Beds Almost Full</span><span class="notif-action">View</span></div>
-                        <div class="notif-item"><span class="notif-emoji">&#9989;</span><span class="notif-text">Backup Completed</span><span class="notif-action">Dismiss</span></div>
+                        <div class="notif-item"><span class="notif-icon" style="background:#FFFBEB;color:#92400E;"><?= icon('alert-triangle') ?></span><span class="notif-text">2 Permission Requests</span><span class="notif-action">Approve</span></div>
+                        <div class="notif-item"><span class="notif-icon" style="background:#ECFDF5;color:#047857;"><?= icon('wallet') ?></span><span class="notif-text">Settlement Ready</span><span class="notif-action">Open</span></div>
+                        <div class="notif-item"><span class="notif-icon" style="background:#FEF2F2;color:#B91C1C;"><?= icon('bed') ?></span><span class="notif-text">Emergency Beds Almost Full</span><span class="notif-action">View</span></div>
+                        <div class="notif-item"><span class="notif-icon" style="background:#ECFDF5;color:#047857;"><?= icon('check-circle') ?></span><span class="notif-text">Backup Completed</span><span class="notif-action">Dismiss</span></div>
                     </div>
                 </div>
             </div>
