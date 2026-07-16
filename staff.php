@@ -28,11 +28,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
+    $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $docTypeInputs = $_POST['doc_type'] ?? [];
     $docFiles = $_FILES['doc_file'] ?? null;
 
     if ($name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
+    } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
+        $error = 'Discount cap must be between 0 and 100.';
     } else {
         $stmt = $pdo->prepare('SELECT id FROM users WHERE (email = ? AND email IS NOT NULL AND email != "") OR (phone = ? AND phone IS NOT NULL AND phone != "") LIMIT 1');
         $stmt->execute([$email, $phone]);
@@ -88,13 +91,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                 $tempPassword = substr(bin2hex(random_bytes(6)), 0, 10);
                 $hash = password_hash($tempPassword, PASSWORD_BCRYPT);
 
-                $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, must_change_password) VALUES (?, ?, ?, ?, ?, 1)');
+                $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, max_discount_pct, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)');
                 $insert->execute([
                     $name,
                     $email !== '' ? $email : null,
                     $phone !== '' ? $phone : null,
                     $hash,
                     $role,
+                    $maxDiscountPct,
                 ]);
 
                 $newUserId = (int) $pdo->lastInsertId();
@@ -134,11 +138,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
+    $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $docTypeInputs = $_POST['doc_type'] ?? [];
     $docFiles = $_FILES['doc_file'] ?? null;
 
     if ($editId <= 0 || $name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
+    } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
+        $error = 'Discount cap must be between 0 and 100.';
     } else {
         $stmt = $pdo->prepare('SELECT id FROM users WHERE id != ? AND ((email = ? AND email IS NOT NULL AND email != "") OR (phone = ? AND phone IS NOT NULL AND phone != ""))');
         $stmt->execute([$editId, $email, $phone]);
@@ -190,12 +197,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
             if ($docError !== '') {
                 $error = $docError;
             } else {
-                $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ? WHERE id = ?');
+                $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ? WHERE id = ?');
                 $update->execute([
                     $name,
                     $email !== '' ? $email : null,
                     $phone !== '' ? $phone : null,
                     $role,
+                    $maxDiscountPct,
                     $editId,
                 ]);
 
@@ -271,13 +279,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     }
 }
 
-$staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, created_at FROM users ORDER BY name ASC')->fetchAll();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_consult_types') {
+    $editId = (int) ($_POST['user_id'] ?? 0);
+    $rowIds = $_POST['consult_type_id'] ?? [];
+    $labels = $_POST['consult_type_label'] ?? [];
+    $fees = $_POST['consult_type_fee'] ?? [];
+    $defaultIndex = (int) ($_POST['consult_type_default'] ?? -1);
+
+    $doctorStmt = $pdo->prepare('SELECT id, name FROM users WHERE id = ? AND base_role = "DOCTOR"');
+    $doctorStmt->execute([$editId]);
+    $doctor = $doctorStmt->fetch();
+
+    if (!$doctor) {
+        $error = 'Doctor not found.';
+    } else {
+        $keepIds = [];
+        $insertType = $pdo->prepare('INSERT INTO doctor_consult_types (doctor_id, label, fee, is_default) VALUES (?, ?, ?, ?)');
+        $updateType = $pdo->prepare('UPDATE doctor_consult_types SET label = ?, fee = ?, is_default = ? WHERE id = ? AND doctor_id = ?');
+
+        foreach ($labels as $i => $label) {
+            $label = trim($label);
+            $fee = trim($fees[$i] ?? '');
+            if ($label === '' || $fee === '' || !is_numeric($fee) || (float) $fee < 0) {
+                continue;
+            }
+            $isDefault = ($i === $defaultIndex) ? 1 : 0;
+            $rowId = (int) ($rowIds[$i] ?? 0);
+
+            if ($rowId > 0) {
+                $updateType->execute([$label, $fee, $isDefault, $rowId, $editId]);
+                $keepIds[] = $rowId;
+            } else {
+                $insertType->execute([$editId, $label, $fee, $isDefault]);
+                $keepIds[] = (int) $pdo->lastInsertId();
+            }
+        }
+
+        // Ensure exactly one default: if none were marked (or all rows were new), default the first kept row.
+        if ($defaultIndex < 0 && !empty($keepIds)) {
+            $pdo->prepare('UPDATE doctor_consult_types SET is_default = 0 WHERE doctor_id = ?')->execute([$editId]);
+            $pdo->prepare('UPDATE doctor_consult_types SET is_default = 1 WHERE id = ?')->execute([$keepIds[0]]);
+        }
+
+        if (!empty($keepIds)) {
+            $placeholders = implode(',', array_fill(0, count($keepIds), '?'));
+            $delete = $pdo->prepare("DELETE FROM doctor_consult_types WHERE doctor_id = ? AND id NOT IN ($placeholders)");
+            $delete->execute(array_merge([$editId], $keepIds));
+        } else {
+            $pdo->prepare('DELETE FROM doctor_consult_types WHERE doctor_id = ?')->execute([$editId]);
+        }
+
+        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
+        $log->execute([
+            $_SESSION['user_id'],
+            'consult_types_updated',
+            "Updated consultation types for doctor #$editId ({$doctor['name']}), " . count($keepIds) . ' type(s) on file',
+        ]);
+
+        $success = "Consultation types updated for {$doctor['name']}.";
+    }
+}
+
+$staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
 $doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
 $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
 
 $docCounts = [];
 foreach ($pdo->query('SELECT user_id, COUNT(*) AS cnt FROM staff_documents GROUP BY user_id')->fetchAll() as $row) {
     $docCounts[(int) $row['user_id']] = (int) $row['cnt'];
+}
+
+$consultTypesByDoctor = [];
+foreach ($pdo->query('SELECT id, doctor_id, label, fee, is_default FROM doctor_consult_types ORDER BY label')->fetchAll() as $ct) {
+    $consultTypesByDoctor[(int) $ct['doctor_id']][] = $ct;
 }
 
 $categoryLabels = [
@@ -518,8 +592,13 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
             <a class="nav-item" href="dashboard.php"><span class="nav-icon">▦</span> Dashboard</a>
         </div>
         <div class="nav-group">
+            <div class="nav-group-label">Reception</div>
+            <a class="nav-item" href="patients.php"><span class="nav-icon">👥</span> Patients</a>
+        </div>
+        <div class="nav-group">
             <div class="nav-group-label">Management</div>
-            <a class="nav-item active" href="staff.php"><span class="nav-icon">👥</span> Staff &amp; Doctors</a>
+            <a class="nav-item active" href="staff.php"><span class="nav-icon">🩺</span> Staff &amp; Doctors</a>
+            <a class="nav-item" href="locations.php"><span class="nav-icon">📍</span> Cities &amp; Areas</a>
         </div>
     </aside>
 
@@ -556,7 +635,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
             <?php endif; ?>
 
             <?php
-            function renderStaffGroup(string $title, array $people, array $docCounts, array $roleDefaultsByRole, array $overridesByUser): void {
+            function renderStaffGroup(string $title, array $people, array $docCounts, array $roleDefaultsByRole, array $overridesByUser, array $consultTypesByDoctor): void {
             ?>
             <div class="card">
                 <div class="section-title"><?= htmlspecialchars($title) ?></div>
@@ -602,6 +681,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                    data-email="<?= htmlspecialchars($s['email'] ?? '', ENT_QUOTES) ?>"
                                    data-phone="<?= htmlspecialchars($s['phone'] ?? '', ENT_QUOTES) ?>"
                                    data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
+                                   data-discount="<?= htmlspecialchars((string) $s['max_discount_pct'], ENT_QUOTES) ?>"
                                    onclick="openEditPanel(this.dataset); return false;">Edit</a>
                                 &nbsp;·&nbsp;
                                 <?php
@@ -613,6 +693,14 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                    data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
                                    data-permission-ids="<?= htmlspecialchars(json_encode($effectiveIds), ENT_QUOTES) ?>"
                                    onclick="openPermissionsPanel(this.dataset); return false;">Permissions</a>
+                                <?php if ($s['base_role'] === 'DOCTOR'): ?>
+                                &nbsp;·&nbsp;
+                                <a href="#" class="edit-link"
+                                   data-id="<?= (int) $s['id'] ?>"
+                                   data-name="<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>"
+                                   data-types="<?= htmlspecialchars(json_encode($consultTypesByDoctor[(int) $s['id']] ?? []), ENT_QUOTES) ?>"
+                                   onclick="openConsultTypesPanel(this.dataset); return false;">Consult Types</a>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -624,8 +712,8 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
             </div>
             <?php
             }
-            renderStaffGroup('Doctors', $doctors, $docCounts, $roleDefaultsByRole, $overridesByUser);
-            renderStaffGroup('Staff', $otherStaff, $docCounts, $roleDefaultsByRole, $overridesByUser);
+            renderStaffGroup('Doctors', $doctors, $docCounts, $roleDefaultsByRole, $overridesByUser, $consultTypesByDoctor);
+            renderStaffGroup('Staff', $otherStaff, $docCounts, $roleDefaultsByRole, $overridesByUser, $consultTypesByDoctor);
             ?>
         </div>
     </div>
@@ -679,6 +767,13 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                 <option value="<?= $r ?>"><?= ucfirst(strtolower($r)) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                        </div>
+                        <div class="field">
+                            <label for="max_discount_pct">Max Discount They Can Apply <span class="opt">(0 = none)</span></label>
+                            <div style="position:relative;">
+                                <input type="number" id="max_discount_pct" name="max_discount_pct" value="0" min="0" max="100" step="0.5" style="padding-right:34px;">
+                                <span style="position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:13px; color:var(--text-muted); font-weight:600;">%</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -790,6 +885,46 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
     </div>
 </div>
 
+<!-- Doctor Consultation Types panel -->
+<div class="panel-overlay" id="consultPanelOverlay">
+    <div class="panel">
+        <div class="form-header">
+            <div>
+                <h1 id="consultPanelTitle">Consultation Types</h1>
+                <div class="sub">Types and fees shown on the registration form when this doctor is selected.</div>
+            </div>
+            <button type="button" class="close-btn" id="closeConsultPanel" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <form method="POST" action="staff.php" id="consultForm">
+            <input type="hidden" name="action" value="save_consult_types">
+            <input type="hidden" name="user_id" id="consultFormUserId" value="">
+
+            <div class="section">
+                <div class="section-body">
+                    <div class="doc-list" id="consultTypeList"></div>
+                    <button type="button" class="add-doc-btn" id="addConsultTypeBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Add another consultation type
+                    </button>
+                </div>
+            </div>
+
+            <div class="info-banner">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                <span>Pick one type as the default — it's pre-selected on the registration form, but reception can still change it. If only one type exists, it's used automatically.</span>
+            </div>
+
+            <div class="form-footer">
+                <button type="button" class="btn secondary" id="cancelConsultPanel">Cancel</button>
+                <button type="submit" class="btn">Save Consultation Types</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 const addPanelOverlay = document.getElementById('addPanelOverlay');
 const staffForm = document.getElementById('staffForm');
@@ -824,6 +959,7 @@ function openEditPanel(data) {
     document.getElementById('email').value = data.email || '';
     document.getElementById('phone').value = data.phone || '';
     document.getElementById('base_role').value = data.role || '';
+    document.getElementById('max_discount_pct').value = data.discount || '0';
     panelTitle.textContent = 'Edit Doctor / Staff';
     panelSub.textContent = 'Update their details and manage their documents.';
     docsSection.style.display = '';
@@ -1011,6 +1147,135 @@ function openDocsPanel(userId, name) {
 docsPanelOverlay.addEventListener('click', (e) => {
     if (e.target === docsPanelOverlay) docsPanelOverlay.classList.remove('open');
 });
+
+// ---------- Doctor Consultation Types panel ----------
+const consultPanelOverlay = document.getElementById('consultPanelOverlay');
+const consultForm = document.getElementById('consultForm');
+const consultFormUserId = document.getElementById('consultFormUserId');
+const consultPanelTitle = document.getElementById('consultPanelTitle');
+const consultTypeList = document.getElementById('consultTypeList');
+
+function consultTypeRow(row) {
+    row = row || { id: '', label: '', fee: '', is_default: 0 };
+    const wrap = document.createElement('div');
+    wrap.className = 'doc-row';
+    wrap.style.gridTemplateColumns = '28px 1fr 140px auto';
+
+    const radioWrap = document.createElement('label');
+    radioWrap.style.display = 'flex';
+    radioWrap.style.alignItems = 'center';
+    radioWrap.style.justifyContent = 'center';
+    radioWrap.title = 'Default type';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'consult_type_default_radio';
+    radio.checked = Number(row.is_default) === 1;
+    radio.style.width = '16px';
+    radio.style.height = '16px';
+    radio.style.accentColor = 'var(--primary)';
+    radio.addEventListener('change', updateDefaultIndexes);
+    radioWrap.appendChild(radio);
+
+    const idInput = document.createElement('input');
+    idInput.type = 'hidden';
+    idInput.name = 'consult_type_id[]';
+    idInput.value = row.id;
+
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.name = 'consult_type_label[]';
+    labelInput.placeholder = 'e.g. New Consultation';
+    labelInput.value = row.label;
+    labelInput.style.width = '100%';
+    labelInput.style.padding = '9px 12px';
+    labelInput.style.border = '1px solid var(--border)';
+    labelInput.style.borderRadius = '10px';
+    labelInput.style.fontSize = '13px';
+    labelInput.style.fontFamily = 'inherit';
+    labelInput.style.background = 'var(--card)';
+
+    const feeWrap = document.createElement('div');
+    feeWrap.style.position = 'relative';
+    const feeInput = document.createElement('input');
+    feeInput.type = 'number';
+    feeInput.name = 'consult_type_fee[]';
+    feeInput.placeholder = '0';
+    feeInput.min = '0';
+    feeInput.step = '1';
+    feeInput.value = row.fee;
+    feeInput.style.width = '100%';
+    feeInput.style.padding = '9px 30px 9px 12px';
+    feeInput.style.border = '1px solid var(--border)';
+    feeInput.style.borderRadius = '10px';
+    feeInput.style.fontSize = '13px';
+    feeInput.style.fontFamily = 'inherit';
+    feeInput.style.background = 'var(--card)';
+    const rsLabel = document.createElement('span');
+    rsLabel.textContent = 'Rs';
+    rsLabel.style.cssText = 'position:absolute; right:10px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--text-muted); font-weight:600;';
+    feeWrap.appendChild(feeInput);
+    feeWrap.appendChild(rsLabel);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'remove-row';
+    removeBtn.setAttribute('aria-label', 'Remove consultation type');
+    removeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+    removeBtn.addEventListener('click', () => { wrap.remove(); updateDefaultIndexes(); });
+
+    wrap.appendChild(radioWrap);
+    wrap.appendChild(labelInput);
+    wrap.appendChild(feeWrap);
+    wrap.appendChild(removeBtn);
+    wrap._idInput = idInput;
+    wrap._radio = radio;
+    wrap.appendChild(idInput);
+    return wrap;
+}
+
+// Single hidden field carrying the index (in DOM order) of the row whose radio is checked.
+let defaultIndexInput;
+function updateDefaultIndexes() {
+    const rows = Array.from(consultTypeList.children);
+    const checkedIndex = rows.findIndex(r => r._radio && r._radio.checked);
+    defaultIndexInput.value = checkedIndex;
+}
+
+document.getElementById('addConsultTypeBtn').addEventListener('click', () => {
+    consultTypeList.appendChild(consultTypeRow());
+});
+
+function openConsultTypesPanel(data) {
+    consultForm.reset();
+    consultFormUserId.value = data.id;
+    consultPanelTitle.textContent = 'Consultation Types — ' + (data.name || '');
+    consultTypeList.innerHTML = '';
+
+    if (!defaultIndexInput) {
+        defaultIndexInput = document.createElement('input');
+        defaultIndexInput.type = 'hidden';
+        defaultIndexInput.name = 'consult_type_default';
+        consultForm.insertBefore(defaultIndexInput, consultForm.firstChild);
+    }
+
+    let types = [];
+    try { types = JSON.parse(data.types || '[]'); } catch (e) { types = []; }
+
+    if (types.length === 0) {
+        consultTypeList.appendChild(consultTypeRow());
+    } else {
+        types.forEach(t => consultTypeList.appendChild(consultTypeRow(t)));
+    }
+    updateDefaultIndexes();
+
+    consultPanelOverlay.classList.add('open');
+}
+
+document.getElementById('closeConsultPanel').addEventListener('click', () => consultPanelOverlay.classList.remove('open'));
+document.getElementById('cancelConsultPanel').addEventListener('click', () => consultPanelOverlay.classList.remove('open'));
+
+<?php if (($error || $success) && ($_POST['action'] ?? '') === 'save_consult_types'): ?>consultPanelOverlay.classList.add('open');
+<?php endif; ?>
 </script>
 </body>
 </html>

@@ -295,7 +295,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 
         <div class="nav-group">
             <div class="nav-group-label">Reception</div>
-            <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('users') ?></span> Patients</a>
+            <a class="nav-item" href="patients.php"><span class="nav-icon"><?= icon('users') ?></span> Patients</a>
             <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('calendar') ?></span> Appointments / OPD</a>
             <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('bed') ?></span> Admissions</a>
             <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('card') ?></span> Billing &amp; Cash</a>
@@ -354,8 +354,8 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
                 <div class="section-title">Quick Actions</div>
                 <div class="section-sub">Jump straight into the most common reception tasks</div>
                 <div class="quick-actions">
-                    <div class="action-tile"><span class="icon"><?= icon('users', 24) ?></span><span class="label">Patients</span></div>
-                    <div class="action-tile"><span class="icon"><?= icon('user-plus', 24) ?></span><span class="label">+ Add Patient</span></div>
+                    <a class="action-tile" href="patients.php"><span class="icon"><?= icon('users', 24) ?></span><span class="label">Patients</span></a>
+                    <a class="action-tile" href="patients.php"><span class="icon"><?= icon('user-plus', 24) ?></span><span class="label">+ Add Patient</span></a>
                     <div class="action-tile"><span class="icon"><?= icon('dollar-sign', 24) ?></span><span class="label">Post Expense</span></div>
                 </div>
             </div>

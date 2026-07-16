@@ -479,7 +479,7 @@ tabular { font-variant-numeric: tabular-nums; }
 
         <div class="nav-group">
             <div class="nav-group-label">Operations</div>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('users') ?></span> Patients</a>
+            <a class="nav-item" href="patients.php"><span class="nav-icon"><?= icon('users') ?></span> Patients</a>
             <a class="nav-item" href="staff.php"><span class="nav-icon"><?= icon('stethoscope') ?></span> Doctors</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('calendar') ?></span> Appointments</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('bed') ?></span> Admissions</a>
@@ -496,6 +496,7 @@ tabular { font-variant-numeric: tabular-nums; }
         <div class="nav-group">
             <div class="nav-group-label">Management</div>
             <a class="nav-item" href="staff.php"><span class="nav-icon"><?= icon('user-group') ?></span> Staff</a>
+            <a class="nav-item" href="locations.php"><span class="nav-icon"><?= icon('bed') ?></span> Cities &amp; Areas</a>
             <a class="nav-item" href="permissions.php"><span class="nav-icon"><?= icon('lock') ?></span> Permissions</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('box') ?></span> Inventory</a>
         </div>
@@ -603,6 +604,7 @@ tabular { font-variant-numeric: tabular-nums; }
                 <div class="section-title">Quick Actions</div>
                 <div class="section-sub">Jump straight into the most common tasks</div>
                 <div class="quick-actions">
+                    <a class="action-tile" href="patients.php"><span class="icon"><?= icon('users', 24) ?></span><span class="label">Patients</span></a>
                     <a class="action-tile" href="staff.php"><span class="icon"><?= icon('plus', 24) ?></span><span class="label">Add Staff</span></a>
                     <a class="action-tile" href="staff.php"><span class="icon"><?= icon('stethoscope', 24) ?></span><span class="label">Add Doctor</span></a>
                     <a class="action-tile" href="permissions.php"><span class="icon"><?= icon('lock', 24) ?></span><span class="label">Permissions</span></a>

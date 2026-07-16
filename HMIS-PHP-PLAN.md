@@ -14,26 +14,48 @@ billing, commissions, QA — is still the target.** Only the implementation laye
 
 ---
 
-## 1. Actual current state (2026-07-16)
+## 1. Actual current state (2026-07-17)
 
-Only this exists, live on `hims.babymedics.com`:
+Live on `hims.babymedics.com`:
 
 - `index.php`, `config/auth.php`, `config/guard_admin.php`, `logout.php`, `change-password.php`
-- `dashboard.php` — admin landing page
-- `staff.php` — add/edit/list staff & doctors (grouped Doctors/Staff, alphabetical, edit panel with document upload)
+- `dashboard.php` — admin landing page; `receptionist.php` — receptionist landing page
+- `staff.php` — add/edit/list staff & doctors (grouped Doctors/Staff, alphabetical, edit panel
+  with document upload, per-user permission overrides, **doctor consultation types + fees editor,
+  per-person discount cap field — added 2026-07-17**)
+- `permissions.php` — role-default permission grid
 - `document.php` — streams a single uploaded staff document by id
-- DB tables live in `sql/schema.sql` + `sql/add_staff_documents.sql`:
-  - `users` (id, name, email, phone, password, base_role enum, must_change_password, created_at)
+- `patients.php` — **added 2026-07-17.** Search (name/phone/father name/MRN) + full registration
+  panel: identity, contact/city/area (with reception quick-add-area flow), and consultation
+  (doctor → consultation type → fee dependency chain, discount input capped client-side against
+  `users.max_discount_pct`, server re-validates). Submitting inserts `patients` + `visits` in one
+  transaction, assigns an MRN and a per-doctor daily queue token, and shows a queue confirmation
+  screen. Gated by `RECEPTION_REGISTER_PATIENTS`.
+- `locations.php` — **added 2026-07-17,** admin-only. Two-pane city/area manager (add/remove) plus
+  a pending-review queue for reception-added areas (approve as-is, rename, or merge into an
+  existing area).
+- DB tables live in `sql/schema.sql`, `sql/add_staff_documents.sql`, and (2026-07-17)
+  `sql/add_locations.sql`, `sql/add_doctor_consult_types.sql`, `sql/add_patients.sql`,
+  `sql/add_discount_cap.sql` — **not yet applied on the live DB, apply via phpMyAdmin in that
+  order before deploying `patients.php`/`locations.php`/the updated `staff.php`** (per the
+  standing rule: never push schema-dependent PHP before its migration has run):
+  - `users` (id, name, email, phone, password, base_role enum, must_change_password,
+    `max_discount_pct` NEW, created_at)
   - `password_reset_tokens`
-  - `permissions`, `role_permissions`, `user_permission_overrides` — **seeded and wired to `permissions.php` + `staff.php` per-user overrides (done 2026-07-16)**
+  - `permissions`, `role_permissions`, `user_permission_overrides`
   - `tasks` — scaffolded, no UI yet, not part of `HMIS-COMPLETE.md` spec (separate ask, keep it)
-  - `audit_logs` — used already (staff_created / staff_updated actions)
+  - `audit_logs`
   - `staff_documents`
+  - `cities`, `areas` (`status`, `added_by_id` for the reception-quick-add/admin-review flow) NEW
+  - `doctor_consult_types` (per-doctor label/fee/is_default, managed on `staff.php`) NEW
+  - `patients`, `visits` (visit carries `fee`, `discount_pct`, `discount_applied_by_id`,
+    `token_no`, `payment_mode`) NEW
 
-Nothing from patient registration onward exists yet: no `patients`, `visits`, `vitals`,
-`procedures`, `bills`, `beds`, `rate_master`, `doctor_financial_terms`, `tax_config`,
-`staff_commission_config`, `short_stay_*`, `consent_forms`, `qa_assessments`. This plan's Phase 2+
-builds those.
+Still nothing for: `vitals`, `procedures`, `bills`, `beds`, `rate_master`,
+`doctor_financial_terms`, `tax_config`, `staff_commission_config`, `short_stay_*`,
+`consent_forms`, `qa_assessments`. Phase 2 continues with the visit/consultation detail screen
+(vitals, doctor's consultation notes, disposition) — registration + queueing is done, the doctor
+side of the visit is not.
 
 ---
 
@@ -77,6 +99,23 @@ New files go in `sql/`, one per feature, applied in order via phpMyAdmin (no loc
 per standing note, no local tooling exists for this stack).
 
 ```sql
+-- sql/add_locations.sql
+-- Admin-curated city/area lists (managed like doctor consultation types — staff pick from
+-- what admin has set up, never free-type). Structured on purpose: this is the source for
+-- branch-expansion reporting (patient density by city/area), so it must stay clean.
+CREATE TABLE IF NOT EXISTS cities (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS areas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    city_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    FOREIGN KEY (city_id) REFERENCES cities(id),
+    UNIQUE KEY uniq_area_per_city (city_id, name)
+);
+
 -- sql/add_patients.sql
 CREATE TABLE IF NOT EXISTS patients (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -84,7 +123,12 @@ CREATE TABLE IF NOT EXISTS patients (
     father_name VARCHAR(150),
     dob DATE NULL,
     phone VARCHAR(30) NOT NULL,
+    city_id INT NULL,
+    area_id INT NULL,
+    address VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (city_id) REFERENCES cities(id),
+    FOREIGN KEY (area_id) REFERENCES areas(id),
     INDEX idx_patient_search (name, phone, father_name)
 );
 
@@ -287,6 +331,53 @@ CREATE TABLE IF NOT EXISTS qa_assessments (
 `gender` also needs adding to `users` (nullable, `ENUM('MALE','FEMALE')`) for the visit-charge
 calculation in §11.2B — small `ALTER TABLE users ADD COLUMN gender ...` migration.
 
+**Discount cap (2026-07-17):** receptionists/staff can never edit the consultation *fee* itself
+(that's always doctor+type driven, per `doctor_financial_terms`/`rate_master`), but admin can let
+specific people apply a discount up to a per-person percentage cap at checkout. This is a numeric
+cap, not a boolean, so it doesn't fit the existing boolean `permissions`/`role_permissions` model —
+add it as a plain column instead of a new permission key:
+
+```sql
+ALTER TABLE users
+  ADD COLUMN max_discount_pct DECIMAL(5,2) NOT NULL DEFAULT 0;
+```
+
+Admin sets this per-person in `staff.php` (defaults to 0 = no discount allowed). At checkout,
+`checkout.php` validates `requested_discount_pct <= users.max_discount_pct` for the logged-in
+user server-side (never trust a client-submitted cap) and logs the applied discount + who granted
+it to `audit_logs`. No role-level default/override layering needed — unlike granular permissions,
+discount authority is a manager-assigned trust level per individual, not something role defaults
+make sense for.
+
+**City/Area capture (2026-07-17):** patient registration captures City and Area as structured,
+admin-curated dropdowns (`cities`/`areas` tables above), not free text — this data is the
+explicit basis for future branch-expansion decisions (where patient density justifies opening a
+new location), so it has to stay clean rather than accumulate typo'd variants. Area is a dependent
+dropdown filtered by the selected City, same interaction pattern as doctor → consultation type.
+
+**Ownership split (2026-07-17):** admin manages the canonical list on a dedicated `locations.php`
+page (add/edit/remove cities and areas). Receptionists can also add a new area inline from the
+registration form itself (an "+ Add new area..." option in the Area dropdown) when a patient's
+neighborhood genuinely isn't listed yet — this is **live immediately**, not blocked on approval,
+so registration is never held up waiting on admin. Reception-added areas are inserted with a
+`status = 'pending'` flag and surface in a review queue at the top of `locations.php`, showing who
+added it, how many patients are already using it, and one-click actions to approve as-is, rename
+(fix a typo), or merge into an existing area (collapsing near-duplicates like "Bahria Twn Ph 8"
+into "Bahria Town Phase 8"). This mirrors the tradeoff already made for granular permissions —
+never block the operational task, catch and clean up data quality asynchronously instead.
+
+```sql
+ALTER TABLE areas
+  ADD COLUMN added_by_id INT NULL,
+  ADD COLUMN status ENUM('active','pending') NOT NULL DEFAULT 'active',
+  ADD FOREIGN KEY (added_by_id) REFERENCES users(id);
+-- admin-added rows: added_by_id NULL, status 'active'
+-- reception quick-add rows: added_by_id = their user id, status 'pending' until admin approves
+```
+
+Mocked at `locations-mockup.html` (two-pane city list / area table + pending-review banner with
+merge dropdown) — not built yet, add to the Phase 2 page list alongside `patients.php`.
+
 All "effective on visit date" lookups become a single reusable helper:
 
 ```php
@@ -336,7 +427,7 @@ non-admin dashboard is a stripped-down view over the same tables, gated by `has_
 |---|---|---|
 | **0 — Foundation** | **Done** | Auth, admin guard, first-admin seed, staff/doctor CRUD + documents, audit log write-path |
 | **1 — Permissions UI** | **Done** | Seeded `permissions`/`role_permissions`, built `permissions.php`, wired per-user override UI into `staff.php` (commit `43ab26e`); `has_permission()` enforcement still needs to be added to each new guarded page as it's built |
-| **2 — Patients & OPD core loop** | Not started | `patients.php`, visit/OPD slip, vitals, consultation, disposition, prescription scan |
+| **2 — Patients & OPD core loop** | **In progress** | `patients.php` registration + queueing **done 2026-07-17** (patient search, register-and-queue with doctor consult-type/fee lookup and discount cap, `cities`/`areas` reference data + `locations.php`); still needed: visit detail page (vitals, consultation notes, disposition), OPD slip printing, prescription scan |
 | **3 — Procedures & consent** | Not started | Procedure master, procedure recording (doctor or staff), consent templates/printing |
 | **3A — Staff commission** | Not started | `gender` column, duty-based split config, visit-charge calc (no shift assignments — see §2) |
 | **4 — Financial config & invoicing** | Not started | Doctor financial terms, rate master, tax config, `checkout.php` invoice generation |
