@@ -134,6 +134,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
+    $docTypeInputs = $_POST['doc_type'] ?? [];
+    $docFiles = $_FILES['doc_file'] ?? null;
 
     if ($editId <= 0 || $name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
@@ -144,23 +146,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         if ($stmt->fetch()) {
             $error = 'Another user with this email or phone already exists.';
         } else {
-            $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ? WHERE id = ?');
-            $update->execute([
-                $name,
-                $email !== '' ? $email : null,
-                $phone !== '' ? $phone : null,
-                $role,
-                $editId,
-            ]);
+            $pendingDocs = [];
+            $docError = '';
 
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([
-                $_SESSION['user_id'],
-                'staff_updated',
-                "Updated user #$editId ($name, $role)",
-            ]);
+            if ($docFiles) {
+                foreach ($docFiles['error'] as $i => $fileError) {
+                    if ($fileError === UPLOAD_ERR_NO_FILE) {
+                        continue;
+                    }
+                    if ($fileError !== UPLOAD_ERR_OK) {
+                        $docError = 'One of the documents failed to upload. Please try again.';
+                        break;
+                    }
 
-            $success = "Account updated for $name.";
+                    $docType = $docTypeInputs[$i] ?? '';
+                    if (!array_key_exists($docType, $docTypes)) {
+                        $docError = 'Invalid document type selected.';
+                        break;
+                    }
+
+                    $origName = $docFiles['name'][$i];
+                    $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+
+                    if (!in_array($ext, $allowedExt, true)) {
+                        $docError = "\"$origName\" must be a PDF, JPG, or PNG file.";
+                        break;
+                    }
+                    if ($docFiles['size'][$i] > $maxFileSize) {
+                        $docError = "\"$origName\" is larger than 10MB.";
+                        break;
+                    }
+
+                    $pendingDocs[] = [
+                        'type' => $docType,
+                        'tmp' => $docFiles['tmp_name'][$i],
+                        'name' => $origName,
+                        'size' => $docFiles['size'][$i],
+                        'ext' => $ext,
+                    ];
+                }
+            }
+
+            if ($docError !== '') {
+                $error = $docError;
+            } else {
+                $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ? WHERE id = ?');
+                $update->execute([
+                    $name,
+                    $email !== '' ? $email : null,
+                    $phone !== '' ? $phone : null,
+                    $role,
+                    $editId,
+                ]);
+
+                $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
+
+                foreach ($pendingDocs as $doc) {
+                    $storedName = $editId . '_' . bin2hex(random_bytes(8)) . '.' . $doc['ext'];
+                    if (move_uploaded_file($doc['tmp'], $uploadDir . $storedName)) {
+                        $docInsert->execute([
+                            $editId,
+                            $doc['type'],
+                            $storedName,
+                            $doc['name'],
+                            $doc['size'],
+                            $_SESSION['user_id'],
+                        ]);
+                    }
+                }
+
+                $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
+                $log->execute([
+                    $_SESSION['user_id'],
+                    'staff_updated',
+                    "Updated user #$editId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : ''),
+                ]);
+
+                $success = "Account updated for $name.";
+            }
         }
     }
 }
@@ -535,6 +598,10 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                     </div>
                 </div>
                 <div class="section-body">
+                    <div id="existingDocsWrap" style="display:none; margin-bottom: 16px;">
+                        <div class="desc" style="margin-bottom: 8px;">Already on file</div>
+                        <div id="existingDocsList" class="doc-list"></div>
+                    </div>
                     <div class="doc-list" id="docList">
                         <div class="doc-row">
                             <select name="doc_type[]">
@@ -557,7 +624,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 
             <div class="info-banner" id="infoBanner">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                <span>A temporary password will be generated on save. They'll be required to set a new one on first sign-in. Documents are stored privately and only visible to admins.</span>
+                <span id="infoBannerText">A temporary password will be generated on save. They'll be required to set a new one on first sign-in. Documents are stored privately and only visible to admins.</span>
             </div>
 
             <div class="form-footer">
@@ -585,8 +652,11 @@ const formUserId = document.getElementById('formUserId');
 const panelTitle = document.getElementById('panelTitle');
 const panelSub = document.getElementById('panelSub');
 const docsSection = document.getElementById('docsSection');
-const infoBanner = document.getElementById('infoBanner');
+const infoBannerText = document.getElementById('infoBannerText');
 const submitBtn = document.getElementById('submitBtn');
+
+const ADD_INFO_TEXT = "A temporary password will be generated on save. They'll be required to set a new one on first sign-in. Documents are stored privately and only visible to admins.";
+const EDIT_INFO_TEXT = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Documents are stored privately and only visible to admins.";
 
 function resetToAddMode() {
     staffForm.reset();
@@ -595,8 +665,9 @@ function resetToAddMode() {
     panelTitle.textContent = 'Add Doctor / Staff';
     panelSub.textContent = "Create a login and file their onboarding documents in one go.";
     docsSection.style.display = '';
-    infoBanner.style.display = '';
+    infoBannerText.textContent = ADD_INFO_TEXT;
     submitBtn.textContent = 'Create Account';
+    document.getElementById('existingDocsWrap').style.display = 'none';
 }
 
 function openEditPanel(data) {
@@ -608,11 +679,50 @@ function openEditPanel(data) {
     document.getElementById('phone').value = data.phone || '';
     document.getElementById('base_role').value = data.role || '';
     panelTitle.textContent = 'Edit Doctor / Staff';
-    panelSub.textContent = 'Update their account details.';
-    docsSection.style.display = 'none';
-    infoBanner.style.display = 'none';
+    panelSub.textContent = 'Update their details and manage their documents.';
+    docsSection.style.display = '';
+    infoBannerText.textContent = EDIT_INFO_TEXT;
     submitBtn.textContent = 'Save Changes';
+    renderExistingDocs(data.id);
     addPanelOverlay.classList.add('open');
+}
+
+function renderExistingDocs(userId) {
+    const wrap = document.getElementById('existingDocsWrap');
+    const list = document.getElementById('existingDocsList');
+    list.innerHTML = '';
+
+    const docs = (typeof staffDocuments !== 'undefined' ? staffDocuments[userId] : null) || [];
+    if (!docs.length) {
+        wrap.style.display = 'none';
+        return;
+    }
+
+    docs.forEach(doc => {
+        const row = document.createElement('div');
+        row.className = 'doc-row';
+        row.style.gridTemplateColumns = '1fr auto';
+
+        const meta = document.createElement('div');
+        meta.style.fontSize = '13px';
+        meta.innerHTML = '<strong>' + doc.type + '</strong> &middot; ' + doc.name;
+
+        const link = document.createElement('a');
+        link.className = 'open-link';
+        link.href = 'document.php?id=' + encodeURIComponent(doc.id);
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = 'Open';
+        link.style.fontSize = '12px';
+        link.style.fontWeight = '600';
+        link.style.color = 'var(--primary)';
+
+        row.appendChild(meta);
+        row.appendChild(link);
+        list.appendChild(row);
+    });
+
+    wrap.style.display = '';
 }
 
 document.getElementById('openAddPanel').addEventListener('click', () => { resetToAddMode(); addPanelOverlay.classList.add('open'); });
