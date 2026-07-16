@@ -341,6 +341,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_staff') {
+    $deleteId = (int) ($_POST['user_id'] ?? 0);
+
+    if ($deleteId === (int) $_SESSION['user_id']) {
+        $error = "You can't delete your own account.";
+    } else {
+        $userStmt = $pdo->prepare('SELECT id, name, base_role FROM users WHERE id = ?');
+        $userStmt->execute([$deleteId]);
+        $targetUser = $userStmt->fetch();
+
+        if (!$targetUser) {
+            $error = 'Staff member not found.';
+        } else {
+            // Cascades to staff_documents, doctor_consult_types, user_permission_overrides,
+            // password_reset_tokens. Sets NULL on visits/patients/tasks they're linked to
+            // (their work stays, just no longer attributed) and on audit_logs.user_id —
+            // see sql/add_delete_cascades.sql for the FK definitions this depends on.
+            $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$deleteId]);
+
+            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
+            $log->execute([
+                $_SESSION['user_id'],
+                'staff_deleted',
+                "Deleted user #$deleteId ({$targetUser['name']}, {$targetUser['base_role']})",
+            ]);
+
+            $success = "Deleted {$targetUser['name']}.";
+        }
+    }
+}
+
 $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
 $doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
 $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
@@ -694,6 +725,12 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                    data-types="<?= htmlspecialchars(json_encode($consultTypesByDoctor[(int) $s['id']] ?? []), ENT_QUOTES) ?>"
                                    onclick="openConsultTypesPanel(this.dataset); return false;">Consult Types</a>
                                 <?php endif; ?>
+                                &nbsp;·&nbsp;
+                                <form method="POST" action="staff.php" style="display:inline;" onsubmit="return confirm('Permanently delete <?= htmlspecialchars(addslashes($s['name'])) ?>? This removes their documents, permissions and consultation types, and can\'t be undone.');">
+                                    <input type="hidden" name="action" value="delete_staff">
+                                    <input type="hidden" name="user_id" value="<?= (int) $s['id'] ?>">
+                                    <button type="submit" class="edit-link" style="background:none;border:none;padding:0;font:inherit;cursor:pointer;color:var(--red-text);">Delete</button>
+                                </form>
                             </td>
                         </tr>
                         <?php endforeach; ?>

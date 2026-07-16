@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'check_d
 
 // ---------------- Register patient + create visit (one transaction) ----------------
 $error = '';
+$success = '';
 $successVisit = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register_patient') {
@@ -190,6 +191,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 $error = 'Could not save registration. Please try again.';
             }
         }
+    }
+}
+
+// ---------------- Delete patient (admin only) ----------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_patient') {
+    if (($_SESSION['base_role'] ?? '') !== 'ADMIN') {
+        http_response_code(403);
+        exit('Forbidden — admin access only.');
+    }
+
+    $deleteId = (int) ($_POST['patient_id'] ?? 0);
+    $patientStmt = $pdo->prepare('SELECT id, name, mrn FROM patients WHERE id = ?');
+    $patientStmt->execute([$deleteId]);
+    $targetPatient = $patientStmt->fetch();
+
+    if (!$targetPatient) {
+        $error = 'Patient not found.';
+    } else {
+        // Cascades to that patient's visits — see sql/add_delete_cascades.sql. Visits belong
+        // to this one patient and have no meaning without them, unlike deleting a staff member
+        // (which only detaches, never deletes, the visits they're linked to).
+        $pdo->prepare('DELETE FROM patients WHERE id = ?')->execute([$deleteId]);
+
+        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
+        $log->execute([
+            $_SESSION['user_id'],
+            'patient_deleted',
+            "Deleted patient #$deleteId ({$targetPatient['name']}, MRN {$targetPatient['mrn']})",
+        ]);
+
+        $success = "Deleted {$targetPatient['name']}.";
     }
 }
 
@@ -375,6 +407,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 
 .alert { border-radius: 14px; padding: 14px 18px; font-size: 13.5px; }
 .alert.error { background: var(--red-bg); color: var(--red-text); }
+.alert.success { background: var(--green-bg); color: var(--green-text); }
 
 .patient-strip { display: flex; align-items: center; gap: 16px; }
 .patient-strip .person-avatar { width: 48px; height: 48px; font-size: 16px; }
@@ -435,6 +468,9 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
             <?php if ($error): ?>
                 <div class="alert error"><?= htmlspecialchars($error) ?></div>
             <?php endif; ?>
+            <?php if ($success): ?>
+                <div class="alert success"><?= htmlspecialchars($success) ?></div>
+            <?php endif; ?>
 
             <form class="card search-card" method="GET" action="patients.php">
                 <div class="search-field">
@@ -453,7 +489,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                 <?php else: ?>
                 <table>
                     <thead>
-                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th></tr>
+                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($patients as $p): $age = $p['dob'] ? ageFromDob($p['dob']) : $p['approx_age']; ?>
@@ -464,6 +500,15 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                             <td><span class="gender-tag"><?= $age !== null ? $age . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
                             <td class="mrn"><?= htmlspecialchars($p['mrn']) ?></td>
                             <td class="muted"><?= $p['last_visit'] ? date('d M Y', strtotime($p['last_visit'])) : '—' ?></td>
+                            <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
+                            <td>
+                                <form method="POST" action="patients.php" style="display:inline;" onsubmit="return confirm('Permanently delete <?= htmlspecialchars(addslashes($p['name'])) ?> (MRN <?= htmlspecialchars($p['mrn']) ?>)? This removes all their visit history and can\'t be undone.');">
+                                    <input type="hidden" name="action" value="delete_patient">
+                                    <input type="hidden" name="patient_id" value="<?= (int) $p['id'] ?>">
+                                    <button type="submit" class="edit-link" style="background:none;border:none;padding:0;font:inherit;cursor:pointer;color:var(--red-text);">Delete</button>
+                                </form>
+                            </td>
+                            <?php endif; ?>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>

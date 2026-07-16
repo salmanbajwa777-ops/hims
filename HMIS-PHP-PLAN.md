@@ -22,7 +22,8 @@ Live on `hims.babymedics.com`:
 - `dashboard.php` — admin landing page; `receptionist.php` — receptionist landing page
 - `staff.php` — add/edit/list staff & doctors (grouped Doctors/Staff, alphabetical, edit panel
   with document upload, per-user permission overrides, **doctor consultation types + fees editor,
-  per-person discount cap field — added 2026-07-17**)
+  per-person discount cap field, admin sets password directly (no auto-gen/email — no SMTP
+  infra exists), hard-delete staff with confirm — added 2026-07-17**)
 - `permissions.php` — role-default permission grid
 - `document.php` — streams a single uploaded staff document by id
 - `patients.php` — **added 2026-07-17.** Search (name/phone/father name/MRN) + full registration
@@ -30,15 +31,19 @@ Live on `hims.babymedics.com`:
   (doctor → consultation type → fee dependency chain, discount input capped client-side against
   `users.max_discount_pct`, server re-validates). Submitting inserts `patients` + `visits` in one
   transaction, assigns an MRN and a per-doctor daily queue token, and shows a queue confirmation
-  screen. Gated by `RECEPTION_REGISTER_PATIENTS`.
+  screen. Gated by `RECEPTION_REGISTER_PATIENTS`; admin-only hard-delete on each search result row
+  (removes the patient's full visit history with them — confirm-gated).
 - `locations.php` — **added 2026-07-17,** admin-only. Two-pane city/area manager (add/remove) plus
   a pending-review queue for reception-added areas (approve as-is, rename, or merge into an
   existing area).
 - DB tables live in `sql/schema.sql`, `sql/add_staff_documents.sql`, and (2026-07-17)
   `sql/add_locations.sql`, `sql/add_doctor_consult_types.sql`, `sql/add_patients.sql`,
-  `sql/add_discount_cap.sql` — **not yet applied on the live DB, apply via phpMyAdmin in that
-  order before deploying `patients.php`/`locations.php`/the updated `staff.php`** (per the
-  standing rule: never push schema-dependent PHP before its migration has run):
+  `sql/add_discount_cap.sql` (**applied on the live DB**), plus `sql/add_delete_cascades.sql`
+  (**not yet applied — needed before the delete-staff/delete-patient buttons will work; loosens
+  several FKs from RESTRICT to CASCADE/SET NULL so a `DELETE FROM users`/`patients` doesn't error
+  out**). Per the standing rule: never push schema-dependent PHP before its migration has run —
+  the delete buttons are already deployed in code, so they'll 500/error until this migration is
+  applied.
   - `users` (id, name, email, phone, password, base_role enum, must_change_password,
     `max_discount_pct` NEW, created_at)
   - `password_reset_tokens`
@@ -50,6 +55,13 @@ Live on `hims.babymedics.com`:
   - `doctor_consult_types` (per-doctor label/fee/is_default, managed on `staff.php`) NEW
   - `patients`, `visits` (visit carries `fee`, `discount_pct`, `discount_applied_by_id`,
     `token_no`, `payment_mode`) NEW
+
+**Delete vs. deactivate (2026-07-17):** hard-delete on `staff.php`/`patients.php` is explicitly
+for cleaning up test data while nothing is live yet. Once real usage starts, the ask is to add an
+active/inactive toggle for staff instead of deleting them (preserves their history/attribution
+cleanly rather than nulling it out) — **not built yet**, deletion stays as the only option for now.
+When that toggle is added, `has_permission()`/login should probably also block inactive users from
+signing in.
 
 Still nothing for: `vitals`, `procedures`, `bills`, `beds`, `rate_master`,
 `doctor_financial_terms`, `tax_config`, `staff_commission_config`, `short_stay_*`,
