@@ -25,7 +25,7 @@ Only this exists, live on `hims.babymedics.com`:
 - DB tables live in `sql/schema.sql` + `sql/add_staff_documents.sql`:
   - `users` (id, name, email, phone, password, base_role enum, must_change_password, created_at)
   - `password_reset_tokens`
-  - `permissions`, `role_permissions`, `user_permission_overrides` — **scaffolded in schema.sql, no UI or enforcement wired yet**
+  - `permissions`, `role_permissions`, `user_permission_overrides` — **seeded and wired to `permissions.php` + `staff.php` per-user overrides (done 2026-07-16)**
   - `tasks` — scaffolded, no UI yet, not part of `HMIS-COMPLETE.md` spec (separate ask, keep it)
   - `audit_logs` — used already (staff_created / staff_updated actions)
   - `staff_documents`
@@ -55,6 +55,18 @@ Keep the two-layer model exactly as specified:
 defaults per role, then build one admin page `permissions.php` (role defaults) — the granular
 per-staff override screen shown in §9.2 can reuse the same checkbox-grid markup pattern already
 used for doc types in `staff.php`.
+
+**Cross-role coverage (2026-07-16 decision):** there is no shift-based scheduling in this system —
+confirmed explicitly, do not reintroduce a `shift_assignments`/time-window overlay concept anywhere
+in this plan. When a receptionist needs to cover a nursing task because no nurse is free (record
+vitals, log a short-stay event, etc.), this is handled purely through the existing permission
+model: admin grants that specific person the relevant nursing permission(s)
+(`vitals.record`, `short_stay_event.record`, etc.) via the per-user override UI in `staff.php`,
+either as a standing grant or toggled off again later. No separate "acting as nurse" mode, no
+second login, no flag distinguishing a covering receptionist's entry from a regular nurse's entry —
+the vitals/event record is simply tagged with `recorded_by_id` = that person's real account, same
+as any other entry. Whether someone *can* record a nursing action is entirely a permission
+question, never a role-identity or shift-state question.
 
 ---
 
@@ -250,16 +262,10 @@ CREATE TABLE IF NOT EXISTS bills (
     FOREIGN KEY (visit_id) REFERENCES visits(id) ON DELETE CASCADE
 );
 
--- sql/add_qa_shifts.sql
-CREATE TABLE IF NOT EXISTS shift_assignments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    shift_date DATE NOT NULL,
-    slot ENUM('MORNING','EVENING','NIGHT') NOT NULL,
-    active TINYINT(1) NOT NULL DEFAULT 0,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
+-- sql/add_qa.sql
+-- (no shift_assignments table — this system has no shift-based scheduling; cross-role
+-- coverage, e.g. a receptionist recording vitals when no nurse is free, is handled purely
+-- via permission grants on the person's existing account, see §2.)
 CREATE TABLE IF NOT EXISTS qa_assessments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     visit_id INT NOT NULL,
@@ -329,10 +335,10 @@ non-admin dashboard is a stripped-down view over the same tables, gated by `has_
 | Phase | Status | Scope |
 |---|---|---|
 | **0 — Foundation** | **Done** | Auth, admin guard, first-admin seed, staff/doctor CRUD + documents, audit log write-path |
-| **1 — Permissions UI** | Not started | Seed `permissions`/`role_permissions`, build `permissions.php`, wire per-user override UI into `staff.php`, add `has_permission()` enforcement to every guarded page going forward |
+| **1 — Permissions UI** | **Done** | Seeded `permissions`/`role_permissions`, built `permissions.php`, wired per-user override UI into `staff.php` (commit `43ab26e`); `has_permission()` enforcement still needs to be added to each new guarded page as it's built |
 | **2 — Patients & OPD core loop** | Not started | `patients.php`, visit/OPD slip, vitals, consultation, disposition, prescription scan |
 | **3 — Procedures & consent** | Not started | Procedure master, procedure recording (doctor or staff), consent templates/printing |
-| **3A — Staff commission** | Not started | `gender` column, duty-based split config, shift assignments, visit-charge calc |
+| **3A — Staff commission** | Not started | `gender` column, duty-based split config, visit-charge calc (no shift assignments — see §2) |
 | **4 — Financial config & invoicing** | Not started | Doctor financial terms, rate master, tax config, `checkout.php` invoice generation |
 | **5 — Short-stay & beds** | Not started | Bed master, admission/discharge, chargeable events, bed status dashboard |
 | **6 — Reporting & QA** | Not started | Settlements, P&L, QA spot-checks, patient feedback, audit log viewer |
