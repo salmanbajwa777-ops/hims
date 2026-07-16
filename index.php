@@ -26,6 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['base_role'] = $user['base_role'];
             $_SESSION['must_change_password'] = (bool) $user['must_change_password'];
 
+            require_once __DIR__ . '/config/permissions.php';
+            refresh_session_permissions($pdo);
+
             header('Location: /dashboard.php');
             exit;
         } else {

@@ -228,6 +228,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_permissions') {
+    $editId = (int) ($_POST['user_id'] ?? 0);
+    $checkedIds = array_map('intval', $_POST['permission_ids'] ?? []);
+
+    $userStmt = $pdo->prepare('SELECT id, name, base_role FROM users WHERE id = ?');
+    $userStmt->execute([$editId]);
+    $targetUser = $userStmt->fetch();
+
+    if (!$targetUser) {
+        $error = 'Staff member not found.';
+    } else {
+        $roleStmt = $pdo->prepare('SELECT permission_id FROM role_permissions WHERE base_role = ?');
+        $roleStmt->execute([$targetUser['base_role']]);
+        $roleDefaultIds = array_map('intval', array_column($roleStmt->fetchAll(), 'permission_id'));
+
+        $del = $pdo->prepare('DELETE FROM user_permission_overrides WHERE user_id = ?');
+        $del->execute([$editId]);
+
+        $allPermIds = array_map('intval', array_column($pdo->query('SELECT id FROM permissions')->fetchAll(), 'id'));
+        $insert = $pdo->prepare('INSERT INTO user_permission_overrides (user_id, permission_id, granted) VALUES (?, ?, ?)');
+
+        foreach ($allPermIds as $permId) {
+            $isChecked = in_array($permId, $checkedIds, true);
+            $isRoleDefault = in_array($permId, $roleDefaultIds, true);
+
+            if ($isChecked && !$isRoleDefault) {
+                $insert->execute([$editId, $permId, 1]);
+            } elseif (!$isChecked && $isRoleDefault) {
+                $insert->execute([$editId, $permId, 0]);
+            }
+        }
+
+        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
+        $log->execute([
+            $_SESSION['user_id'],
+            'permissions_updated',
+            "Updated individual permissions for user #$editId ({$targetUser['name']})",
+        ]);
+
+        $success = "Permissions updated for {$targetUser['name']}.";
+    }
+}
+
 $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, created_at FROM users ORDER BY name ASC')->fetchAll();
 $doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
 $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
@@ -235,6 +278,40 @@ $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'D
 $docCounts = [];
 foreach ($pdo->query('SELECT user_id, COUNT(*) AS cnt FROM staff_documents GROUP BY user_id')->fetchAll() as $row) {
     $docCounts[(int) $row['user_id']] = (int) $row['cnt'];
+}
+
+$categoryLabels = [
+    'clinical' => 'Clinical & Nursing',
+    'financial' => 'Financial',
+    'admin' => 'Admin & Reception',
+];
+
+$allPermissions = $pdo->query('SELECT id, `key`, label, category FROM permissions ORDER BY category, label')->fetchAll();
+$permsByCategory = [];
+foreach ($allPermissions as $p) {
+    $permsByCategory[$p['category']][] = $p;
+}
+
+$roleDefaultsByRole = [];
+foreach ($pdo->query('SELECT base_role, permission_id FROM role_permissions')->fetchAll() as $row) {
+    $roleDefaultsByRole[$row['base_role']][(int) $row['permission_id']] = true;
+}
+
+$overridesByUser = [];
+foreach ($pdo->query('SELECT user_id, permission_id, granted FROM user_permission_overrides')->fetchAll() as $row) {
+    $overridesByUser[(int) $row['user_id']][(int) $row['permission_id']] = (int) $row['granted'] === 1;
+}
+
+function effectivePermissionIds(string $baseRole, int $userId, array $roleDefaultsByRole, array $overridesByUser): array {
+    $effective = array_fill_keys(array_keys($roleDefaultsByRole[$baseRole] ?? []), true);
+    foreach ($overridesByUser[$userId] ?? [] as $permId => $granted) {
+        if ($granted) {
+            $effective[$permId] = true;
+        } else {
+            unset($effective[$permId]);
+        }
+    }
+    return array_keys($effective);
 }
 
 function roleBadgeColor(string $role): array {
@@ -396,6 +473,16 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 
 .form-footer { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; background: var(--card); border-top: 1px solid var(--border); padding: 16px 24px; border-radius: var(--radius-card); box-shadow: var(--shadow-md); margin-top: 4px; }
 
+/* ---------- Permissions panel ---------- */
+.perm-category { margin-bottom: 4px; }
+.perm-category-head { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 14px 4px 8px; border-top: 1px solid var(--border); }
+.perm-category:first-child .perm-category-head { border-top: none; padding-top: 0; }
+.perm-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-radius: 10px; }
+.perm-row:hover { background: var(--bg); }
+.perm-row label { font-size: 13.5px; color: var(--text); cursor: pointer; flex: 1; }
+.perm-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; flex-shrink: 0; }
+.perm-key { font-size: 11px; color: var(--text-muted); font-family: 'Courier New', monospace; }
+
 /* ---------- Document viewer panel ---------- */
 .docs-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
 .docs-panel-overlay.open { display: flex; }
@@ -469,7 +556,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
             <?php endif; ?>
 
             <?php
-            function renderStaffGroup(string $title, array $people, array $docCounts): void {
+            function renderStaffGroup(string $title, array $people, array $docCounts, array $roleDefaultsByRole, array $overridesByUser): void {
             ?>
             <div class="card">
                 <div class="section-title"><?= htmlspecialchars($title) ?></div>
@@ -516,6 +603,16 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                    data-phone="<?= htmlspecialchars($s['phone'] ?? '', ENT_QUOTES) ?>"
                                    data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
                                    onclick="openEditPanel(this.dataset); return false;">Edit</a>
+                                &nbsp;·&nbsp;
+                                <?php
+                                $effectiveIds = effectivePermissionIds($s['base_role'], (int) $s['id'], $roleDefaultsByRole, $overridesByUser);
+                                ?>
+                                <a href="#" class="edit-link"
+                                   data-id="<?= (int) $s['id'] ?>"
+                                   data-name="<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>"
+                                   data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
+                                   data-permission-ids="<?= htmlspecialchars(json_encode($effectiveIds), ENT_QUOTES) ?>"
+                                   onclick="openPermissionsPanel(this.dataset); return false;">Permissions</a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -527,8 +624,8 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
             </div>
             <?php
             }
-            renderStaffGroup('Doctors', $doctors, $docCounts);
-            renderStaffGroup('Staff', $otherStaff, $docCounts);
+            renderStaffGroup('Doctors', $doctors, $docCounts, $roleDefaultsByRole, $overridesByUser);
+            renderStaffGroup('Staff', $otherStaff, $docCounts, $roleDefaultsByRole, $overridesByUser);
             ?>
         </div>
     </div>
@@ -644,6 +741,55 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
     </div>
 </div>
 
+<!-- Individual Permissions panel -->
+<div class="panel-overlay" id="permPanelOverlay">
+    <div class="panel">
+        <div class="form-header">
+            <div>
+                <h1 id="permPanelTitle">Permissions</h1>
+                <div class="sub" id="permPanelSub">Grant or revoke individual permissions for this person.</div>
+            </div>
+            <button type="button" class="close-btn" id="closePermPanel" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <form method="POST" action="staff.php" id="permForm">
+            <input type="hidden" name="action" value="edit_permissions">
+            <input type="hidden" name="user_id" id="permFormUserId" value="">
+
+            <div class="section">
+                <div class="section-body" id="permCategoryList">
+                    <?php foreach ($permsByCategory as $cat => $perms): ?>
+                    <div class="perm-category" data-category="<?= htmlspecialchars($cat, ENT_QUOTES) ?>">
+                        <div class="perm-category-head"><?= htmlspecialchars($categoryLabels[$cat] ?? ucfirst($cat)) ?></div>
+                        <?php foreach ($perms as $p): ?>
+                        <div class="perm-row">
+                            <input type="checkbox" class="perm-checkbox" id="staffPerm_<?= (int) $p['id'] ?>" name="permission_ids[]" value="<?= (int) $p['id'] ?>">
+                            <label for="staffPerm_<?= (int) $p['id'] ?>">
+                                <?= htmlspecialchars($p['label']) ?>
+                                <div class="perm-key"><?= htmlspecialchars($p['key']) ?></div>
+                            </label>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="info-banner">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                <span>Checked items are pre-filled from their role's defaults. Uncheck to revoke, or check extra ones to grant beyond the role default — changes take effect immediately.</span>
+            </div>
+
+            <div class="form-footer">
+                <button type="button" class="btn secondary" id="cancelPermPanel">Cancel</button>
+                <button type="submit" class="btn">Save Permissions</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 const addPanelOverlay = document.getElementById('addPanelOverlay');
 const staffForm = document.getElementById('staffForm');
@@ -728,7 +874,39 @@ function renderExistingDocs(userId) {
 document.getElementById('openAddPanel').addEventListener('click', () => { resetToAddMode(); addPanelOverlay.classList.add('open'); });
 document.getElementById('closeAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
 document.getElementById('cancelAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
-<?php if ($error || $success): ?>addPanelOverlay.classList.add('open');<?php endif; ?>
+
+const permPanelOverlay = document.getElementById('permPanelOverlay');
+const permForm = document.getElementById('permForm');
+const permFormUserId = document.getElementById('permFormUserId');
+const permPanelTitle = document.getElementById('permPanelTitle');
+const permPanelSub = document.getElementById('permPanelSub');
+
+function openPermissionsPanel(data) {
+    permForm.reset();
+    permFormUserId.value = data.id;
+    permPanelTitle.textContent = 'Permissions — ' + (data.name || '');
+    permPanelSub.textContent = 'Base role: ' + (data.role || '') + '. Grant or revoke individual permissions.';
+
+    let grantedIds = [];
+    try {
+        grantedIds = JSON.parse(data.permissionIds || '[]').map(String);
+    } catch (e) {
+        grantedIds = [];
+    }
+
+    document.querySelectorAll('.perm-checkbox').forEach(cb => {
+        cb.checked = grantedIds.includes(cb.value);
+    });
+
+    permPanelOverlay.classList.add('open');
+}
+
+document.getElementById('closePermPanel').addEventListener('click', () => permPanelOverlay.classList.remove('open'));
+document.getElementById('cancelPermPanel').addEventListener('click', () => permPanelOverlay.classList.remove('open'));
+
+<?php if (($error || $success) && ($_POST['action'] ?? '') === 'edit_permissions'): ?>permPanelOverlay.classList.add('open');
+<?php elseif ($error || $success): ?>addPanelOverlay.classList.add('open');
+<?php endif; ?>
 
 const docTypeOptions = <?= json_encode($docTypes) ?>;
 

@@ -2,6 +2,8 @@
 require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/permissions.php';
+refresh_session_permissions($pdo);
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$_SESSION['user_id']]);
@@ -494,7 +496,7 @@ tabular { font-variant-numeric: tabular-nums; }
         <div class="nav-group">
             <div class="nav-group-label">Management</div>
             <a class="nav-item" href="staff.php"><span class="nav-icon"><?= icon('user-group') ?></span> Staff</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('lock') ?></span> Permissions</a>
+            <a class="nav-item" href="permissions.php"><span class="nav-icon"><?= icon('lock') ?></span> Permissions</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('box') ?></span> Inventory</a>
         </div>
 
@@ -603,7 +605,7 @@ tabular { font-variant-numeric: tabular-nums; }
                 <div class="quick-actions">
                     <a class="action-tile" href="staff.php"><span class="icon"><?= icon('plus', 24) ?></span><span class="label">Add Staff</span></a>
                     <a class="action-tile" href="staff.php"><span class="icon"><?= icon('stethoscope', 24) ?></span><span class="label">Add Doctor</span></a>
-                    <div class="action-tile"><span class="icon"><?= icon('lock', 24) ?></span><span class="label">Permissions</span></div>
+                    <a class="action-tile" href="permissions.php"><span class="icon"><?= icon('lock', 24) ?></span><span class="label">Permissions</span></a>
                     <div class="action-tile"><span class="icon"><?= icon('bar-chart', 24) ?></span><span class="label">Settlement</span></div>
                     <div class="action-tile"><span class="icon"><?= icon('box', 24) ?></span><span class="label">Inventory</span></div>
                     <div class="action-tile"><span class="icon"><?= icon('file-text', 24) ?></span><span class="label">Reports</span></div>
