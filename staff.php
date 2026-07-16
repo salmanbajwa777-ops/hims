@@ -128,7 +128,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     }
 }
 
-$staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, created_at FROM users ORDER BY created_at DESC')->fetchAll();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_staff') {
+    $editId = (int) ($_POST['user_id'] ?? 0);
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $role = $_POST['base_role'] ?? '';
+
+    if ($editId <= 0 || $name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
+        $error = 'Please provide a name, at least one of email/phone, and a valid role.';
+    } else {
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE id != ? AND ((email = ? AND email IS NOT NULL AND email != "") OR (phone = ? AND phone IS NOT NULL AND phone != ""))');
+        $stmt->execute([$editId, $email, $phone]);
+
+        if ($stmt->fetch()) {
+            $error = 'Another user with this email or phone already exists.';
+        } else {
+            $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ? WHERE id = ?');
+            $update->execute([
+                $name,
+                $email !== '' ? $email : null,
+                $phone !== '' ? $phone : null,
+                $role,
+                $editId,
+            ]);
+
+            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
+            $log->execute([
+                $_SESSION['user_id'],
+                'staff_updated',
+                "Updated user #$editId ($name, $role)",
+            ]);
+
+            $success = "Account updated for $name.";
+        }
+    }
+}
+
+$staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, created_at FROM users ORDER BY name ASC')->fetchAll();
+$doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
+$otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
 
 $docCounts = [];
 foreach ($pdo->query('SELECT user_id, COUNT(*) AS cnt FROM staff_documents GROUP BY user_id')->fetchAll() as $row) {
@@ -234,6 +273,8 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .muted { color: var(--text-muted); font-size: 12.5px; }
 .doc-count-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 .doc-count-link.none { color: var(--text-muted); font-weight: 500; cursor: default; }
+.edit-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
+.edit-link:hover { text-decoration: underline; }
 
 /* ---------- Add Staff full-page panel ---------- */
 .panel-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
@@ -355,21 +396,27 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
             <?php endif; ?>
             <?php if ($success): ?>
                 <div class="alert success">
-                    <?= htmlspecialchars($success) ?> Temporary password:
+                    <?= htmlspecialchars($success) ?>
+                    <?php if ($tempPassword !== ''): ?>
+                    Temporary password:
                     <span class="temp-pass"><?= htmlspecialchars($tempPassword) ?></span>
                     — share this with them securely. They'll be asked to set a new password on first login.
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 
+            <?php
+            function renderStaffGroup(string $title, array $people, array $docCounts): void {
+            ?>
             <div class="card">
-                <div class="section-title">All Accounts</div>
-                <div class="section-sub"><?= count($staff) ?> total</div>
+                <div class="section-title"><?= htmlspecialchars($title) ?></div>
+                <div class="section-sub"><?= count($people) ?> total</div>
                 <table>
                     <thead>
-                        <tr><th>Name</th><th>Contact</th><th>Role</th><th>Status</th><th>Documents</th><th>Added</th></tr>
+                        <tr><th>Name</th><th>Contact</th><th>Role</th><th>Status</th><th>Documents</th><th>Added</th><th></th></tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($staff as $s): ?>
+                        <?php foreach ($people as $s): ?>
                         <?php
                         [$bg, $fg] = roleBadgeColor($s['base_role']);
                         $count = $docCounts[(int) $s['id']] ?? 0;
@@ -398,14 +445,28 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                 <?php endif; ?>
                             </td>
                             <td class="muted"><?= date('d M Y', strtotime($s['created_at'])) ?></td>
+                            <td>
+                                <a href="#" class="edit-link"
+                                   data-id="<?= (int) $s['id'] ?>"
+                                   data-name="<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>"
+                                   data-email="<?= htmlspecialchars($s['email'] ?? '', ENT_QUOTES) ?>"
+                                   data-phone="<?= htmlspecialchars($s['phone'] ?? '', ENT_QUOTES) ?>"
+                                   data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
+                                   onclick="openEditPanel(this.dataset); return false;">Edit</a>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
-                        <?php if (!$staff): ?>
-                        <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">No staff added yet.</td></tr>
+                        <?php if (!$people): ?>
+                        <tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">None yet.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
             </div>
+            <?php
+            }
+            renderStaffGroup('Doctors', $doctors, $docCounts);
+            renderStaffGroup('Staff', $otherStaff, $docCounts);
+            ?>
         </div>
     </div>
 </div>
@@ -415,16 +476,17 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
     <div class="panel">
         <div class="form-header">
             <div>
-                <h1>Add Doctor / Staff</h1>
-                <div class="sub">Create a login and file their onboarding documents in one go.</div>
+                <h1 id="panelTitle">Add Doctor / Staff</h1>
+                <div class="sub" id="panelSub">Create a login and file their onboarding documents in one go.</div>
             </div>
             <button type="button" class="close-btn" id="closeAddPanel" aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
         </div>
 
-        <form class="staff-form" method="POST" action="staff.php" enctype="multipart/form-data">
-            <input type="hidden" name="action" value="add_staff">
+        <form class="staff-form" method="POST" action="staff.php" enctype="multipart/form-data" id="staffForm">
+            <input type="hidden" name="action" id="formAction" value="add_staff">
+            <input type="hidden" name="user_id" id="formUserId" value="">
 
             <div class="section">
                 <div class="section-head">
@@ -462,7 +524,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                 </div>
             </div>
 
-            <div class="section">
+            <div class="section" id="docsSection">
                 <div class="section-head">
                     <div class="icon-badge">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
@@ -493,14 +555,14 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                 </div>
             </div>
 
-            <div class="info-banner">
+            <div class="info-banner" id="infoBanner">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
                 <span>A temporary password will be generated on save. They'll be required to set a new one on first sign-in. Documents are stored privately and only visible to admins.</span>
             </div>
 
             <div class="form-footer">
                 <button type="button" class="btn secondary" id="cancelAddPanel">Cancel</button>
-                <button type="submit" class="btn">Create Account</button>
+                <button type="submit" class="btn" id="submitBtn">Create Account</button>
             </div>
         </form>
     </div>
@@ -517,7 +579,43 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 
 <script>
 const addPanelOverlay = document.getElementById('addPanelOverlay');
-document.getElementById('openAddPanel').addEventListener('click', () => addPanelOverlay.classList.add('open'));
+const staffForm = document.getElementById('staffForm');
+const formAction = document.getElementById('formAction');
+const formUserId = document.getElementById('formUserId');
+const panelTitle = document.getElementById('panelTitle');
+const panelSub = document.getElementById('panelSub');
+const docsSection = document.getElementById('docsSection');
+const infoBanner = document.getElementById('infoBanner');
+const submitBtn = document.getElementById('submitBtn');
+
+function resetToAddMode() {
+    staffForm.reset();
+    formAction.value = 'add_staff';
+    formUserId.value = '';
+    panelTitle.textContent = 'Add Doctor / Staff';
+    panelSub.textContent = "Create a login and file their onboarding documents in one go.";
+    docsSection.style.display = '';
+    infoBanner.style.display = '';
+    submitBtn.textContent = 'Create Account';
+}
+
+function openEditPanel(data) {
+    staffForm.reset();
+    formAction.value = 'edit_staff';
+    formUserId.value = data.id;
+    document.getElementById('name').value = data.name || '';
+    document.getElementById('email').value = data.email || '';
+    document.getElementById('phone').value = data.phone || '';
+    document.getElementById('base_role').value = data.role || '';
+    panelTitle.textContent = 'Edit Doctor / Staff';
+    panelSub.textContent = 'Update their account details.';
+    docsSection.style.display = 'none';
+    infoBanner.style.display = 'none';
+    submitBtn.textContent = 'Save Changes';
+    addPanelOverlay.classList.add('open');
+}
+
+document.getElementById('openAddPanel').addEventListener('click', () => { resetToAddMode(); addPanelOverlay.classList.add('open'); });
 document.getElementById('closeAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
 document.getElementById('cancelAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
 <?php if ($error || $success): ?>addPanelOverlay.classList.add('open');<?php endif; ?>
