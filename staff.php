@@ -16,7 +16,6 @@ $maxFileSize = 10 * 1024 * 1024;
 
 $error = '';
 $success = '';
-$tempPassword = '';
 
 $uploadDir = __DIR__ . '/uploads/staff_docs/';
 if (!is_dir($uploadDir)) {
@@ -28,12 +27,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
+    $password = $_POST['password'] ?? '';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $docTypeInputs = $_POST['doc_type'] ?? [];
     $docFiles = $_FILES['doc_file'] ?? null;
 
     if ($name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
+    } elseif (strlen($password) < 6) {
+        $error = 'Password must be at least 6 characters.';
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
     } else {
@@ -88,8 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
             if ($docError !== '') {
                 $error = $docError;
             } else {
-                $tempPassword = substr(bin2hex(random_bytes(6)), 0, 10);
-                $hash = password_hash($tempPassword, PASSWORD_BCRYPT);
+                $hash = password_hash($password, PASSWORD_BCRYPT);
 
                 $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, max_discount_pct, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)');
                 $insert->execute([
@@ -473,7 +474,6 @@ a { text-decoration: none; color: inherit; }
 .alert { border-radius: 14px; padding: 14px 18px; font-size: 13.5px; margin-bottom: 4px; }
 .alert.error { background: var(--red-bg); color: var(--red-text); }
 .alert.success { background: var(--green-bg); color: var(--green-text); }
-.alert .temp-pass { font-weight: 700; font-family: 'Courier New', monospace; background: #fff; padding: 2px 8px; border-radius: 6px; margin-left: 4px; }
 
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
@@ -624,14 +624,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                 <div class="alert error"><?= htmlspecialchars($error) ?></div>
             <?php endif; ?>
             <?php if ($success): ?>
-                <div class="alert success">
-                    <?= htmlspecialchars($success) ?>
-                    <?php if ($tempPassword !== ''): ?>
-                    Temporary password:
-                    <span class="temp-pass"><?= htmlspecialchars($tempPassword) ?></span>
-                    — share this with them securely. They'll be asked to set a new password on first login.
-                    <?php endif; ?>
-                </div>
+                <div class="alert success"><?= htmlspecialchars($success) ?></div>
             <?php endif; ?>
 
             <?php
@@ -757,8 +750,15 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                             <input type="text" id="email" name="email" placeholder="doctor@example.com">
                         </div>
                         <div class="field">
-                            <label for="phone">Phone <span class="opt">(optional if email set)</span></label>
+                            <label for="phone">Phone <span class="opt">(this is their login ID — optional if email set)</span></label>
                             <input type="text" id="phone" name="phone" placeholder="03xxxxxxxxx">
+                        </div>
+                        <div class="field" id="passwordField">
+                            <label for="password">Password <span class="opt">(min 6 characters — tell them this yourself)</span></label>
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="password" name="password" minlength="6" style="flex:1;">
+                                <button type="button" class="btn secondary" id="genPasswordBtn" style="white-space:nowrap;">Generate</button>
+                            </div>
                         </div>
                         <div class="field">
                             <label for="base_role">Role</label>
@@ -935,9 +935,11 @@ const panelSub = document.getElementById('panelSub');
 const docsSection = document.getElementById('docsSection');
 const infoBannerText = document.getElementById('infoBannerText');
 const submitBtn = document.getElementById('submitBtn');
+const passwordField = document.getElementById('passwordField');
+const passwordInput = document.getElementById('password');
 
-const ADD_INFO_TEXT = "A temporary password will be generated on save. They'll be required to set a new one on first sign-in. Documents are stored privately and only visible to admins.";
-const EDIT_INFO_TEXT = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Documents are stored privately and only visible to admins.";
+const ADD_INFO_TEXT = "Tell them their login ID (phone or email) and the password you set here — they can change it themselves after signing in. Documents are stored privately and only visible to admins.";
+const EDIT_INFO_TEXT = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Password isn't changed from this form. Documents are stored privately and only visible to admins.";
 
 function resetToAddMode() {
     staffForm.reset();
@@ -946,6 +948,8 @@ function resetToAddMode() {
     panelTitle.textContent = 'Add Doctor / Staff';
     panelSub.textContent = "Create a login and file their onboarding documents in one go.";
     docsSection.style.display = '';
+    passwordField.style.display = '';
+    passwordInput.required = true;
     infoBannerText.textContent = ADD_INFO_TEXT;
     submitBtn.textContent = 'Create Account';
     document.getElementById('existingDocsWrap').style.display = 'none';
@@ -963,11 +967,21 @@ function openEditPanel(data) {
     panelTitle.textContent = 'Edit Doctor / Staff';
     panelSub.textContent = 'Update their details and manage their documents.';
     docsSection.style.display = '';
+    passwordField.style.display = 'none';
+    passwordInput.required = false;
     infoBannerText.textContent = EDIT_INFO_TEXT;
     submitBtn.textContent = 'Save Changes';
     renderExistingDocs(data.id);
     addPanelOverlay.classList.add('open');
 }
+
+document.getElementById('genPasswordBtn').addEventListener('click', () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let pw = '';
+    for (let i = 0; i < 8; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+    passwordInput.value = pw;
+    passwordInput.type = 'text';
+});
 
 function renderExistingDocs(userId) {
     const wrap = document.getElementById('existingDocsWrap');
