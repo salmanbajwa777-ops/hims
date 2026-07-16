@@ -1,8 +1,12 @@
 <?php
 require_once __DIR__ . '/config/auth.php';
 
+function landing_page_for_role(string $baseRole): string {
+    return $baseRole === 'RECEPTIONIST' ? '/receptionist.php' : '/dashboard.php';
+}
+
 if (is_logged_in()) {
-    header('Location: /dashboard.php');
+    header('Location: ' . landing_page_for_role($_SESSION['base_role'] ?? ''));
     exit;
 }
 
@@ -29,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_once __DIR__ . '/config/permissions.php';
             refresh_session_permissions($pdo);
 
-            header('Location: /dashboard.php');
+            header('Location: ' . landing_page_for_role($user['base_role']));
             exit;
         } else {
             $error = 'Invalid credentials.';

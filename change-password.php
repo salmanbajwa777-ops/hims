@@ -7,6 +7,8 @@ $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
 
+$landingPage = ($_SESSION['base_role'] ?? '') === 'RECEPTIONIST' ? 'receptionist.php' : 'dashboard.php';
+
 $error = '';
 $success = '';
 
@@ -82,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <p class="subtitle">Update your account password</p>
 
         <?php if ($error): ?><div class="error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
-        <?php if ($success): ?><div class="success"><?= htmlspecialchars($success) ?> <a href="dashboard.php">Go to dashboard &rarr;</a></div><?php endif; ?>
+        <?php if ($success): ?><div class="success"><?= htmlspecialchars($success) ?> <a href="<?= $landingPage ?>">Go to dashboard &rarr;</a></div><?php endif; ?>
 
         <?php if (!$success): ?>
         <form method="POST" action="change-password.php">
@@ -97,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <button type="submit">Update Password</button>
         </form>
-        <a class="back-link" href="dashboard.php">&larr; Back to dashboard</a>
+        <a class="back-link" href="<?= $landingPage ?>">&larr; Back to dashboard</a>
         <?php endif; ?>
     </div>
 </body>
