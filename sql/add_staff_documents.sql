@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS staff_documents (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    doc_type ENUM('CNIC','EDUCATIONAL_DEGREE','REGISTRATION','EXPERIENCE_LETTER','CV','OTHER') NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    file_size INT NOT NULL,
+    uploaded_by_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by_id) REFERENCES users(id)
+);

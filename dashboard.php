@@ -478,7 +478,7 @@ tabular { font-variant-numeric: tabular-nums; }
         <div class="nav-group">
             <div class="nav-group-label">Operations</div>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('users') ?></span> Patients</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('stethoscope') ?></span> Doctors</a>
+            <a class="nav-item" href="staff.php"><span class="nav-icon"><?= icon('stethoscope') ?></span> Doctors</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('calendar') ?></span> Appointments</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('bed') ?></span> Admissions</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('clipboard') ?></span> Procedures</a>
@@ -493,7 +493,7 @@ tabular { font-variant-numeric: tabular-nums; }
 
         <div class="nav-group">
             <div class="nav-group-label">Management</div>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('user-group') ?></span> Staff</a>
+            <a class="nav-item" href="staff.php"><span class="nav-icon"><?= icon('user-group') ?></span> Staff</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('lock') ?></span> Permissions</a>
             <a class="nav-item" href="#"><span class="nav-icon"><?= icon('box') ?></span> Inventory</a>
         </div>
@@ -601,8 +601,8 @@ tabular { font-variant-numeric: tabular-nums; }
                 <div class="section-title">Quick Actions</div>
                 <div class="section-sub">Jump straight into the most common tasks</div>
                 <div class="quick-actions">
-                    <div class="action-tile"><span class="icon"><?= icon('plus', 24) ?></span><span class="label">Add Staff</span></div>
-                    <div class="action-tile"><span class="icon"><?= icon('stethoscope', 24) ?></span><span class="label">Add Doctor</span></div>
+                    <a class="action-tile" href="staff.php"><span class="icon"><?= icon('plus', 24) ?></span><span class="label">Add Staff</span></a>
+                    <a class="action-tile" href="staff.php"><span class="icon"><?= icon('stethoscope', 24) ?></span><span class="label">Add Doctor</span></a>
                     <div class="action-tile"><span class="icon"><?= icon('lock', 24) ?></span><span class="label">Permissions</span></div>
                     <div class="action-tile"><span class="icon"><?= icon('bar-chart', 24) ?></span><span class="label">Settlement</span></div>
                     <div class="action-tile"><span class="icon"><?= icon('box', 24) ?></span><span class="label">Inventory</span></div>
