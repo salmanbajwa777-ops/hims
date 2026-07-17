@@ -36,14 +36,36 @@ Live on `hims.babymedics.com`:
 - `locations.php` — **added 2026-07-17,** admin-only. Two-pane city/area manager (add/remove) plus
   a pending-review queue for reception-added areas (approve as-is, rename, or merge into an
   existing area).
+- `checkout.php` — **added 2026-07-17.** Jumps ahead of the Phase 3→4 dependency order on purpose
+  (see decision note below): manual/free-entry line items rather than procedure-sourced ones. Picks
+  an unbilled today's visit, pre-seeds one line item from the visit's consultation fee (net of any
+  discount), allows free-entry additional items (description/qty/rate), computes tax +
+  consolidation from `clinic_settings` server-side, draft → finalize (locks items, assigns a daily
+  sequential `invoice_number` like `94345 - 2026-07-17 14:03:00`) → record payment. Print view at
+  `checkout.php?print=1&bill_id=X` renders an A5 HTML invoice (`views/invoice_print_partial.php`,
+  browser print → "Save as PDF" instead of a server-side PDF library) and swaps the printed
+  logo/icon based on the visit's doctor's `users.specialty` (`GENERAL` → `assets/images/logo-general.png`,
+  `DENTAL` → `assets/images/logo-dental.png`) — the dental icon is wired in ahead of any dentist
+  actually being added as staff. Gated by the already-seeded `RECEPTION_GENERATE_INVOICES`
+  permission (payment recording additionally requires `RECEPTION_PROCESS_PAYMENTS`) — no new
+  permission key was needed, both existed unused in `sql/seed_permissions.sql` since Phase 1.
+  `staff.php`'s doctor edit panel got a new Specialty dropdown (General/Dental) alongside the
+  existing discount-cap field to drive this. **Typography (2026-07-17):** the "BABY MEDICS"
+  wordmark next to the logo is locked to Arial (unchanged from the original spec); every other
+  element on the invoice (metadata, item table, totals, footer, quote) uses IBM Plex Mono, loaded
+  via Google Fonts `<link>` in `views/invoice_print_partial.php` since this is a browser-print
+  view, not a server-rendered PDF.
 - DB tables live in `sql/schema.sql`, `sql/add_staff_documents.sql`, and (2026-07-17)
   `sql/add_locations.sql`, `sql/add_doctor_consult_types.sql`, `sql/add_patients.sql`,
-  `sql/add_discount_cap.sql` (**applied on the live DB**), plus `sql/add_delete_cascades.sql`
+  `sql/add_discount_cap.sql` (**applied on the live DB**), `sql/add_billing.sql` (**not yet
+  applied** — adds `clinic_settings`, `invoice_sequences`, `bills`, `bill_items`, and
+  `users.specialty`; `checkout.php`/`staff.php`'s specialty field will 500/error until this runs),
+  plus `sql/add_delete_cascades.sql`
   (**not yet applied — needed before the delete-staff/delete-patient buttons will work; loosens
   several FKs from RESTRICT to CASCADE/SET NULL so a `DELETE FROM users`/`patients` doesn't error
   out**). Per the standing rule: never push schema-dependent PHP before its migration has run —
-  the delete buttons are already deployed in code, so they'll 500/error until this migration is
-  applied.
+  the delete buttons and checkout.php are already deployed in code, so they'll 500/error until
+  their migrations are applied.
   - `users` (id, name, email, phone, password, base_role enum, must_change_password,
     `max_discount_pct` NEW, created_at)
   - `password_reset_tokens`
@@ -442,7 +464,7 @@ non-admin dashboard is a stripped-down view over the same tables, gated by `has_
 | **2 — Patients & OPD core loop** | **In progress** | `patients.php` registration + queueing **done 2026-07-17** (patient search, register-and-queue with doctor consult-type/fee lookup and discount cap, `cities`/`areas` reference data + `locations.php`); still needed: visit detail page (vitals, consultation notes, disposition), OPD slip printing, prescription scan |
 | **3 — Procedures & consent** | Not started | Procedure master, procedure recording (doctor or staff), consent templates/printing |
 | **3A — Staff commission** | Not started | `gender` column, duty-based split config, visit-charge calc (no shift assignments — see §2) |
-| **4 — Financial config & invoicing** | Not started | Doctor financial terms, rate master, tax config, `checkout.php` invoice generation |
+| **4 — Financial config & invoicing** | **Partially done (2026-07-17)** | `checkout.php` built with manual line items ahead of schedule — deliberately jumped ahead of Phase 3/3A, see decision note below. Still missing: `doctor_financial_terms`/`rate_master`/`tax_config` admin config UI (tax/consolidation rates are currently a raw `clinic_settings` seed, not admin-editable), procedure-sourced line items, `revenue_splits` locking |
 | **5 — Short-stay & beds** | Not started | Bed master, admission/discharge, chargeable events, bed status dashboard |
 | **6 — Reporting & QA** | Not started | Settlements, P&L, QA spot-checks, patient feedback, audit log viewer |
 | **7 — Polish** | Not started | Permission enforcement audit, UI pass, bug fixes |
@@ -450,6 +472,15 @@ non-admin dashboard is a stripped-down view over the same tables, gated by `has_
 Each phase = one or more `sql/add_*.sql` files (applied via phpMyAdmin) + the PHP pages listed
 above + a commit/push through the existing FTP auto-deploy workflow. Per standing rule: never push
 schema-dependent PHP before its migration has actually been run on the live database.
+
+**Billing-before-procedures decision (2026-07-17):** `checkout.php` was deliberately built ahead
+of Phase 3 (procedures) and 3A (staff commission) rather than after them as originally ordered.
+Line items are free/manual entry (description + qty + rate) instead of being sourced from
+`procedure_master`/`procedures`, and there's no `revenue_splits` locking on finalize. This
+unblocks real billing today without waiting on procedures to be modeled first. `bills`/`bill_items`
+are schema'd so procedure-sourced line items can be added later without restructuring — a future
+Phase 3 can insert `bill_items` rows from recorded procedures the same way `checkout.php` already
+does for the consultation fee line, no rework needed on the billing side.
 
 ---
 

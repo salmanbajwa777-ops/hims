@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     $role = $_POST['base_role'] ?? '';
     $password = $_POST['password'] ?? '';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
+    $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
     $docTypeInputs = $_POST['doc_type'] ?? [];
     $docFiles = $_FILES['doc_file'] ?? null;
 
@@ -92,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
             } else {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
 
-                $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, max_discount_pct, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)');
+                $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, max_discount_pct, specialty, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, 1)');
                 $insert->execute([
                     $name,
                     $email !== '' ? $email : null,
@@ -100,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                     $hash,
                     $role,
                     $maxDiscountPct,
+                    $specialty,
                 ]);
 
                 $newUserId = (int) $pdo->lastInsertId();
@@ -139,12 +141,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
+    $newPassword = $_POST['password'] ?? '';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
+    $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
     $docTypeInputs = $_POST['doc_type'] ?? [];
     $docFiles = $_FILES['doc_file'] ?? null;
 
     if ($editId <= 0 || $name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
+    } elseif ($newPassword !== '' && strlen($newPassword) < 6) {
+        $error = 'Password must be at least 6 characters.';
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
     } else {
@@ -198,15 +204,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
             if ($docError !== '') {
                 $error = $docError;
             } else {
-                $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ? WHERE id = ?');
-                $update->execute([
-                    $name,
-                    $email !== '' ? $email : null,
-                    $phone !== '' ? $phone : null,
-                    $role,
-                    $maxDiscountPct,
-                    $editId,
-                ]);
+                if ($newPassword !== '') {
+                    $hash = password_hash($newPassword, PASSWORD_BCRYPT);
+                    $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ?, password = ?, must_change_password = 1 WHERE id = ?');
+                    $update->execute([
+                        $name,
+                        $email !== '' ? $email : null,
+                        $phone !== '' ? $phone : null,
+                        $role,
+                        $maxDiscountPct,
+                        $specialty,
+                        $hash,
+                        $editId,
+                    ]);
+                } else {
+                    $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ? WHERE id = ?');
+                    $update->execute([
+                        $name,
+                        $email !== '' ? $email : null,
+                        $phone !== '' ? $phone : null,
+                        $role,
+                        $maxDiscountPct,
+                        $specialty,
+                        $editId,
+                    ]);
+                }
 
                 $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
 
@@ -228,10 +250,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                 $log->execute([
                     $_SESSION['user_id'],
                     'staff_updated',
-                    "Updated user #$editId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : ''),
+                    "Updated user #$editId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : '') . ($newPassword !== '' ? ', password reset' : ''),
                 ]);
 
-                $success = "Account updated for $name.";
+                $success = "Account updated for $name." . ($newPassword !== '' ? ' Password has been reset.' : '');
             }
         }
     }
@@ -372,7 +394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     }
 }
 
-$staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
+$staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, specialty, created_at FROM users ORDER BY name ASC')->fetchAll();
 $doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
 $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
 
@@ -706,6 +728,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                    data-phone="<?= htmlspecialchars($s['phone'] ?? '', ENT_QUOTES) ?>"
                                    data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
                                    data-discount="<?= htmlspecialchars((string) $s['max_discount_pct'], ENT_QUOTES) ?>"
+                                   data-specialty="<?= htmlspecialchars($s['specialty'], ENT_QUOTES) ?>"
                                    onclick="openEditPanel(this.dataset); return false;">Edit</a>
                                 &nbsp;·&nbsp;
                                 <?php
@@ -791,7 +814,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                             <input type="text" id="phone" name="phone" placeholder="03xxxxxxxxx">
                         </div>
                         <div class="field" id="passwordField">
-                            <label for="password">Password <span class="opt">(min 6 characters — tell them this yourself)</span></label>
+                            <label for="password">Password <span class="opt" id="passwordHint">(min 6 characters — tell them this yourself)</span></label>
                             <div style="display:flex; gap:8px;">
                                 <input type="text" id="password" name="password" minlength="6" style="flex:1;">
                                 <button type="button" class="btn secondary" id="genPasswordBtn" style="white-space:nowrap;">Generate</button>
@@ -811,6 +834,13 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                                 <input type="number" id="max_discount_pct" name="max_discount_pct" value="0" min="0" max="100" step="0.5" style="padding-right:34px;">
                                 <span style="position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:13px; color:var(--text-muted); font-weight:600;">%</span>
                             </div>
+                        </div>
+                        <div class="field" id="specialtyField" style="display:none;">
+                            <label for="specialty">Specialty <span class="opt">(controls the invoice icon printed for their visits)</span></label>
+                            <select id="specialty" name="specialty">
+                                <option value="GENERAL">General</option>
+                                <option value="DENTAL">Dental</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -974,9 +1004,19 @@ const infoBannerText = document.getElementById('infoBannerText');
 const submitBtn = document.getElementById('submitBtn');
 const passwordField = document.getElementById('passwordField');
 const passwordInput = document.getElementById('password');
+const specialtyField = document.getElementById('specialtyField');
+const baseRoleSelect = document.getElementById('base_role');
+
+function updateSpecialtyVisibility() {
+    specialtyField.style.display = baseRoleSelect.value === 'DOCTOR' ? '' : 'none';
+}
+baseRoleSelect.addEventListener('change', updateSpecialtyVisibility);
 
 const ADD_INFO_TEXT = "Tell them their login ID (phone or email) and the password you set here — they can change it themselves after signing in. Documents are stored privately and only visible to admins.";
-const EDIT_INFO_TEXT = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Password isn't changed from this form. Documents are stored privately and only visible to admins.";
+const EDIT_INFO_TEXT = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Leave the password blank to keep it unchanged, or set a new one to reset it (they'll be required to change it on next sign-in). Documents are stored privately and only visible to admins.";
+const passwordHint = document.getElementById('passwordHint');
+const ADD_PASSWORD_HINT = '(min 6 characters — tell them this yourself)';
+const EDIT_PASSWORD_HINT = '(leave blank to keep current password)';
 
 function resetToAddMode() {
     staffForm.reset();
@@ -987,9 +1027,12 @@ function resetToAddMode() {
     docsSection.style.display = '';
     passwordField.style.display = '';
     passwordInput.required = true;
+    passwordHint.textContent = ADD_PASSWORD_HINT;
     infoBannerText.textContent = ADD_INFO_TEXT;
     submitBtn.textContent = 'Create Account';
     document.getElementById('existingDocsWrap').style.display = 'none';
+    document.getElementById('specialty').value = 'GENERAL';
+    updateSpecialtyVisibility();
 }
 
 function openEditPanel(data) {
@@ -1001,13 +1044,16 @@ function openEditPanel(data) {
     document.getElementById('phone').value = data.phone || '';
     document.getElementById('base_role').value = data.role || '';
     document.getElementById('max_discount_pct').value = data.discount || '0';
+    document.getElementById('specialty').value = data.specialty || 'GENERAL';
     panelTitle.textContent = 'Edit Doctor / Staff';
     panelSub.textContent = 'Update their details and manage their documents.';
     docsSection.style.display = '';
-    passwordField.style.display = 'none';
+    passwordField.style.display = '';
     passwordInput.required = false;
+    passwordHint.textContent = EDIT_PASSWORD_HINT;
     infoBannerText.textContent = EDIT_INFO_TEXT;
     submitBtn.textContent = 'Save Changes';
+    updateSpecialtyVisibility();
     renderExistingDocs(data.id);
     addPanelOverlay.classList.add('open');
 }
