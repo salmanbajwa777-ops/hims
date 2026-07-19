@@ -577,7 +577,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                         <div class="field full">
                             <label>Gender <span class="req">*</span></label>
                             <div class="radio-row">
-                                <div class="radio-pill"><input type="radio" id="gender_f" name="gender" value="FEMALE" checked><label for="gender_f">Female</label></div>
+                                <div class="radio-pill"><input type="radio" id="gender_f" name="gender" value="FEMALE"><label for="gender_f">Female</label></div>
                                 <div class="radio-pill"><input type="radio" id="gender_m" name="gender" value="MALE"><label for="gender_m">Male</label></div>
                                 <div class="radio-pill"><input type="radio" id="gender_o" name="gender" value="OTHER"><label for="gender_o">Other</label></div>
                             </div>
