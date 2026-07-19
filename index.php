@@ -155,5 +155,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <a class="forgot" href="forgot-password.php">Forgot password?</a>
     </div>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>

@@ -491,5 +491,6 @@ button { font-family: inherit; cursor: pointer; }
         </div>
     </div>
 </div>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>

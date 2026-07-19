@@ -244,5 +244,6 @@ a { text-decoration: none; color: inherit; }
         </div>
     </div>
 </div>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>

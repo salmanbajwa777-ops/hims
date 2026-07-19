@@ -422,5 +422,6 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
         </div>
     </div>
 </div>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>

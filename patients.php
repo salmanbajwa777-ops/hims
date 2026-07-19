@@ -994,5 +994,6 @@ document.getElementById('openAddPanel').addEventListener('click', () => addPanel
 document.getElementById('closeAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
 document.getElementById('cancelAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
 </script>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>

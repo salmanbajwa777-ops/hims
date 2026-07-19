@@ -331,5 +331,6 @@ function selectCity(el) {
     });
 }
 </script>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>

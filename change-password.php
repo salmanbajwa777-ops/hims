@@ -106,5 +106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <a class="back-link" href="<?= $landingPage ?>">&larr; Back to dashboard</a>
         <?php endif; ?>
     </div>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>
