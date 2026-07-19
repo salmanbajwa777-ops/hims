@@ -126,9 +126,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
                 // MRN and queue token both need to be race-safe under concurrent registrations
                 // (two receptionists saving at once) — a plain "SELECT MAX(...) + 1" can hand out
-                // the same value to both before either commits. MRN is derived from the patient
-                // row's own auto-increment id (unique by construction). The token counter uses an
-                // atomic upsert so MySQL serializes concurrent increments via row locking.
+                // the same value to both before either commits. Both use an atomic upsert so MySQL
+                // serializes concurrent increments via row locking.
                 $insertPatient = $pdo->prepare('
                     INSERT INTO patients (mrn, name, father_name, dob, approx_age, gender, phone, alt_phone, cnic, city_id, area_id, address, created_by_id)
                     VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -138,7 +137,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                     $phone, $altPhone, $cnic, $cityId, $areaId, $address, $_SESSION['user_id'],
                 ]);
                 $patientId = (int) $pdo->lastInsertId();
-                $mrn = 'HMS-' . str_pad((string) $patientId, 5, '0', STR_PAD_LEFT);
+
+                // MRN = YY + NNNN + MM, where NNNN resets to 0001 each month (e.g. the first
+                // July-2026 patient is 26000107). The per-month sequence comes from mrn_counters,
+                // incremented with the same LAST_INSERT_ID() upsert trick as the queue token below.
+                // rowCount() disambiguates the two branches reliably (independent of which statement
+                // ran before): MySQL reports 1 affected row for a fresh INSERT and 2 for the ODKU
+                // update path, so we don't have to trust that lastInsertId() reflects THIS statement
+                // on the insert branch. See sql/add_mrn_monthly_counter.sql.
+                $year = (int) date('Y');
+                $month = (int) date('n');
+                $mrnStmt = $pdo->prepare('
+                    INSERT INTO mrn_counters (yr, mo, next_seq)
+                    VALUES (?, ?, 2)
+                    ON DUPLICATE KEY UPDATE next_seq = LAST_INSERT_ID(next_seq) + 1
+                ');
+                $mrnStmt->execute([$year, $month]);
+                // Fresh (year, month) row (rowCount 1): this is the month's first patient, seq = 1.
+                // Otherwise (rowCount 2): LAST_INSERT_ID captured the pre-increment seq for us.
+                $mrnSeq = $mrnStmt->rowCount() === 1 ? 1 : (int) $pdo->lastInsertId();
+                $mrn = substr((string) $year, 2, 2)
+                    . str_pad((string) $mrnSeq, 4, '0', STR_PAD_LEFT)
+                    . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
                 $pdo->prepare('UPDATE patients SET mrn = ? WHERE id = ?')->execute([$mrn, $patientId]);
 
                 $pdo->prepare('
