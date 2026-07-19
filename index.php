@@ -2,7 +2,11 @@
 require_once __DIR__ . '/config/auth.php';
 
 function landing_page_for_role(string $baseRole): string {
-    return $baseRole === 'RECEPTIONIST' ? '/receptionist.php' : '/dashboard.php';
+    switch ($baseRole) {
+        case 'RECEPTIONIST': return '/receptionist.php';
+        case 'DOCTOR':       return '/doctor.php';
+        default:             return '/dashboard.php';
+    }
 }
 
 if (is_logged_in()) {

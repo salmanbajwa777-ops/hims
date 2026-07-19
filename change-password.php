@@ -7,7 +7,11 @@ $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
 
-$landingPage = ($_SESSION['base_role'] ?? '') === 'RECEPTIONIST' ? 'receptionist.php' : 'dashboard.php';
+$landingPage = match ($_SESSION['base_role'] ?? '') {
+    'RECEPTIONIST' => 'receptionist.php',
+    'DOCTOR'       => 'doctor.php',
+    default        => 'dashboard.php',
+};
 
 $error = '';
 $success = '';
