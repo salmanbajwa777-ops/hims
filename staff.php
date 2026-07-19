@@ -445,7 +445,7 @@ function effectivePermissionIds(string $baseRole, int $userId, array $roleDefaul
 function roleBadgeColor(string $role): array {
     return match ($role) {
         'ADMIN' => ['#EDE9FE', '#6D28D9'],
-        'DOCTOR' => ['#DBEAFE', '#1E3A8A'],
+        'DOCTOR' => ['#E0F2F1', '#0E5456'],
         'MANAGER' => ['#FEF3C7', '#92400E'],
         'ACCOUNTANT' => ['#ECFDF5', '#047857'],
         'NURSE' => ['#FCE7F3', '#9D174D'],
@@ -462,9 +462,9 @@ function roleBadgeColor(string $role): array {
 <title>HIMS — Staff &amp; Doctors</title>
 <style>
 :root {
-    --primary-dark: #1E3A8A;
-    --primary: #2563EB;
-    --primary-light: #DBEAFE;
+    --primary-dark: #0E5456;
+    --primary: #1A7F7E;
+    --primary-light: #E0F2F1;
     --green: #10B981;
     --green-bg: #ECFDF5;
     --green-text: #047857;

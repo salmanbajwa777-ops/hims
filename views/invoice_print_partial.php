@@ -34,7 +34,7 @@ $printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
         .header { text-align: center; margin-bottom: 6px; }
         .clinic-logo { height: 28px; vertical-align: middle; margin-right: 4px; }
         /* Clinic wordmark stays on the original spec's font, exempt from the IBM Plex Mono switch. */
-        .clinic-name { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #008080; }
+        .clinic-name { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #1A7F7E; }
         .website { font-size: 9px; font-weight: bold; margin-bottom: 2px; }
         .clinic-tagline { font-size: 10px; margin: 2px 0; font-weight: bold; }
         .contact-info { font-size: 9px; line-height: 1.2; margin-top: 3px; }

@@ -276,9 +276,9 @@ $pendingVisits = $pdo->query("
 <title>Checkout &amp; Billing - HIMS</title>
 <style>
 :root {
-    --primary-dark: #1E3A8A;
-    --primary: #2563EB;
-    --primary-light: #DBEAFE;
+    --primary-dark: #0E5456;
+    --primary: #1A7F7E;
+    --primary-light: #E0F2F1;
     --bg: #F8FAFC;
     --card: #FFFFFF;
     --border: #E2E8F0;

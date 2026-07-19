@@ -49,8 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>HIMS — Login</title>
     <style>
         :root {
-            --primary-start: #1E3A8A;
-            --primary-end: #3B82F6;
+            --primary-start: #0E5456;
+            --primary-end: #1A7F7E;
         }
         * { box-sizing: border-box; }
         body {
@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             text-align: center;
             margin-top: 16px;
             font-size: 13px;
-            color: #3B82F6;
+            color: #1A7F7E;
             text-decoration: none;
         }
     </style>

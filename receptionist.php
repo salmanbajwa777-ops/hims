@@ -67,9 +67,9 @@ $doctorSchedule = [];
 <title>HIMS — Reception Desk</title>
 <style>
 :root {
-    --primary-dark: #1E3A8A;
-    --primary: #2563EB;
-    --primary-light: #DBEAFE;
+    --primary-dark: #0E5456;
+    --primary: #1A7F7E;
+    --primary-light: #E0F2F1;
     --green: #10B981;
     --amber: #F59E0B;
     --red: #DC2626;

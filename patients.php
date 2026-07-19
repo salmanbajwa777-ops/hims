@@ -262,9 +262,9 @@ function ageFromDob(?string $dob): ?int {
 <title>HIMS — Patients</title>
 <style>
 :root {
-    --primary-dark: #1E3A8A;
-    --primary: #2563EB;
-    --primary-light: #DBEAFE;
+    --primary-dark: #0E5456;
+    --primary: #1A7F7E;
+    --primary-light: #E0F2F1;
     --green: #10B981;
     --green-bg: #ECFDF5;
     --green-text: #047857;
@@ -591,18 +591,10 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                     <div class="icon-badge">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
                     </div>
-                    <div class="titles"><h2>Contact &amp; ID</h2><div class="desc">Optional details, add if the patient has them on hand</div></div>
+                    <div class="titles"><h2>Location</h2><div class="desc">Where the patient is based</div></div>
                 </div>
                 <div class="section-body">
                     <div class="field-grid">
-                        <div class="field">
-                            <label for="cnic">CNIC / B-Form <span class="opt">(optional)</span></label>
-                            <input type="text" id="cnic" name="cnic" placeholder="xxxxx-xxxxxxx-x">
-                        </div>
-                        <div class="field">
-                            <label for="alt_phone">Alternate Phone <span class="opt">(optional)</span></label>
-                            <input type="text" id="alt_phone" name="alt_phone">
-                        </div>
                         <div class="field">
                             <label for="city">City <span class="req">*</span></label>
                             <select id="city" name="city_id" required>
@@ -627,10 +619,6 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                             </div>
                             <span class="hint">Usable immediately for this patient — flagged for admin to review and merge duplicates later</span>
                             <div id="areaAddedNote" style="display:none; color:var(--green-text); font-size:11.5px; font-weight:600; margin-top:4px;"></div>
-                        </div>
-                        <div class="field full">
-                            <label for="address">Street Address <span class="opt">(optional)</span></label>
-                            <input type="text" id="address" name="address" placeholder="House / street, landmark">
                         </div>
                     </div>
                 </div>

@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HIMS — Change Password</title>
     <style>
-        :root { --primary-start: #1E3A8A; --primary-end: #2563EB; }
+        :root { --primary-start: #0E5456; --primary-end: #1A7F7E; }
         * { box-sizing: border-box; }
         body {
             margin: 0;
@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         button:hover { opacity: .92; }
         .error { background: #FEF2F2; color: #B91C1C; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
         .success { background: #ECFDF5; color: #047857; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
-        .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #2563EB; }
+        .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #1A7F7E; }
     </style>
 </head>
 <body>
