@@ -83,7 +83,12 @@ $successVisit = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register_patient') {
     $name = trim($_POST['name'] ?? '');
     $fatherName = trim($_POST['father_name'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
+    // Phone: combine country code + local number into E.164 (e.g. +923001234567).
+    // Strip non-digits and any leading zero(s) from the local part before prefixing the code.
+    $phoneCc = preg_replace('/[^\d+]/', '', $_POST['phone_cc'] ?? '+92');
+    if ($phoneCc === '' || $phoneCc[0] !== '+') { $phoneCc = '+92'; }
+    $phoneLocal = ltrim(preg_replace('/\D/', '', $_POST['phone'] ?? ''), '0');
+    $phone = $phoneLocal !== '' ? $phoneCc . $phoneLocal : '';
     $dob = trim($_POST['dob'] ?? '') ?: null;
     $approxAge = trim($_POST['approx_age'] ?? '') !== '' ? (int) $_POST['approx_age'] : null;
     $gender = $_POST['gender'] ?? '';
@@ -392,6 +397,57 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .radio-pill label { display: flex; align-items: center; justify-content: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-weight: 600; color: var(--text-secondary); background: var(--bg); cursor: pointer; transition: all .15s ease; }
 .radio-pill input:checked + label { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); }
 
+/* ---------- Single continuous form: floating-label fields ---------- */
+.form-flow { display: flex; flex-direction: column; gap: 16px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-sm); padding: 24px 26px; }
+.group-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.group-label:first-child { margin-top: 0; }
+.group-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.group-chip { font-size: 10px; font-weight: 700; letter-spacing: .02em; color: var(--primary-dark); background: var(--primary-light); border-radius: 20px; padding: 2px 9px; text-transform: none; }
+
+.f { position: relative; }
+.f.full { grid-column: 1 / -1; }
+.f > input, .f > select { width: 100%; height: 52px; padding: 20px 14px 6px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); font-size: 14px; font-family: inherit; background: var(--card); color: var(--text); transition: border-color .15s, box-shadow .15s; }
+.f > select { padding-top: 18px; padding-bottom: 4px; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 14px center; }
+.f > input:focus, .f > select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.f > input:disabled, .f > select:disabled { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
+.f > input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
+
+.f .flabel { position: absolute; left: 15px; top: 26px; transform: translateY(-50%); pointer-events: none; font-size: 14px; font-weight: 500; color: var(--text-muted); transition: all .15s ease; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.f > input:focus ~ .flabel,
+.f > input:not(:placeholder-shown) ~ .flabel,
+.f > select:focus ~ .flabel,
+.f > select.filled ~ .flabel,
+.f .flabel.always-float { top: 15px; transform: none; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; color: var(--primary); }
+.f > input:not(:focus):not(:placeholder-shown) ~ .flabel,
+.f > select.filled:not(:focus) ~ .flabel { color: var(--text-secondary); }
+.f .flabel .req { color: var(--red); }
+.f .flabel .opt { color: var(--text-muted); font-weight: 500; }
+.f .flabel .locked-tag { font-size: 10px; font-weight: 700; color: var(--text-muted); }
+.f .flabel .auto-tag { font-size: 10px; font-weight: 700; color: var(--green-text); background: var(--green-bg); padding: 1px 6px; border-radius: 6px; }
+.f > input::placeholder { color: transparent; }
+.f > input:focus::placeholder { color: var(--text-muted); }
+.f .hint { display: block; font-size: 11px; color: var(--text-muted); margin-top: 5px; padding-left: 2px; }
+.f .hint.warn { color: var(--red-text); font-weight: 600; }
+.f .hint.ok { color: var(--green-text); font-weight: 600; }
+.f .mini-label { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; display: flex; gap: 5px; align-items: center; }
+.f .mini-label .req { color: var(--red); }
+.f .pct-suffix { position: absolute; right: 14px; top: 30px; font-size: 13px; color: var(--text-muted); font-weight: 600; pointer-events: none; }
+.f .seq-step-num { margin-right: 6px; }
+
+/* phone: country code + number in one connected control */
+.phone-wrap { position: relative; display: flex; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--radius-input); background: var(--card); transition: border-color .15s, box-shadow .15s; }
+.phone-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.cc-select { flex: 0 0 auto; width: 92px; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 14px; font-weight: 600; padding: 20px 24px 6px 14px; border-radius: var(--radius-input) 0 0 var(--radius-input); cursor: pointer; appearance: none; height: 52px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; }
+.cc-select:focus { outline: none; }
+.cc-divider { width: 1px; background: var(--border); margin: 12px 0; }
+.phone-wrap input { flex: 1; height: 52px; border: none; background: transparent; box-shadow: none; padding: 20px 14px 6px 12px; border-radius: 0 var(--radius-input) var(--radius-input) 0; min-width: 0; font-size: 14px; font-family: inherit; color: var(--text); }
+.phone-wrap input:focus { outline: none; box-shadow: none; }
+.phone-wrap .flabel { left: 118px; }
+.phone-wrap input:focus ~ .flabel,
+.phone-wrap input:not(:placeholder-shown) ~ .flabel { top: 15px; left: 106px; }
+.phone-wrap input::placeholder { color: transparent; }
+.phone-wrap input:focus::placeholder { color: var(--text-muted); }
+
 .info-banner { display: flex; gap: 12px; align-items: flex-start; background: var(--primary-light); border-radius: 14px; padding: 14px 16px; color: var(--primary-dark); font-size: 12.5px; }
 .info-banner svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 
@@ -544,134 +600,120 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                 </div>
             </div>
 
-            <div class="section">
-                <div class="section-head">
-                    <div class="icon-badge">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>
-                    </div>
-                    <div class="titles"><h2>Identity</h2><div class="desc">Who the patient is</div></div>
-                </div>
-                <div class="section-body">
-                    <div class="field-grid">
-                        <div class="field full">
-                            <label for="name">Full Name <span class="req">*</span></label>
-                            <input type="text" id="name" name="name" required autofocus>
-                        </div>
-                        <div class="field">
-                            <label for="father_name">Father / Guardian Name <span class="opt">(optional)</span></label>
-                            <input type="text" id="father_name" name="father_name">
-                        </div>
-                        <div class="field">
-                            <label for="phone">Phone <span class="req">*</span></label>
-                            <input type="text" id="phone" name="phone" placeholder="03xxxxxxxxx" required>
-                        </div>
-                        <div class="field">
-                            <label for="dob">Date of Birth <span class="opt">(optional)</span></label>
-                            <input type="date" id="dob" name="dob">
-                            <span class="hint">Leave blank if unknown — use approximate age instead</span>
-                        </div>
-                        <div class="field">
-                            <label for="approx_age">Approx. Age <span class="opt">(if DOB unknown)</span></label>
-                            <input type="number" id="approx_age" name="approx_age" min="0" max="130">
-                        </div>
-                        <div class="field full">
-                            <label>Gender <span class="req">*</span></label>
-                            <div class="radio-row">
-                                <div class="radio-pill"><input type="radio" id="gender_f" name="gender" value="FEMALE"><label for="gender_f">Female</label></div>
-                                <div class="radio-pill"><input type="radio" id="gender_m" name="gender" value="MALE"><label for="gender_m">Male</label></div>
-                                <div class="radio-pill"><input type="radio" id="gender_o" name="gender" value="OTHER"><label for="gender_o">Other</label></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <div class="form-flow">
 
-            <div class="section">
-                <div class="section-head">
-                    <div class="icon-badge">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                <div class="group-label">Patient</div>
+                <div class="field-grid">
+                    <div class="f full">
+                        <input type="text" id="name" name="name" placeholder=" " required autofocus>
+                        <span class="flabel" data-for="name">Full Name <span class="req">*</span></span>
                     </div>
-                    <div class="titles"><h2>Location</h2><div class="desc">Where the patient is based</div></div>
-                </div>
-                <div class="section-body">
-                    <div class="field-grid">
-                        <div class="field">
-                            <label for="city">City <span class="req">*</span></label>
-                            <select id="city" name="city_id" required>
-                                <option value="">Select city</option>
-                                <?php foreach ($cities as $c): ?>
-                                <option value="<?= (int) $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
-                                <?php endforeach; ?>
+                    <div class="f">
+                        <input type="text" id="father_name" name="father_name" placeholder=" ">
+                        <span class="flabel" data-for="father_name">Father / Guardian Name <span class="opt">(optional)</span></span>
+                    </div>
+                    <div class="f">
+                        <div class="phone-wrap">
+                            <select class="cc-select" id="phone_cc" name="phone_cc">
+                                <option value="+92" selected>🇵🇰 +92</option>
+                                <option value="+1">🇺🇸 +1</option>
+                                <option value="+44">🇬🇧 +44</option>
+                                <option value="+91">🇮🇳 +91</option>
+                                <option value="+971">🇦🇪 +971</option>
+                                <option value="+966">🇸🇦 +966</option>
                             </select>
-                            <span class="hint">Drives branch-expansion reporting — pick the closest match</span>
+                            <div class="cc-divider"></div>
+                            <input type="tel" id="phone" name="phone" inputmode="numeric" placeholder="3001234567" required>
+                            <span class="flabel" data-for="phone">Phone <span class="req">*</span></span>
                         </div>
-                        <div class="field seq-field locked" id="areaField">
-                            <label for="area">Area <span class="req">*</span></label>
-                            <select id="area" name="area_id" disabled required>
-                                <option value="">Select city first</option>
-                            </select>
-                        </div>
-                        <div class="field full" id="newAreaField" style="display:none;">
-                            <label for="new_area">New Area Name <span class="req">*</span></label>
-                            <div style="display:flex; gap:8px;">
-                                <input type="text" id="new_area" placeholder="e.g. Bahria Town Phase 8" style="flex:1;">
-                                <button type="button" class="btn secondary" id="addAreaBtn" style="white-space:nowrap;">+ Add &amp; Use</button>
-                            </div>
-                            <span class="hint">Usable immediately for this patient — flagged for admin to review and merge duplicates later</span>
-                            <div id="areaAddedNote" style="display:none; color:var(--green-text); font-size:11.5px; font-weight:600; margin-top:4px;"></div>
+                        <span class="hint">Type the local number — a leading 0 is dropped automatically.</span>
+                    </div>
+                    <div class="f">
+                        <input type="date" id="dob" name="dob" class="always-float" placeholder=" ">
+                        <span class="flabel always-float">Date of Birth <span class="opt">(optional)</span></span>
+                        <span class="hint">Leave blank if unknown — use approximate age instead</span>
+                    </div>
+                    <div class="f">
+                        <input type="number" id="approx_age" name="approx_age" min="0" max="130" placeholder=" ">
+                        <span class="flabel" data-for="approx_age">Approx. Age <span class="opt">(if DOB unknown)</span></span>
+                    </div>
+                    <div class="f full">
+                        <div class="mini-label">Gender <span class="req">*</span></div>
+                        <div class="radio-row">
+                            <div class="radio-pill"><input type="radio" id="gender_f" name="gender" value="FEMALE"><label for="gender_f">Female</label></div>
+                            <div class="radio-pill"><input type="radio" id="gender_m" name="gender" value="MALE"><label for="gender_m">Male</label></div>
+                            <div class="radio-pill"><input type="radio" id="gender_o" name="gender" value="OTHER"><label for="gender_o">Other</label></div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="section">
-                <div class="section-head">
-                    <div class="icon-badge">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1"/></svg>
+                <div class="group-label">Location</div>
+                <div class="field-grid">
+                    <div class="f">
+                        <select id="city" name="city_id" required>
+                            <option value=""></option>
+                            <?php foreach ($cities as $c): ?>
+                            <option value="<?= (int) $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <span class="flabel" data-for="city">City <span class="req">*</span></span>
+                        <span class="hint">Drives branch-expansion reporting — pick the closest match</span>
                     </div>
-                    <div class="titles"><h2>Consultation</h2><div class="desc">Doctor first — type and fee follow automatically from their profile</div></div>
-                    <span class="count-chip">Today's visit</span>
-                </div>
-                <div class="section-body">
-                    <div class="field-grid">
-                        <div class="field">
-                            <label for="doctor"><span class="seq-step-num">1</span>Doctor <span class="req">*</span></label>
-                            <select id="doctor" name="doctor_id" required>
-                                <option value="">Select doctor</option>
-                                <?php foreach ($doctors as $d): ?>
-                                <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
+                    <div class="f seq-field locked" id="areaField">
+                        <select id="area" name="area_id" disabled required>
+                            <option value=""></option>
+                        </select>
+                        <span class="flabel" data-for="area">Area <span class="req">*</span></span>
+                    </div>
+                    <div class="f full" id="newAreaField" style="display:none;">
+                        <div class="mini-label">New Area Name <span class="req">*</span></div>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="new_area" placeholder="e.g. Bahria Town Phase 8" style="flex:1; height:auto;">
+                            <button type="button" class="btn secondary" id="addAreaBtn" style="white-space:nowrap;">+ Add &amp; Use</button>
                         </div>
-                        <div class="field seq-field locked" id="typeField">
-                            <label for="consult_type"><span class="seq-step-num">2</span>Consultation Type <span class="req">*</span> <span class="auto-tag" id="typeAutoTag" style="display:none;">Auto</span></label>
-                            <select id="consult_type" name="doctor_consult_type_id" disabled required>
-                                <option value="">Select doctor first</option>
-                            </select>
-                            <span class="hint" id="typeHint">Waiting on doctor selection</span>
-                        </div>
-                        <div class="field seq-field locked" id="feeField">
-                            <label for="fee_display"><span class="seq-step-num">3</span>Consultation Fee <span class="locked-tag">🔒 Locked</span></label>
-                            <input type="text" id="fee_display" readonly disabled placeholder="—">
-                            <span class="hint">Set by doctor + consultation type — never editable by reception, at registration or checkout</span>
-                        </div>
-                        <div class="field seq-field locked" id="discountField">
-                            <label for="discount_pct"><span class="seq-step-num">4</span>Discount <span class="opt">(optional)</span></label>
-                            <div style="position:relative;">
-                                <input type="number" id="discount_pct" name="discount_pct" placeholder="0" min="0" step="0.5" style="padding-right:34px;">
-                                <span style="position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:13px; color:var(--text-muted); font-weight:600;">%</span>
-                            </div>
-                            <span class="hint" id="discountHint">Your cap: up to <?= htmlspecialchars($currentUser['max_discount_pct']) ?>% — enforced when the bill is saved</span>
-                        </div>
-                        <div class="field">
-                            <label for="payment_mode">Payment Mode <span class="req">*</span></label>
-                            <select id="payment_mode" name="payment_mode" required>
-                                <option value="CASH" selected>Cash</option>
-                                <option value="DIGITAL">Digital / Card</option>
-                            </select>
-                        </div>
+                        <span class="hint">Usable immediately for this patient — flagged for admin to review and merge duplicates later</span>
+                        <div id="areaAddedNote" style="display:none; color:var(--green-text); font-size:11.5px; font-weight:600; margin-top:4px;"></div>
                     </div>
                 </div>
+
+                <div class="group-label">Consultation <span class="group-chip">Today's visit</span></div>
+                <div class="field-grid">
+                    <div class="f">
+                        <select id="doctor" name="doctor_id" required>
+                            <option value=""></option>
+                            <?php foreach ($doctors as $d): ?>
+                            <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <span class="flabel" data-for="doctor"><span class="seq-step-num">1</span>Doctor <span class="req">*</span></span>
+                    </div>
+                    <div class="f seq-field locked" id="typeField">
+                        <select id="consult_type" name="doctor_consult_type_id" disabled required>
+                            <option value=""></option>
+                        </select>
+                        <span class="flabel" data-for="consult_type"><span class="seq-step-num">2</span>Consultation Type <span class="req">*</span> <span class="auto-tag" id="typeAutoTag" style="display:none;">Auto</span></span>
+                        <span class="hint" id="typeHint">Waiting on doctor selection</span>
+                    </div>
+                    <div class="f seq-field locked" id="feeField">
+                        <input type="text" id="fee_display" class="always-float" readonly disabled placeholder="—">
+                        <span class="flabel always-float"><span class="seq-step-num">3</span>Consultation Fee <span class="locked-tag">🔒 Locked</span></span>
+                        <span class="hint">Set by doctor + consultation type — never editable by reception, at registration or checkout</span>
+                    </div>
+                    <div class="f seq-field locked" id="discountField">
+                        <input type="number" id="discount_pct" name="discount_pct" placeholder=" " min="0" step="0.5" style="padding-right:34px;">
+                        <span class="pct-suffix">%</span>
+                        <span class="flabel" data-for="discount_pct"><span class="seq-step-num">4</span>Discount <span class="opt">(optional)</span></span>
+                        <span class="hint" id="discountHint">Your cap: up to <?= htmlspecialchars($currentUser['max_discount_pct']) ?>% — enforced when the bill is saved</span>
+                    </div>
+                    <div class="f">
+                        <select id="payment_mode" name="payment_mode" class="filled" required>
+                            <option value="CASH" selected>Cash</option>
+                            <option value="DIGITAL">Digital / Card</option>
+                        </select>
+                        <span class="flabel" data-for="payment_mode">Payment Mode <span class="req">*</span></span>
+                    </div>
+                </div>
+
             </div>
 
             <div class="info-banner">
@@ -729,6 +771,20 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 const areasByCity = <?= json_encode($areasByCity) ?>;
 const cityNames = <?= json_encode(array_column($cities, 'name', 'id')) ?>;
 
+// ---- Floating-label helper: mark a select "filled" so its label stays up ----
+function setFilled(sel) { sel.classList.toggle('filled', !!sel.value); }
+document.querySelectorAll('.f > select').forEach(sel => {
+    setFilled(sel);
+    sel.addEventListener('change', () => setFilled(sel));
+});
+
+// ---- Phone: keep digits only, auto-drop leading zero(s) ----
+const phoneInput = document.getElementById('phone');
+phoneInput.addEventListener('input', () => {
+    let d = phoneInput.value.replace(/\D/g, '').replace(/^0+/, '');
+    if (phoneInput.value !== d) phoneInput.value = d;
+});
+
 const doctorSelect = document.getElementById('doctor');
 const typeField = document.getElementById('typeField');
 const typeSelect = document.getElementById('consult_type');
@@ -749,7 +805,8 @@ doctorSelect.addEventListener('change', () => {
         typeField.classList.add('locked');
         feeField.classList.add('locked');
         typeSelect.disabled = true;
-        typeSelect.innerHTML = '<option value="">Select doctor first</option>';
+        typeSelect.innerHTML = '<option value=""></option>';
+        setFilled(typeSelect);
         typeHint.textContent = 'Waiting on doctor selection';
         typeAutoTag.style.display = 'none';
         feeDisplay.value = '';
@@ -767,6 +824,7 @@ doctorSelect.addEventListener('change', () => {
 
             if (!types.length) {
                 typeSelect.innerHTML = '<option value="">No consultation types set up for this doctor</option>';
+                setFilled(typeSelect);
                 typeHint.textContent = 'Ask admin to add consultation types on this doctor\'s profile';
                 feeDisplay.value = '';
                 return;
@@ -776,6 +834,7 @@ doctorSelect.addEventListener('change', () => {
             typeSelect.innerHTML = types.map(t =>
                 `<option value="${t.id}" ${t.id === defaultType.id ? 'selected' : ''}>${t.label}</option>`
             ).join('');
+            setFilled(typeSelect);
 
             if (types.length === 1) {
                 typeAutoTag.style.display = 'inline-flex';
@@ -802,10 +861,11 @@ const areaAddedNote = document.getElementById('areaAddedNote');
 
 function renderAreaOptions(selectValue) {
     const areas = areasByCity[citySelect.value] || [];
-    areaSelect.innerHTML = '<option value="">Select area</option>' +
+    areaSelect.innerHTML = '<option value=""></option>' +
         areas.map(a => `<option value="${a.id}">${a.name}</option>`).join('') +
         '<option value="__other">+ Add new area...</option>';
     if (selectValue) areaSelect.value = selectValue;
+    setFilled(areaSelect);
 }
 
 citySelect.addEventListener('change', () => {
@@ -815,7 +875,8 @@ citySelect.addEventListener('change', () => {
     if (!citySelect.value) {
         areaField.classList.add('locked');
         areaSelect.disabled = true;
-        areaSelect.innerHTML = '<option value="">Select city first</option>';
+        areaSelect.innerHTML = '<option value=""></option>';
+        setFilled(areaSelect);
         return;
     }
 
