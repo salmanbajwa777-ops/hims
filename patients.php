@@ -267,6 +267,10 @@ if ($q !== '') {
     $patients = $stmt->fetchAll();
 }
 
+// Full-page registration view: ?register=1 shows only the form (no list/search).
+// Also forced open when a submit failed validation so the entered data survives.
+$showRegister = isset($_GET['register']) || $error !== '';
+
 $doctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
 $cities = $pdo->query('SELECT id, name FROM cities ORDER BY name')->fetchAll();
 $areasByCity = [];
@@ -417,61 +421,75 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .radio-pill label { display: flex; align-items: center; justify-content: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13px; font-weight: 600; color: var(--text-secondary); background: var(--bg); cursor: pointer; transition: all .15s ease; }
 .radio-pill input:checked + label { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); }
 
-/* ---------- Single continuous form: floating-label fields ---------- */
-.form-flow { display: flex; flex-direction: column; gap: 16px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-sm); padding: 24px 26px; }
-.group-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+/* ---------- Register Patient — full-page layout ---------- */
+.content:has(.reg-page) { padding-top: 20px; padding-bottom: 24px; }
+.reg-page { display: flex; flex-direction: column; gap: 14px; }
+.reg-page .form-header { position: static; margin-bottom: 0; padding: 16px 22px; box-shadow: var(--shadow-sm); }
+.reg-page .form-header h1 { font-size: 18px; }
+.reg-page .patient-form { display: flex; flex-direction: column; gap: 14px; }
+
+/* ---------- Single continuous form: floating-label fields (compact) ---------- */
+.form-flow { display: flex; flex-direction: column; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-sm); padding: 16px 22px; }
+.group-label { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .group-label:first-child { margin-top: 0; }
 .group-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .group-chip { font-size: 10px; font-weight: 700; letter-spacing: .02em; color: var(--primary-dark); background: var(--primary-light); border-radius: 20px; padding: 2px 9px; text-transform: none; }
 
+.form-flow .field-grid { gap: 10px 14px; }
 .f { position: relative; }
 .f.full { grid-column: 1 / -1; }
-.f > input, .f > select { width: 100%; height: 52px; padding: 20px 14px 6px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); font-size: 14px; font-family: inherit; background: var(--card); color: var(--text); transition: border-color .15s, box-shadow .15s; }
-.f > select { padding-top: 18px; padding-bottom: 4px; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 14px center; }
+.f > input, .f > select { width: 100%; height: 46px; padding: 18px 14px 4px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; background: var(--card); color: var(--text); transition: border-color .15s, box-shadow .15s; }
+.f > select { padding-top: 16px; padding-bottom: 2px; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 14px center; }
 .f > input:focus, .f > select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
 .f > input:disabled, .f > select:disabled { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
 .f > input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
 
-.f .flabel { position: absolute; left: 15px; top: 26px; transform: translateY(-50%); pointer-events: none; font-size: 14px; font-weight: 500; color: var(--text-muted); transition: all .15s ease; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.f .flabel { position: absolute; left: 15px; top: 23px; transform: translateY(-50%); pointer-events: none; font-size: 13.5px; font-weight: 500; color: var(--text-muted); transition: all .15s ease; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .f > input:focus ~ .flabel,
 .f > input:not(:placeholder-shown) ~ .flabel,
 .f > select:focus ~ .flabel,
 .f > select.filled ~ .flabel,
-.f .flabel.always-float { top: 15px; transform: none; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; color: var(--primary); }
+.f .flabel.always-float { top: 12px; transform: none; font-size: 10px; font-weight: 700; letter-spacing: .02em; color: var(--primary); }
 .f > input:not(:focus):not(:placeholder-shown) ~ .flabel,
 .f > select.filled:not(:focus) ~ .flabel { color: var(--text-secondary); }
 .f .flabel .req { color: var(--red); }
 .f .flabel .opt { color: var(--text-muted); font-weight: 500; }
-.f .flabel .locked-tag { font-size: 10px; font-weight: 700; color: var(--text-muted); }
-.f .flabel .auto-tag { font-size: 10px; font-weight: 700; color: var(--green-text); background: var(--green-bg); padding: 1px 6px; border-radius: 6px; }
+.f .flabel .locked-tag { font-size: 9.5px; font-weight: 700; color: var(--text-muted); }
+.f .flabel .auto-tag { font-size: 9.5px; font-weight: 700; color: var(--green-text); background: var(--green-bg); padding: 1px 6px; border-radius: 6px; }
 .f > input::placeholder { color: transparent; }
 .f > input:focus::placeholder { color: var(--text-muted); }
-.f .hint { display: block; font-size: 11px; color: var(--text-muted); margin-top: 5px; padding-left: 2px; }
+.f .hint { display: block; font-size: 10.5px; color: var(--text-muted); margin-top: 3px; padding-left: 2px; }
 .f .hint.warn { color: var(--red-text); font-weight: 600; }
 .f .hint.ok { color: var(--green-text); font-weight: 600; }
-.f .mini-label { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; display: flex; gap: 5px; align-items: center; }
+.f .mini-label { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: flex; gap: 5px; align-items: center; }
 .f .mini-label .req { color: var(--red); }
-.f .pct-suffix { position: absolute; right: 14px; top: 30px; font-size: 13px; color: var(--text-muted); font-weight: 600; pointer-events: none; }
+.f .pct-suffix { position: absolute; right: 14px; top: 26px; font-size: 13px; color: var(--text-muted); font-weight: 600; pointer-events: none; }
 .f .seq-step-num { margin-right: 6px; }
+
+/* compact gender pills */
+.form-flow .radio-pill label { padding: 8px 12px; }
 
 /* phone: country code + number in one connected control */
 .phone-wrap { position: relative; display: flex; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--radius-input); background: var(--card); transition: border-color .15s, box-shadow .15s; }
 .phone-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
-.cc-select { flex: 0 0 auto; width: 92px; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 14px; font-weight: 600; padding: 20px 24px 6px 14px; border-radius: var(--radius-input) 0 0 var(--radius-input); cursor: pointer; appearance: none; height: 52px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; }
+.cc-select { flex: 0 0 auto; width: 90px; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 18px 22px 4px 14px; border-radius: var(--radius-input) 0 0 var(--radius-input); cursor: pointer; appearance: none; height: 46px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; }
 .cc-select:focus { outline: none; }
-.cc-divider { width: 1px; background: var(--border); margin: 12px 0; }
-.phone-wrap input { flex: 1; height: 52px; border: none; background: transparent; box-shadow: none; padding: 20px 14px 6px 12px; border-radius: 0 var(--radius-input) var(--radius-input) 0; min-width: 0; font-size: 14px; font-family: inherit; color: var(--text); }
+.cc-divider { width: 1px; background: var(--border); margin: 10px 0; }
+.phone-wrap input { flex: 1; height: 46px; border: none; background: transparent; box-shadow: none; padding: 18px 14px 4px 12px; border-radius: 0 var(--radius-input) var(--radius-input) 0; min-width: 0; font-size: 13.5px; font-family: inherit; color: var(--text); }
 .phone-wrap input:focus { outline: none; box-shadow: none; }
-.phone-wrap .flabel { left: 118px; }
+.phone-wrap .flabel { left: 116px; }
 .phone-wrap input:focus ~ .flabel,
-.phone-wrap input:not(:placeholder-shown) ~ .flabel { top: 15px; left: 106px; }
+.phone-wrap input:not(:placeholder-shown) ~ .flabel { top: 12px; left: 104px; }
 .phone-wrap input::placeholder { color: transparent; }
 .phone-wrap input:focus::placeholder { color: var(--text-muted); }
 
 .info-banner { display: flex; gap: 12px; align-items: flex-start; background: var(--primary-light); border-radius: 14px; padding: 14px 16px; color: var(--primary-dark); font-size: 12.5px; }
 .info-banner svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 
-.form-footer { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 10px; background: var(--card); border-top: 1px solid var(--border); padding: 16px 24px; border-radius: var(--radius-card); box-shadow: var(--shadow-md); margin-top: 4px; }
+.form-footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; background: var(--card); border: 1px solid var(--border); padding: 12px 22px; border-radius: var(--radius-card); box-shadow: var(--shadow-sm); }
+.form-footer .foot-note { margin-right: auto; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-muted); max-width: 46ch; }
+.form-footer .foot-note svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--primary); }
+@media (max-width: 720px) { .form-footer .foot-note { display: none; } }
 
 .match-banner { display: none; background: var(--amber-bg); border: 1px solid #FDE68A; border-radius: 14px; padding: 14px 16px; gap: 12px; align-items: flex-start; color: var(--amber-text); font-size: 12.5px; }
 .match-banner.show { display: flex; }
@@ -533,17 +551,15 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
         </header>
 
         <div class="content">
+            <?php if (!$showRegister): ?>
             <div class="page-head">
                 <div>
                     <div class="page-title">Patients</div>
                     <div class="page-sub">Search existing patients or register someone new</div>
                 </div>
-                <button class="btn" id="openAddPanel" type="button">+ Register Patient</button>
+                <a class="btn" href="patients.php?register=1">+ Register Patient</a>
             </div>
 
-            <?php if ($error): ?>
-                <div class="alert error"><?= htmlspecialchars($error) ?></div>
-            <?php endif; ?>
             <?php if ($success): ?>
                 <div class="alert success"><?= htmlspecialchars($success) ?></div>
             <?php endif; ?>
@@ -592,22 +608,24 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                 <?php endif; ?>
             </div>
             <?php endif; ?>
-        </div>
-    </div>
-</div>
+            <?php endif; // end !$showRegister ?>
 
-<!-- Register Patient full panel -->
-<div class="panel-overlay<?= $error ? ' open' : '' ?>" id="addPanelOverlay">
-    <div class="panel">
-        <div class="form-header">
-            <div>
-                <h1>Register Patient</h1>
-                <div class="sub">Search couldn't find them — create a new patient record and queue today's visit in one step.</div>
-            </div>
-            <button type="button" class="close-btn" id="closeAddPanel" aria-label="Close">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-        </div>
+            <?php if ($showRegister): ?>
+            <!-- Register Patient — full page -->
+            <div class="reg-page">
+                <div class="form-header">
+                    <div>
+                        <h1>Register Patient</h1>
+                        <div class="sub">Create a new patient record and queue today's visit in one step.</div>
+                    </div>
+                    <a href="patients.php" class="close-btn" aria-label="Close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </a>
+                </div>
+
+                <?php if ($error): ?>
+                    <div class="alert error"><?= htmlspecialchars($error) ?></div>
+                <?php endif; ?>
 
         <form class="patient-form" method="POST" action="patients.php" id="patientForm">
             <input type="hidden" name="action" value="register_patient">
@@ -736,16 +754,18 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 
             </div>
 
-            <div class="info-banner">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                <span>A unique MRN is generated automatically on save, and this visit is added straight to the doctor's queue.</span>
-            </div>
-
             <div class="form-footer">
-                <button type="button" class="btn secondary" id="cancelAddPanel">Cancel</button>
+                <span class="foot-note">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                    A unique MRN is generated on save and the visit goes straight to the doctor's queue.
+                </span>
+                <a href="patients.php" class="btn secondary">Cancel</a>
                 <button type="submit" class="btn" id="submitBtn">Register &amp; Add to Queue</button>
             </div>
         </form>
+            </div>
+            <?php endif; // end $showRegister ?>
+        </div>
     </div>
 </div>
 
@@ -787,6 +807,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 </div>
 <?php endif; ?>
 
+<?php if ($showRegister): ?>
 <script>
 const areasByCity = <?= json_encode($areasByCity) ?>;
 const cityNames = <?= json_encode(array_column($cities, 'name', 'id')) ?>;
@@ -987,13 +1008,8 @@ function checkForMatch() {
     document.getElementById(id).addEventListener('input', checkForMatch);
     document.getElementById(id).addEventListener('change', checkForMatch);
 });
-
-// ---- Panel open/close ----
-const addPanelOverlay = document.getElementById('addPanelOverlay');
-document.getElementById('openAddPanel').addEventListener('click', () => addPanelOverlay.classList.add('open'));
-document.getElementById('closeAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
-document.getElementById('cancelAddPanel').addEventListener('click', () => addPanelOverlay.classList.remove('open'));
 </script>
+<?php endif; ?>
 <script src="assets/js/date-picker.js"></script>
 </body>
 </html>
