@@ -10,50 +10,7 @@ $currentUser = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $currentUser->execute([$_SESSION['user_id']]);
 $currentUser = $currentUser->fetch();
 
-function clinic_setting(PDO $pdo, string $key, string $default): string {
-    $stmt = $pdo->prepare('SELECT setting_value FROM clinic_settings WHERE setting_key = ?');
-    $stmt->execute([$key]);
-    $row = $stmt->fetch();
-    return $row ? $row['setting_value'] : $default;
-}
-
-// Daily sequential invoice number: "94345 - 2026-07-17 14:03:00" — matches the
-// original spec's format. Race-safe under concurrent checkouts via the same
-// atomic-upsert + LAST_INSERT_ID() pattern used for visit queue tokens in patients.php.
-function generate_invoice_number(PDO $pdo): string {
-    $today = date('Y-m-d');
-    $now = date('H:i:s');
-
-    $pdo->prepare('
-        INSERT INTO invoice_sequences (sequence_date, last_sequence)
-        VALUES (?, 94345)
-        ON DUPLICATE KEY UPDATE last_sequence = LAST_INSERT_ID(last_sequence) + 1
-    ')->execute([$today]);
-    $lastId = (int) $pdo->lastInsertId();
-    $seq = $lastId > 0 ? $lastId : 94345;
-
-    return $seq . ' - ' . $today . ' ' . $now;
-}
-
-function recalc_bill_totals(PDO $pdo, int $billId): void {
-    $stmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS subtotal FROM bill_items WHERE bill_id = ?');
-    $stmt->execute([$billId]);
-    $subtotal = (float) $stmt->fetch()['subtotal'];
-
-    $taxPct = (float) clinic_setting($pdo, 'sales_tax_percent', '17');
-    $consolPct = (float) clinic_setting($pdo, 'consolidation_rate_percent', '2');
-
-    $taxAmount = round($subtotal * ($taxPct / 100), 2);
-    $consolAmount = round(($subtotal + $taxAmount) * ($consolPct / 100), 2);
-    $grandTotal = round($subtotal + $taxAmount + $consolAmount, 2);
-
-    $pdo->prepare('
-        UPDATE bills
-        SET subtotal = ?, sales_tax_percent = ?, sales_tax_amount = ?,
-            consolidation_rate_percent = ?, consolidation_amount = ?, grand_total = ?
-        WHERE id = ?
-    ')->execute([$subtotal, $taxPct, $taxAmount, $consolPct, $consolAmount, $grandTotal, $billId]);
-}
+require_once __DIR__ . '/config/billing.php';
 
 $error = '';
 $success = '';
@@ -77,26 +34,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'start
         try {
             $pdo->beginTransaction();
 
-            $invoiceNumber = generate_invoice_number($pdo);
-            $taxPct = (float) clinic_setting($pdo, 'sales_tax_percent', '17');
-            $consolPct = (float) clinic_setting($pdo, 'consolidation_rate_percent', '2');
-
-            $pdo->prepare('
-                INSERT INTO bills (invoice_number, visit_id, sales_tax_percent, consolidation_rate_percent, created_by_id)
-                VALUES (?, ?, ?, ?, ?)
-            ')->execute([$invoiceNumber, $visitId, $taxPct, $consolPct, $_SESSION['user_id']]);
-            $billId = (int) $pdo->lastInsertId();
-
-            $consultFee = (float) $visit['fee'] * (1 - ((float) $visit['discount_pct'] / 100));
-            $pdo->prepare('
-                INSERT INTO bill_items (bill_id, description, quantity, unit_rate, amount)
-                VALUES (?, ?, 1, ?, ?)
-            ')->execute([$billId, $visit['consult_label'], $consultFee, $consultFee]);
-
-            recalc_bill_totals($pdo, $billId);
+            $billId = create_bill_for_visit(
+                $pdo,
+                $visitId,
+                $visit['consult_label'],
+                (float) $visit['fee'],
+                (float) $visit['discount_pct'],
+                (int) $_SESSION['user_id']
+            );
 
             $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([$_SESSION['user_id'], 'bill_created', "Created bill #$billId (invoice $invoiceNumber) for visit #$visitId"]);
+            $log->execute([$_SESSION['user_id'], 'bill_created', "Created bill #$billId for visit #$visitId"]);
 
             $pdo->commit();
             header('Location: checkout.php?bill_id=' . $billId);
@@ -204,7 +152,7 @@ if (isset($_GET['print']) && isset($_GET['bill_id'])) {
     $billId = (int) $_GET['bill_id'];
 
     $stmt = $pdo->prepare('
-        SELECT b.*, v.fee, v.discount_pct, p.name AS patient_name, p.father_name, p.dob,
+        SELECT b.*, v.fee, v.discount_pct, p.mrn, p.name AS patient_name, p.father_name, p.dob,
                d.name AS doctor_name, d.specialty AS doctor_specialty
         FROM bills b
         JOIN visits v ON v.id = b.visit_id
@@ -256,16 +204,19 @@ if (isset($_GET['bill_id'])) {
     }
 }
 
-// Today's un-billed visits, most recent first.
-$pendingVisits = $pdo->query("
-    SELECT v.id, v.token_no, v.fee, v.discount_pct, p.name AS patient_name, p.mrn, dr.name AS doctor_name, dct.label AS consult_label
-    FROM visits v
+// Today's open bills, most recent first. Bills are raised automatically at registration
+// (see patients.php), so this list is what's still awaiting items/finalize/payment —
+// not un-billed visits, which no longer occur.
+$pendingBills = $pdo->query("
+    SELECT b.id, b.invoice_number, b.status, b.grand_total,
+           v.token_no, p.name AS patient_name, p.mrn, dr.name AS doctor_name, dct.label AS consult_label
+    FROM bills b
+    JOIN visits v ON v.id = b.visit_id
     JOIN patients p ON p.id = v.patient_id
     JOIN users dr ON dr.id = v.doctor_id
     JOIN doctor_consult_types dct ON dct.id = v.doctor_consult_type_id
-    LEFT JOIN bills b ON b.visit_id = v.id
-    WHERE b.id IS NULL AND v.visit_date = CURDATE()
-    ORDER BY v.created_at DESC
+    WHERE v.visit_date = CURDATE() AND b.status <> 'paid'
+    ORDER BY b.id DESC
 ")->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -374,7 +325,7 @@ td { padding: 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
             <div class="page-head">
                 <div>
                     <div class="page-title">Checkout &amp; Billing</div>
-                    <div class="page-sub">Generate and print A5 invoices for today's visits</div>
+                    <div class="page-sub">Add items, finalize and take payment on today's A5 invoices</div>
                 </div>
             </div>
 
@@ -387,23 +338,22 @@ td { padding: 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
 
             <?php if (!$activeBill): ?>
             <div class="card">
-                <div class="section-title">Unbilled visits today</div>
-                <div class="section-sub"><?= count($pendingVisits) ?> waiting for checkout</div>
-                <?php if (empty($pendingVisits)): ?>
-                    <div class="empty-state">No unbilled visits today.</div>
+                <div class="section-title">Open invoices today</div>
+                <div class="section-sub"><?= count($pendingBills) ?> awaiting payment</div>
+                <?php if (empty($pendingBills)): ?>
+                    <div class="empty-state">No open invoices today.</div>
                 <?php else: ?>
-                    <?php foreach ($pendingVisits as $v): ?>
+                    <?php foreach ($pendingBills as $b): ?>
                     <div class="visit-pick-row">
                         <div>
-                            <strong><?= htmlspecialchars($v['patient_name']) ?></strong>
-                            <span class="muted"> &middot; MRN <?= htmlspecialchars($v['mrn']) ?> &middot; Token #<?= (int) $v['token_no'] ?></span>
-                            <div class="muted"><?= htmlspecialchars($v['doctor_name']) ?> &middot; <?= htmlspecialchars($v['consult_label']) ?> &middot; Rs <?= number_format((float) $v['fee'], 2) ?><?= $v['discount_pct'] > 0 ? ' (' . $v['discount_pct'] . '% discount)' : '' ?></div>
+                            <strong><?= htmlspecialchars($b['patient_name']) ?></strong>
+                            <span class="muted"> &middot; MRN <?= htmlspecialchars($b['mrn']) ?> &middot; Token #<?= (int) $b['token_no'] ?></span>
+                            <div class="muted">Invoice <?= htmlspecialchars($b['invoice_number']) ?> &middot; <?= htmlspecialchars($b['doctor_name']) ?> &middot; <?= htmlspecialchars($b['consult_label']) ?> &middot; Rs <?= number_format((float) $b['grand_total'], 2) ?></div>
                         </div>
-                        <form method="POST" action="checkout.php">
-                            <input type="hidden" name="action" value="start_checkout">
-                            <input type="hidden" name="visit_id" value="<?= (int) $v['id'] ?>">
-                            <button type="submit" class="btn small">Start Checkout</button>
-                        </form>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span class="status-pill <?= htmlspecialchars($b['status']) ?>"><?= htmlspecialchars($b['status']) ?></span>
+                            <a class="btn small" href="checkout.php?bill_id=<?= (int) $b['id'] ?>">Open</a>
+                        </div>
                     </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -467,8 +417,6 @@ td { padding: 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
 
                 <div class="totals-box">
                     <div class="row"><span>Subtotal</span><span>Rs <?= number_format((float) $activeBill['subtotal'], 2) ?></span></div>
-                    <div class="row"><span>Sales Tax (<?= $activeBill['sales_tax_percent'] ?>%)</span><span>Rs <?= number_format((float) $activeBill['sales_tax_amount'], 2) ?></span></div>
-                    <div class="row"><span>Consolidation (<?= $activeBill['consolidation_rate_percent'] ?>%)</span><span>Rs <?= number_format((float) $activeBill['consolidation_amount'], 2) ?></span></div>
                     <div class="row grand"><span>Grand Total</span><span>Rs <?= number_format((float) $activeBill['grand_total'], 2) ?></span></div>
                 </div>
 

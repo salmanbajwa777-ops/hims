@@ -8,12 +8,8 @@ CREATE TABLE IF NOT EXISTS clinic_settings (
     setting_key VARCHAR(100) UNIQUE NOT NULL,
     setting_value VARCHAR(100) NOT NULL
 );
-INSERT INTO clinic_settings (setting_key, setting_value)
-SELECT * FROM (
-    SELECT 'sales_tax_percent' AS setting_key, '17' AS setting_value
-    UNION ALL SELECT 'consolidation_rate_percent', '2'
-) AS seed
-WHERE NOT EXISTS (SELECT 1 FROM clinic_settings cs WHERE cs.setting_key = seed.setting_key);
+-- No tax settings are seeded: invoices carry no sales tax or consolidation rate.
+-- See sql/run_now_billing_no_tax.sql, which is the migration actually applied.
 
 -- Daily invoice number sequence, base 94345 (matches the printed-invoice-number format
 -- from the original spec: "94345 - 2026-07-17 14:03:00").

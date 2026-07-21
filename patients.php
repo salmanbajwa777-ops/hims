@@ -3,6 +3,7 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+require_once __DIR__ . '/config/billing.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_REGISTER_PATIENTS');
 
@@ -184,6 +185,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 ]);
                 $visitId = (int) $pdo->lastInsertId();
 
+                // Registration doubles as checkout: the consultation invoice is raised now so
+                // the front desk can print it straight away instead of revisiting checkout.php.
+                $typeStmt = $pdo->prepare('SELECT label FROM doctor_consult_types WHERE id = ?');
+                $typeStmt->execute([$consultTypeId]);
+                $typeLabel = $typeStmt->fetch()['label'] ?? 'Consultation';
+
+                $billId = create_bill_for_visit(
+                    $pdo,
+                    $visitId,
+                    $typeLabel,
+                    (float) $fee,
+                    (float) $discountPct,
+                    (int) $_SESSION['user_id'],
+                    $paymentMode
+                );
+
                 $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
                 $log->execute([
                     $_SESSION['user_id'],
@@ -198,11 +215,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 $doctorStmt->execute([$doctorId]);
                 $doctorName = $doctorStmt->fetch()['name'] ?? '';
 
-                $typeStmt = $pdo->prepare('SELECT label FROM doctor_consult_types WHERE id = ?');
-                $typeStmt->execute([$consultTypeId]);
-                $typeLabel = $typeStmt->fetch()['label'] ?? '';
-
                 $successVisit = [
+                    'bill_id' => $billId,
                     'mrn' => $mrn,
                     'patient_name' => $name,
                     'father_name' => $fatherName,
@@ -800,11 +814,18 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
             <div class="num"><?= (int) $successVisit['token_no'] ?></div>
             <div class="label">Queue Token</div>
         </div>
-        <div class="form-footer" style="justify-content:center; box-shadow:none; border-top:none; background:transparent;">
-            <a href="patients.php" class="btn">Back to Patients</a>
+        <div class="form-footer" style="justify-content:center; gap:10px; box-shadow:none; border-top:none; background:transparent;">
+            <a href="patients.php" class="btn secondary">Back to Patients</a>
+            <a href="checkout.php?print=1&amp;bill_id=<?= (int) $successVisit['bill_id'] ?>" target="_blank" rel="noopener" class="btn" id="invoiceLink">Print Invoice</a>
         </div>
     </div>
 </div>
+<script>
+// Pop the invoice automatically. Blocked popups still leave the button above as a fallback.
+window.addEventListener('load', function () {
+    window.open(document.getElementById('invoiceLink').href, '_blank');
+});
+</script>
 <?php endif; ?>
 
 <?php if ($showRegister): ?>

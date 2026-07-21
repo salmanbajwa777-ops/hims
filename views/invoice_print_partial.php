@@ -2,12 +2,14 @@
 // A5 invoice print view, included from checkout.php's ?print=1 branch.
 // Expects $bill (row from bills joined to visits/patients/users) and $items (bill_items) in scope.
 
-$clinicName = 'BABY MEDICS';
+// Wordmark prints as two tone-split words (see .mark-accent), matching the logo lockup.
+$clinicNameLead = 'BABY';
+$clinicNameAccent = 'MEDICS';
 $clinicTagline = 'Premium Healthcare | Emergency | Vaccines';
 $clinicAddress = 'Metacare, Main PWD Road, Police Foundation, Islamabad, Pakistan.';
 $clinicEmail = 'info@babymedics.com';
 $clinicPhone = '+92 51 5735006';
-$clinicWebsite = 'babymedics.com';
+$clinicWebsite = 'b a b y m e d i c s . c o m';
 
 $logoFile = $bill['doctor_specialty'] === 'DENTAL' ? 'logo-dental.png' : 'logo-general.png';
 
@@ -34,8 +36,10 @@ $printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
         .header { text-align: center; margin-bottom: 6px; }
         .clinic-logo { height: 28px; vertical-align: middle; margin-right: 4px; }
         /* Clinic wordmark stays on the original spec's font, exempt from the IBM Plex Mono switch. */
-        .clinic-name { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #1A7F7E; }
-        .website { font-size: 9px; font-weight: bold; margin-bottom: 2px; }
+        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #2F4858; }
+        .clinic-name .mark-accent { color: #4CAF7D; }
+        /* Website line mirrors the letter-spaced "b a b y m e d i c s . c o m" in the printed sample. */
+        .website { font-family: Arial, Helvetica, sans-serif; font-size: 9px; font-weight: bold; letter-spacing: 2px; margin-bottom: 2px; color: #2F4858; }
         .clinic-tagline { font-size: 10px; margin: 2px 0; font-weight: bold; }
         .contact-info { font-size: 9px; line-height: 1.2; margin-top: 3px; }
         .contact-info p { margin: 1px 0; }
@@ -74,7 +78,7 @@ $printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
             <div class="clinic-info">
                 <h1 class="clinic-name">
                     <img class="clinic-logo" src="/assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
-                    <?= $clinicName ?>
+                    <?= $clinicNameLead ?> <span class="mark-accent"><?= $clinicNameAccent ?></span>
                 </h1>
                 <p class="website"><?= $clinicWebsite ?></p>
             </div>
@@ -90,6 +94,7 @@ $printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
 
         <table class="metadata-table">
             <tr><td><strong>Invoice #</strong></td><td><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>
+            <tr><td><strong>MR #</strong></td><td><?= htmlspecialchars($bill['mrn']) ?></td></tr>
             <tr><td><strong>Name:</strong></td><td><?= htmlspecialchars($bill['patient_name']) ?></td></tr>
             <tr><td><strong>S/D/W Of:</strong></td><td><?= htmlspecialchars($bill['father_name'] ?: '—') ?></td></tr>
             <tr><td><strong>DOB:</strong></td><td><?= $patientDobDisplay ?></td></tr>
@@ -114,8 +119,6 @@ $printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
 
         <table class="totals-table">
             <tr><td colspan="3" class="text-right">Total Amount</td><td class="text-right"><strong><?= number_format((float) $bill['subtotal'], 2) ?></strong></td></tr>
-            <tr><td colspan="3" class="text-right">Sales Tax (<?= $bill['sales_tax_percent'] ?>%)</td><td class="text-right"><?= number_format((float) $bill['sales_tax_amount'], 2) ?></td></tr>
-            <tr><td colspan="3" class="text-right">Consolidation (<?= $bill['consolidation_rate_percent'] ?>%)</td><td class="text-right"><?= number_format((float) $bill['consolidation_amount'], 2) ?></td></tr>
             <tr class="net-total"><td colspan="3" class="text-right"><strong>Net Total</strong></td><td class="text-right"><strong><?= number_format((float) $bill['grand_total'], 2) ?></strong></td></tr>
         </table>
 
