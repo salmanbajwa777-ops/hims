@@ -14,6 +14,9 @@ $docTypes = [
 $allowedExt = ['pdf', 'jpg', 'jpeg', 'png'];
 $maxFileSize = 10 * 1024 * 1024;
 
+// Every new staff account starts here. They are forced to change it on first sign-in.
+const DEFAULT_STAFF_PASSWORD = '123456';
+
 $error = '';
 $success = '';
 
@@ -27,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
-    $password = $_POST['password'] ?? '';
+    $password = DEFAULT_STAFF_PASSWORD;
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
     $docTypeInputs = $_POST['doc_type'] ?? [];
@@ -35,8 +38,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
 
     if ($name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
-    } elseif (strlen($password) < 6) {
-        $error = 'Password must be at least 6 characters.';
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
     } else {
@@ -129,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                     "Created user #$newUserId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : ''),
                 ]);
 
-                $success = "Account created for $name.";
+                $success = "Account created for $name. Their password is " . DEFAULT_STAFF_PASSWORD . " — they must change it on first sign-in.";
             }
         }
     }
@@ -141,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
-    $newPassword = $_POST['password'] ?? '';
+    $resetPassword = ($_POST['reset_password'] ?? '') === '1';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
     $docTypeInputs = $_POST['doc_type'] ?? [];
@@ -149,8 +150,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
 
     if ($editId <= 0 || $name === '' || ($email === '' && $phone === '') || !in_array($role, $roles, true)) {
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
-    } elseif ($newPassword !== '' && strlen($newPassword) < 6) {
-        $error = 'Password must be at least 6 characters.';
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
     } else {
@@ -204,8 +203,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
             if ($docError !== '') {
                 $error = $docError;
             } else {
-                if ($newPassword !== '') {
-                    $hash = password_hash($newPassword, PASSWORD_BCRYPT);
+                if ($resetPassword) {
+                    $hash = password_hash(DEFAULT_STAFF_PASSWORD, PASSWORD_BCRYPT);
                     $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ?, password = ?, must_change_password = 1 WHERE id = ?');
                     $update->execute([
                         $name,
@@ -250,10 +249,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                 $log->execute([
                     $_SESSION['user_id'],
                     'staff_updated',
-                    "Updated user #$editId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : '') . ($newPassword !== '' ? ', password reset' : ''),
+                    "Updated user #$editId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : '') . ($resetPassword ? ', password reset to default' : ''),
                 ]);
 
-                $success = "Account updated for $name." . ($newPassword !== '' ? ' Password has been reset.' : '');
+                $success = "Account updated for $name." . ($resetPassword ? ' Password reset to ' . DEFAULT_STAFF_PASSWORD . ' — they must change it on next sign-in.' : '');
             }
         }
     }
@@ -813,12 +812,12 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
                             <label for="phone">Phone <span class="opt">(this is their login ID — optional if email set)</span></label>
                             <input type="text" id="phone" name="phone" placeholder="03xxxxxxxxx">
                         </div>
-                        <div class="field" id="passwordField">
-                            <label for="password">Password <span class="opt" id="passwordHint">(min 6 characters — tell them this yourself)</span></label>
-                            <div style="display:flex; gap:8px;">
-                                <input type="text" id="password" name="password" minlength="6" style="flex:1;">
-                                <button type="button" class="btn secondary" id="genPasswordBtn" style="white-space:nowrap;">Generate</button>
-                            </div>
+                        <div class="field" id="passwordField" style="display:none;">
+                            <label>Password</label>
+                            <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer;">
+                                <input type="checkbox" id="reset_password" name="reset_password" value="1" style="width:auto; margin:0;">
+                                <span>Reset password back to <strong><?= DEFAULT_STAFF_PASSWORD ?></strong></span>
+                            </label>
                         </div>
                         <div class="field">
                             <label for="base_role">Role</label>
@@ -883,7 +882,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 
             <div class="info-banner" id="infoBanner">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                <span id="infoBannerText">A temporary password will be generated on save. They'll be required to set a new one on first sign-in. Documents are stored privately and only visible to admins.</span>
+                <span id="infoBannerText">Their password will be <strong><?= DEFAULT_STAFF_PASSWORD ?></strong>. Tell them their login ID (phone or email) and this password — they'll be asked to change it on first sign-in. Documents are stored privately and only visible to admins.</span>
             </div>
 
             <div class="form-footer">
@@ -1003,7 +1002,6 @@ const docsSection = document.getElementById('docsSection');
 const infoBannerText = document.getElementById('infoBannerText');
 const submitBtn = document.getElementById('submitBtn');
 const passwordField = document.getElementById('passwordField');
-const passwordInput = document.getElementById('password');
 const specialtyField = document.getElementById('specialtyField');
 const baseRoleSelect = document.getElementById('base_role');
 
@@ -1012,11 +1010,9 @@ function updateSpecialtyVisibility() {
 }
 baseRoleSelect.addEventListener('change', updateSpecialtyVisibility);
 
-const ADD_INFO_TEXT = "Tell them their login ID (phone or email) and the password you set here — they can change it themselves after signing in. Documents are stored privately and only visible to admins.";
-const EDIT_INFO_TEXT = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Leave the password blank to keep it unchanged, or set a new one to reset it (they'll be required to change it on next sign-in). Documents are stored privately and only visible to admins.";
-const passwordHint = document.getElementById('passwordHint');
-const ADD_PASSWORD_HINT = '(min 6 characters — tell them this yourself)';
-const EDIT_PASSWORD_HINT = '(leave blank to keep current password)';
+const DEFAULT_PASSWORD = <?= json_encode(DEFAULT_STAFF_PASSWORD) ?>;
+const ADD_INFO_HTML = "Their password will be <strong>" + DEFAULT_PASSWORD + "</strong>. Tell them their login ID (phone or email) and this password — they'll be asked to change it on first sign-in. Documents are stored privately and only visible to admins.";
+const EDIT_INFO_HTML = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Tick the password box only if they've forgotten theirs and need it set back to <strong>" + DEFAULT_PASSWORD + "</strong>. Documents are stored privately and only visible to admins.";
 
 function resetToAddMode() {
     staffForm.reset();
@@ -1025,10 +1021,8 @@ function resetToAddMode() {
     panelTitle.textContent = 'Add Doctor / Staff';
     panelSub.textContent = "Create a login and file their onboarding documents in one go.";
     docsSection.style.display = '';
-    passwordField.style.display = '';
-    passwordInput.required = true;
-    passwordHint.textContent = ADD_PASSWORD_HINT;
-    infoBannerText.textContent = ADD_INFO_TEXT;
+    passwordField.style.display = 'none';
+    infoBannerText.innerHTML = ADD_INFO_HTML;
     submitBtn.textContent = 'Create Account';
     document.getElementById('existingDocsWrap').style.display = 'none';
     document.getElementById('specialty').value = 'GENERAL';
@@ -1049,22 +1043,13 @@ function openEditPanel(data) {
     panelSub.textContent = 'Update their details and manage their documents.';
     docsSection.style.display = '';
     passwordField.style.display = '';
-    passwordInput.required = false;
-    passwordHint.textContent = EDIT_PASSWORD_HINT;
-    infoBannerText.textContent = EDIT_INFO_TEXT;
+    document.getElementById('reset_password').checked = false;
+    infoBannerText.innerHTML = EDIT_INFO_HTML;
     submitBtn.textContent = 'Save Changes';
     updateSpecialtyVisibility();
     renderExistingDocs(data.id);
     addPanelOverlay.classList.add('open');
 }
-
-document.getElementById('genPasswordBtn').addEventListener('click', () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    let pw = '';
-    for (let i = 0; i < 8; i++) pw += chars[Math.floor(Math.random() * chars.length)];
-    passwordInput.value = pw;
-    passwordInput.type = 'text';
-});
 
 function renderExistingDocs(userId) {
     const wrap = document.getElementById('existingDocsWrap');
