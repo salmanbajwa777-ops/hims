@@ -446,6 +446,9 @@ td { padding: 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
                         <?php endif; ?>
                     <?php else: ?>
                         <a class="btn secondary" href="checkout.php?print=1&bill_id=<?= (int) $activeBill['id'] ?>" target="_blank">Print Invoice</a>
+                        <?php if (has_permission('RECEPTION_ISSUE_REFUNDS')): ?>
+                            <a class="btn secondary" href="refund.php?bill_id=<?= (int) $activeBill['id'] ?>" style="color:var(--red-text);">Refund</a>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>

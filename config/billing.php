@@ -36,6 +36,30 @@ function recalc_bill_totals(PDO $pdo, int $billId): void {
     ')->execute([$subtotal, $subtotal, $billId]);
 }
 
+// Yearly refund voucher number, e.g. "RF-2026-0021". Separate series from invoice
+// numbers (confirmed), race-safe via the same atomic-upsert + LAST_INSERT_ID()
+// pattern used for invoice numbers and queue tokens.
+function generate_refund_number(PDO $pdo): string {
+    $year = (int) date('Y');
+
+    $pdo->prepare('
+        INSERT INTO refund_sequences (sequence_year, last_sequence)
+        VALUES (?, 1)
+        ON DUPLICATE KEY UPDATE last_sequence = LAST_INSERT_ID(last_sequence) + 1
+    ')->execute([$year]);
+    $lastId = (int) $pdo->lastInsertId();
+    $seq = $lastId > 0 ? $lastId : 1;
+
+    return 'RF-' . $year . '-' . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+}
+
+// How much of a bill has already been refunded.
+function refunded_total(PDO $pdo, int $billId): float {
+    $stmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS t FROM refunds WHERE bill_id = ?');
+    $stmt->execute([$billId]);
+    return (float) $stmt->fetch()['t'];
+}
+
 // Creates the bill for a freshly registered visit, seeded with the consultation
 // fee line. Must be called inside an open transaction; returns the new bill id.
 function create_bill_for_visit(
