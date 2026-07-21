@@ -152,7 +152,8 @@ if (isset($_GET['print']) && isset($_GET['bill_id'])) {
     $billId = (int) $_GET['bill_id'];
 
     $stmt = $pdo->prepare('
-        SELECT b.*, v.fee, v.discount_pct, p.mrn, p.name AS patient_name, p.father_name, p.dob,
+        SELECT b.*, v.fee, v.discount_pct, v.token_no,
+               p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
                d.name AS doctor_name, d.specialty AS doctor_specialty
         FROM bills b
         JOIN visits v ON v.id = b.visit_id

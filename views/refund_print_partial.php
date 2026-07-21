@@ -4,7 +4,7 @@
 // $priorRefunded (sum of earlier refunds on the same bill) in scope.
 
 $clinicName = 'BABY MEDICS';
-$clinicTagline = 'Premium Healthcare | Emergency | Vaccines';
+$clinicTagline = 'Premium Healthcare | Vaccines';
 $clinicAddress = 'Metacare, Main PWD Road, Police Foundation, Islamabad, Pakistan.';
 $clinicEmail = 'info@babymedics.com';
 $clinicPhone = '+92 51 5735006';
@@ -28,7 +28,10 @@ $refundModeLabel = ucfirst(str_replace('_', ' ', $refund['refund_mode']));
         body { font-family: 'IBM Plex Mono', 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
         .invoice-container { width: 100%; height: 100%; padding: 8mm; overflow: hidden; display: flex; flex-direction: column; }
         .header { text-align: center; margin-bottom: 6px; }
-        .clinic-logo { height: 28px; vertical-align: middle; margin-right: 4px; }
+        /* Explicit white ground: the PNGs carry real transparency, and without it the
+           print pipeline composites them against a shaded backdrop and a grey box
+           appears behind the artwork. */
+        .clinic-logo { height: 28px; vertical-align: middle; margin-right: 4px; background: #fff; }
         /* Wordmark keeps the original spec's font and the logo art's teal. */
         .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #0A6B5E; }
         .website { font-family: Arial, Helvetica, sans-serif; font-size: 9px; font-weight: bold; letter-spacing: 2px; margin-bottom: 2px; color: #0A6B5E; }
