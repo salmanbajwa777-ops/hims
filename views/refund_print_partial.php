@@ -5,7 +5,7 @@
 
 $clinicName = 'BABY MEDICS';
 $clinicTagline = 'Premium Healthcare | Vaccines';
-$clinicAddress = 'Metacare, Main PWD Road, Police Foundation, Islamabad, Pakistan.';
+$clinicAddress = 'Polymedics, 2165-F, NPF, PWD Double Road, Islamabad, Pakistan.';
 $clinicEmail = 'info@babymedics.com';
 $clinicPhone = '+92 51 5735006';
 $clinicWebsite = 'b a b y m e d i c s . c o m';

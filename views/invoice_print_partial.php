@@ -60,7 +60,9 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
 
         /* ---------- Header box ---------- */
-        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm; display: flex; gap: 5mm; align-items: stretch; }
+        /* Bottom padding is ~1mm so the tables sit hard against the box edge and the
+           fee table below butts straight onto it. */
+        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1mm; display: flex; gap: 5mm; align-items: stretch; }
         /* Both halves are flex columns whose table is pushed to the bottom by an auto
            top margin. Since the two tables have the same four rows, bottom-aligning
            them also top-aligns them — the rows line up without either side depending
@@ -89,37 +91,44 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
         }
         .addr { font-size: 9px; line-height: 1.35; margin-top: 5px; margin-bottom: 4px; }
 
+        /* Sized and spaced so the Email/Phone pair below lands level with the two
+           address lines opposite — the tagline's height is what buys that alignment. */
         .tagline {
-            font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: bold;
-            margin-bottom: 3px; white-space: nowrap;
+            font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold;
+            line-height: 1.15; margin-bottom: 9px; white-space: nowrap;
         }
         .meta { width: 100%; border-collapse: collapse; font-size: 9px; }
         .meta td { border: 1px solid #C8C8C8; padding: 3px 5px; vertical-align: top; }
-        .meta td.k { background: #EDEDED; font-weight: bold; width: 40%; }
+        /* Lighter grey than before, with the label text bolded so it still reads
+           strongly against the paler ground. */
+        .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
         .meta td.v { font-weight: bold; }
 
         /* Clinic contact sits above the patient table, mirroring the street address
            opposite so both columns carry two lines before their tables begin. */
-        .clinic-contact { margin-top: 0; margin-bottom: 3px; }
+        .clinic-contact { margin-top: 0; margin-bottom: 4px; }
 
         /* Identifiers sit under the clinic block, opposite the patient details.
            Vertical placement comes from the flex rule above, not a fixed margin. */
         .ids { width: 100%; border-collapse: collapse; font-size: 9px; }
         .ids td { border: 1px solid #C8C8C8; padding: 3px 5px; }
-        .ids td.k { background: #EDEDED; font-weight: bold; width: 42%; }
+        .ids td.k { background: #F4F4F4; font-weight: bold; width: 42%; }
         .ids td.v { font-weight: bold; }
 
         /* ---------- Fee line + vitals ---------- */
         .fee-table, .vitals-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
-        .fee-table { margin-top: 4mm; }
+        /* Butted straight against the header box: -1px so the two share a single rule
+           rather than showing a gap or a doubled border. */
+        .fee-table { margin-top: -1px; }
         .fee-table td, .fee-table th,
         .vitals-table td, .vitals-table th { border: 1px solid #C8C8C8; padding: 4px 6px; }
         .fee-table th, .vitals-table th { background: #FFFFFF; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: center; }
-        /* No gap and no doubled rule between the two tables. */
         .vitals-table { margin-top: -1px; }
-        .vitals-cell td { font-size: 10px; line-height: 1; padding: 5px 6px; }
+        /* Write-in row: tall enough to take a handwritten figure, at least the height
+           of the label row above it. */
+        .vitals-cell td { height: 9mm; }
 
         /* The area below is the doctor's handwriting space, so the quote is NOT pushed
            to the foot of the page — it sits just under the vitals block and the sheet
@@ -154,7 +163,7 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
                     </span>
                 </div>
                 <div class="addr">
-                    <b>Metacare,</b> Main PWD Road, Police Foundation,<br>
+                    <b>Polymedics,</b> 2165-F, NPF, PWD Double Road<br>
                     Islamabad, Pakistan.
                 </div>
                 <!-- Pushed down so row 1 lines up with row 1 of the patient table opposite. -->
