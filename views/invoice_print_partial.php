@@ -2,11 +2,12 @@
 // A5 invoice print view, included from checkout.php's ?print=1 branch.
 // Expects $bill (row from bills joined to visits/patients/users) and $items (bill_items) in scope.
 //
-// Layout mirrors the clinic's existing printed receipt exactly: a bordered header
-// box split into a left clinic block and a right metadata table, then the items
-// table, totals, payment mode and an empty vitals row for the nurse to fill in by
-// hand. Only the typeface differs from the original (IBM Plex Mono, except the
-// wordmark which keeps Arial).
+// Mirrors the clinic's existing printed receipt. Two structural points matter for
+// matching it: the header is a bordered box split clinic-left / metadata-right, and
+// everything below it (items, totals, payment mode, vitals) is ONE table sharing a
+// single column grid — that is what makes the vertical rules line up down the page.
+// Only the typeface differs from the original: IBM Plex Mono throughout, except the
+// wordmark and tagline which stay on the original's sans face.
 
 $clinicName = 'BABY MEDICS';
 $clinicTagline = 'Premium Healthcare | Emergency | Vaccines';
@@ -22,9 +23,13 @@ $printedByStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
 $printedByStmt->execute([$_SESSION['user_id']]);
 $printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
 
-// The original receipt prints four blank filler rows under the single line item so
-// the table always reaches the totals block at the same height.
-$fillerRows = max(0, 4 - count($items));
+$paymentModeLabel = $bill['payment_method']
+    ? ucfirst(str_replace('_', ' ', $bill['payment_method']))
+    : 'Pending';
+
+// The original keeps the body of the table a fixed height regardless of how many
+// items were billed, so the totals always land in the same place on the page.
+$fillerRows = max(0, 3 - count($items));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -37,79 +42,67 @@ $fillerRows = max(0, 4 - count($items));
         html, body { width: 148mm; margin: 0; padding: 0; }
         body {
             font-family: 'IBM Plex Mono', 'Courier New', monospace;
-            font-size: 10px; line-height: 1.35; color: #000; background: #fff;
+            font-size: 9.5px; line-height: 1.35; color: #000; background: #fff;
         }
-        .sheet { width: 100%; padding: 7mm; }
+        .sheet { width: 100%; padding: 6mm; display: flex; flex-direction: column; min-height: 210mm; }
 
-        /* ---------- Header: bordered box, clinic left / metadata right ---------- */
-        .head-box { border: 1px solid #999; padding: 4mm; display: flex; gap: 4mm; }
-        .head-left { width: 52%; }
-        .head-right { width: 48%; }
+        /* ---------- Header box ---------- */
+        .head-box { border: 1px solid #B0B0B0; padding: 3.5mm 4mm; display: flex; gap: 5mm; }
+        .head-left { width: 54%; }
+        .head-right { width: 46%; }
 
-        .brandline { display: flex; align-items: center; gap: 3px; }
-        .clinic-logo { height: 26px; }
-        /* Wordmark keeps the original receipt's sans face and the logo art's teal. */
+        .brandline { display: flex; align-items: center; gap: 4px; }
+        .clinic-logo { height: 27px; }
+        /* Wordmark and tagline keep the original receipt's sans face. */
         .clinic-name {
-            font-family: Arial, Helvetica, sans-serif; font-size: 17px; font-weight: bold;
-            letter-spacing: .3px; color: #0A6B5E; white-space: nowrap;
+            font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold;
+            letter-spacing: .2px; color: #0F7362; white-space: nowrap;
         }
         .website {
             font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold;
-            letter-spacing: 1.6px; color: #0A6B5E; margin: 1px 0 0 30px;
+            letter-spacing: 1.7px; color: #4A4A4A; margin: 2px 0 0 32px;
         }
-        .addr { font-size: 9px; line-height: 1.35; margin-top: 7px; }
-        .addr b { font-weight: bold; }
+        .addr { font-size: 9px; line-height: 1.4; margin-top: 8px; }
 
         .tagline {
-            font-family: Arial, Helvetica, sans-serif; font-size: 11.5px; font-weight: bold;
-            margin-bottom: 3px;
+            font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: bold;
+            margin-bottom: 4px; white-space: nowrap;
         }
-        .meta { width: 100%; border-collapse: collapse; font-size: 9.5px; }
-        .meta td { border: 1px solid #999; padding: 2.5px 4px; vertical-align: top; }
-        .meta td.k { background: #EDEDED; font-weight: bold; width: 38%; }
+        .meta { width: 100%; border-collapse: collapse; font-size: 9px; }
+        .meta td { border: 1px solid #C8C8C8; padding: 3px 5px; vertical-align: top; }
+        .meta td.k { background: #EDEDED; font-weight: bold; width: 40%; }
         .meta td.v { font-weight: bold; }
 
-        /* ---------- Items ---------- */
-        .items { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 5mm; }
-        .items th {
-            border: 1px solid #999; background: #EDEDED; padding: 4px 5px;
-            font-weight: bold; text-align: center;
-        }
-        .items td { border: 1px solid #999; padding: 3.5px 5px; }
-        .items .desc { text-align: left; }
-        .items .num { text-align: center; }
-        .items tr.spacer td { background: #EDEDED; height: 9px; padding: 0; }
-        .items tr.blank td { height: 15px; }
-        .items .lbl { text-align: right; font-weight: bold; border-left: none; border-right: none; }
-        .items .grand { font-weight: bold; font-size: 11px; }
-        .items .net { font-style: italic; }
-
-        /* ---------- Footer blocks ---------- */
-        .payrow { width: 100%; border-collapse: collapse; font-size: 9.5px; }
-        .payrow td { border: 1px solid #999; border-top: none; padding: 4px 5px; }
-        .payrow .thanks { width: 60%; }
-        .payrow .mode { text-align: right; }
-        .payrow .mode b { font-weight: bold; }
-
-        .vitals { width: 100%; border-collapse: collapse; font-size: 9.5px; }
-        .vitals th {
-            border: 1px solid #999; border-top: none; background: #fff; padding: 5px;
-            font-weight: bold; text-align: center;
-        }
-        .vitals td { border: 1px solid #999; border-top: none; height: 12mm; }
+        /* ---------- Body: one grid for items + totals + payment + vitals ---------- */
+        .body-table { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 5mm; }
+        .body-table td, .body-table th { border: 1px solid #C8C8C8; padding: 4px 6px; }
+        .body-table th { background: #FFFFFF; font-weight: bold; text-align: center; }
+        .body-table .desc { text-align: left; }
+        .body-table .num { text-align: center; }
+        .band td { background: #E8E8E8; height: 10px; padding: 0; }
+        .empty td { height: 16px; }
+        /* Totals label sits in the Qty column, value in Amount — the two cells to the
+           left stay bordered so the grid reads continuously down the page. */
+        .tot .lbl { text-align: right; font-weight: bold; }
+        .tot .val { text-align: center; font-weight: bold; font-size: 11px; }
+        .tot .val.net { font-style: italic; }
+        .payline .thanks { text-align: left; }
+        .payline .mode { text-align: right; }
+        .vitals-head th { font-weight: bold; }
+        .vitals-cell td { height: 13mm; }
 
         .quote {
             text-align: center; font-size: 9.5px; font-style: italic; font-weight: bold;
-            margin-top: 22mm;
+            margin-top: auto; padding: 14mm 0 0;
         }
         .foot {
-            display: flex; justify-content: space-between; gap: 8px;
-            border-top: 1px solid #999; margin-top: 3mm; padding-top: 2px; font-size: 8px;
+            display: flex; justify-content: space-between; gap: 10px;
+            border-top: 1px solid #B0B0B0; margin-top: 4mm; padding-top: 3px; font-size: 7.5px;
         }
 
         @media print {
             html, body { width: 148mm; height: 210mm; }
-            .sheet { padding: 7mm; }
+            .sheet { min-height: 210mm; padding: 6mm; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             @page { size: A5; margin: 0; }
         }
@@ -146,15 +139,20 @@ $fillerRows = max(0, 4 - count($items));
             </div>
         </div>
 
-        <table class="items">
+        <table class="body-table">
+            <colgroup>
+                <col style="width:40%"><col style="width:20%"><col style="width:18%"><col style="width:22%">
+            </colgroup>
+
             <thead>
                 <tr>
-                    <th style="width:42%;">Checkup/Procedure</th>
-                    <th style="width:20%;">Fee/Price (Rs)</th>
-                    <th style="width:16%;">Qty</th>
-                    <th style="width:22%;">Amount (Rs)</th>
+                    <th>Checkup/Procedure</th>
+                    <th>Fee/Price (Rs)</th>
+                    <th>Qty</th>
+                    <th>Amount (Rs)</th>
                 </tr>
             </thead>
+
             <tbody>
                 <?php foreach ($items as $item): ?>
                 <tr>
@@ -165,34 +163,38 @@ $fillerRows = max(0, 4 - count($items));
                 </tr>
                 <?php endforeach; ?>
 
-                <tr class="spacer"><td colspan="4"></td></tr>
+                <tr class="band"><td></td><td></td><td></td><td></td></tr>
 
-                <tr>
-                    <td class="blank">&nbsp;</td><td></td>
+                <tr class="tot">
+                    <td>&nbsp;</td><td></td>
                     <td class="lbl">Total Amount</td>
-                    <td class="num grand"><?= number_format((float) $bill['subtotal'], 0) ?></td>
+                    <td class="val"><?= number_format((float) $bill['subtotal'], 0) ?></td>
                 </tr>
+
                 <?php for ($i = 0; $i < $fillerRows; $i++): ?>
-                <tr class="blank"><td>&nbsp;</td><td></td><td></td><td></td></tr>
+                <tr class="empty"><td>&nbsp;</td><td></td><td></td><td></td></tr>
                 <?php endfor; ?>
-                <tr>
-                    <td class="blank">&nbsp;</td><td></td>
+
+                <tr class="tot">
+                    <td>&nbsp;</td><td></td>
                     <td class="lbl">Net Total</td>
-                    <td class="num grand net"><?= number_format((float) $bill['grand_total'], 0) ?></td>
+                    <td class="val net"><?= number_format((float) $bill['grand_total'], 0) ?></td>
+                </tr>
+
+                <tr class="payline">
+                    <td class="thanks" colspan="2">Thank you! We wish you best of health.</td>
+                    <td class="mode" colspan="2"><b>Payment Mode:</b> <?= htmlspecialchars($paymentModeLabel) ?></td>
+                </tr>
+
+                <tr class="vitals-head">
+                    <th colspan="2">Temperature</th>
+                    <th>Weight</th>
+                    <th>Height</th>
+                </tr>
+                <tr class="vitals-cell">
+                    <td colspan="2"></td><td></td><td></td>
                 </tr>
             </tbody>
-        </table>
-
-        <table class="payrow">
-            <tr>
-                <td class="thanks">Thank you! We wish you best of health.</td>
-                <td class="mode"><b>Payment Mode:</b> <?= htmlspecialchars($bill['payment_method'] ? ucfirst(str_replace('_', ' ', $bill['payment_method'])) : 'Pending') ?></td>
-            </tr>
-        </table>
-
-        <table class="vitals">
-            <tr><th style="width:38%;">Temperature</th><th style="width:32%;">Weight</th><th style="width:30%;">Height</th></tr>
-            <tr><td></td><td></td><td></td></tr>
         </table>
 
         <p class="quote">"What is called genius is the abundance of life and health"</p>
