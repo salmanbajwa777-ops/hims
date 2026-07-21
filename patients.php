@@ -302,7 +302,7 @@ function ageFromDob(?string $dob): ?int {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HIMS — Patients</title>
+<title>HIMS — <?= $showRegister ? 'New Patient Registration' : 'Patients' ?></title>
 <style>
 :root {
     --primary-dark: #0E5456;
@@ -449,9 +449,9 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 /* ---------- Register Patient — full-page layout ---------- */
 .content:has(.reg-page) { padding-top: 20px; padding-bottom: 24px; }
 .reg-page { display: flex; flex-direction: column; gap: 14px; }
-.reg-page .form-header { position: static; margin-bottom: 0; padding: 16px 22px; box-shadow: var(--shadow-sm); }
-.reg-page .form-header h1 { font-size: 18px; }
 .reg-page .patient-form { display: flex; flex-direction: column; gap: 14px; }
+.group-label .flow-close { flex: 0 0 auto; width: 28px; height: 28px; margin: -4px 0; }
+.group-label .flow-close svg { width: 15px; height: 15px; }
 
 /* ---------- Single continuous form: floating-label fields (compact) ---------- */
 .form-flow { display: flex; flex-direction: column; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-sm); padding: 16px 22px; }
@@ -568,7 +568,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 
     <div class="main">
         <header class="header">
-            <div class="page-title" style="font-size:16px;">Patients</div>
+            <div class="page-title" style="font-size:16px;"><?= $showRegister ? 'New Patient Registration' : 'Patients' ?></div>
             <div class="header-right">
                 <span class="header-date"><?= date('D, d M Y') ?></span>
                 <a class="logout-link" href="logout.php">Logout</a>
@@ -655,16 +655,6 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
             <?php if ($showRegister): ?>
             <!-- Register Patient — full page -->
             <div class="reg-page">
-                <div class="form-header">
-                    <div>
-                        <h1>Register Patient</h1>
-                        <div class="sub">Create a new patient record and queue today's visit in one step.</div>
-                    </div>
-                    <a href="patients.php" class="close-btn" aria-label="Close">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    </a>
-                </div>
-
                 <?php if ($error): ?>
                     <div class="alert error"><?= htmlspecialchars($error) ?></div>
                 <?php endif; ?>
@@ -682,7 +672,12 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 
             <div class="form-flow">
 
-                <div class="group-label">Patient</div>
+                <div class="group-label">
+                    Patient
+                    <a href="patients.php" class="close-btn flow-close" aria-label="Close">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </a>
+                </div>
                 <div class="field-grid">
                     <div class="f full">
                         <input type="text" id="name" name="name" placeholder=" " required autofocus>
@@ -711,13 +706,9 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                     <div class="f">
                         <input type="date" id="dob" name="dob" class="always-float" placeholder=" ">
                         <span class="flabel always-float">Date of Birth <span class="opt">(optional)</span></span>
-                        <span class="hint">Leave blank if unknown — use approximate age instead</span>
+                        <span class="hint">Leave blank if unknown</span>
                     </div>
                     <div class="f">
-                        <input type="number" id="approx_age" name="approx_age" min="0" max="130" placeholder=" ">
-                        <span class="flabel" data-for="approx_age">Approx. Age <span class="opt">(if DOB unknown)</span></span>
-                    </div>
-                    <div class="f full">
                         <div class="mini-label">Gender <span class="req">*</span></div>
                         <div class="radio-row">
                             <div class="radio-pill"><input type="radio" id="gender_f" name="gender" value="FEMALE"><label for="gender_f">Female</label></div>
