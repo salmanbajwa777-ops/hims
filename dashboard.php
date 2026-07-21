@@ -244,60 +244,15 @@ a { text-decoration: none; color: inherit; }
 }
 .logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
 
-/* ---------- Hero ---------- */
-.hero {
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    border-radius: var(--radius-card);
-    padding: 32px 36px;
-    min-height: 180px;
+/* ---------- Welcome line ---------- */
+.welcome-line {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: baseline;
     flex-wrap: wrap;
-    gap: 24px;
-    color: #fff;
-    position: relative;
-    overflow: hidden;
+    gap: 4px 14px;
 }
-.hero::before, .hero::after {
-    content: "";
-    position: absolute;
-    border-radius: 50%;
-    background: rgba(255,255,255,.08);
-}
-.hero::before { width: 220px; height: 220px; top: -80px; right: 120px; }
-.hero::after { width: 140px; height: 140px; bottom: -60px; right: -20px; }
-.hero-greeting .eyebrow { font-size: 14px; opacity: .85; font-weight: 500; }
-.hero-greeting h1 { font-size: 32px; font-weight: 700; margin: 4px 0 8px; }
-.hero-greeting .date { font-size: 13.5px; opacity: .85; }
-.hero-kpis { display: flex; gap: 36px; flex-wrap: wrap; position: relative; z-index: 1; }
-.hero-kpi .label { font-size: 12.5px; opacity: .8; margin-bottom: 4px; }
-.hero-kpi .value { font-size: 28px; font-weight: 700; }
-
-/* ---------- KPI Cards ---------- */
-.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-.kpi-card {
-    background: var(--card);
-    border-radius: var(--radius-card);
-    padding: 20px 22px;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border);
-    transition: transform .25s ease, box-shadow .25s ease;
-}
-.kpi-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
-.kpi-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.kpi-icon {
-    width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
-    background: var(--primary-light); color: var(--primary-dark);
-}
-.kpi-icon svg { width: 20px; height: 20px; }
-.kpi-trend { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 8px; }
-.kpi-trend.up { color: #047857; background: #ECFDF5; }
-.kpi-trend.down { color: #B91C1C; background: #FEF2F2; }
-.kpi-value { font-size: 30px; font-weight: 700; margin-bottom: 2px; }
-.kpi-label { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
-.kpi-sparkline { height: 28px; }
-.kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 8px; display: flex; gap: 12px; }
+.welcome-line h1 { font-size: 26px; font-weight: 700; color: var(--text); margin: 0; }
+.welcome-date { font-size: 13.5px; color: var(--text-muted); }
 
 /* ---------- Quick Actions ---------- */
 .quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
@@ -454,7 +409,7 @@ tabular { font-variant-numeric: tabular-nums; }
 .nag-banner a { font-weight: 700; text-decoration: underline; }
 
 @media (max-width: 1200px) {
-    .grid-4, .quick-actions, .fin-grid { grid-template-columns: repeat(2, 1fr); }
+    .quick-actions, .fin-grid { grid-template-columns: repeat(2, 1fr); }
     .row-2 { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
@@ -544,59 +499,10 @@ tabular { font-variant-numeric: tabular-nums; }
             </div>
             <?php endif; ?>
 
-            <!-- Hero -->
-            <section class="hero">
-                <div class="hero-greeting">
-                    <div class="eyebrow"><?= $greeting ?></div>
-                    <h1><?= htmlspecialchars($user['name']) ?></h1>
-                    <div class="date"><?= date('l') ?><br><?= date('d F Y') ?></div>
-                </div>
-                <div class="hero-kpis">
-                    <div class="hero-kpi"><div class="label">Today's Revenue</div><div class="value">82,500</div></div>
-                    <div class="hero-kpi"><div class="label">Patients</div><div class="value">145</div></div>
-                    <div class="hero-kpi"><div class="label">Admissions</div><div class="value">18</div></div>
-                    <div class="hero-kpi"><div class="label">Discharges</div><div class="value">14</div></div>
-                </div>
-            </section>
-
-            <!-- KPI Cards -->
-            <div class="grid-4">
-                <div class="kpi-card">
-                    <div class="kpi-top">
-                        <div class="kpi-icon"><?= icon('stethoscope', 20) ?></div>
-                        <div class="kpi-trend up">&#9650; +2%</div>
-                    </div>
-                    <div class="kpi-value">5</div>
-                    <div class="kpi-label">Doctors</div>
-                    <div class="kpi-sub"><span>4 In Clinic</span><span>1 On Leave</span></div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-top">
-                        <div class="kpi-icon"><?= icon('users', 20) ?></div>
-                        <div class="kpi-trend up">&#9650; +8%</div>
-                    </div>
-                    <div class="kpi-value">145</div>
-                    <div class="kpi-label">Patients Today</div>
-                    <div class="kpi-sub"><span>126 Returning</span><span>19 New</span></div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-top">
-                        <div class="kpi-icon" style="background:#FFFBEB;color:#92400E;"><?= icon('lock', 20) ?></div>
-                        <div class="kpi-trend down">&#9660; -1</div>
-                    </div>
-                    <div class="kpi-value">2</div>
-                    <div class="kpi-label">Pending Permissions</div>
-                    <div class="kpi-sub"><span>Awaiting admin review</span></div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-top">
-                        <div class="kpi-icon" style="background:#ECFDF5;color:#047857;"><?= icon('check-circle', 20) ?></div>
-                        <div class="kpi-trend up">Stable</div>
-                    </div>
-                    <div class="kpi-value">99.9%</div>
-                    <div class="kpi-label">System Health</div>
-                    <div class="kpi-sub"><span>All services operational</span></div>
-                </div>
+            <!-- Greeting -->
+            <div class="welcome-line">
+                <h1><?= $greeting ?>, <?= htmlspecialchars($user['name']) ?></h1>
+                <span class="welcome-date"><?= date('l, d F Y') ?></span>
             </div>
 
             <!-- Quick Actions -->
