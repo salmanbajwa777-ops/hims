@@ -77,7 +77,7 @@ $printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
         <div class="header">
             <div class="clinic-info">
                 <h1 class="clinic-name">
-                    <img class="clinic-logo" src="/assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
+                    <img class="clinic-logo" src="assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
                     <?= $clinicNameLead ?> <span class="mark-accent"><?= $clinicNameAccent ?></span>
                 </h1>
                 <p class="website"><?= $clinicWebsite ?></p>
