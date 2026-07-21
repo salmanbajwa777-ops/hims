@@ -93,7 +93,7 @@ $pending = $pdo->query('
     --amber: #F59E0B; --amber-bg: #FFFBEB; --amber-text: #92400E;
     --red: #DC2626; --red-bg: #FEF2F2; --red-text: #B91C1C;
     --bg: #F8FAFC; --card: #FFFFFF; --text: #0F172A;
-    --text-secondary: #64748B; --text-muted: #94A3B8;
+    --text-secondary: #334155; --text-muted: #64748B;
     --border: #E2E8F0; --border-strong: #CBD5E1;
     --shadow-sm: 0 2px 8px rgba(15,23,42,.05); --shadow-md: 0 10px 25px rgba(15,23,42,.08);
     --radius-card: 20px; --radius-input: 12px; --radius-btn: 14px;

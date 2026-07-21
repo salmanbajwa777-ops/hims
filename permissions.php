@@ -88,8 +88,8 @@ if (!in_array($activeRole, $roles, true)) {
     --bg: #F8FAFC;
     --card: #FFFFFF;
     --text: #0F172A;
-    --text-secondary: #64748B;
-    --text-muted: #94A3B8;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
     --border: #E2E8F0;
     --border-strong: #CBD5E1;
     --shadow-sm: 0 2px 8px rgba(15,23,42,.05);

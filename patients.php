@@ -320,8 +320,8 @@ function ageFromDob(?string $dob): ?int {
     --bg: #F8FAFC;
     --card: #FFFFFF;
     --text: #0F172A;
-    --text-secondary: #64748B;
-    --text-muted: #94A3B8;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
     --border: #E2E8F0;
     --border-strong: #CBD5E1;
     --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
@@ -369,6 +369,17 @@ a { text-decoration: none; color: inherit; }
 .btn.secondary { background: #fff; color: var(--text-secondary); border: 1px solid var(--border); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
+.row-acts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.qa { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 8px;
+      padding: 5px 11px; font: 600 12px inherit; font-family: inherit; cursor: pointer; white-space: nowrap;
+      text-decoration: none; }
+.qa:hover { border-color: var(--primary); color: var(--primary-dark); }
+.qa[disabled] { opacity: .45; cursor: not-allowed; }
+.qa[disabled]:hover { border-color: var(--border); color: var(--text); }
+.view-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.view-tab { padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary);
+            border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; }
+.view-tab.active { color: var(--primary-dark); border-bottom-color: var(--primary); }
 .search-card { display: flex; align-items: center; gap: 12px; }
 .search-field { flex: 1; position: relative; }
 .search-field input { width: 100%; padding: 12px 14px 12px 42px; border-radius: var(--radius-input); border: 1px solid var(--border); background: var(--bg); font-size: 14px; color: var(--text); font-family: inherit; }
@@ -574,6 +585,13 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                 <a class="btn" href="patients.php?register=1">+ Register Patient</a>
             </div>
 
+            <?php if (has_permission('RECEPTION_REGISTER_PATIENTS')): ?>
+            <div class="view-tabs">
+                <a class="view-tab" href="receptionist.php">Today</a>
+                <a class="view-tab active" href="patients.php">Patients</a>
+            </div>
+            <?php endif; ?>
+
             <?php if ($success): ?>
                 <div class="alert success"><?= htmlspecialchars($success) ?></div>
             <?php endif; ?>
@@ -595,7 +613,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                 <?php else: ?>
                 <table>
                     <thead>
-                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
+                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th><th>Actions</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($patients as $p): $age = $p['dob'] ? ageFromDob($p['dob']) : $p['approx_age']; ?>
@@ -606,6 +624,16 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                             <td><span class="gender-tag"><?= $age !== null ? $age . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
                             <td class="mrn"><?= htmlspecialchars($p['mrn']) ?></td>
                             <td class="muted"><?= $p['last_visit'] ? date('d M Y', strtotime($p['last_visit'])) : '—' ?></td>
+                            <td>
+                                <div class="row-acts">
+                                    <!-- Both inert for now. "New invoice" needs a revisit flow that opens
+                                         the register panel prefilled from this patient — ?register=1 alone
+                                         would create a duplicate patient record. "Admit" awaits the
+                                         short-stay model. Shown disabled so the intent is visible. -->
+                                    <button class="qa" disabled title="Billing a returning patient isn't built yet">New invoice</button>
+                                    <button class="qa" disabled title="Short-stay admission isn't built yet">Admit</button>
+                                </div>
+                            </td>
                             <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
                             <td>
                                 <form method="POST" action="patients.php" style="display:inline;" onsubmit="return confirm('Permanently delete <?= htmlspecialchars(addslashes($p['name'])) ?> (MRN <?= htmlspecialchars($p['mrn']) ?>)? This removes all their visit history and can\'t be undone.');">

@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border: 1px solid #E2E8F0;
         }
         .card h1 { margin: 0 0 4px; font-size: 20px; color: #0F172A; }
-        .card p.subtitle { margin: 0 0 24px; color: #64748B; font-size: 13.5px; }
+        .card p.subtitle { margin: 0 0 24px; color: #334155; font-size: 13.5px; }
         label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
         input[type="password"] {
             width: 100%; padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 12px;

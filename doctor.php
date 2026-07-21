@@ -145,8 +145,8 @@ function icon(string $name, int $size = 18): string {
     --bg: #F5F8F8;
     --card: #FFFFFF;
     --text: #0F172A;
-    --text-secondary: #566579;
-    --text-muted: #94A3B8;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
     --border: #E2E8F0;
     --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
     --shadow-md: 0 10px 25px rgba(15,23,42,.08);

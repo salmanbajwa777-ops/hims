@@ -233,8 +233,8 @@ $pendingBills = $pdo->query("
     --bg: #F8FAFC;
     --card: #FFFFFF;
     --border: #E2E8F0;
-    --text: #1E293B;
-    --text-muted: #94A3B8;
+    --text: #0F172A;
+    --text-muted: #64748B;
     --red-bg: #FEE2E2;
     --red-text: #B91C1C;
     --green-bg: #DCFCE7;

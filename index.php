@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .login-card p.subtitle {
             margin: 0 0 24px;
-            color: #6B7280;
+            color: #334155;
             font-size: 14px;
         }
         label {

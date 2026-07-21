@@ -47,17 +47,70 @@ function icon(string $name, int $size = 18): string {
     return '<svg width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
 }
 
-// Placeholder data — Patients (Phase 2), Billing (Phase 4) and Short-stay (Phase 5)
-// tables don't exist yet per HMIS-PHP-PLAN.md. Replace with real queries once those
-// phases land; until then this page is a UI shell only.
+// ---------------- Today's work queue ----------------
+// Every visit registered today, newest first. Registration raises the bill and takes
+// payment up front (see patients.php), so there is no unpaid state here — the money
+// columns report what was collected, net of any refunds.
+$todayRows = $pdo->query("
+    SELECT v.id AS visit_id, v.token_no, v.consult_status, v.disposition, v.created_at,
+           v.started_at, v.finished_at,
+           p.id AS patient_id, p.mrn, p.name AS patient_name, p.dob, p.approx_age, p.phone,
+           dr.name AS doctor_name,
+           dct.label AS consult_label,
+           b.id AS bill_id, b.grand_total, b.paid_amount, b.status AS bill_status,
+           COALESCE(r.refunded, 0) AS refunded
+    FROM visits v
+    JOIN patients p ON p.id = v.patient_id
+    JOIN users dr ON dr.id = v.doctor_id
+    JOIN doctor_consult_types dct ON dct.id = v.doctor_consult_type_id
+    LEFT JOIN bills b ON b.visit_id = v.id
+    LEFT JOIN (
+        SELECT bill_id, SUM(amount) AS refunded FROM refunds GROUP BY bill_id
+    ) r ON r.bill_id = b.id
+    WHERE v.visit_date = CURDATE()
+    ORDER BY v.created_at DESC
+")->fetchAll();
+
+$countWaiting = 0;
+$countInConsult = 0;
+$countAdmitted = 0;
+$grossCollected = 0.0;
+$totalRefunded = 0.0;
+$longestWaitMins = 0;
+
+foreach ($todayRows as $row) {
+    if ($row['consult_status'] === 'WAITING') {
+        $countWaiting++;
+        $waited = (int) round((time() - strtotime($row['created_at'])) / 60);
+        $longestWaitMins = max($longestWaitMins, $waited);
+    } elseif ($row['consult_status'] === 'IN_CONSULT') {
+        $countInConsult++;
+    }
+    if ($row['disposition'] === 'SHORT_STAY') {
+        $countAdmitted++;
+    }
+    $grossCollected += (float) $row['paid_amount'];
+    $totalRefunded += (float) $row['refunded'];
+}
+$netCollected = $grossCollected - $totalRefunded;
+
 $stats = [
-    ['label' => 'Cash Tally Today', 'value' => 'Rs 0', 'icon' => 'dollar-sign'],
-    ['label' => 'New Admissions', 'value' => '0', 'icon' => 'bed'],
-    ['label' => 'OPD Patients Today', 'value' => '0', 'icon' => 'users'],
-    ['label' => 'Discharges Today', 'value' => '0', 'icon' => 'file-text'],
+    ['label' => 'Registered Today', 'value' => (string) count($todayRows), 'icon' => 'users'],
+    ['label' => 'Waiting', 'value' => (string) $countWaiting, 'icon' => 'calendar'],
+    ['label' => 'In Consult', 'value' => (string) $countInConsult, 'icon' => 'stethoscope'],
+    ['label' => 'Collected (net)', 'value' => 'Rs ' . number_format($netCollected), 'icon' => 'dollar-sign'],
 ];
-$opdQueue = [];
-$doctorSchedule = [];
+
+// Doctors seeing patients today, with how many each has left to see.
+$doctorSchedule = $pdo->query("
+    SELECT dr.name,
+           SUM(v.consult_status <> 'DONE') AS pending,
+           COUNT(*) AS total
+    FROM visits v JOIN users dr ON dr.id = v.doctor_id
+    WHERE v.visit_date = CURDATE()
+    GROUP BY dr.id, dr.name
+    ORDER BY pending DESC, dr.name
+")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -76,8 +129,8 @@ $doctorSchedule = [];
     --bg: #F8FAFC;
     --card: #FFFFFF;
     --text: #0F172A;
-    --text-secondary: #64748B;
-    --text-muted: #94A3B8;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
     --border: #E2E8F0;
     --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
     --shadow-md: 0 10px 25px rgba(15,23,42,.08);
@@ -240,10 +293,50 @@ a { text-decoration: none; color: inherit; }
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
 td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
-.status-pill { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
-.status-pill.waiting { background: #FFFBEB; color: #92400E; }
-.status-pill.in-consult { background: #ECFDF5; color: #047857; }
+.status-pill { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; display: inline-block; }
+.status-pill.waiting, .status-pill.wait { background: #FFFBEB; color: #92400E; }
+.status-pill.in-consult, .status-pill.active { background: #ECFDF5; color: #047857; }
 .status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
+.status-pill.stay { background: #EDE7FB; color: #6D28D9; }
+
+/* ---------- Today / Patients view toggle ---------- */
+.view-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.view-tab { padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary);
+            border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.view-tab.active { color: var(--primary-dark); border-bottom-color: var(--primary); }
+.view-tab:hover { color: var(--primary-dark); }
+
+/* ---------- Today work queue ---------- */
+.queue-scroll { overflow-x: auto; }
+.queue-table { width: 100%; border-collapse: collapse; min-width: 900px; }
+.queue-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                  color: var(--text-muted); font-weight: 600; padding: 0 10px 10px; }
+.queue-table td { padding: 11px 10px; border-top: 1px solid var(--border); vertical-align: middle; }
+.queue-table .ta-r { text-align: right; }
+.qrow { position: relative; }
+/* Left severity stripe: consultation state at a glance. box-shadow rather than a
+   pseudo-element so it can't be clipped by the horizontal scroll container. */
+.qrow td:first-child { box-shadow: inset 3px 0 0 0 transparent; }
+.qrow.s-wait td:first-child { box-shadow: inset 3px 0 0 0 var(--amber); }
+.qrow.s-active td:first-child { box-shadow: inset 3px 0 0 0 var(--primary); }
+.qrow.s-done td:first-child { box-shadow: inset 3px 0 0 0 #CBD5E1; }
+.qrow.s-stay td:first-child { box-shadow: inset 3px 0 0 0 #6D28D9; }
+.qrow.voided { opacity: .6; }
+.qrow .tok { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; padding-left: 14px; }
+.qrow .tok small { display: block; font-size: 10px; font-weight: 600; letter-spacing: .05em;
+                   color: var(--text-muted); }
+.q-name { font-weight: 600; font-size: 13.5px; }
+.q-doc { font-weight: 600; font-size: 13px; }
+.q-meta { font-size: 11.5px; color: var(--text-muted); }
+.mono { font-variant-numeric: tabular-nums; }
+.struck { text-decoration: line-through; color: var(--text-muted); }
+.q-acts { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.qa { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 8px;
+      padding: 5px 11px; font: 600 12px inherit; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.qa:hover { border-color: var(--primary); color: var(--primary-dark); }
+.qa.warn { color: var(--red); }
+.qa[disabled] { opacity: .45; cursor: not-allowed; }
+.qa[disabled]:hover { border-color: var(--border); color: var(--text); }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 /* ---------- Doctor schedule ---------- */
@@ -264,11 +357,6 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .nag-banner a { font-weight: 700; text-decoration: underline; }
 
 /* ---------- Build notice ---------- */
-.build-notice {
-    background: #F1F5F9; border: 1px dashed var(--border); border-radius: 14px;
-    padding: 12px 18px; font-size: 12.5px; color: var(--text-secondary);
-}
-
 @media (max-width: 1200px) {
     .grid-4, .quick-actions { grid-template-columns: repeat(2, 1fr); }
     .row-2 { grid-template-columns: 1fr; }
@@ -334,12 +422,6 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
             </div>
             <?php endif; ?>
 
-            <div class="build-notice">
-                Patient registration, OPD/billing and admissions aren't built yet (Phases 2, 4 &amp; 5 of
-                the HMIS build plan) — the stats, queue and nav items below are placeholders until that
-                data exists.
-            </div>
-
             <!-- Hero -->
             <section class="hero">
                 <div class="hero-greeting">
@@ -348,6 +430,11 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
                     <div class="date"><?= date('l') ?>, <?= date('d F Y') ?></div>
                 </div>
             </section>
+
+            <div class="view-tabs">
+                <a class="view-tab active" href="receptionist.php">Today</a>
+                <a class="view-tab" href="patients.php">Patients</a>
+            </div>
 
             <!-- Quick Actions -->
             <div>
@@ -373,50 +460,116 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
                 <?php endforeach; ?>
             </div>
 
-            <div class="row-2">
-                <!-- OPD Queue -->
-                <div class="card">
-                    <div class="section-title">OPD Queue</div>
-                    <div class="section-sub">Today's patients, in check-in order</div>
-                    <?php if (empty($opdQueue)): ?>
-                        <div class="empty-state">No patients in queue yet.</div>
-                    <?php else: ?>
-                    <table>
-                        <thead><tr><th>Token</th><th>Patient</th><th>Doctor</th><th>Status</th></tr></thead>
-                        <tbody>
-                        <?php foreach ($opdQueue as $q): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($q['token']) ?></td>
-                                <td><?= htmlspecialchars($q['patient']) ?></td>
-                                <td><?= htmlspecialchars($q['doctor']) ?></td>
-                                <td><span class="status-pill <?= htmlspecialchars($q['status_class']) ?>"><?= htmlspecialchars($q['status_label']) ?></span></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <?php endif; ?>
-                </div>
+            <!-- Today's work queue -->
+            <div class="card">
+                <div class="section-title">Today</div>
+                <div class="section-sub"><?= count($todayRows) ?> registered &middot; <?= $countWaiting ?> waiting<?= $longestWaitMins > 0 ? ' (longest ' . $longestWaitMins . ' min)' : '' ?></div>
 
-                <!-- Doctor Schedule -->
-                <div class="card">
-                    <div class="section-title">Doctor Schedule</div>
-                    <div class="section-sub">Who's in today</div>
-                    <?php if (empty($doctorSchedule)): ?>
-                        <div class="empty-state">No schedule configured yet.</div>
-                    <?php else: ?>
-                    <div class="sched-list">
-                        <?php foreach ($doctorSchedule as $d): ?>
-                            <div class="sched-item">
-                                <div class="doc-avatar"><?= strtoupper(substr($d['name'], 0, 1)) ?></div>
-                                <div class="sched-text">
-                                    <div class="sched-name"><?= htmlspecialchars($d['name']) ?></div>
-                                    <div class="sched-time"><?= htmlspecialchars($d['time']) ?></div>
+                <?php if (empty($todayRows)): ?>
+                    <div class="empty-state">No patients registered today yet.</div>
+                <?php else: ?>
+                <div class="queue-scroll">
+                <table class="queue-table">
+                    <thead>
+                        <tr><th>Token</th><th>Patient</th><th>Doctor / Type</th><th>Status</th><th>Paid</th><th class="ta-r">Actions</th></tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($todayRows as $row): ?>
+                        <?php
+                            $isAdmitted = $row['disposition'] === 'SHORT_STAY';
+                            $refunded = (float) $row['refunded'];
+                            $paidAmount = (float) $row['paid_amount'];
+
+                            if ($isAdmitted) {
+                                $stripe = 'stay';
+                            } elseif ($row['consult_status'] === 'IN_CONSULT') {
+                                $stripe = 'active';
+                            } elseif ($row['consult_status'] === 'WAITING') {
+                                $stripe = 'wait';
+                            } else {
+                                $stripe = 'done';
+                            }
+
+                            if ($row['consult_status'] === 'WAITING') {
+                                $waitedMins = (int) round((time() - strtotime($row['created_at'])) / 60);
+                                $statusLabel = 'Waiting ' . $waitedMins . 'm';
+                                $statusClass = 'wait';
+                            } elseif ($row['consult_status'] === 'IN_CONSULT') {
+                                $statusLabel = 'In consult';
+                                $statusClass = 'active';
+                            } else {
+                                $statusLabel = $row['finished_at'] ? 'Done ' . date('H:i', strtotime($row['finished_at'])) : 'Done';
+                                $statusClass = 'done';
+                            }
+
+                            $ageDisplay = $row['dob']
+                                ? (new DateTime($row['dob']))->diff(new DateTime())->y . 'y'
+                                : ($row['approx_age'] !== null ? (int) $row['approx_age'] . 'y' : '—');
+                        ?>
+                        <tr class="qrow s-<?= $stripe ?><?= $refunded > 0 && $refunded >= $paidAmount ? ' voided' : '' ?>">
+                            <td class="tok"><?= (int) $row['token_no'] ?><small><?= date('H:i', strtotime($row['created_at'])) ?></small></td>
+                            <td>
+                                <div class="q-name"><?= htmlspecialchars($row['patient_name']) ?></div>
+                                <div class="q-meta"><span class="mono"><?= htmlspecialchars($row['mrn']) ?></span> &middot; <?= $ageDisplay ?> &middot; <?= htmlspecialchars($row['phone']) ?></div>
+                            </td>
+                            <td>
+                                <div class="q-doc"><?= htmlspecialchars($row['doctor_name']) ?></div>
+                                <div class="q-meta"><?= htmlspecialchars($row['consult_label']) ?></div>
+                            </td>
+                            <td>
+                                <span class="status-pill <?= $statusClass ?>"><?= htmlspecialchars($statusLabel) ?></span>
+                                <?php if ($isAdmitted): ?><span class="status-pill stay">Admitted</span><?php endif; ?>
+                            </td>
+                            <td class="mono">
+                                <?php if ($refunded > 0): ?>
+                                    <span class="struck">Rs <?= number_format($paidAmount, 0) ?></span>
+                                    <div class="q-meta">refunded <?= number_format($refunded, 0) ?></div>
+                                <?php else: ?>
+                                    Rs <?= number_format($paidAmount, 0) ?>
+                                <?php endif; ?>
+                            </td>
+                            <td class="ta-r">
+                                <div class="q-acts">
+                                    <!-- Admit/Discharge is deliberately inert until the short-stay model is
+                                         specified (bed/room? own charge?). Shown disabled rather than hidden
+                                         so the intended action is visible without implying it works. -->
+                                    <button class="qa" disabled title="Short-stay admission isn't built yet"><?= $isAdmitted ? 'Discharge' : 'Admit' ?></button>
+                                    <?php if ($row['bill_id']): ?>
+                                        <a class="qa" href="checkout.php?print=1&amp;bill_id=<?= (int) $row['bill_id'] ?>" target="_blank" rel="noopener">Invoice</a>
+                                        <?php if ($row['bill_status'] === 'paid' && $refunded < $paidAmount && has_permission('RECEPTION_ISSUE_REFUNDS')): ?>
+                                            <a class="qa warn" href="refund.php?bill_id=<?= (int) $row['bill_id'] ?>">Refund</a>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                    <a class="qa" href="patients.php?q=<?= urlencode($row['mrn']) ?>">Profile</a>
                                 </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
                 </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- Doctor Schedule -->
+            <div class="card">
+                <div class="section-title">Doctors today</div>
+                <div class="section-sub">Who's in, and how many are still waiting to be seen</div>
+                <?php if (empty($doctorSchedule)): ?>
+                    <div class="empty-state">No visits booked today yet.</div>
+                <?php else: ?>
+                <div class="sched-list">
+                    <?php foreach ($doctorSchedule as $d): ?>
+                        <div class="sched-item">
+                            <div class="doc-avatar"><?= strtoupper(substr($d['name'], 0, 1)) ?></div>
+                            <div class="sched-text">
+                                <div class="sched-name"><?= htmlspecialchars($d['name']) ?></div>
+                                <div class="sched-time"><?= (int) $d['pending'] ?> of <?= (int) $d['total'] ?> still to see</div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
             </div>
 
         </div>
