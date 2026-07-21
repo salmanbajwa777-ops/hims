@@ -54,7 +54,7 @@ function icon(string $name, int $size = 18): string {
 $todayRows = $pdo->query("
     SELECT v.id AS visit_id, v.token_no, v.consult_status, v.disposition, v.created_at,
            v.started_at, v.finished_at,
-           p.id AS patient_id, p.mrn, p.name AS patient_name, p.dob, p.approx_age, p.phone,
+           p.id AS patient_id, p.mrn, p.name AS patient_name, p.dob, p.phone,
            dr.name AS doctor_name,
            dct.label AS consult_label,
            b.id AS bill_id, b.grand_total, b.paid_amount, b.status AS bill_status,
@@ -504,7 +504,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 
                             $ageDisplay = $row['dob']
                                 ? (new DateTime($row['dob']))->diff(new DateTime())->y . 'y'
-                                : ($row['approx_age'] !== null ? (int) $row['approx_age'] . 'y' : '—');
+                                : '—';
                         ?>
                         <tr class="qrow s-<?= $stripe ?><?= $refunded > 0 && $refunded >= $paidAmount ? ' voided' : '' ?>">
                             <td class="tok"><?= (int) $row['token_no'] ?><small><?= date('H:i', strtotime($row['created_at'])) ?></small></td>

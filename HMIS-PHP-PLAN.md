@@ -68,10 +68,15 @@ Live on `hims.babymedics.com`:
   their migrations are applied.
   - `users` (id, name, email, phone, password, base_role enum, must_change_password,
     `max_discount_pct` NEW, created_at)
-  - `password_reset_tokens`
   - `permissions`, `role_permissions`, `user_permission_overrides`
-  - `tasks` — scaffolded, no UI yet, not part of `HMIS-COMPLETE.md` spec (separate ask, keep it)
   - `audit_logs`
+  - **DROPPED 2026-07-21** via `sql/drop_unused.sql` (**applied on the live DB**), after an
+    audit found zero queries against any of them: `password_reset_tokens` (resets were never
+    built — staff.php uses admin-set temp passwords + `must_change_password` instead), `tasks`
+    (scaffolded, no UI ever built), `clinic_settings` (invoices carry no tax; `config/billing.php`
+    hardcodes zeros rather than reading it back). Same migration dropped `patients.approx_age`
+    when the "Approx. Age" field was removed from registration — age now comes from `dob` only,
+    and patients without a `dob` display "—".
   - `staff_documents`
   - `cities`, `areas` (`status`, `added_by_id` for the reception-quick-add/admin-review flow) NEW
   - `doctor_consult_types` (per-doctor label/fee/is_default, managed on `staff.php`) NEW

@@ -91,7 +91,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
     $phoneLocal = ltrim(preg_replace('/\D/', '', $_POST['phone'] ?? ''), '0');
     $phone = $phoneLocal !== '' ? $phoneCc . $phoneLocal : '';
     $dob = trim($_POST['dob'] ?? '') ?: null;
-    $approxAge = trim($_POST['approx_age'] ?? '') !== '' ? (int) $_POST['approx_age'] : null;
     $gender = $_POST['gender'] ?? '';
     $cnic = trim($_POST['cnic'] ?? '') ?: null;
     $altPhone = trim($_POST['alt_phone'] ?? '') ?: null;
@@ -130,11 +129,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 // the same value to both before either commits. Both use an atomic upsert so MySQL
                 // serializes concurrent increments via row locking.
                 $insertPatient = $pdo->prepare('
-                    INSERT INTO patients (mrn, name, father_name, dob, approx_age, gender, phone, alt_phone, cnic, city_id, area_id, address, created_by_id)
-                    VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO patients (mrn, name, father_name, dob, gender, phone, alt_phone, cnic, city_id, area_id, address, created_by_id)
+                    VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ');
                 $insertPatient->execute([
-                    $name, $fatherName ?: null, $dob, $approxAge, $gender,
+                    $name, $fatherName ?: null, $dob, $gender,
                     $phone, $altPhone, $cnic, $cityId, $areaId, $address, $_SESSION['user_id'],
                 ]);
                 $patientId = (int) $pdo->lastInsertId();
@@ -616,7 +615,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                         <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th><th>Actions</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($patients as $p): $age = $p['dob'] ? ageFromDob($p['dob']) : $p['approx_age']; ?>
+                        <?php foreach ($patients as $p): $age = $p['dob'] ? ageFromDob($p['dob']) : null; ?>
                         <tr>
                             <td><div class="person"><span class="person-avatar"><?= htmlspecialchars(strtoupper(substr($p['name'], 0, 1))) ?></span><?= htmlspecialchars($p['name']) ?></div></td>
                             <td class="muted"><?= htmlspecialchars($p['father_name'] ?: '—') ?></td>

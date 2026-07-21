@@ -2,22 +2,30 @@
 // Shared billing helpers, used by checkout.php (manual checkout) and patients.php
 // (auto-create a bill the moment a visit is registered).
 
-// Daily sequential invoice number: "94345 - 2026-07-17 14:03:00" — matches the
-// original spec's format. Race-safe under concurrent checkouts via the same
-// atomic-upsert + LAST_INSERT_ID() pattern used for visit queue tokens in patients.php.
+// Invoice number: sequence + YY + MM as one continuous run of digits, e.g. 1202607
+// is the 12th invoice of July 2026. Same encoding as the MRN (see patients.php).
+// The sequence restarts at 1 each month; year and month are carried in the number
+// itself, so the pair (yr, mo) is what makes it unique, not the sequence alone.
+//
+// Race-safe under concurrent registrations via the atomic-upsert + LAST_INSERT_ID()
+// pattern used for MRNs and queue tokens. rowCount() distinguishes the two branches:
+// MySQL reports 1 affected row for a fresh INSERT and 2 for the ON DUPLICATE KEY
+// update path, so the first invoice of a month correctly gets sequence 1.
 function generate_invoice_number(PDO $pdo): string {
-    $today = date('Y-m-d');
-    $now = date('H:i:s');
+    $year = (int) date('Y');
+    $month = (int) date('n');
 
-    $pdo->prepare('
-        INSERT INTO invoice_sequences (sequence_date, last_sequence)
-        VALUES (?, 94345)
-        ON DUPLICATE KEY UPDATE last_sequence = LAST_INSERT_ID(last_sequence) + 1
-    ')->execute([$today]);
-    $lastId = (int) $pdo->lastInsertId();
-    $seq = $lastId > 0 ? $lastId : 94345;
+    $stmt = $pdo->prepare('
+        INSERT INTO invoice_counters (yr, mo, next_seq)
+        VALUES (?, ?, 2)
+        ON DUPLICATE KEY UPDATE next_seq = LAST_INSERT_ID(next_seq) + 1
+    ');
+    $stmt->execute([$year, $month]);
+    $seq = $stmt->rowCount() === 1 ? 1 : (int) $pdo->lastInsertId();
 
-    return $seq . ' - ' . $today . ' ' . $now;
+    return $seq
+        . substr((string) $year, 2, 2)
+        . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
 }
 
 // Invoices carry no tax: the net total is simply the sum of the line items. The

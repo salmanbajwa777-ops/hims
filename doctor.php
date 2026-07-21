@@ -80,7 +80,7 @@ $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good
 // consultation and those still waiting float to the top (by status), then by token.
 $queueStmt = $pdo->prepare("
     SELECT v.id AS visit_id, v.token_no, v.consult_status, v.started_at, v.created_at,
-           p.name AS patient_name, p.gender, p.dob, p.approx_age, p.mrn,
+           p.name AS patient_name, p.gender, p.dob, p.mrn,
            t.label AS type_label
     FROM visits v
     JOIN patients p ON p.id = v.patient_id
@@ -102,7 +102,7 @@ function doc_age(array $v): ?int {
     if (!empty($v['dob'])) {
         return (new DateTime($v['dob']))->diff(new DateTime())->y;
     }
-    return $v['approx_age'] !== null ? (int) $v['approx_age'] : null;
+    return null;
 }
 
 // Minutes a still-waiting patient has been in the queue (since their visit row was created).

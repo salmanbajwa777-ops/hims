@@ -375,10 +375,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         if (!$targetUser) {
             $error = 'Staff member not found.';
         } else {
-            // Cascades to staff_documents, doctor_consult_types, user_permission_overrides,
-            // password_reset_tokens. Sets NULL on visits/patients/tasks they're linked to
-            // (their work stays, just no longer attributed) and on audit_logs.user_id —
-            // see sql/add_delete_cascades.sql for the FK definitions this depends on.
+            // Cascades to staff_documents, doctor_consult_types, user_permission_overrides.
+            // Sets NULL on visits/patients they're linked to (their work stays, just no
+            // longer attributed) and on audit_logs.user_id — see sql/add_delete_cascades.sql
+            // for the FK definitions this depends on.
             $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$deleteId]);
 
             $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
