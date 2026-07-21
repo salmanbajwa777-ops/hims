@@ -718,7 +718,6 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                     </div>
                 </div>
 
-                <div class="group-label">Location</div>
                 <div class="field-grid">
                     <div class="f">
                         <select id="city" name="city_id" required>
