@@ -777,11 +777,11 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                         <span class="hint" id="discountHint">Your cap: up to <?= htmlspecialchars($currentUser['max_discount_pct']) ?>% — enforced when the bill is saved</span>
                     </div>
                     <div class="f">
-                        <select id="payment_mode" name="payment_mode" class="filled" required>
-                            <option value="CASH" selected>Cash</option>
-                            <option value="DIGITAL">Digital / Card</option>
-                        </select>
-                        <span class="flabel" data-for="payment_mode">Payment Mode <span class="req">*</span></span>
+                        <div class="mini-label">Payment Mode <span class="req">*</span></div>
+                        <div class="radio-row">
+                            <div class="radio-pill"><input type="radio" id="pay_cash" name="payment_mode" value="CASH" required><label for="pay_cash">Cash</label></div>
+                            <div class="radio-pill"><input type="radio" id="pay_digital" name="payment_mode" value="DIGITAL"><label for="pay_digital">Online / Card</label></div>
+                        </div>
                     </div>
                 </div>
 
