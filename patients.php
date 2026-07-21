@@ -283,6 +283,8 @@ if ($q !== '') {
 // Full-page registration view: ?register=1 shows only the form (no list/search).
 // Also forced open when a submit failed validation so the entered data survives.
 $showRegister = isset($_GET['register']) || $error !== '';
+$qhActive = $showRegister ? 'register' : 'patients';
+$qhBrand = false; // the sidebar already carries the HIMS mark
 
 $doctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
 $cities = $pdo->query('SELECT id, name FROM cities ORDER BY name')->fetchAll();
@@ -350,10 +352,7 @@ a { text-decoration: none; color: inherit; }
 .nav-icon svg { width: 15px; height: 15px; }
 .nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
 
-.header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
-.header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+/* Header styles now ship with partials/quick_header.php. */
 
 .page-title { font-size: 22px; font-weight: 700; }
 .page-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
@@ -375,10 +374,6 @@ a { text-decoration: none; color: inherit; }
 .qa:hover { border-color: var(--primary); color: var(--primary-dark); }
 .qa[disabled] { opacity: .45; cursor: not-allowed; }
 .qa[disabled]:hover { border-color: var(--border); color: var(--text); }
-.view-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
-.view-tab { padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary);
-            border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; }
-.view-tab.active { color: var(--primary-dark); border-bottom-color: var(--primary); }
 .search-card { display: flex; align-items: center; gap: 12px; }
 .search-field { flex: 1; position: relative; }
 .search-field input { width: 100%; padding: 12px 14px 12px 42px; border-radius: var(--radius-input); border: 1px solid var(--border); background: var(--bg); font-size: 14px; color: var(--text); font-family: inherit; }
@@ -566,13 +561,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
     </aside>
 
     <div class="main">
-        <header class="header">
-            <div class="page-title" style="font-size:16px;"><?= $showRegister ? 'New Patient Registration' : 'Patients' ?></div>
-            <div class="header-right">
-                <span class="header-date"><?= date('D, d M Y') ?></span>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
+        <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
         <div class="content">
             <?php if (!$showRegister): ?>
@@ -583,13 +572,6 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
                 </div>
                 <a class="btn" href="patients.php?register=1">+ Register Patient</a>
             </div>
-
-            <?php if (has_permission('RECEPTION_REGISTER_PATIENTS')): ?>
-            <div class="view-tabs">
-                <a class="view-tab" href="receptionist.php">Today</a>
-                <a class="view-tab active" href="patients.php">Patients</a>
-            </div>
-            <?php endif; ?>
 
             <?php if ($success): ?>
                 <div class="alert success"><?= htmlspecialchars($success) ?></div>

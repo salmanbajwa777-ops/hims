@@ -24,6 +24,8 @@ if (!has_permission('RECEPTION_REGISTER_PATIENTS')) {
 
 $mustChangePassword = (bool) $user['must_change_password'];
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
+$qhActive = 'today';
+$qhBrand = false; // the sidebar already carries the HIMS mark
 $hour = (int) date('G');
 $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good Evening');
 
@@ -202,41 +204,7 @@ a { text-decoration: none; color: inherit; }
 .nav-icon svg { width: 15px; height: 15px; }
 .nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
 
-/* ---------- Header ---------- */
-.header {
-    height: 72px; position: sticky; top: 0; z-index: 20;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px);
-    border-bottom: 1px solid var(--border);
-}
-.header-title { font-size: 16px; font-weight: 700; }
-.search-box { flex: 1; max-width: 420px; margin: 0 32px; position: relative; }
-.search-box input {
-    width: 100%; padding: 9px 14px 9px 38px; border-radius: var(--radius-input);
-    border: 1px solid var(--border); background: #F8FAFC; font-size: 13.5px; color: var(--text);
-}
-.search-box input:focus { outline: none; border-color: var(--primary); background: #fff; }
-.search-box .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-muted); display: flex; }
-.search-box .icon svg { width: 15px; height: 15px; }
-.header-right { display: flex; align-items: center; gap: 18px; }
-.icon-btn {
-    width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border);
-    background: #fff; display: flex; align-items: center; justify-content: center;
-    color: var(--text-secondary); position: relative; cursor: pointer;
-}
-.icon-btn svg { width: 17px; height: 17px; }
-.icon-btn .dot {
-    position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
-    background: var(--red); border: 1.5px solid #fff;
-}
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.avatar {
-    width: 38px; height: 38px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    color: #fff; display: flex; align-items: center; justify-content: center;
-    font-weight: 600; font-size: 13px;
-}
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+/* Header styles now ship with partials/quick_header.php. */
 
 /* ---------- Hero ---------- */
 .hero {
@@ -251,20 +219,6 @@ a { text-decoration: none; color: inherit; }
 .hero-greeting .eyebrow { font-size: 14px; opacity: .85; font-weight: 500; }
 .hero-greeting h1 { font-size: 30px; font-weight: 700; margin: 4px 0 8px; }
 .hero-greeting .date { font-size: 13.5px; opacity: .85; }
-
-/* ---------- Quick Actions ---------- */
-.quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.action-tile {
-    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-    min-height: 100px; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 8px; cursor: pointer;
-    transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
-    text-align: center; padding: 10px;
-}
-.action-tile:hover { transform: scale(1.03); box-shadow: var(--shadow-md); background: linear-gradient(160deg, #fff, var(--primary-light)); }
-.action-tile .icon { color: var(--primary-dark); }
-.action-tile .icon svg { width: 24px; height: 24px; }
-.action-tile .label { font-size: 12.5px; font-weight: 600; color: var(--text); }
 
 /* ---------- Stat cards ---------- */
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
@@ -298,13 +252,6 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .status-pill.in-consult, .status-pill.active { background: #ECFDF5; color: #047857; }
 .status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
 .status-pill.stay { background: #EDE7FB; color: #6D28D9; }
-
-/* ---------- Today / Patients view toggle ---------- */
-.view-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
-.view-tab { padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary);
-            border-bottom: 2px solid transparent; margin-bottom: -1px; }
-.view-tab.active { color: var(--primary-dark); border-bottom-color: var(--primary); }
-.view-tab:hover { color: var(--primary-dark); }
 
 /* ---------- Today work queue ---------- */
 .queue-scroll { overflow-x: auto; }
@@ -358,7 +305,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 
 /* ---------- Build notice ---------- */
 @media (max-width: 1200px) {
-    .grid-4, .quick-actions { grid-template-columns: repeat(2, 1fr); }
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
     .row-2 { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
@@ -397,21 +344,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
     </aside>
 
     <div class="main">
-        <header class="header">
-            <div class="header-title">Reception Desk</div>
-
-            <div class="search-box">
-                <span class="icon"><?= icon('search') ?></span>
-                <input type="text" placeholder="Search patients by name, phone, father's name..." disabled>
-            </div>
-
-            <div class="header-right">
-                <button class="icon-btn"><?= icon('bell', 17) ?><span class="dot"></span></button>
-                <span class="header-date"><?= date('D, d M Y') ?></span>
-                <div class="avatar"><?= strtoupper(substr($firstName, 0, 1)) ?></div>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
+        <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
         <div class="content">
 
@@ -430,22 +363,6 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
                     <div class="date"><?= date('l') ?>, <?= date('d F Y') ?></div>
                 </div>
             </section>
-
-            <div class="view-tabs">
-                <a class="view-tab active" href="receptionist.php">Today</a>
-                <a class="view-tab" href="patients.php">Patients</a>
-            </div>
-
-            <!-- Quick Actions -->
-            <div>
-                <div class="section-title">Quick Actions</div>
-                <div class="section-sub">Jump straight into the most common reception tasks</div>
-                <div class="quick-actions">
-                    <a class="action-tile" href="patients.php"><span class="icon"><?= icon('users', 24) ?></span><span class="label">Patients</span></a>
-                    <a class="action-tile" href="patients.php"><span class="icon"><?= icon('user-plus', 24) ?></span><span class="label">+ Add Patient</span></a>
-                    <div class="action-tile"><span class="icon"><?= icon('dollar-sign', 24) ?></span><span class="label">Post Expense</span></div>
-                </div>
-            </div>
 
             <!-- Stat cards -->
             <div class="grid-4">
