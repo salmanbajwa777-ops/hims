@@ -60,8 +60,13 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
 
         /* ---------- Header box ---------- */
-        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm; display: flex; gap: 5mm; }
-        .head-left, .head-right { width: 50%; }
+        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm; display: flex; gap: 5mm; align-items: stretch; }
+        /* Both halves are flex columns whose table is pushed to the bottom by an auto
+           top margin. Since the two tables have the same four rows, bottom-aligning
+           them also top-aligns them — the rows line up without either side depending
+           on a hand-tuned offset that would drift whenever the text above changes. */
+        .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
+        .head-left > .ids, .head-right > .meta { margin-top: auto; }
 
         /* Wordmark and web address are a tight pair whose combined height matches the
            logo, so the three read as one lockup rather than a loose stack. */
@@ -82,7 +87,7 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
             font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold;
             letter-spacing: 1.7px; color: #4A4A4A; line-height: 1; margin-top: 2px;
         }
-        .addr { font-size: 9px; line-height: 1.4; margin-top: 7px; }
+        .addr { font-size: 9px; line-height: 1.35; margin-top: 5px; margin-bottom: 4px; }
 
         .tagline {
             font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: bold;
@@ -97,9 +102,9 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
            opposite so both columns carry two lines before their tables begin. */
         .clinic-contact { margin-top: 0; margin-bottom: 3px; }
 
-        /* Identifiers sit under the clinic block, opposite the patient details. The
-           top margin is what lands row 1 level with row 1 of the table opposite. */
-        .ids { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 7mm; }
+        /* Identifiers sit under the clinic block, opposite the patient details.
+           Vertical placement comes from the flex rule above, not a fixed margin. */
+        .ids { width: 100%; border-collapse: collapse; font-size: 9px; }
         .ids td { border: 1px solid #C8C8C8; padding: 3px 5px; }
         .ids td.k { background: #EDEDED; font-weight: bold; width: 42%; }
         .ids td.v { font-weight: bold; }
