@@ -46,9 +46,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'doctor_consult_types') {
     header('Content-Type: application/json');
     $doctorId = (int) ($_GET['doctor_id'] ?? 0);
-    $stmt = $pdo->prepare('SELECT id, label, fee, is_default FROM doctor_consult_types WHERE doctor_id = ? ORDER BY label');
+    $stmt = $pdo->prepare('SELECT id, label, fee, is_default, is_revisit_eligible FROM doctor_consult_types WHERE doctor_id = ? ORDER BY label');
     $stmt->execute([$doctorId]);
     echo json_encode($stmt->fetchAll());
+    exit;
+}
+
+// ---------------- AJAX: revisit quote for a returning patient ----------------
+// Given an existing patient + doctor + consult-type, returns the proposed fee
+// (with any follow-up discount) so the follow-up panel can show it live.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'revisit_quote') {
+    header('Content-Type: application/json');
+    $pid = (int) ($_GET['patient_id'] ?? 0);
+    $did = (int) ($_GET['doctor_id'] ?? 0);
+    $ctid = (int) ($_GET['consult_type_id'] ?? 0);
+    $feeStmt = $pdo->prepare('SELECT fee FROM doctor_consult_types WHERE id = ? AND doctor_id = ?');
+    $feeStmt->execute([$ctid, $did]);
+    $feeRow = $feeStmt->fetch();
+    if (!$feeRow) { echo json_encode(['error' => 'Invalid consultation type.']); exit; }
+    $quote = revisit_consultation_fee($pdo, $pid, $did, $ctid, (float) $feeRow['fee']);
+    $quote['full_fee'] = (float) $feeRow['fee'];
+    echo json_encode($quote);
     exit;
 }
 
@@ -175,12 +193,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
                 $discountBy = $discountPct > 0 ? $_SESSION['user_id'] : null;
 
+                // A brand-new patient's first visit at full fee is a FULL window anchor for
+                // future revisit pricing; a discounted first visit is not a clean anchor.
+                $feeType = $discountPct > 0 ? null : 'FULL';
+
                 $insertVisit = $pdo->prepare('
-                    INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)
+                    INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)
                 ');
                 $insertVisit->execute([
-                    $tokenNo, $patientId, $doctorId, $consultTypeId, $fee, $discountPct, $discountBy, $paymentMode, $_SESSION['user_id'],
+                    $tokenNo, $patientId, $doctorId, $consultTypeId, $fee, $discountPct, $discountBy, $paymentMode, $_SESSION['user_id'], $feeType,
                 ]);
                 $visitId = (int) $pdo->lastInsertId();
 
@@ -228,6 +250,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 $pdo->rollBack();
                 $error = 'Could not save registration. Please try again.';
             }
+        }
+    }
+}
+
+// ---------------- Follow-up visit for an EXISTING patient (revisit billing) ----------------
+// Raises a new consultation visit + bill for a patient already on file. The fee is
+// proposed by the revisit engine (free / 50% / 75% / full), overridable by reception.
+$followupVisit = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register_followup') {
+    $patientId = (int) ($_POST['patient_id'] ?? 0);
+    $doctorId = (int) ($_POST['doctor_id'] ?? 0);
+    $consultTypeId = (int) ($_POST['doctor_consult_type_id'] ?? 0);
+    $paymentMode = $_POST['payment_mode'] ?? '';
+    $override = ($_POST['override_full'] ?? '') === '1';   // reception forced full fee
+
+    $pStmt = $pdo->prepare('SELECT id, name, mrn FROM patients WHERE id = ?');
+    $pStmt->execute([$patientId]);
+    $patient = $pStmt->fetch();
+
+    $feeStmt = $pdo->prepare('SELECT fee, label FROM doctor_consult_types WHERE id = ? AND doctor_id = ?');
+    $feeStmt->execute([$consultTypeId, $doctorId]);
+    $ctRow = $feeStmt->fetch();
+
+    if (!$patient || !$ctRow || !in_array($paymentMode, ['CASH', 'DIGITAL'], true)) {
+        $error = 'Pick a patient, doctor, consultation type and payment mode.';
+    } else {
+        $fullFee = (float) $ctRow['fee'];
+        $quote = revisit_consultation_fee($pdo, $patientId, $doctorId, $consultTypeId, $fullFee);
+
+        // Receptionist override: charge full instead of the proposed follow-up rate.
+        if ($override) {
+            $quote = ['fee' => $fullFee, 'discount_pct' => 0.0, 'fee_type' => 'FULL',
+                      'reason' => 'Reception override to full fee', 'anchor_visit_id' => null];
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            $pdo->prepare('
+                INSERT INTO visit_queue_counters (doctor_id, visit_date, next_token)
+                VALUES (?, CURDATE(), 2)
+                ON DUPLICATE KEY UPDATE next_token = LAST_INSERT_ID(next_token) + 1
+            ')->execute([$doctorId]);
+            $lastId = (int) $pdo->lastInsertId();
+            $tokenNo = $lastId > 0 ? $lastId : 1;
+
+            $discountPct = (float) $quote['discount_pct'];
+            $discountBy = $discountPct > 0 ? $_SESSION['user_id'] : null;
+
+            $insertVisit = $pdo->prepare('
+                INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type, revisit_of_visit_id, fee_overridden)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?)
+            ');
+            $insertVisit->execute([
+                $tokenNo, $patientId, $doctorId, $consultTypeId, $fullFee, $discountPct, $discountBy,
+                $paymentMode, $_SESSION['user_id'], $quote['fee_type'], $quote['anchor_visit_id'] ?? null, $override ? 1 : 0,
+            ]);
+            $visitId = (int) $pdo->lastInsertId();
+
+            $billId = create_bill_for_visit(
+                $pdo, $visitId, $ctRow['label'], $fullFee, $discountPct, (int) $_SESSION['user_id'], $paymentMode
+            );
+
+            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+                ->execute([$_SESSION['user_id'], 'followup_registered',
+                    "Follow-up visit #$visitId for patient #$patientId ({$patient['mrn']}), {$quote['fee_type']} ({$quote['reason']}), token #$tokenNo"]);
+
+            $pdo->commit();
+
+            $dStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+            $dStmt->execute([$doctorId]);
+            $followupVisit = [
+                'bill_id' => $billId, 'mrn' => $patient['mrn'], 'patient_name' => $patient['name'],
+                'doctor_name' => $dStmt->fetch()['name'] ?? '', 'type_label' => $ctRow['label'],
+                'token_no' => $tokenNo, 'fee_type' => $quote['fee_type'], 'reason' => $quote['reason'],
+                'fee' => $quote['fee'],
+            ];
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error = 'Could not create the follow-up visit. Please try again.';
         }
     }
 }
@@ -533,12 +635,9 @@ require __DIR__ . '/partials/sidebar.php';
                             <td class="muted"><?= $p['last_visit'] ? date('d M Y', strtotime($p['last_visit'])) : '—' ?></td>
                             <td>
                                 <div class="row-acts">
-                                    <!-- Both inert for now. "New invoice" needs a revisit flow that opens
-                                         the register panel prefilled from this patient — ?register=1 alone
-                                         would create a duplicate patient record. "Admit" awaits the
-                                         short-stay model. Shown disabled so the intent is visible. -->
-                                    <button class="qa" disabled title="Billing a returning patient isn't built yet">New invoice</button>
-                                    <button class="qa" disabled title="Short-stay admission isn't built yet">Admit</button>
+                                    <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>)">New invoice</button>
+                                    <!-- Procedure billing (e.g. ear piercing) is a separate, one-time flow — placeholder for a later phase. -->
+                                    <button class="qa" disabled title="Procedure billing is coming in a later phase">Procedure</button>
                                 </div>
                             </td>
                             <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
@@ -708,6 +807,143 @@ require __DIR__ . '/partials/sidebar.php';
     </div>
 </div>
 
+<!-- Follow-up "New invoice" panel (returning patient) -->
+<style>
+.fu-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:60; align-items:center; justify-content:center; padding:20px; }
+.fu-overlay.open { display:flex; }
+.fu-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:460px; box-shadow:var(--shadow-lg); overflow:hidden; }
+.fu-head { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 22px 4px; }
+.fu-eyebrow { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); }
+.fu-name { font-size:18px; font-weight:700; margin-top:2px; }
+.fu-x { background:none; border:none; font-size:24px; line-height:1; color:var(--text-muted); cursor:pointer; }
+.fu-body { padding:10px 22px 4px; display:flex; flex-direction:column; gap:14px; }
+.fu-body label { display:block; font-size:12.5px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
+.fu-body select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-input); font:inherit; font-size:13.5px; background:var(--bg); color:var(--text); }
+.fu-body select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); background:#fff; }
+.fu-quote { border:1px solid var(--border); border-radius:12px; padding:12px 14px; background:var(--bg); display:flex; justify-content:space-between; align-items:center; }
+.fu-quote .lbl { font-size:12.5px; color:var(--text-secondary); }
+.fu-quote .fee { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
+.fu-quote .tag { font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px; background:var(--primary-light); color:var(--primary-dark); margin-top:2px; display:inline-block; }
+.fu-pay { display:flex; gap:8px; }
+.fu-pay label.pill { flex:1; border:1px solid var(--border); border-radius:12px; padding:10px; text-align:center; font-size:13px; font-weight:600; cursor:pointer; }
+.fu-pay label.pill:has(input:checked) { border-color:var(--primary); background:var(--primary-light); color:var(--primary-dark); }
+.fu-pay input { display:none; }
+.fu-override { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:7px; }
+.fu-foot { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 22px; }
+</style>
+<div class="fu-overlay" id="fuOverlay" onclick="if(event.target===this)fuClose()">
+    <div class="fu-modal" role="dialog" aria-modal="true">
+        <form method="POST" action="patients.php" id="fuForm">
+            <input type="hidden" name="action" value="register_followup">
+            <input type="hidden" name="patient_id" id="fuPatientId">
+            <div class="fu-head">
+                <div>
+                    <div class="fu-eyebrow">New consultation invoice</div>
+                    <div class="fu-name" id="fuName">—</div>
+                </div>
+                <button type="button" class="fu-x" onclick="fuClose()" aria-label="Close">&times;</button>
+            </div>
+            <div class="fu-body">
+                <div>
+                    <label>Doctor</label>
+                    <select name="doctor_id" id="fuDoctor" required onchange="fuLoadTypes()">
+                        <option value="">Select doctor…</option>
+                        <?php foreach ($doctors as $d): ?><option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option><?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label>Consultation type</label>
+                    <select name="doctor_consult_type_id" id="fuType" required onchange="fuQuote()" disabled>
+                        <option value="">Select doctor first…</option>
+                    </select>
+                </div>
+                <div class="fu-quote">
+                    <div>
+                        <div class="lbl">Fee</div>
+                        <div id="fuTag" class="tag" style="display:none;"></div>
+                    </div>
+                    <div class="fee" id="fuFee">—</div>
+                </div>
+                <label class="fu-override"><input type="checkbox" name="override_full" value="1" id="fuOverride" onchange="fuApplyOverride()"> Charge full fee instead (override follow-up discount)</label>
+                <div>
+                    <label>Payment mode</label>
+                    <div class="fu-pay">
+                        <label class="pill"><input type="radio" name="payment_mode" value="CASH" checked> Cash</label>
+                        <label class="pill"><input type="radio" name="payment_mode" value="DIGITAL"> Online / Card</label>
+                    </div>
+                </div>
+            </div>
+            <div class="fu-foot">
+                <button type="button" class="btn secondary" onclick="fuClose()">Cancel</button>
+                <button type="submit" class="btn" id="fuSubmit" disabled>Create invoice &amp; add to queue</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+let fuFullFee = 0, fuQuoteFee = 0;
+function openFollowup(pid, name, mrn) {
+    document.getElementById('fuPatientId').value = pid;
+    document.getElementById('fuName').textContent = name + '  ·  ' + mrn;
+    document.getElementById('fuDoctor').value = '';
+    const t = document.getElementById('fuType'); t.innerHTML = '<option value="">Select doctor first…</option>'; t.disabled = true;
+    document.getElementById('fuFee').textContent = '—';
+    document.getElementById('fuTag').style.display = 'none';
+    document.getElementById('fuOverride').checked = false;
+    document.getElementById('fuSubmit').disabled = true;
+    document.getElementById('fuOverlay').classList.add('open');
+}
+function fuClose() { document.getElementById('fuOverlay').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fuClose(); });
+
+function fuLoadTypes() {
+    const did = document.getElementById('fuDoctor').value;
+    const t = document.getElementById('fuType');
+    t.innerHTML = '<option value="">Loading…</option>'; t.disabled = true;
+    document.getElementById('fuFee').textContent = '—'; document.getElementById('fuTag').style.display='none';
+    document.getElementById('fuSubmit').disabled = true;
+    if (!did) { t.innerHTML = '<option value="">Select doctor first…</option>'; return; }
+    fetch('patients.php?action=doctor_consult_types&doctor_id=' + did)
+        .then(r => r.json())
+        .then(types => {
+            t.innerHTML = '<option value="">Select type…</option>';
+            types.forEach(ct => {
+                const o = document.createElement('option');
+                o.value = ct.id; o.textContent = ct.label + ' (Rs ' + Math.round(ct.fee) + ')';
+                t.appendChild(o);
+            });
+            t.disabled = false;
+        });
+}
+function fuQuote() {
+    const pid = document.getElementById('fuPatientId').value;
+    const did = document.getElementById('fuDoctor').value;
+    const ctid = document.getElementById('fuType').value;
+    if (!ctid) { document.getElementById('fuSubmit').disabled = true; return; }
+    fetch('patients.php?action=revisit_quote&patient_id=' + pid + '&doctor_id=' + did + '&consult_type_id=' + ctid)
+        .then(r => r.json())
+        .then(q => {
+            fuFullFee = q.full_fee; fuQuoteFee = q.fee;
+            renderQuote(q.fee, q.label, q.fee_type);
+            document.getElementById('fuSubmit').disabled = false;
+        });
+}
+function renderQuote(fee, label, feeType) {
+    document.getElementById('fuFee').textContent = 'Rs ' + Math.round(fee);
+    const tag = document.getElementById('fuTag');
+    if (feeType && feeType !== 'FULL') { tag.textContent = label; tag.style.display = 'inline-block'; }
+    else { tag.style.display = 'none'; }
+}
+function fuApplyOverride() {
+    if (document.getElementById('fuOverride').checked) { renderQuote(fuFullFee, 'Full fee (override)', 'FULL'); }
+    else { renderQuote(fuQuoteFee, '', ''); fuQuote(); }
+}
+</script>
+
+<?php
+// A follow-up visit shows the same confirmation + auto-print as a new registration.
+if ($followupVisit && !$successVisit) { $successVisit = $followupVisit; }
+?>
 <?php if ($successVisit): ?>
 <!-- Consultation / Queue confirmation -->
 <div class="panel-overlay open" id="queuePage">
@@ -715,7 +951,12 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="form-header">
             <div>
                 <h1>Consultation Queue</h1>
-                <div class="sub">Patient added — waiting to see <?= htmlspecialchars($successVisit['doctor_name']) ?></div>
+                <div class="sub">
+                    <?= isset($successVisit['fee_type']) ? 'Follow-up visit added' : 'Patient added' ?> — waiting to see <?= htmlspecialchars($successVisit['doctor_name']) ?>
+                    <?php if (!empty($successVisit['reason']) && ($successVisit['fee_type'] ?? '') !== 'FULL'): ?>
+                        &middot; <b style="color:var(--primary);"><?= htmlspecialchars($successVisit['reason']) ?> (Rs <?= number_format((float) $successVisit['fee']) ?>)</b>
+                    <?php endif; ?>
+                </div>
             </div>
             <a href="patients.php" class="close-btn" aria-label="Close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>

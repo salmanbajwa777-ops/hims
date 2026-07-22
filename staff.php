@@ -306,6 +306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     $rowIds = $_POST['consult_type_id'] ?? [];
     $labels = $_POST['consult_type_label'] ?? [];
     $fees = $_POST['consult_type_fee'] ?? [];
+    $revisits = $_POST['consult_type_revisit'] ?? [];  // ['1' => '1', ...] keyed by row index
     $defaultIndex = (int) ($_POST['consult_type_default'] ?? -1);
 
     $doctorStmt = $pdo->prepare('SELECT id, name FROM users WHERE id = ? AND base_role = "DOCTOR"');
@@ -316,8 +317,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $error = 'Doctor not found.';
     } else {
         $keepIds = [];
-        $insertType = $pdo->prepare('INSERT INTO doctor_consult_types (doctor_id, label, fee, is_default) VALUES (?, ?, ?, ?)');
-        $updateType = $pdo->prepare('UPDATE doctor_consult_types SET label = ?, fee = ?, is_default = ? WHERE id = ? AND doctor_id = ?');
+        $insertType = $pdo->prepare('INSERT INTO doctor_consult_types (doctor_id, label, fee, is_default, is_revisit_eligible) VALUES (?, ?, ?, ?, ?)');
+        $updateType = $pdo->prepare('UPDATE doctor_consult_types SET label = ?, fee = ?, is_default = ?, is_revisit_eligible = ? WHERE id = ? AND doctor_id = ?');
 
         foreach ($labels as $i => $label) {
             $label = trim($label);
@@ -326,13 +327,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 continue;
             }
             $isDefault = ($i === $defaultIndex) ? 1 : 0;
+            $revisitOk = !empty($revisits[$i]) ? 1 : 0;   // checkbox present for this row index
             $rowId = (int) ($rowIds[$i] ?? 0);
 
             if ($rowId > 0) {
-                $updateType->execute([$label, $fee, $isDefault, $rowId, $editId]);
+                $updateType->execute([$label, $fee, $isDefault, $revisitOk, $rowId, $editId]);
                 $keepIds[] = $rowId;
             } else {
-                $insertType->execute([$editId, $label, $fee, $isDefault]);
+                $insertType->execute([$editId, $label, $fee, $isDefault, $revisitOk]);
                 $keepIds[] = (int) $pdo->lastInsertId();
             }
         }
@@ -403,7 +405,7 @@ foreach ($pdo->query('SELECT user_id, COUNT(*) AS cnt FROM staff_documents GROUP
 }
 
 $consultTypesByDoctor = [];
-foreach ($pdo->query('SELECT id, doctor_id, label, fee, is_default FROM doctor_consult_types ORDER BY label')->fetchAll() as $ct) {
+foreach ($pdo->query('SELECT id, doctor_id, label, fee, is_default, is_revisit_eligible FROM doctor_consult_types ORDER BY label')->fetchAll() as $ct) {
     $consultTypesByDoctor[(int) $ct['doctor_id']][] = $ct;
 }
 
@@ -1141,10 +1143,10 @@ const consultPanelTitle = document.getElementById('consultPanelTitle');
 const consultTypeList = document.getElementById('consultTypeList');
 
 function consultTypeRow(row) {
-    row = row || { id: '', label: '', fee: '', is_default: 0 };
+    row = row || { id: '', label: '', fee: '', is_default: 0, is_revisit_eligible: 1 };
     const wrap = document.createElement('div');
     wrap.className = 'doc-row';
-    wrap.style.gridTemplateColumns = '28px 1fr 140px auto';
+    wrap.style.gridTemplateColumns = '28px 1fr 140px 150px auto';
 
     const radioWrap = document.createElement('label');
     radioWrap.style.display = 'flex';
@@ -1208,12 +1210,28 @@ function consultTypeRow(row) {
     removeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
     removeBtn.addEventListener('click', () => { wrap.remove(); updateDefaultIndexes(); });
 
+    // Revisit-eligible toggle: ticked = a real consultation (follow-up discounts
+    // apply); unticked = a procedure-like type (always full fee, no revisit).
+    const revisitWrap = document.createElement('label');
+    revisitWrap.style.cssText = 'display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); white-space:nowrap;';
+    revisitWrap.title = 'Tick for consultations (follow-up discounts apply). Untick for procedures.';
+    const revisitCb = document.createElement('input');
+    revisitCb.type = 'checkbox';
+    revisitCb.checked = Number(row.is_revisit_eligible) !== 0;
+    revisitCb.style.cssText = 'width:15px; height:15px; accent-color:var(--primary);';
+    const revisitTxt = document.createElement('span');
+    revisitTxt.textContent = 'Follow-up disc.';
+    revisitWrap.appendChild(revisitCb);
+    revisitWrap.appendChild(revisitTxt);
+
     wrap.appendChild(radioWrap);
     wrap.appendChild(labelInput);
     wrap.appendChild(feeWrap);
+    wrap.appendChild(revisitWrap);
     wrap.appendChild(removeBtn);
     wrap._idInput = idInput;
     wrap._radio = radio;
+    wrap._revisitCb = revisitCb;
     wrap.appendChild(idInput);
     return wrap;
 }
@@ -1228,6 +1246,15 @@ function updateDefaultIndexes() {
 
 document.getElementById('addConsultTypeBtn').addEventListener('click', () => {
     consultTypeList.appendChild(consultTypeRow());
+});
+
+// Checkboxes only submit when checked, which would break alignment with the
+// parallel label[]/fee[] arrays. So on submit, stamp each row's checkbox with
+// its DOM-order index name (consult_type_revisit[IDX]); the PHP reads that map.
+consultForm.addEventListener('submit', () => {
+    Array.from(consultTypeList.children).forEach((rowEl, idx) => {
+        if (rowEl._revisitCb) { rowEl._revisitCb.name = 'consult_type_revisit[' + idx + ']'; }
+    });
 });
 
 function openConsultTypesPanel(data) {

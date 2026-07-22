@@ -166,3 +166,85 @@ function admission_service_charge(string $chargeType, float $unitCharge, int $qu
     }
     return round($unitCharge * max(1, $quantity), 2);
 }
+
+// ============================================================================
+// Revisit billing (Phase 2). OPD consultation follow-ups only. Window is per
+// patient + doctor + consultation type, measured from the last FULL-paid
+// consultation. Only FULL payments move the window; free/50%/75% visits don't.
+// Applies only to consult-types the admin flagged is_revisit_eligible.
+// ============================================================================
+
+// Returns the proposed fee for a (possibly returning) consultation:
+//   ['fee', 'discount_pct', 'fee_type', 'reason', 'anchor_visit_id', 'days_since', 'label']
+// $fullFee is the consult-type's list fee (the current visit's own fee — the
+// discount base). $consultTypeId identifies the type; ineligible types always
+// bill FULL with no revisit fields.
+function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $consultTypeId, float $fullFee): array {
+    $full = [
+        'fee' => round($fullFee, 2), 'discount_pct' => 0.0, 'fee_type' => 'FULL',
+        'reason' => 'First/standard consultation', 'anchor_visit_id' => null,
+        'days_since' => null, 'label' => 'Full consultation fee',
+    ];
+
+    // Only eligible consultation types take revisit pricing.
+    $elig = $pdo->prepare('SELECT is_revisit_eligible FROM doctor_consult_types WHERE id = ? AND doctor_id = ?');
+    $elig->execute([$consultTypeId, $doctorId]);
+    if (!(int) ($elig->fetchColumn() ?: 0)) {
+        return $full;
+    }
+
+    // Latest FULL-paid consultation of this exact trio = the window anchor.
+    $anchorStmt = $pdo->prepare("
+        SELECT id, visit_date
+        FROM visits
+        WHERE patient_id = ? AND doctor_id = ? AND doctor_consult_type_id = ?
+          AND consultation_fee_type = 'FULL'
+        ORDER BY visit_date DESC, id DESC
+        LIMIT 1
+    ");
+    $anchorStmt->execute([$patientId, $doctorId, $consultTypeId]);
+    $anchor = $anchorStmt->fetch();
+    if (!$anchor) {
+        return $full;   // never had a full consultation of this type with this doctor
+    }
+
+    $anchorDate = new DateTime($anchor['visit_date']);
+    $today = new DateTime(date('Y-m-d'));
+    $days = (int) $anchorDate->diff($today)->days;
+
+    if ($days > 15) {
+        return $full;   // window expired — this visit is a fresh full anchor
+    }
+
+    if ($days <= 5) {
+        // Count paid follow-ups already taken in this window (after the anchor).
+        $cnt = $pdo->prepare("
+            SELECT COUNT(*) FROM visits
+            WHERE patient_id = ? AND doctor_id = ? AND doctor_consult_type_id = ?
+              AND id <> ? AND visit_date >= ? AND visit_date <= CURDATE()
+              AND consultation_fee_type IN ('FREE_FOLLOWUP','HALF_FOLLOWUP','THREE_QUARTER_FOLLOWUP')
+        ");
+        $cnt->execute([$patientId, $doctorId, $consultTypeId, (int) $anchor['id'], $anchor['visit_date']]);
+        $priorRevisits = (int) $cnt->fetchColumn();
+
+        if ($priorRevisits === 0) {
+            return [
+                'fee' => 0.0, 'discount_pct' => 100.0, 'fee_type' => 'FREE_FOLLOWUP',
+                'reason' => 'Free follow-up (1st within 5 days)', 'anchor_visit_id' => (int) $anchor['id'],
+                'days_since' => $days, 'label' => 'Free follow-up',
+            ];
+        }
+        return [
+            'fee' => round($fullFee * 0.5, 2), 'discount_pct' => 50.0, 'fee_type' => 'HALF_FOLLOWUP',
+            'reason' => 'Follow-up (2nd+ within 5 days, 50%)', 'anchor_visit_id' => (int) $anchor['id'],
+            'days_since' => $days, 'label' => '50% follow-up',
+        ];
+    }
+
+    // 6–15 days → 75% of fee (25% discount).
+    return [
+        'fee' => round($fullFee * 0.75, 2), 'discount_pct' => 25.0, 'fee_type' => 'THREE_QUARTER_FOLLOWUP',
+        'reason' => 'Follow-up (day 6–15, 75%)', 'anchor_visit_id' => (int) $anchor['id'],
+        'days_since' => $days, 'label' => '75% follow-up',
+    ];
+}
