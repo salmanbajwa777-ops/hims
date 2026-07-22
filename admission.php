@@ -120,10 +120,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hando
     }
 }
 
-// ---------------- Submit discharge (nursing) ----------------
-// Marks the stay as discharge-in-progress and hands off to the billing screen.
+// ---------------- Submit discharge ----------------
+// Marks the stay as discharge-in-progress. What happens NEXT depends on who
+// submitted: a nurse's job ends here — the stay appears on reception's queue
+// as "awaiting billing" and she stays on this page. Anyone who can also bill
+// (reception/admin/manager) is taken straight to the billing screen, which
+// covers the one-person-covering-both-desks case without any UI switching.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submit_discharge' && $isOpen) {
-    // Reception runs the front desk here, so they can raise the final bill too.
     $canDischarge = has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST'], true);
     if ($canDischarge) {
         $pdo->prepare('UPDATE admissions SET status = \'DISCHARGE_IN_PROGRESS\', discharged_at = COALESCE(discharged_at, NOW()) WHERE id = ?')
@@ -131,8 +134,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
         $pdo->prepare('UPDATE visits SET discharged_at = NOW() WHERE id = ?')->execute([(int) $adm['visit_id']]);
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
             ->execute([$uid, 'admission_discharge_submitted', "Discharge submitted for admission #$admissionId"]);
-        // Hand off to the billing/finalize screen.
-        header('Location: admission_discharge.php?id=' . $admissionId);
+
+        $canBill = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+        if ($canBill) {
+            header('Location: admission_discharge.php?id=' . $admissionId);
+        } else {
+            header('Location: admission.php?id=' . $admissionId . '&discharge_sent=1');
+        }
         exit;
     }
 }
@@ -217,6 +225,7 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
 
             <?php if ($flash): ?><div class="alert success"><?= htmlspecialchars($flash) ?></div><?php endif; ?>
+            <?php if (isset($_GET['discharge_sent'])): ?><div class="alert success">Discharge submitted — the stay is now with reception for billing.</div><?php endif; ?>
             <?php if ($err): ?><div class="alert error"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
             <div class="card">
@@ -348,13 +357,32 @@ require __DIR__ . '/partials/sidebar.php';
                         </details>
                         <?php endif; ?>
 
-                        <?php if ($isOpen && (has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST'], true))): ?>
+                        <?php
+                        // Who can do what from here: nurses SUBMIT the discharge
+                        // (their part ends), billing-capable users go straight
+                        // through to the bill.
+                        $canSubmitDischarge = has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST'], true);
+                        $canBillHere = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+                        ?>
+                        <?php if ($isOpen && $canSubmitDischarge): ?>
+                        <?php if ($canBillHere): ?>
                         <form method="POST" action="admission.php?id=<?= $admissionId ?>" onsubmit="return confirm('Submit discharge? This starts the final bill.');">
                             <input type="hidden" name="action" value="submit_discharge">
                             <button type="submit" class="btn" style="width:100%;">Discharge &amp; bill</button>
                         </form>
+                        <?php else: ?>
+                        <form method="POST" action="admission.php?id=<?= $admissionId ?>" onsubmit="return confirm('Submit discharge? Make sure every service provided has been logged — reception will bill from this list.');">
+                            <input type="hidden" name="action" value="submit_discharge">
+                            <button type="submit" class="btn" style="width:100%;">Submit discharge</button>
+                        </form>
+                        <div class="est-note" style="font-size:11.5px;color:var(--text-muted);">Sends the stay to reception, who reviews the charges and generates the invoice.</div>
+                        <?php endif; ?>
                         <?php elseif ($adm['status'] === 'DISCHARGE_IN_PROGRESS'): ?>
+                        <?php if ($canBillHere): ?>
                         <a class="btn" style="width:100%;text-align:center;" href="admission_discharge.php?id=<?= $admissionId ?>">Go to billing</a>
+                        <?php else: ?>
+                        <div class="muted">Discharge submitted <?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '' ?> — with reception for billing.</div>
+                        <?php endif; ?>
                         <?php elseif ($adm['status'] === 'DISCHARGED'): ?>
                         <div class="muted">Discharged <?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '' ?>.</div>
                         <?php endif; ?>

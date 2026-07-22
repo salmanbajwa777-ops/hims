@@ -85,6 +85,17 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="page-sub">Short-stay patients admitted today &mdash; <?= date('l, d F Y') ?></div>
     </div>
 
+    <?php
+    // Surface nurse-submitted discharges to whoever can bill them.
+    $awaitingBilling = array_filter($rows, fn($r) => $r['status'] === 'DISCHARGE_IN_PROGRESS');
+    $canBillBanner = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+    if ($awaitingBilling && $canBillBanner): ?>
+    <div class="alert" style="background:var(--amber-bg);color:var(--amber-text);font-weight:600;">
+        <?= count($awaitingBilling) ?> discharge<?= count($awaitingBilling) > 1 ? 's' : '' ?> awaiting billing —
+        review the charges and generate the invoice<?= count($awaitingBilling) > 1 ? 's' : '' ?> below.
+    </div>
+    <?php endif; ?>
+
     <div class="card">
         <?php if (!$rows): ?>
             <div class="empty">
@@ -111,9 +122,13 @@ require __DIR__ . '/partials/sidebar.php';
                 $stApill = [
                     'PENDING_ASSIGNMENT' => ['pending', 'Awaiting nurse'],
                     'ACTIVE' => ['in-consult', 'Active'],
-                    'DISCHARGE_IN_PROGRESS' => ['waiting', 'Discharging'],
+                    'DISCHARGE_IN_PROGRESS' => ['waiting', 'Awaiting billing'],
                     'DISCHARGED' => ['done', 'Discharged'],
                 ];
+                // Billing-capable users get a direct "Bill now" action on stays
+                // a nurse has submitted for discharge — that hand-off is the
+                // whole point of the DISCHARGE_IN_PROGRESS state.
+                $canBillList = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
                 foreach ($rows as $r):
                     [$cls, $lbl] = $stApill[$r['status']] ?? ['done', $r['status']]; ?>
                     <tr>
@@ -127,7 +142,13 @@ require __DIR__ . '/partials/sidebar.php';
                         <td><?= htmlspecialchars($r['nurse_name'] ?: '—') ?></td>
                         <td><span class="status-pill <?= $cls ?>"><?= $lbl ?></span></td>
                         <td><?= date('h:i A', strtotime($r['admitted_at'])) ?></td>
-                        <td><a class="edit-link" href="admission.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--primary);font-weight:600;font-size:12.5px;">Manage &rarr;</a></td>
+                        <td>
+                            <?php if ($r['status'] === 'DISCHARGE_IN_PROGRESS' && $canBillList): ?>
+                            <a class="edit-link" href="admission_discharge.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--amber-text);font-weight:700;font-size:12.5px;">Bill now &rarr;</a>
+                            <?php else: ?>
+                            <a class="edit-link" href="admission.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--primary);font-weight:600;font-size:12.5px;">Manage &rarr;</a>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>

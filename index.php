@@ -5,6 +5,7 @@ function landing_page_for_role(string $baseRole): string {
     switch ($baseRole) {
         case 'RECEPTIONIST': return '/receptionist.php';
         case 'DOCTOR':       return '/doctor.php';
+        case 'NURSE':        return '/admissions.php'; // the ward list is the nurse's home
         default:             return '/dashboard.php';
     }
 }

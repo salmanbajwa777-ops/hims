@@ -127,7 +127,7 @@ $todayRows = $pdo->query("
            v.started_at, v.finished_at, v.doctor_id,
            p.id AS patient_id, p.mrn, p.name AS patient_name, p.dob, p.phone,
            dr.name AS doctor_name,
-           adm.id AS admission_id,
+           adm.id AS admission_id, adm.status AS admission_status,
            dct.label AS consult_label,
            b.id AS bill_id, b.grand_total, b.paid_amount, b.status AS bill_status,
            COALESCE(r.refunded, 0) AS refunded
@@ -411,7 +411,15 @@ require __DIR__ . '/partials/sidebar.php';
                             </td>
                             <td>
                                 <span class="status-pill <?= $statusClass ?>"><?= htmlspecialchars($statusLabel) ?></span>
-                                <?php if ($isAdmitted): ?><span class="status-pill stay">Admitted</span><?php endif; ?>
+                                <?php if ($isAdmitted): ?>
+                                    <?php if ($row['admission_status'] === 'DISCHARGE_IN_PROGRESS'): ?>
+                                        <span class="status-pill wait">Awaiting billing</span>
+                                    <?php elseif ($row['admission_status'] === 'DISCHARGED'): ?>
+                                        <span class="status-pill done">Discharged</span>
+                                    <?php else: ?>
+                                        <span class="status-pill stay">Admitted</span>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                             </td>
                             <td class="mono">
                                 <?php if ($refunded > 0): ?>
@@ -423,7 +431,9 @@ require __DIR__ . '/partials/sidebar.php';
                             </td>
                             <td class="ta-r">
                                 <div class="q-acts">
-                                    <?php if ($isAdmitted && $row['admission_id']): ?>
+                                    <?php if ($isAdmitted && $row['admission_id'] && $row['admission_status'] === 'DISCHARGE_IN_PROGRESS'): ?>
+                                        <a class="qa warn" href="admission_discharge.php?id=<?= (int) $row['admission_id'] ?>">Bill discharge</a>
+                                    <?php elseif ($isAdmitted && $row['admission_id']): ?>
                                         <a class="qa" href="admission.php?id=<?= (int) $row['admission_id'] ?>">Manage stay</a>
                                     <?php elseif (has_permission('RECEPTION_ADMIT_PATIENTS')): ?>
                                         <button type="button" class="qa"

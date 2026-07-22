@@ -36,9 +36,11 @@ $sbBaseRole = $_SESSION['base_role'] ?? '';
 $sbIsAdmin  = $sbBaseRole === 'ADMIN';
 
 // The "home" destination differs by role: admins land on the full dashboard,
-// reception on their own console. Keeps one nav definition working for both.
+// reception on their own console, nurses on the ward list. Keeps one nav
+// definition working for all of them.
 $sbHome = $sbBaseRole === 'RECEPTIONIST' ? 'receptionist.php'
-        : ($sbBaseRole === 'DOCTOR' ? 'doctor.php' : 'dashboard.php');
+        : ($sbBaseRole === 'DOCTOR' ? 'doctor.php'
+        : ($sbBaseRole === 'NURSE' ? 'admissions.php' : 'dashboard.php'));
 
 if (!function_exists('sb_icon')) {
     function sb_icon(string $name): string {
@@ -61,8 +63,13 @@ if (!function_exists('sb_icon')) {
 /**
  * The nav model — the ONE definition of what's in the sidebar and for whom.
  * Each group: label + items. Each item: slug, label, icon, href, and optional
- * 'admin' => true (admin-only) or 'disabled' => true (not built yet, shown
- * greyed with a tooltip rather than silently dropped).
+ * 'admin' => true (admin-only), 'roles' => [...] (only these base roles see
+ * it), or 'disabled' => true (not built yet, shown greyed with a tooltip
+ * rather than silently dropped).
+ *
+ * Nurses get a Nursing group instead of Reception: their work is the ward,
+ * not registration/checkout. Their Dashboard item points at admissions too
+ * (via $sbHome), so 'admissions' is dropped from their duplicate listing.
  */
 $sbGroups = [
     [
@@ -72,7 +79,17 @@ $sbGroups = [
         ],
     ],
     [
+        'label' => 'Nursing',
+        'roles' => ['NURSE'],
+        'items' => [
+            ['slug' => 'admissions', 'label' => 'Ward / Admissions', 'icon' => 'bed', 'href' => 'admissions.php'],
+        ],
+    ],
+    [
         'label' => 'Reception',
+        // Everyone except nurses (their ward work lives in the Nursing group;
+        // registration/checkout is not theirs to see).
+        'roles' => ['ADMIN', 'MANAGER', 'RECEPTIONIST', 'DOCTOR', 'ACCOUNTANT'],
         'items' => [
             ['slug' => 'patients',    'label' => 'Patients',        'icon' => 'users',    'href' => 'patients.php'],
             ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php'],
@@ -101,9 +118,10 @@ $sbGroups = [
 
 /** Render the nav groups once; reused verbatim by the desktop rail and the
  *  mobile drawer so the two can never drift. */
-$sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $navActive) {
+$sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive) {
     foreach ($sbGroups as $g) {
         if (!empty($g['admin']) && !$sbIsAdmin) { continue; }
+        if (!empty($g['roles']) && !in_array($sbBaseRole, $g['roles'], true)) { continue; }
         echo '<div class="nav-group"><div class="nav-group-label">' . htmlspecialchars($g['label']) . '</div>';
         foreach ($g['items'] as $it) {
             $cls = 'nav-item';

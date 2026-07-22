@@ -248,8 +248,8 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
 
             <?php if ($err): ?><div class="alert error"><?= htmlspecialchars($err) ?></div><?php endif; ?>
-            <?php if (isset($_GET['paid'])): ?><div class="alert success">Payment recorded — patient discharged.</div><?php endif; ?>
-            <?php if (isset($_GET['wroteoff'])): ?><div class="alert success">Write-off approved — patient discharged.</div><?php endif; ?>
+            <?php if (isset($_GET['paid'])): ?><div class="alert success">Payment recorded — patient discharged. The invoice is opening in a new tab.</div><?php endif; ?>
+            <?php if (isset($_GET['wroteoff'])): ?><div class="alert success">Write-off approved — patient discharged. The invoice is opening in a new tab.</div><?php endif; ?>
             <?php if (isset($_GET['pending_writeoff'])): ?><div class="alert error">Partial payment recorded. Admin/manager must approve the write-off below before this closes.</div><?php endif; ?>
 
             <div class="card">
@@ -258,7 +258,14 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="section-title"><?= htmlspecialchars($adm['patient_name']) ?></div>
                         <div class="bill-meta"><span class="mono"><?= htmlspecialchars($adm['mrn']) ?></span> &middot; <?= htmlspecialchars($adm['doctor_name'] ?: '—') ?> &middot; Admission invoice <b><?= htmlspecialchars($bill['invoice_number']) ?></b></div>
                     </div>
+                    <?php if ($bill['status'] === 'paid'): ?>
                     <a class="btn secondary" href="admission_invoice.php?id=<?= $admissionId ?>" target="_blank" rel="noopener">Print invoice</a>
+                    <?php else: ?>
+                    <!-- The invoice PDF only exists AFTER payment: reception first reviews
+                         the lines and records the payment mode; opening the print view also
+                         locks the bill, so exposing it early would freeze editable bills. -->
+                    <span class="bill-meta" style="align-self:center;">Invoice prints after payment is recorded</span>
+                    <?php endif; ?>
                 </div>
 
                 <div class="time-strip">
@@ -362,5 +369,15 @@ require __DIR__ . '/partials/sidebar.php';
     </div>
 </div>
 <script src="assets/js/date-picker.js"></script>
+<?php if (isset($_GET['paid']) || isset($_GET['wroteoff'])): ?>
+<script>
+// Payment just landed: open the invoice PDF automatically, mirroring how
+// registration auto-opens the consultation slip. Popup blockers fall back to
+// the Print invoice button that is now visible in the header.
+window.addEventListener('load', function () {
+    window.open('admission_invoice.php?id=<?= (int) $admissionId ?>', '_blank', 'noopener');
+});
+</script>
+<?php endif; ?>
 </body>
 </html>
