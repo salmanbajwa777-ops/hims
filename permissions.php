@@ -64,80 +64,16 @@ $activeRole = $_GET['role'] ?? 'ADMIN';
 if (!in_array($activeRole, $roles, true)) {
     $activeRole = 'ADMIN';
 }
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HIMS — Permissions</title>
+
+$pageTitle = 'Permissions';
+// Page-specific chrome + components kept local; tokens/reset/.card/.btn/.alert
+// now come from app.css, and the sidebar from partials/sidebar.php.
+$headExtra = <<<CSS
 <style>
-:root {
-    --primary-dark: #0E5456;
-    --primary: #1A7F7E;
-    --primary-light: #E0F2F1;
-    --green: #10B981;
-    --green-bg: #ECFDF5;
-    --green-text: #047857;
-    --amber: #F59E0B;
-    --amber-bg: #FFFBEB;
-    --amber-text: #92400E;
-    --red: #DC2626;
-    --red-bg: #FEF2F2;
-    --red-text: #B91C1C;
-    --bg: #F8FAFC;
-    --card: #FFFFFF;
-    --text: #0F172A;
-    --text-secondary: #334155;
-    --text-muted: #64748B;
-    --border: #E2E8F0;
-    --border-strong: #CBD5E1;
-    --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
-    --shadow-md: 0 10px 25px rgba(15,23,42,.08);
-    --radius-card: 20px;
-    --radius-input: 12px;
-    --radius-btn: 14px;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
-a { text-decoration: none; color: inherit; }
-.app { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
-.main { display: flex; flex-direction: column; min-width: 0; }
-.content { padding: 28px 32px 60px; display: flex; flex-direction: column; gap: 24px; }
-
-.sidebar { background: var(--card); border-right: 1px solid var(--border); padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; font-weight: 700; font-size: 18px; }
-.sidebar-brand .logo-mark { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
-.nav-group { margin-bottom: 18px; }
-.nav-group-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--text-muted); padding: 0 12px 8px; text-transform: uppercase; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; color: var(--text-secondary); font-weight: 500; font-size: 13.5px; transition: background .15s ease; }
-.nav-item:hover { background: #F8FAFC; }
-.nav-item.active { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; position: relative; }
-.nav-item.active::before { content: ""; position: absolute; left: -16px; top: 8px; bottom: 8px; width: 3px; background: var(--primary); border-radius: 0 3px 3px 0; }
-.nav-icon { width: 28px; height: 28px; border-radius: 8px; background: #F1F5F9; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text-secondary); }
-.nav-icon svg { width: 15px; height: 15px; }
-.nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
-
 .header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
 .header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
 .header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
 .logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
-
-.page-title { font-size: 22px; font-weight: 700; }
-.page-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
-.page-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-
-.card { background: var(--card); border-radius: var(--radius-card); border: 1px solid var(--border); box-shadow: var(--shadow-sm); padding: 22px 24px; }
-.section-title { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
-.section-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
-
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--radius-btn); border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
-.btn:hover { opacity: .92; }
-.btn.secondary { background: #fff; color: var(--text-secondary); border: 1px solid var(--border); }
-
-.alert { border-radius: 14px; padding: 14px 18px; font-size: 13.5px; margin-bottom: 4px; }
-.alert.error { background: var(--red-bg); color: var(--red-text); }
-.alert.success { background: var(--green-bg); color: var(--green-text); }
 
 .role-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .role-tab { padding: 9px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; color: var(--text-secondary); background: var(--card); border: 1px solid var(--border); }
@@ -153,33 +89,15 @@ a { text-decoration: none; color: inherit; }
 .perm-row:hover { background: var(--bg); }
 .perm-row label { font-size: 13.5px; color: var(--text); cursor: pointer; flex: 1; }
 .perm-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; flex-shrink: 0; }
-
 .perm-key { font-size: 11px; color: var(--text-muted); font-family: 'Courier New', monospace; }
 
 .form-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 16px; margin-top: 8px; border-top: 1px solid var(--border); }
-
-@media (max-width: 900px) {
-    .app { grid-template-columns: 1fr; }
-    .sidebar { display: none; }
-}
 </style>
-</head>
-<body>
-<div class="app">
-    <aside class="sidebar">
-        <div class="sidebar-brand"><div class="logo-mark">H</div>HIMS</div>
-        <div class="nav-group">
-            <div class="nav-group-label">Overview</div>
-            <a class="nav-item" href="dashboard.php"><span class="nav-icon">▦</span> Dashboard</a>
-        </div>
-        <div class="nav-group">
-            <div class="nav-group-label">Management</div>
-            <a class="nav-item" href="staff.php"><span class="nav-icon">👥</span> Staff &amp; Doctors</a>
-            <a class="nav-item active" href="permissions.php"><span class="nav-icon">🔒</span> Permissions</a>
-        </div>
-    </aside>
-
-    <div class="main">
+CSS;
+require __DIR__ . '/partials/head.php';
+$navActive = 'permissions';
+require __DIR__ . '/partials/sidebar.php';
+?>
         <header class="header">
             <div class="page-title" style="font-size:16px;">Permissions</div>
             <div class="header-right">

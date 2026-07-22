@@ -43,63 +43,30 @@ $rows = $pdo->query("
 ")->fetchAll();
 
 $qhActive = 'admissions';
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HIMS — Admissions</title>
+
+$pageTitle = 'Admissions';
+// Page-specific: the wide table needs a horizontal scroll floor, and this
+// page shows a card with no inner padding (the table sits flush). Everything
+// else (tokens, .content, base table, .status-pill, .empty) comes from app.css.
+$headExtra = <<<CSS
 <style>
-:root {
-    --primary-dark: #0E5456; --primary: #1A7F7E; --primary-light: #E0F2F1;
-    --green: #10B981; --amber: #F59E0B; --red: #DC2626;
-    --bg: #F8FAFC; --card: #FFFFFF;
-    --text: #0F172A; --text-secondary: #334155; --text-muted: #64748B;
-    --border: #E2E8F0;
-    --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
-    --radius-card: 20px; --radius-input: 12px; --radius-btn: 14px;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5;
-}
-a { text-decoration: none; color: inherit; }
-
-.content { padding: 28px 32px 60px; display: flex; flex-direction: column; gap: 20px; }
-.page-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
-.page-sub { font-size: 13.5px; color: var(--text-muted); }
-
-.card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius-card); box-shadow: var(--shadow-sm);
-}
+.page-title { letter-spacing: -.02em; }
+.card { padding: 0; }
 .table-scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 820px; }
-th {
-    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-    color: var(--text-muted); padding: 14px 16px; border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-}
-td { padding: 13px 16px; border-top: 1px solid var(--border); font-size: 13.5px; }
+table { min-width: 820px; }
+th { padding: 14px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 13px 16px; }
 tbody tr:first-child td { border-top: none; }
 .mrn { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 12.5px; }
 .name { font-weight: 600; }
-
-.status-pill {
-    font-size: 11.5px; font-weight: 600; padding: 3px 9px;
-    border-radius: 20px; white-space: nowrap; display: inline-block;
-}
-.status-pill.waiting { background: #FFFBEB; color: #92400E; }
-.status-pill.in-consult { background: #ECFDF5; color: #047857; }
+.status-pill.waiting { background: var(--amber-bg); color: var(--amber-text); }
+.status-pill.in-consult { background: var(--green-bg); color: var(--green-text); }
 .status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
-
-.empty { padding: 56px 24px; text-align: center; color: var(--text-muted); }
 .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
 </style>
-</head>
-<body>
+CSS;
+require __DIR__ . '/partials/head.php';
+?>
 
 <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
