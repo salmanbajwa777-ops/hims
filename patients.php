@@ -333,6 +333,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .muted { color: var(--text-muted); font-size: 12.5px; }
 .mrn { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); }
 .gender-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: #F1F5F9; color: var(--text-secondary); }
+.unpaid-badge { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--red-bg); color: var(--red-text); white-space: nowrap; }
 .edit-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 .edit-link:hover { text-decoration: underline; }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
@@ -518,7 +519,13 @@ require __DIR__ . '/partials/sidebar.php';
                     <tbody>
                         <?php foreach ($patients as $p): $age = $p['dob'] ? ageFromDob($p['dob']) : null; ?>
                         <tr>
-                            <td><div class="person"><span class="person-avatar"><?= htmlspecialchars(strtoupper(substr($p['name'], 0, 1))) ?></span><?= htmlspecialchars($p['name']) ?></div></td>
+                            <td><div class="person"><span class="person-avatar"><?= htmlspecialchars(strtoupper(substr($p['name'], 0, 1))) ?></span>
+                                <span><?= htmlspecialchars($p['name']) ?>
+                                <?php if (!empty($p['unpaid_flag'])): ?>
+                                    <span class="unpaid-badge" title="Previously left with an unpaid balance">&#9888; Unpaid Rs <?= number_format((float) ($p['unpaid_total'] ?? 0)) ?><?= (int) ($p['unpaid_count'] ?? 0) > 1 ? ' (' . (int) $p['unpaid_count'] . '×)' : '' ?></span>
+                                <?php endif; ?>
+                                </span>
+                            </div></td>
                             <td class="muted"><?= htmlspecialchars($p['father_name'] ?: '—') ?></td>
                             <td class="muted"><?= htmlspecialchars($p['phone']) ?></td>
                             <td><span class="gender-tag"><?= $age !== null ? $age . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
