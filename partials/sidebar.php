@@ -104,6 +104,7 @@ $sbGroups = [
             ['slug' => 'staff',       'label' => 'Staff & Doctors', 'icon' => 'stetho',  'href' => 'staff.php'],
             ['slug' => 'locations',   'label' => 'Cities & Areas',  'icon' => 'pin',     'href' => 'locations.php'],
             ['slug' => 'er_services', 'label' => 'ER Services & Rates','icon' => 'receipt','href' => 'er_services.php'],
+            ['slug' => 'procedure_master', 'label' => 'Procedures',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
             ['slug' => 'permissions', 'label' => 'Permissions',     'icon' => 'lock',    'href' => 'permissions.php'],
         ],
     ],
