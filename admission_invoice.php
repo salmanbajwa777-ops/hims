@@ -132,7 +132,8 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Tr
                 <table class="ids">
                     <tr><td class="k">MR #</td><td class="v"><?= htmlspecialchars($bill['mrn']) ?></td></tr>
                     <tr><td class="k">Invoice #</td><td class="v"><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>
-                    <tr><td class="k">Type</td><td class="v"><?= htmlspecialchars($bill['admission_type']) ?></td></tr>
+                    <tr><td class="k">Admitted</td><td class="v"><?= date('d/m/Y H:i', strtotime($bill['admitted_at'])) ?></td></tr>
+                    <tr><td class="k">Discharged</td><td class="v"><?= $bill['discharged_at'] ? date('d/m/Y H:i', strtotime($bill['discharged_at'])) : '—' ?></td></tr>
                     <tr><td class="k">Doctor</td><td class="v"><?= htmlspecialchars($bill['doctor_name'] ?: '—') ?></td></tr>
                 </table>
             </div>
@@ -144,6 +145,7 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Tr
                     <tr><td class="k">S/D/W Of:</td><td class="v"><?= htmlspecialchars($fatherNameUpper) ?></td></tr>
                     <tr><td class="k">DOB:</td><td><?= $dobDisplay ?></td></tr>
                     <tr><td class="k">Phone:</td><td><?= htmlspecialchars($bill['phone']) ?></td></tr>
+                    <tr><td class="k">Type</td><td class="v"><?= htmlspecialchars($bill['admission_type']) ?></td></tr>
                 </table>
             </div>
         </div>

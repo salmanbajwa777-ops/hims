@@ -203,6 +203,11 @@ $paid = (float) ($bill['paid_amount'] ?? 0);
 $short = round($total - $paid, 2);
 $pendingWriteoff = $bill['status'] === 'finalized' && $short > 0.001;
 
+// Admission → discharge timing for the header strip.
+$dischargeTs = $adm['discharged_at'] ? strtotime($adm['discharged_at']) : time();
+$stayMins = max(0, (int) round(($dischargeTs - strtotime($adm['admitted_at'])) / 60));
+$stayLabel = (intdiv($stayMins, 60) ? intdiv($stayMins, 60) . 'h ' : '') . ($stayMins % 60) . 'm';
+
 $pageTitle = 'Discharge — ' . $adm['patient_name'];
 $headExtra = <<<CSS
 <style>
@@ -222,6 +227,11 @@ $headExtra = <<<CSS
 .short-note { background:var(--amber-bg); color:var(--amber-text); border-radius:12px; padding:12px 14px; font-size:13px; font-weight:600; }
 .wo-note { background:#EDE7FB; color:#6D28D9; border-radius:12px; padding:12px 14px; font-size:13px; }
 .locked-tag { background:var(--green-bg); color:var(--green-text); font-size:12px; font-weight:700; padding:4px 12px; border-radius:20px; }
+.time-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:2px; border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-top:14px; }
+.time-strip > div { padding:10px 14px; border-right:1px solid var(--border); }
+.time-strip > div:last-child { border-right:none; }
+.time-strip .k { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:700; }
+.time-strip .v { font-size:14px; font-weight:650; margin-top:2px; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -249,6 +259,12 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="bill-meta"><span class="mono"><?= htmlspecialchars($adm['mrn']) ?></span> &middot; <?= htmlspecialchars($adm['doctor_name'] ?: '—') ?> &middot; Admission invoice <b><?= htmlspecialchars($bill['invoice_number']) ?></b></div>
                     </div>
                     <a class="btn secondary" href="admission_invoice.php?id=<?= $admissionId ?>" target="_blank" rel="noopener">Print invoice</a>
+                </div>
+
+                <div class="time-strip">
+                    <div><div class="k">Admitted</div><div class="v"><?= date('d M, H:i', strtotime($adm['admitted_at'])) ?></div></div>
+                    <div><div class="k">Discharged</div><div class="v"><?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '—' ?></div></div>
+                    <div><div class="k">Total stay</div><div class="v"><?= $stayLabel ?></div></div>
                 </div>
 
                 <div style="overflow-x:auto;margin-top:14px;">

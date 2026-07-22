@@ -123,7 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hando
 // ---------------- Submit discharge (nursing) ----------------
 // Marks the stay as discharge-in-progress and hands off to the billing screen.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submit_discharge' && $isOpen) {
-    $canDischarge = has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+    // Reception runs the front desk here, so they can raise the final bill too.
+    $canDischarge = has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST'], true);
     if ($canDischarge) {
         $pdo->prepare('UPDATE admissions SET status = \'DISCHARGE_IN_PROGRESS\', discharged_at = COALESCE(discharged_at, NOW()) WHERE id = ?')
             ->execute([$admissionId]);
@@ -229,7 +230,8 @@ require __DIR__ . '/partials/sidebar.php';
                 <div class="kv" style="margin-top:14px;">
                     <div><div class="k">Type</div><div class="v"><?= $typeLabels[$adm['admission_type']] ?? $adm['admission_type'] ?></div></div>
                     <div><div class="k">Admitted</div><div class="v"><?= date('d M, H:i', strtotime($adm['admitted_at'])) ?></div></div>
-                    <div><div class="k">Stay so far</div><div class="v"><?= fmt_dur($stayMins) ?></div></div>
+                    <div><div class="k">Discharged</div><div class="v"><?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '—' ?></div></div>
+                    <div><div class="k"><?= $isOpen && !$adm['discharged_at'] ? 'Stay so far' : 'Total stay' ?></div><div class="v"><?= fmt_dur($stayMins) ?></div></div>
                     <div><div class="k">Doctor</div><div class="v"><?= htmlspecialchars($adm['doctor_name'] ?: '—') ?></div></div>
                     <div><div class="k">Nurse</div><div class="v"><?= htmlspecialchars($adm['nurse_name'] ?: 'Unassigned') ?></div></div>
                 </div>
@@ -346,7 +348,7 @@ require __DIR__ . '/partials/sidebar.php';
                         </details>
                         <?php endif; ?>
 
-                        <?php if ($isOpen && (has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER'], true))): ?>
+                        <?php if ($isOpen && (has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST'], true))): ?>
                         <form method="POST" action="admission.php?id=<?= $admissionId ?>" onsubmit="return confirm('Submit discharge? This starts the final bill.');">
                             <input type="hidden" name="action" value="submit_discharge">
                             <button type="submit" class="btn" style="width:100%;">Discharge &amp; bill</button>
