@@ -107,6 +107,8 @@ $varianceLabel = abs($varianceVal) < 0.01 ? 'Balanced'
             <tr><td>Cash — admissions</td><td class="text-right"><?= (int) $closing['cash_admission_count'] ?></td><td class="text-right"><?= number_format((float) $closing['cash_admission_total'], 2) ?></td></tr>
             <tr><td>Online — all</td><td class="text-right"><?= (int) $closing['online_count'] ?></td><td class="text-right"><?= number_format((float) $closing['online_total'], 2) ?></td></tr>
             <tr><td>Refunds paid (cash)</td><td class="text-right"><?= (int) $closing['cash_refund_count'] ?></td><td class="text-right">(<?= number_format((float) $closing['cash_refund_total'], 2) ?>)</td></tr>
+            <?php $slipExpenses = (float) ($closing['expense_total'] ?? 0); ?>
+            <tr><td>Counter expenses (EXP)</td><td class="text-right"><?= (int) ($closing['expense_count'] ?? 0) ?></td><td class="text-right">(<?= number_format($slipExpenses, 2) ?>)</td></tr>
             <?php
             $netCollected = (float) $closing['cash_consult_total'] + (float) $closing['cash_admission_total']
                           + (float) $closing['online_total'] - (float) $closing['cash_refund_total'];
@@ -117,6 +119,9 @@ $varianceLabel = abs($varianceVal) < 0.01 ? 'Balanced'
         <div class="section-title">CASH DRAWER</div>
         <table class="amounts-table">
             <tr><td>Opening float</td><td class="text-right"><?= number_format((float) $closing['opening_float'], 2) ?></td></tr>
+            <?php if ($slipExpenses > 0): ?>
+            <tr><td>Less: counter expenses</td><td class="text-right">(<?= number_format($slipExpenses, 2) ?>)</td></tr>
+            <?php endif; ?>
             <tr><td>Expected cash in drawer</td><td class="text-right"><?= number_format((float) $closing['expected_cash'], 2) ?></td></tr>
             <tr><td>Counted cash</td><td class="text-right"><?= number_format((float) $closing['counted_cash'], 2) ?></td></tr>
             <tr><td>Variance</td><td class="text-right"><?= $varianceLabel ?></td></tr>

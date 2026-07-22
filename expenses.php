@@ -21,6 +21,7 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+require_once __DIR__ . '/config/billing.php';   // require_day_open() — expenses feed the cash tally
 refresh_session_permissions($pdo);
 require_permission('FINANCIAL_POST_EXPENSES');
 
@@ -51,7 +52,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
     $description = trim($_POST['description'] ?? '');
     $paidTo      = trim($_POST['paid_to'] ?? '');
 
-    if ($categoryId <= 0) {
+    // Expenses come out of the counted drawer — a closed day takes no more.
+    $dayLock = require_day_open($pdo);
+
+    if ($dayLock) {
+        $error = $dayLock;
+    } elseif ($categoryId <= 0) {
         $error = 'Pick a category.';
     } elseif ($amount <= 0) {
         $error = 'The amount must be more than zero.';
@@ -144,7 +150,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
     }
     $id = (int) ($_POST['expense_id'] ?? 0);
     $reason = trim($_POST['void_reason'] ?? '');
-    if ($id > 0 && $reason !== '') {
+
+    // A void changes that day's expected-cash figure — if the expense's own
+    // date has already been closed (signed tally), refuse it.
+    $expDate = null;
+    if ($id > 0) {
+        $dStmt = $pdo->prepare('SELECT expense_date FROM expenses WHERE id = ?');
+        $dStmt->execute([$id]);
+        $expDate = $dStmt->fetchColumn() ?: null;
+    }
+    $dayLock = $expDate ? require_day_open($pdo, $expDate) : null;
+
+    if ($dayLock) {
+        $error = $dayLock . ' Voiding this expense would change that day\'s signed tally.';
+    } elseif ($id > 0 && $reason !== '') {
         $upd = $pdo->prepare('
             UPDATE expenses SET voided_at = NOW(), voided_by_id = ?, void_reason = ?
             WHERE id = ? AND voided_at IS NULL

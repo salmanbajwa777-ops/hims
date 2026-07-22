@@ -237,6 +237,8 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
                 'Online'             => 'Rs ' . number_format((float) $c['online_total'], 2)
                                         . ' (' . (int) $c['online_count'] . ' payments)',
                 'Cash refunds'       => 'Rs ' . number_format((float) $c['cash_refund_total'], 2),
+                'Counter expenses'   => 'Rs ' . number_format((float) ($c['expense_total'] ?? 0), 2)
+                                        . ' (' . (int) ($c['expense_count'] ?? 0) . ' vouchers)',
                 'Expected in drawer' => 'Rs ' . number_format((float) $c['expected_cash'], 2),
                 'Counted'            => 'Rs ' . number_format((float) $c['counted_cash'], 2),
                 'Variance'           => $varianceText . ($c['variance_note'] ? ' — ' . $c['variance_note'] : ''),

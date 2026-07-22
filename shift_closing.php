@@ -103,15 +103,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                          cash_admission_total, cash_admission_count,
                          online_total, online_count,
                          cash_refund_total, cash_refund_count,
+                         expense_total, expense_count,
                          expected_cash, counted_cash, variance, variance_note,
                          float_retained, handover_declared, handover_to_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ')->execute([
                     $closingNumber, $today, $_SESSION['user_id'], $tally['opening_float'],
                     $tally['cash_consult_total'], $tally['cash_consult_count'],
                     $tally['cash_admission_total'], $tally['cash_admission_count'],
                     $tally['online_total'], $tally['online_count'],
                     $tally['cash_refund_total'], $tally['cash_refund_count'],
+                    $tally['expense_total'], $tally['expense_count'],
                     $tally['expected_cash'], $counted, $variance, $varianceNote ?: null,
                     $floatRetained, $handoverDeclared, $handoverToId,
                 ]);
@@ -281,7 +283,7 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="tile hero">
             <div class="lbl">Expected cash in drawer</div>
             <div class="val">Rs <?= number_format($tally['expected_cash'], 0) ?></div>
-            <div class="hint">Float <?= number_format($tally['opening_float'], 0) ?> + cash <?= number_format($tally['cash_total'], 0) ?> − refunds <?= number_format($tally['cash_refund_total'], 0) ?></div>
+            <div class="hint">Float <?= number_format($tally['opening_float'], 0) ?> + cash <?= number_format($tally['cash_total'], 0) ?> − refunds <?= number_format($tally['cash_refund_total'], 0) ?> − expenses <?= number_format($tally['expense_total'], 0) ?></div>
         </div>
     </div>
 
@@ -315,6 +317,11 @@ require __DIR__ . '/partials/sidebar.php';
                         <td class="num" style="color:var(--text-muted)"><?= $tally['cash_refund_count'] ? 'paid from the drawer' : 'none today' ?></td>
                         <td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td>
                     </tr>
+                    <tr>
+                        <td>Expenses — counter <span class="count-chip"><?= $tally['expense_count'] ?></span></td>
+                        <td class="num" style="color:var(--text-muted)"><?= $tally['expense_count'] ? '<a href="expenses.php" style="color:var(--primary-dark);text-decoration:underline;">EXP vouchers</a>' : 'none today' ?></td>
+                        <td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td>
+                    </tr>
                     <tr class="total">
                         <td colspan="2">Net collected today</td>
                         <td class="num">Rs <?= number_format($tally['net_collected'], 2) ?></td>
@@ -331,6 +338,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <tr><td>Opening float (carried in)</td><td class="num"><?= number_format($tally['opening_float'], 2) ?></td></tr>
                     <tr><td>+ Cash payments received</td><td class="num"><?= number_format($tally['cash_total'], 2) ?></td></tr>
                     <tr><td>− Cash refunds paid out</td><td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td></tr>
+                    <tr><td>− Counter expenses (EXP vouchers)</td><td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td></tr>
                     <tr class="grand"><td>Expected cash in drawer</td><td class="num">Rs <?= number_format($tally['expected_cash'], 2) ?></td></tr>
                 </table>
                 </div>

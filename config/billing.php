@@ -325,6 +325,7 @@ function day_cash_tally(PDO $pdo, string $date): array {
         'online_consult_total' => 0.0, 'online_consult_count' => 0,
         'online_admission_total' => 0.0, 'online_admission_count' => 0,
         'cash_refund_total' => 0.0, 'cash_refund_count' => 0,
+        'expense_total' => 0.0, 'expense_count' => 0,
     ];
 
     $stmt = $pdo->prepare("
@@ -365,6 +366,23 @@ function day_cash_tally(PDO $pdo, string $date): array {
     $t['cash_refund_total'] = (float) $r['total'];
     $t['cash_refund_count'] = (int) $r['n'];
 
+    // Counter expenses (EXP- vouchers) come straight out of the drawer.
+    // Voided rows are excluded; the expenses table may predate this feature
+    // being deployed together, so tolerate it missing.
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
+            FROM expenses
+            WHERE source = 'CASH_COUNTER' AND expense_date = ? AND voided_at IS NULL
+        ");
+        $stmt->execute([$date]);
+        $r = $stmt->fetch();
+        $t['expense_total'] = (float) $r['total'];
+        $t['expense_count'] = (int) $r['n'];
+    } catch (PDOException $e) {
+        // expenses module not migrated — treat as zero
+    }
+
     $t['cash_total']   = round($t['cash_consult_total'] + $t['cash_admission_total'], 2);
     $t['cash_count']   = $t['cash_consult_count'] + $t['cash_admission_count'];
     $t['online_total'] = round($t['online_consult_total'] + $t['online_admission_total'], 2);
@@ -372,7 +390,9 @@ function day_cash_tally(PDO $pdo, string $date): array {
     $t['net_collected'] = round($t['cash_total'] + $t['online_total'] - $t['cash_refund_total'], 2);
 
     $t['opening_float'] = opening_float($pdo);
-    $t['expected_cash'] = round($t['opening_float'] + $t['cash_total'] - $t['cash_refund_total'], 2);
+    $t['expected_cash'] = round(
+        $t['opening_float'] + $t['cash_total'] - $t['cash_refund_total'] - $t['expense_total'], 2
+    );
 
     return $t;
 }
