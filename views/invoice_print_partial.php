@@ -6,7 +6,7 @@
 // matching it: the header is a bordered box split clinic-left / metadata-right, and
 // everything below it (items, totals, payment mode, vitals) is ONE table sharing a
 // single column grid — that is what makes the vertical rules line up down the page.
-// Only the typeface differs from the original: IBM Plex Mono throughout, except the
+// Only the typeface differs from the original: Lora throughout, except the
 // wordmark and tagline which stay on the original's sans face.
 
 $clinicName = 'BABY MEDICS';
@@ -50,11 +50,14 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invoice - <?= htmlspecialchars($bill['invoice_number']) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; margin: 0; padding: 0; }
         body {
-            font-family: 'IBM Plex Mono', 'Courier New', monospace;
+            font-family: 'Lora', Georgia, 'Times New Roman', serif;
             font-size: 9.5px; line-height: 1.3; color: #000; background: #fff;
         }
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
@@ -122,7 +125,9 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
         .fee-table { margin-top: -1px; }
         .fee-table td, .fee-table th,
         .vitals-table td, .vitals-table th { border: 1px solid #C8C8C8; padding: 4px 6px; }
-        .fee-table th, .vitals-table th { background: #FFFFFF; font-weight: bold; text-align: center; }
+        /* Heading cells share the same greyscale ground as the header tables' label
+           column, so every heading on the sheet reads as one system: grey + bold. */
+        .fee-table th, .vitals-table th { background: #F4F4F4; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: center; }
         .vitals-table { margin-top: -1px; }

@@ -22,10 +22,13 @@ $refundModeLabel = ucfirst(str_replace('_', ' ', $refund['refund_mode']));
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Refund <?= htmlspecialchars($refund['refund_number']) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; height: 210mm; margin: 0; padding: 0; }
-        body { font-family: 'IBM Plex Mono', 'Courier New', monospace; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
+        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
         .invoice-container { width: 100%; height: 100%; padding: 8mm; overflow: hidden; display: flex; flex-direction: column; }
         .header { text-align: center; margin-bottom: 6px; }
         /* Explicit white ground: the PNGs carry real transparency, and without it the

@@ -3,8 +3,8 @@
  * Admission invoice — A5 print view.
  *
  * The SEPARATE admission bill, in the same visual format as the consultation
- * slip (views/invoice_print_partial.php) — same bordered header box, IBM Plex
- * Mono, A5 — but ITEMISED (stay + services + totals) rather than a single
+ * slip (views/invoice_print_partial.php) — same bordered header box, Lora
+ * serif, A5 — but ITEMISED (stay + services + totals) rather than a single
  * consultation-fee line. Browser print -> Save as PDF, like the consultation slip.
  */
 require_once __DIR__ . '/config/auth.php';
@@ -65,11 +65,11 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Tr
     <title>Admission Invoice - <?= htmlspecialchars($bill['invoice_number']) ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; margin: 0; padding: 0; }
-        body { font-family: 'IBM Plex Mono', 'Courier New', monospace; font-size: 9.5px; line-height: 1.3; color: #000; background: #fff; }
+        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #000; background: #fff; }
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
 
         .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1mm; display: flex; gap: 5mm; align-items: stretch; }
