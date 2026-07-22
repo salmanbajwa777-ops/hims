@@ -5,6 +5,17 @@
  * Cached in $_SESSION so it's computed once per login.
  */
 
+// Timezone belt-and-suspenders. config/db.php (gitignored, so deploys never
+// update it) is supposed to pin the MySQL session to PKT; when a live copy
+// without the pin sneaks back, every NOW()-written DATETIME lands 5h in the
+// past and stay durations inflate by exactly that. This file is tracked and
+// loaded right after db.php on every page that writes times, so enforcing the
+// pin here survives any future db.php regression. Cheap (one session var set)
+// and idempotent.
+if (isset($pdo) && $pdo instanceof PDO) {
+    $pdo->exec("SET time_zone = '+05:00'");
+}
+
 function load_permissions(PDO $pdo, int $userId, string $baseRole): array {
     $stmt = $pdo->prepare('
         SELECT p.`key`

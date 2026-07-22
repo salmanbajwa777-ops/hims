@@ -88,6 +88,58 @@ $drift = $pdo->query("
 ")->fetch();
 $driftHours = ($drift['n'] > 0) ? round($drift['avg_min'] / 60) : 0;
 
+// Same probe for admissions: admitted_at is DATETIME, created_at is TIMESTAMP,
+// both written in the same INSERT -- any gap between them is pure zone drift.
+// Rows are judged individually (not by table average) because some may have
+// been written before the db.php patch and some after. The other DATETIME
+// columns on a stranded row (assigned_at, discharged_at, discharge_finalized_at)
+// were written by the same misconfigured session, so they get the same offset;
+// they have no TIMESTAMP twin of their own to measure against.
+$admStranded = [];  // id => hours to ADD to the row's DATETIME columns
+foreach ($pdo->query("SELECT id, TIMESTAMPDIFF(MINUTE, admitted_at, created_at) AS drift_min FROM admissions") as $r) {
+    $h = (int) round(($r['drift_min'] ?? 0) / 60);
+    if ($h !== 0) { $admStranded[(int) $r['id']] = $h; }
+}
+
+// ---------------------------------------------------------------- 3b. shift stranded admissions
+// Per-row correction: each stranded row gets ITS OWN measured offset applied to
+// every DATETIME column it carries. Re-running is safe -- once shifted, the
+// admitted_at/created_at gap is zero and the row no longer appears stranded.
+$admShiftResult = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'shift_admissions') {
+    if (!$admStranded) {
+        $admShiftResult = ['ok' => false, 'msg' => 'No stranded admission rows to shift.'];
+    } else {
+        $pdo->beginTransaction();
+        try {
+            $upd = $pdo->prepare("
+                UPDATE admissions SET
+                    admitted_at             = admitted_at + INTERVAL ? HOUR,
+                    assigned_at             = CASE WHEN assigned_at             IS NULL THEN NULL ELSE assigned_at             + INTERVAL ? HOUR END,
+                    discharged_at           = CASE WHEN discharged_at           IS NULL THEN NULL ELSE discharged_at           + INTERVAL ? HOUR END,
+                    discharge_finalized_at  = CASE WHEN discharge_finalized_at  IS NULL THEN NULL ELSE discharge_finalized_at  + INTERVAL ? HOUR END
+                WHERE id = ?
+            ");
+            // visits.admitted_at mirrors the admission row; fix it with the same offset.
+            $updVisit = $pdo->prepare("
+                UPDATE visits v JOIN admissions a ON a.visit_id = v.id
+                SET v.admitted_at = CASE WHEN v.admitted_at IS NULL THEN NULL ELSE v.admitted_at + INTERVAL ? HOUR END
+                WHERE a.id = ?
+            ");
+            foreach ($admStranded as $id => $h) {
+                $upd->execute([$h, $h, $h, $h, $id]);
+                $updVisit->execute([$h, $id]);
+            }
+            $pdo->commit();
+            $admShiftResult = ['ok' => true, 'msg' => 'Corrected ' . count($admStranded) . ' admission row(s), each by its own measured offset. Reload to re-verify.'];
+            $admStranded = [];
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            $admShiftResult = ['ok' => false, 'msg' => 'Shift failed, rolled back: ' . $e->getMessage()];
+        }
+    }
+}
+
 // ---------------------------------------------------------------- 3. shift DATETIMEs
 $shiftResult = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'shift') {
@@ -185,6 +237,32 @@ $pdo-&gt;exec("SET time_zone = '<?= $PKT ?>'");        // right after the PDO co
       <input type="hidden" name="action" value="shift">
       <input type="hidden" name="hours" value="<?= $driftHours ?>">
       <button type="submit">Shift <?= (int) $drift['n'] ?> row(s) by <?= $driftHours ?>h</button>
+    </form>
+  <?php endif; ?>
+</div>
+
+<div class="card <?= $admShiftResult ? ($admShiftResult['ok'] ? 'ok' : 'bad') : (!$admStranded ? 'ok' : 'warn') ?>">
+  <strong>3b. Stranded <code>admissions</code> rows (admitted / discharged times)</strong>
+  <p>
+    <code>admitted_at</code>, <code>assigned_at</code>, <code>discharged_at</code> and
+    <code>discharge_finalized_at</code> are <code>DATETIME</code> &mdash; a row written while MySQL
+    was still on UTC is permanently ~5h behind, which is what makes a 10-minute stay
+    display as 5 hours. Each row is measured against its own <code>created_at</code>
+    (<code>TIMESTAMP</code>, self-correcting), so only genuinely stranded rows are touched,
+    each by its own offset. <code>visits.admitted_at</code> is corrected alongside.
+  </p>
+  <?php if ($admShiftResult): ?>
+    <p><strong><?= htmlspecialchars($admShiftResult['msg']) ?></strong></p>
+  <?php elseif (!$admStranded): ?>
+    <p>All admission rows agree with their own <code>created_at</code> &mdash; nothing to repair.</p>
+  <?php else: ?>
+    <p>
+      <strong><?= count($admStranded) ?> stranded row(s):</strong>
+      <?php $parts = []; foreach ($admStranded as $id => $h) { $parts[] = "#{$id} (" . ($h > 0 ? "+{$h}h" : "{$h}h") . ")"; } echo htmlspecialchars(implode(', ', $parts)); ?>
+    </p>
+    <form method="post" onsubmit="return confirm('Correct <?= count($admStranded) ?> admission row(s)? Safe to re-run; already-correct rows are never touched.')">
+      <input type="hidden" name="action" value="shift_admissions">
+      <button type="submit">Correct <?= count($admStranded) ?> admission row(s)</button>
     </form>
   <?php endif; ?>
 </div>
