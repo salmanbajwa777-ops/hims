@@ -30,6 +30,7 @@ if (!has_permission('RECEPTION_REGISTER_PATIENTS') && ($_SESSION['base_role'] ??
 
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 $qhActive = 'bookings';
+$qhBrand  = false; // the sidebar already carries the HIMS mark
 
 $pageTitle = 'Bookings';
 // Page-specific: this placeholder card centers its content and overrides the
@@ -55,9 +56,10 @@ $headExtra = <<<CSS
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
+$navActive = 'bookings';
+require __DIR__ . '/partials/sidebar.php';
 ?>
-
-<?php require __DIR__ . '/partials/quick_header.php'; ?>
+        <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
 <div class="content">
     <div>
@@ -75,6 +77,8 @@ require __DIR__ . '/partials/head.php';
         <p>Patients are registered as walk-ins today &mdash; every visit joins the queue the moment it is created.</p>
         <p>Scheduling ahead needs an appointment record, a slot calendar per doctor, and a handoff into the day's queue on arrival.</p>
         <a class="cta" href="receptionist.php">Go to today's queue</a>
+    </div>
+</div>
     </div>
 </div>
 

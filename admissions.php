@@ -43,6 +43,7 @@ $rows = $pdo->query("
 ")->fetchAll();
 
 $qhActive = 'admissions';
+$qhBrand  = false; // the sidebar already carries the HIMS mark
 
 $pageTitle = 'Admissions';
 // Page-specific: the wide table needs a horizontal scroll floor, and this
@@ -66,9 +67,10 @@ tbody tr:first-child td { border-top: none; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
+$navActive = 'admissions';
+require __DIR__ . '/partials/sidebar.php';
 ?>
-
-<?php require __DIR__ . '/partials/quick_header.php'; ?>
+        <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
 <div class="content">
     <div>
@@ -120,6 +122,8 @@ require __DIR__ . '/partials/head.php';
             </table>
         </div>
         <?php endif; ?>
+    </div>
+</div>
     </div>
 </div>
 
