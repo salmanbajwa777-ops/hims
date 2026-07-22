@@ -50,15 +50,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     }
 }
 
-// ---- Edit an existing service (rate / charge type) ----
+// ---- Edit an existing service (name / type / rate / charge type) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_service') {
     $id = (int) ($_POST['service_id'] ?? 0);
+    $type = $_POST['service_type'] ?? '';
+    $name = trim($_POST['service_name'] ?? '');
     $charge = $_POST['charge_type'] ?? 'FLAT';
     $base = (float) ($_POST['base_charge'] ?? 0);
-    if ($id > 0 && in_array($charge, $chargeTypes, true)) {
-        $pdo->prepare('UPDATE er_services_master SET charge_type = ?, base_charge = ? WHERE id = ?')
-            ->execute([$charge, $base, $id]);
+    if ($id > 0 && $name !== '' && in_array($type, $serviceTypes, true) && in_array($charge, $chargeTypes, true)) {
+        $pdo->prepare('UPDATE er_services_master SET service_type = ?, service_name = ?, charge_type = ?, base_charge = ? WHERE id = ?')
+            ->execute([$type, $name, $charge, $base, $id]);
         $success = 'Service updated.';
+    } else {
+        $error = 'A service needs a name, a type, and a charge type.';
     }
 }
 
@@ -110,6 +114,9 @@ $headExtra = <<<CSS
 .inline-edit { display: flex; gap: 6px; align-items: center; }
 .inline-edit select, .inline-edit input { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; }
 .inline-edit input { width: 90px; }
+.row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 100%; }
+.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.btn.small { padding: 7px 14px; font-size: 12.5px; }
 .row-inactive td { opacity: .5; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .link-btn.warn { color: var(--red-text); }
@@ -210,32 +217,44 @@ require __DIR__ . '/partials/sidebar.php';
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
-                        <tr><th>Type</th><th>Service</th><th>Charge</th><th>Rate (Rs)</th><th>Status</th><th></th></tr>
+                        <tr><th style="width:130px;">Type</th><th>Service</th><th style="width:130px;">Charge</th><th style="width:120px;">Rate (Rs)</th><th style="width:150px;">Update</th><th style="width:90px;">Status</th><th style="width:110px;"></th></tr>
                     </thead>
                     <tbody>
                         <?php if (!$services): ?>
-                        <tr><td colspan="6" class="muted" style="padding:20px 10px;">No services yet — add one above.</td></tr>
+                        <tr><td colspan="7" class="muted" style="padding:20px 10px;">No services yet — add one above.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($services as $s): ?>
                         <tr class="<?= $s['status'] === 'INACTIVE' ? 'row-inactive' : '' ?>">
-                            <td><span class="svc-type-tag"><?= htmlspecialchars($typeLabels[$s['service_type']] ?? $s['service_type']) ?></span></td>
-                            <td style="font-weight:600;"><?= htmlspecialchars($s['service_name']) ?></td>
-                            <td colspan="2">
-                                <form method="POST" action="er_services.php" class="inline-edit">
+                            <td>
+                                <select name="service_type" form="edit-<?= (int) $s['id'] ?>" class="row-inp">
+                                    <?php foreach ($serviceTypes as $t): ?>
+                                    <option value="<?= $t ?>" <?= $s['service_type'] === $t ? 'selected' : '' ?>><?= htmlspecialchars($typeLabels[$t]) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <input type="text" name="service_name" form="edit-<?= (int) $s['id'] ?>" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($s['service_name']) ?>">
+                            </td>
+                            <td>
+                                <select name="charge_type" form="edit-<?= (int) $s['id'] ?>" class="row-inp">
+                                    <?php foreach ($chargeTypes as $c): ?>
+                                    <option value="<?= $c ?>" <?= $s['charge_type'] === $c ? 'selected' : '' ?>><?= htmlspecialchars($chargeLabels[$c]) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <input type="number" step="0.01" min="0" name="base_charge" form="edit-<?= (int) $s['id'] ?>" class="row-inp" style="width:100px;" value="<?= htmlspecialchars((string) $s['base_charge']) ?>">
+                            </td>
+                            <td>
+                                <form method="POST" action="er_services.php" id="edit-<?= (int) $s['id'] ?>" style="margin:0;">
                                     <input type="hidden" name="action" value="edit_service">
                                     <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
-                                    <select name="charge_type">
-                                        <?php foreach ($chargeTypes as $c): ?>
-                                        <option value="<?= $c ?>" <?= $s['charge_type'] === $c ? 'selected' : '' ?>><?= htmlspecialchars($chargeLabels[$c]) ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <input type="number" step="0.01" min="0" name="base_charge" value="<?= htmlspecialchars((string) $s['base_charge']) ?>">
-                                    <button type="submit" class="link-btn">Save</button>
+                                    <button type="submit" class="btn small">Save changes</button>
                                 </form>
                             </td>
                             <td><?= $s['status'] === 'ACTIVE' ? '<span class="status-pill active">Active</span>' : '<span class="status-pill on-leave">Inactive</span>' ?></td>
                             <td>
-                                <form method="POST" action="er_services.php" style="display:inline;">
+                                <form method="POST" action="er_services.php" style="display:inline;margin:0;">
                                     <input type="hidden" name="action" value="toggle_service">
                                     <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
                                     <button type="submit" class="link-btn <?= $s['status'] === 'ACTIVE' ? 'warn' : '' ?>"><?= $s['status'] === 'ACTIVE' ? 'Deactivate' : 'Activate' ?></button>
