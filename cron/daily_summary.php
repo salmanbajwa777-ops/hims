@@ -120,4 +120,21 @@ if (php_sapi_name() === 'cli') {
     echo ($ok ? 'sent' : 'FAILED (see email_log)') . "\n";
 } else {
     echo $ok ? 'Daily summary sent.' : 'Send FAILED — check the email_log table and config/mail.php.';
+    if (!$ok) {
+        // Surface the recorded SMTP error right here so diagnosing doesn't
+        // require a phpMyAdmin round-trip. Key-gated page, admin-only info.
+        try {
+            $last = $pdo->query("SELECT status, error, created_at FROM email_log ORDER BY id DESC LIMIT 1")->fetch();
+            if ($last) {
+                echo '<br><br>Last attempt (' . htmlspecialchars($last['created_at']) . '): <strong>'
+                    . htmlspecialchars($last['status']) . '</strong> — '
+                    . htmlspecialchars($last['error'] ?? '(no error recorded)');
+            }
+        } catch (Throwable $e) {
+            echo '<br><br>email_log table does not exist yet — run sql/add_email_log.sql in phpMyAdmin.';
+        }
+        if (!mail_config()) {
+            echo '<br>config/mail.php is missing, disabled, or its password is still CHANGE_ME.';
+        }
+    }
 }
