@@ -45,28 +45,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     $pdo->beginTransaction();
     try {
         $up = $pdo->prepare('
-            INSERT INTO doctor_day_timings (doctor_id, timing_date, start_time, end_time, status, note, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO doctor_day_timings
+                (doctor_id, timing_date, start_time, end_time, start_time_2, end_time_2, status, note, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 start_time = VALUES(start_time), end_time = VALUES(end_time),
+                start_time_2 = VALUES(start_time_2), end_time_2 = VALUES(end_time_2),
                 status = VALUES(status), note = VALUES(note), updated_by = VALUES(updated_by)
         ');
+        // <input type=time> gives HH:MM; anything else (or empty) becomes NULL.
+        $tParse = static fn ($v) => preg_match('/^\d{2}:\d{2}$/', trim($v ?? '')) ? trim($v) . ':00' : null;
         foreach ($rows as $docId => $r) {
             $docId = (int) $docId;
             if (!in_array($docId, $validIds, true)) { continue; }
 
             $status = in_array($r['status'] ?? '', ['AVAILABLE', 'DELAYED', 'OFF'], true)
                 ? $r['status'] : 'AVAILABLE';
-            $start = trim($r['start'] ?? '');
-            $end   = trim($r['end'] ?? '');
-            // <input type=time> gives HH:MM; anything else (or empty) becomes NULL.
-            $start = preg_match('/^\d{2}:\d{2}$/', $start) ? $start . ':00' : null;
-            $end   = preg_match('/^\d{2}:\d{2}$/', $end)   ? $end . ':00'   : null;
-            if ($status === 'OFF') { $start = $end = null; } // no window on an off day
+            $start  = $tParse($r['start'] ?? '');
+            $end    = $tParse($r['end'] ?? '');
+            $start2 = $tParse($r['start2'] ?? '');
+            $end2   = $tParse($r['end2'] ?? '');
+            // A session-2 window with an empty session 1 slides up to be THE window.
+            if ($start === null && $end === null && ($start2 !== null || $end2 !== null)) {
+                [$start, $end] = [$start2, $end2];
+                $start2 = $end2 = null;
+            }
+            if ($status === 'OFF') { $start = $end = $start2 = $end2 = null; } // no windows on an off day
             $note = trim($r['note'] ?? '');
             $note = $note === '' ? null : mb_substr($note, 0, 255);
 
-            $up->execute([$docId, $today, $start, $end, $status, $note, $_SESSION['user_id']]);
+            $up->execute([$docId, $today, $start, $end, $start2, $end2, $status, $note, $_SESSION['user_id']]);
         }
 
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
@@ -86,7 +94,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 try {
     $stmt = $pdo->prepare("
         SELECT u.id, u.name,
-               t.start_time, t.end_time, t.status, t.note, t.updated_at,
+               t.start_time, t.end_time, t.start_time_2, t.end_time_2,
+               t.status, t.note, t.updated_at,
                ub.name AS updated_by_name
         FROM users u
         LEFT JOIN doctor_day_timings t ON t.doctor_id = u.id AND t.timing_date = ?
@@ -141,11 +150,13 @@ $headExtra = <<<CSS
 .status-seg input:checked + span.s-delay { background: #FFFBEB; color: #92400E; }
 .status-seg input:checked + span.s-off { background: #FEF2F2; color: #B91C1C; }
 
+.time-stack { display: flex; flex-direction: column; gap: 8px; }
 .time-pair { display: inline-flex; align-items: center; gap: 6px; }
+.time-pair .sess { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); width: 44px; flex-shrink: 0; }
 .time-pair input[type=time] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); color: var(--text); width: 110px; }
 .time-pair input[type=time]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
 .time-pair .dash { color: var(--text-muted); }
-tr.is-off .time-pair, tr.is-off .note-input { opacity: .4; pointer-events: none; }
+tr.is-off .time-stack, tr.is-off .note-input { opacity: .4; pointer-events: none; }
 
 .note-input { width: 100%; min-width: 160px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); color: var(--text); }
 .note-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
@@ -194,8 +205,10 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php foreach ($doctors as $d): ?>
                             <?php
                                 $st = $d['status'] ?? 'AVAILABLE';
-                                $startVal = $d['start_time'] ? substr($d['start_time'], 0, 5) : '';
-                                $endVal   = $d['end_time'] ? substr($d['end_time'], 0, 5) : '';
+                                $startVal  = $d['start_time'] ? substr($d['start_time'], 0, 5) : '';
+                                $endVal    = $d['end_time'] ? substr($d['end_time'], 0, 5) : '';
+                                $start2Val = $d['start_time_2'] ? substr($d['start_time_2'], 0, 5) : '';
+                                $end2Val   = $d['end_time_2'] ? substr($d['end_time_2'], 0, 5) : '';
                             ?>
                             <tr class="<?= $st === 'OFF' ? 'is-off' : '' ?>" data-doc-row>
                                 <td>
@@ -222,10 +235,19 @@ require __DIR__ . '/partials/sidebar.php';
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="time-pair">
-                                        <input type="time" name="t[<?= (int) $d['id'] ?>][start]" value="<?= htmlspecialchars($startVal) ?>"<?= $ro ?>>
-                                        <span class="dash">&ndash;</span>
-                                        <input type="time" name="t[<?= (int) $d['id'] ?>][end]" value="<?= htmlspecialchars($endVal) ?>"<?= $ro ?>>
+                                    <div class="time-stack">
+                                        <div class="time-pair">
+                                            <span class="sess">Sess 1</span>
+                                            <input type="time" name="t[<?= (int) $d['id'] ?>][start]" value="<?= htmlspecialchars($startVal) ?>"<?= $ro ?>>
+                                            <span class="dash">&ndash;</span>
+                                            <input type="time" name="t[<?= (int) $d['id'] ?>][end]" value="<?= htmlspecialchars($endVal) ?>"<?= $ro ?>>
+                                        </div>
+                                        <div class="time-pair">
+                                            <span class="sess">Sess 2</span>
+                                            <input type="time" name="t[<?= (int) $d['id'] ?>][start2]" value="<?= htmlspecialchars($start2Val) ?>"<?= $ro ?>>
+                                            <span class="dash">&ndash;</span>
+                                            <input type="time" name="t[<?= (int) $d['id'] ?>][end2]" value="<?= htmlspecialchars($end2Val) ?>"<?= $ro ?>>
+                                        </div>
                                     </div>
                                 </td>
                                 <td>
@@ -239,7 +261,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
 
                     <div class="sheet-foot">
-                        <div class="hint">Timings apply to <strong>today only</strong> and reset each day. Mark a doctor <strong>Off today</strong> to grey out their window.</div>
+                        <div class="hint">Timings apply to <strong>today only</strong> and reset each day. Session 2 is optional — leave it blank for single-sitting doctors. Mark a doctor <strong>Off today</strong> to grey out their windows.</div>
                         <?php if ($canEdit): ?>
                         <button type="submit" class="btn">Save today's timings</button>
                         <?php endif; ?>

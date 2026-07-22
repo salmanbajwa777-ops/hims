@@ -185,7 +185,8 @@ $docTimings = [];
 $timingsLastTouch = null;
 try {
     $tStmt = $pdo->prepare("
-        SELECT u.name, t.start_time, t.end_time, t.status, t.note, t.updated_at,
+        SELECT u.name, t.start_time, t.end_time, t.start_time_2, t.end_time_2,
+               t.status, t.note, t.updated_at,
                ub.name AS updated_by_name
         FROM users u
         LEFT JOIN doctor_day_timings t ON t.doctor_id = u.id AND t.timing_date = CURDATE()
@@ -351,7 +352,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .tim-info { flex: 1; min-width: 0; }
 .tim-doc { font-size: 13.5px; font-weight: 600; }
 .tim-note { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
-.tim-when { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tim-when { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; line-height: 1.5; }
 .tim-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
 .tim-pill.avail { background: #ECFDF5; color: #047857; }
 .tim-pill.delay { background: #FFFBEB; color: #92400E; }
@@ -569,17 +570,23 @@ require __DIR__ . '/partials/sidebar.php';
             <?php foreach ($docTimings as $t): ?>
                 <?php
                     $tst = $t['status']; // NULL means not confirmed yet today
+                    // A doctor may sit in one or two sessions: show only the
+                    // windows that actually have values.
+                    $fmtWin = static function ($s, $e) {
+                        if (!$s && !$e) { return null; }
+                        return ($s ? date('g:i A', strtotime($s)) : '?')
+                             . ' – ' . ($e ? date('g:i A', strtotime($e)) : '?');
+                    };
                     if ($tst === 'OFF') {
                         $pill = ['off', 'Off today'];
                         $when = '—';
-                    } elseif ($tst === 'DELAYED') {
-                        $pill = ['delay', 'Delayed'];
-                        $when = ($t['start_time'] ? date('g:i A', strtotime($t['start_time'])) : '?')
-                              . ' – ' . ($t['end_time'] ? date('g:i A', strtotime($t['end_time'])) : '?');
-                    } elseif ($tst === 'AVAILABLE') {
-                        $pill = ['avail', 'Available'];
-                        $when = ($t['start_time'] ? date('g:i A', strtotime($t['start_time'])) : '?')
-                              . ' – ' . ($t['end_time'] ? date('g:i A', strtotime($t['end_time'])) : '?');
+                    } elseif ($tst === 'DELAYED' || $tst === 'AVAILABLE') {
+                        $pill = $tst === 'DELAYED' ? ['delay', 'Delayed'] : ['avail', 'Available'];
+                        $wins = array_filter([
+                            $fmtWin($t['start_time'], $t['end_time']),
+                            $fmtWin($t['start_time_2'] ?? null, $t['end_time_2'] ?? null),
+                        ]);
+                        $when = $wins ? implode('<br>', array_map('htmlspecialchars', $wins)) : '?';
                     } else {
                         $pill = ['unset', 'Not confirmed'];
                         $when = '—';
@@ -591,7 +598,10 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="tim-doc"><?= htmlspecialchars($t['name']) ?></div>
                         <?php if (!empty($t['note'])): ?><div class="tim-note"><?= htmlspecialchars($t['note']) ?></div><?php endif; ?>
                     </div>
-                    <div class="tim-when"><?= htmlspecialchars($when) ?></div>
+                    <?php /* $when is built above from formatted times only and
+                             is already escaped where needed (may contain <br>
+                             between two sessions) */ ?>
+                    <div class="tim-when"><?= $when ?></div>
                     <span class="tim-pill <?= $pill[0] ?>"><?= $pill[1] ?></span>
                 </div>
             <?php endforeach; ?>
