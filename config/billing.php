@@ -168,6 +168,37 @@ function admission_service_charge(string $chargeType, float $unitCharge, int $qu
 }
 
 // ============================================================================
+// Patient discount categories (Family & Friends / Charity / Loyalty).
+// Admin assigns a category to a patient; every future invoice auto-discounts
+// at the category's rates — separate percentages for consultation, ER services
+// and procedures. Rates are snapshotted at billing time; the printed slip stays
+// generic ("Discount"), the category is internal-only for month-end reporting.
+// ============================================================================
+
+// The patient's active discount category, or null. Inactive categories are
+// treated as unassigned (admin can pause a category without touching patients).
+function patient_discount_category(PDO $pdo, int $patientId): ?array {
+    $stmt = $pdo->prepare('
+        SELECT dc.id, dc.name, dc.consultation_pct, dc.er_services_pct, dc.procedures_pct
+        FROM patients p
+        JOIN discount_categories dc ON dc.id = p.discount_category_id AND dc.is_active = 1
+        WHERE p.id = ?
+    ');
+    $stmt->execute([$patientId]);
+    $cat = $stmt->fetch();
+    return $cat ?: null;
+}
+
+// Stack the category percentage ON TOP of an already-discounted price
+// (confirmed rule: revisit engine first, category second — they compound).
+// e.g. 50% revisit + 20% category → 100 − 50×0.80 paid = 60% total discount.
+// Capped at 100 so a free follow-up stays exactly free.
+function stack_discount_pct(float $basePct, float $categoryPct): float {
+    $paid = (100 - $basePct) * (100 - $categoryPct) / 100;
+    return round(min(100, max(0, 100 - $paid)), 2);
+}
+
+// ============================================================================
 // Revisit billing (Phase 2). OPD consultation follow-ups only. Window is per
 // patient + doctor + consultation type, measured from the last FULL-paid
 // consultation. Only FULL payments move the window; free/50%/75% visits don't.

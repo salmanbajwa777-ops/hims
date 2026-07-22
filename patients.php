@@ -67,6 +67,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'revisit
     if (!$feeRow) { echo json_encode(['error' => 'Invalid consultation type.']); exit; }
     $quote = revisit_consultation_fee($pdo, $pid, $did, $ctid, (float) $feeRow['fee']);
     $quote['full_fee'] = (float) $feeRow['fee'];
+
+    // Patient discount category stacks ON TOP of the revisit price so the panel
+    // quotes what will actually be billed. Overriding to full fee still keeps
+    // the category discount (it's the patient's standing entitlement — only the
+    // follow-up portion is overridable), which the JS mirrors.
+    $cat = patient_discount_category($pdo, $pid);
+    if ($cat) {
+        $quote['category_name'] = $cat['name'];
+        $quote['category_pct'] = (float) $cat['consultation_pct'];
+        $quote['discount_pct'] = stack_discount_pct((float) $quote['discount_pct'], (float) $cat['consultation_pct']);
+        $quote['fee'] = round($quote['full_fee'] * (1 - $quote['discount_pct'] / 100), 2);
+    }
     echo json_encode($quote);
     exit;
 }
@@ -289,6 +301,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                       'reason' => 'Reception override to full fee', 'anchor_visit_id' => null];
         }
 
+        // Patient discount category stacks ON TOP of the (possibly overridden)
+        // revisit price. The override only cancels the follow-up portion — the
+        // category discount is the patient's standing entitlement and survives.
+        // Snapshot the rate used so later rate edits never rewrite this visit,
+        // and month-end reporting can attribute the discount to its category.
+        $cat = patient_discount_category($pdo, $patientId);
+        $categoryPct = $cat ? (float) $cat['consultation_pct'] : 0.0;
+        $categoryId = $cat ? (int) $cat['id'] : null;
+        $categoryAmount = 0.0;
+        if ($categoryPct > 0) {
+            $beforeCategory = (float) $quote['fee'];   // price after revisit/override step
+            $quote['discount_pct'] = stack_discount_pct((float) $quote['discount_pct'], $categoryPct);
+            $quote['fee'] = round($fullFee * (1 - $quote['discount_pct'] / 100), 2);
+            // Exact rupees the category step saved — snapshotted for month-end
+            // reporting (no derivation math, exact even at 100% free).
+            $categoryAmount = round($beforeCategory - $quote['fee'], 2);
+            // A category-only discount is still a clean FULL anchor for the
+            // revisit window (it's automatic policy, not ad-hoc pricing) — so
+            // discounted regular patients keep qualifying for follow-up rates.
+            // Follow-up fee types are left as the engine set them.
+        }
+
         try {
             $pdo->beginTransaction();
 
@@ -304,12 +338,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
             $discountBy = $discountPct > 0 ? $_SESSION['user_id'] : null;
 
             $insertVisit = $pdo->prepare('
-                INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type, revisit_of_visit_id, fee_overridden)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?)
+                INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type, revisit_of_visit_id, fee_overridden, discount_category_id, category_discount_pct, category_discount_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?)
             ');
             $insertVisit->execute([
                 $tokenNo, $patientId, $doctorId, $consultTypeId, $fullFee, $discountPct, $discountBy,
                 $paymentMode, $_SESSION['user_id'], $quote['fee_type'], $quote['anchor_visit_id'] ?? null, $override ? 1 : 0,
+                $categoryPct > 0 ? $categoryId : null, $categoryPct, $categoryAmount,
             ]);
             $visitId = (int) $pdo->lastInsertId();
 
@@ -319,7 +354,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
             $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
                 ->execute([$_SESSION['user_id'], 'followup_registered',
-                    "Follow-up visit #$visitId for patient #$patientId ({$patient['mrn']}), {$quote['fee_type']} ({$quote['reason']}), token #$tokenNo"]);
+                    "Follow-up visit #$visitId for patient #$patientId ({$patient['mrn']}), {$quote['fee_type']} ({$quote['reason']}), token #$tokenNo"
+                    . ($categoryPct > 0 ? ", {$cat['name']} category discount {$categoryPct}% (total {$discountPct}%)" : '')]);
 
             $pdo->commit();
 
@@ -338,6 +374,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
             $pdo->rollBack();
             $error = 'Could not create the follow-up visit. Please try again.';
         }
+    }
+}
+
+// ---------------- Assign / clear a discount category (admin only) ----------------
+// The patient's standing discount scheme (Family & Friends / Charity / Loyalty).
+// Assignment is admin-only; reception just sees the badge. All FUTURE invoices
+// auto-discount at the category's rates — nothing already billed changes.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_discount_category') {
+    if (($_SESSION['base_role'] ?? '') !== 'ADMIN') {
+        http_response_code(403);
+        exit('Forbidden — admin access only.');
+    }
+
+    $targetId = (int) ($_POST['patient_id'] ?? 0);
+    $categoryId = (int) ($_POST['discount_category_id'] ?? 0) ?: null;
+
+    $pStmt = $pdo->prepare('SELECT id, name, mrn FROM patients WHERE id = ?');
+    $pStmt->execute([$targetId]);
+    $target = $pStmt->fetch();
+
+    $catName = null;
+    if ($categoryId !== null) {
+        $cStmt = $pdo->prepare('SELECT name FROM discount_categories WHERE id = ? AND is_active = 1');
+        $cStmt->execute([$categoryId]);
+        $catName = $cStmt->fetchColumn() ?: null;
+    }
+
+    if (!$target || ($categoryId !== null && $catName === null)) {
+        $error = 'Patient or discount category not found.';
+    } else {
+        $pdo->prepare('UPDATE patients SET discount_category_id = ?, discount_assigned_by_id = ?, discount_assigned_at = NOW() WHERE id = ?')
+            ->execute([$categoryId, $_SESSION['user_id'], $targetId]);
+        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+            ->execute([$_SESSION['user_id'], 'patient_discount_category_set',
+                $categoryId !== null
+                    ? "Assigned \"$catName\" discount category to patient #$targetId ({$target['name']}, MRN {$target['mrn']})"
+                    : "Removed discount category from patient #$targetId ({$target['name']}, MRN {$target['mrn']})"]);
+        $success = $categoryId !== null
+            ? "{$target['name']} assigned to \"$catName\" — future invoices auto-discount."
+            : "Discount category removed from {$target['name']}.";
     }
 }
 
@@ -379,9 +455,11 @@ if ($q !== '') {
     $like = '%' . $q . '%';
     $stmt = $pdo->prepare('
         SELECT p.*, c.name AS city_name,
+            dc.name AS discount_category_name, dc.is_active AS discount_category_active,
             (SELECT v.visit_date FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC LIMIT 1) AS last_visit
         FROM patients p
         LEFT JOIN cities c ON c.id = p.city_id
+        LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
         WHERE p.name LIKE ? OR p.phone LIKE ? OR p.father_name LIKE ? OR p.mrn LIKE ?
         ORDER BY p.name ASC LIMIT 50
     ');
@@ -396,6 +474,10 @@ $qhActive = $showRegister ? 'register' : 'patients';
 $qhBrand = false; // the sidebar already carries the HIMS mark
 
 $doctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
+// Active discount categories for the admin's assignment dropdown in the results table.
+$discountCategories = ($_SESSION['base_role'] ?? '') === 'ADMIN'
+    ? $pdo->query('SELECT id, name, consultation_pct FROM discount_categories WHERE is_active = 1 ORDER BY name')->fetchAll()
+    : [];
 $cities = $pdo->query('SELECT id, name FROM cities ORDER BY name')->fetchAll();
 $areasByCity = [];
 foreach ($pdo->query("SELECT id, city_id, name FROM areas WHERE status = 'active' ORDER BY name")->fetchAll() as $a) {
@@ -443,6 +525,9 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .mrn { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); }
 .gender-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: #F1F5F9; color: var(--text-secondary); }
 .unpaid-badge { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--red-bg); color: var(--red-text); white-space: nowrap; }
+.dc-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); white-space: nowrap; }
+.dc-select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12px; background: #fff; color: var(--text-secondary); max-width: 140px; }
+.dc-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.12); }
 .edit-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 .edit-link:hover { text-decoration: underline; }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
@@ -623,7 +708,7 @@ require __DIR__ . '/partials/sidebar.php';
                 <?php else: ?>
                 <table>
                     <thead>
-                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th><th>Actions</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
+                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th><th>Discount</th><th>Actions</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($patients as $p): $age = $p['dob'] ? ageFromDob($p['dob']) : null; ?>
@@ -640,6 +725,29 @@ require __DIR__ . '/partials/sidebar.php';
                             <td><span class="gender-tag"><?= $age !== null ? $age . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
                             <td class="mrn"><?= htmlspecialchars($p['mrn']) ?></td>
                             <td class="muted"><?= $p['last_visit'] ? date('d M Y', strtotime($p['last_visit'])) : '—' ?></td>
+                            <td>
+                                <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
+                                <!-- Admin: assign the standing discount category; auto-saves on change. -->
+                                <form method="POST" action="patients.php?q=<?= urlencode($q) ?>" style="margin:0;">
+                                    <input type="hidden" name="action" value="set_discount_category">
+                                    <input type="hidden" name="patient_id" value="<?= (int) $p['id'] ?>">
+                                    <select name="discount_category_id" class="dc-select" onchange="this.form.submit()" title="Standing discount category — auto-applies to all future invoices">
+                                        <option value="">— None —</option>
+                                        <?php foreach ($discountCategories as $dc): ?>
+                                        <option value="<?= (int) $dc['id'] ?>" <?= (int) ($p['discount_category_id'] ?? 0) === (int) $dc['id'] ? 'selected' : '' ?>><?= htmlspecialchars($dc['name']) ?></option>
+                                        <?php endforeach; ?>
+                                        <?php if (!empty($p['discount_category_id']) && empty($p['discount_category_active'])): ?>
+                                        <option value="<?= (int) $p['discount_category_id'] ?>" selected><?= htmlspecialchars($p['discount_category_name']) ?> (inactive)</option>
+                                        <?php endif; ?>
+                                    </select>
+                                </form>
+                                <?php elseif (!empty($p['discount_category_name']) && !empty($p['discount_category_active'])): ?>
+                                <!-- Reception: read-only badge; assignment is admin-only. -->
+                                <span class="dc-badge" title="Standing discount — auto-applied on billing"><?= htmlspecialchars($p['discount_category_name']) ?></span>
+                                <?php else: ?>
+                                <span class="muted">—</span>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <div class="row-acts">
                                     <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>)">New invoice</button>
@@ -888,7 +996,7 @@ require __DIR__ . '/partials/sidebar.php';
     </div>
 </div>
 <script>
-let fuFullFee = 0, fuQuoteFee = 0;
+let fuFullFee = 0, fuQuoteFee = 0, fuCatPct = 0, fuCatName = '', fuQuoteLabel = '', fuQuoteType = '';
 function openFollowup(pid, name, mrn) {
     document.getElementById('fuPatientId').value = pid;
     document.getElementById('fuName').textContent = name + '  ·  ' + mrn;
@@ -931,6 +1039,8 @@ function fuQuote() {
         .then(r => r.json())
         .then(q => {
             fuFullFee = q.full_fee; fuQuoteFee = q.fee;
+            fuCatPct = q.category_pct || 0; fuCatName = q.category_name || '';
+            fuQuoteLabel = q.label || ''; fuQuoteType = q.fee_type || '';
             renderQuote(q.fee, q.label, q.fee_type);
             document.getElementById('fuSubmit').disabled = false;
         });
@@ -938,12 +1048,20 @@ function fuQuote() {
 function renderQuote(fee, label, feeType) {
     document.getElementById('fuFee').textContent = 'Rs ' + Math.round(fee);
     const tag = document.getElementById('fuTag');
-    if (feeType && feeType !== 'FULL') { tag.textContent = label; tag.style.display = 'inline-block'; }
+    // The patient's standing category discount always shows alongside any follow-up rate.
+    const parts = [];
+    if (feeType && feeType !== 'FULL' && label) { parts.push(label); }
+    if (fuCatPct > 0) { parts.push(fuCatName + ' −' + fuCatPct + '%'); }
+    if (parts.length) { tag.textContent = parts.join(' + '); tag.style.display = 'inline-block'; }
     else { tag.style.display = 'none'; }
 }
 function fuApplyOverride() {
-    if (document.getElementById('fuOverride').checked) { renderQuote(fuFullFee, 'Full fee (override)', 'FULL'); }
-    else { renderQuote(fuQuoteFee, '', ''); fuQuote(); }
+    if (document.getElementById('fuOverride').checked) {
+        // Override cancels only the follow-up rate — the category discount is
+        // the patient's standing entitlement and still applies (matches server).
+        const fee = fuFullFee * (1 - fuCatPct / 100);
+        renderQuote(fee, 'Full fee (override)', 'FULL');
+    } else { renderQuote(fuQuoteFee, fuQuoteLabel, fuQuoteType); }
 }
 </script>
 

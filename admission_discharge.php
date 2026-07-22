@@ -45,11 +45,17 @@ function ensure_admission_bill(PDO $pdo, array $adm, int $uid): array {
     $bill = $b->fetch();
     if ($bill) { return $bill; }
 
+    // Patient's standing discount category: applies to SERVICE/PROCEDURE lines
+    // only (each at its own rate) — the room stay is NEVER discounted. Rates are
+    // snapshotted per line so later category edits don't rewrite this bill, and
+    // month-end reporting can split service vs procedure discounts.
+    $cat = patient_discount_category($pdo, (int) $adm['patient_id']);
+
     $pdo->beginTransaction();
     try {
         $inv = generate_admission_invoice_number($pdo);
-        $pdo->prepare('INSERT INTO admission_bills (invoice_number, admission_id, created_by_id) VALUES (?, ?, ?)')
-            ->execute([$inv, $adm['id'], $uid]);
+        $pdo->prepare('INSERT INTO admission_bills (invoice_number, admission_id, created_by_id, discount_category_id) VALUES (?, ?, ?, ?)')
+            ->execute([$inv, $adm['id'], $uid, $cat ? (int) $cat['id'] : null]);
         $billId = (int) $pdo->lastInsertId();
 
         // Stay line.
@@ -69,13 +75,28 @@ function ensure_admission_bill(PDO $pdo, array $adm, int $uid): array {
         $pdo->prepare('INSERT INTO admission_bill_items (admission_bill_id, description, quantity, unit_rate, amount, item_kind) VALUES (?, ?, ?, ?, ?, \'STAY\')')
             ->execute([$billId, $desc, $units, $rate['rate_amount'], $stayAmt]);
 
-        // Service lines (billable only).
+        // Service lines (billable only), net of the category discount if any.
         $svc = $pdo->prepare('SELECT * FROM admission_services WHERE admission_id = ? AND is_billable = 1 ORDER BY logged_at');
         $svc->execute([$adm['id']]);
+        $totalDiscount = 0.0;
         foreach ($svc->fetchAll() as $s) {
             $qtyLabel = $s['charge_type'] === 'HOURLY' ? ((int) $s['duration_minutes']) . ' min' : (int) $s['quantity'];
-            $pdo->prepare('INSERT INTO admission_bill_items (admission_bill_id, description, quantity, unit_rate, amount, item_kind) VALUES (?, ?, ?, ?, ?, \'SERVICE\')')
-                ->execute([$billId, $s['service_name'] . ' (' . $qtyLabel . ')', max(1, (int) $s['quantity']), $s['unit_charge'], $s['calculated_charge']]);
+            // Procedures discount at their own rate, plain services at theirs.
+            $pct = 0.0;
+            if ($cat) {
+                $pct = $s['service_type'] === 'PROCEDURE'
+                    ? (float) $cat['procedures_pct'] : (float) $cat['er_services_pct'];
+            }
+            $gross = (float) $s['calculated_charge'];
+            $lineDiscount = round($gross * $pct / 100, 2);
+            $net = round($gross - $lineDiscount, 2);
+            $totalDiscount += $lineDiscount;
+            $pdo->prepare('INSERT INTO admission_bill_items (admission_bill_id, description, quantity, unit_rate, amount, item_kind, discount_pct, discount_amount, service_type) VALUES (?, ?, ?, ?, ?, \'SERVICE\', ?, ?, ?)')
+                ->execute([$billId, $s['service_name'] . ' (' . $qtyLabel . ')', max(1, (int) $s['quantity']), $s['unit_charge'], $net, $pct, $lineDiscount, $s['service_type']]);
+        }
+        if ($totalDiscount > 0) {
+            $pdo->prepare('UPDATE admission_bills SET discount_amount = ? WHERE id = ?')
+                ->execute([round($totalDiscount, 2), $billId]);
         }
 
         recalc_admission_bill_totals($pdo, $billId);
@@ -92,6 +113,16 @@ function ensure_admission_bill(PDO $pdo, array $adm, int $uid): array {
 $bill = ensure_admission_bill($pdo, $adm, $uid);
 $locked = $bill['status'] === 'paid' || $bill['printed_at'];
 
+// Keep the bill's discount rollup honest after any line edit/removal: it's
+// simply the sum of the surviving lines' snapshots.
+function resync_admission_bill_discount(PDO $pdo, int $billId): void {
+    $pdo->prepare('
+        UPDATE admission_bills SET discount_amount =
+            (SELECT COALESCE(SUM(discount_amount), 0) FROM admission_bill_items WHERE admission_bill_id = ?)
+        WHERE id = ?
+    ')->execute([$billId, $billId]);
+}
+
 // ---- Edit a line item (before finalize) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_item' && !$locked && $canFinalize) {
     $itemId = (int) ($_POST['item_id'] ?? 0);
@@ -100,10 +131,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $rate = (float) ($_POST['unit_rate'] ?? 0);
     $amount = round($qty * $rate, 2);
     if ($itemId > 0 && $desc !== '') {
-        $pdo->prepare('UPDATE admission_bill_items SET description = ?, quantity = ?, unit_rate = ?, amount = ? WHERE id = ? AND admission_bill_id = ?')
+        // A manual edit replaces the auto-priced line entirely — clear its
+        // category-discount snapshot so reporting doesn't count a discount
+        // that is no longer embedded in the amount.
+        $pdo->prepare('UPDATE admission_bill_items SET description = ?, quantity = ?, unit_rate = ?, amount = ?, discount_pct = 0, discount_amount = 0 WHERE id = ? AND admission_bill_id = ?')
             ->execute([$desc, $qty, $rate, $amount, $itemId, $bill['id']]);
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
             ->execute([$uid, 'admission_bill_item_edited', "Edited item #$itemId on admission bill {$bill['invoice_number']}"]);
+        resync_admission_bill_discount($pdo, (int) $bill['id']);
         recalc_admission_bill_totals($pdo, (int) $bill['id']);
     }
     header('Location: admission_discharge.php?id=' . $admissionId); exit;
@@ -113,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remove_item' && !$locked && $canFinalize) {
     $itemId = (int) ($_POST['item_id'] ?? 0);
     $pdo->prepare('DELETE FROM admission_bill_items WHERE id = ? AND admission_bill_id = ?')->execute([$itemId, $bill['id']]);
+    resync_admission_bill_discount($pdo, (int) $bill['id']);
     recalc_admission_bill_totals($pdo, (int) $bill['id']);
     header('Location: admission_discharge.php?id=' . $admissionId); exit;
 }
@@ -312,6 +348,11 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
 
                 <div class="totbox">
+                    <?php $dcAmt = (float) ($bill['discount_amount'] ?? 0); if ($dcAmt > 0): ?>
+                    <!-- Generic wording by design — the category name never shows to reception/patient here. -->
+                    <div class="r"><span>Before discount</span><span class="mono">Rs <?= number_format($total + $dcAmt) ?></span></div>
+                    <div class="r" style="color:var(--green-text);"><span>Discount (services)</span><span class="mono">− Rs <?= number_format($dcAmt) ?></span></div>
+                    <?php endif; ?>
                     <div class="r grand"><span>Total</span><span class="mono">Rs <?= number_format($total) ?></span></div>
                     <?php if ($bill['status'] !== 'draft'): ?>
                     <div class="r"><span>Paid</span><span class="mono">Rs <?= number_format($paid) ?></span></div>
