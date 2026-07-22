@@ -83,6 +83,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .error { background: #FEF2F2; color: #B91C1C; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
         .success { background: #ECFDF5; color: #047857; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
         .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #1A7F7E; }
+        .pw-wrap { position: relative; margin-bottom: 16px; }
+        .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
+        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748B; padding: 4px; width: auto; margin: 0; display: flex; }
+        .pw-eye:hover { color: var(--primary); }
+        .pw-eye svg { width: 18px; height: 18px; }
     </style>
 </head>
 <body>
@@ -96,16 +101,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if (!$success): ?>
         <form method="POST" action="change-password.php">
             <label for="current_password">Current Password</label>
-            <input type="password" id="current_password" name="current_password" required>
+            <div class="pw-wrap">
+                <input type="password" id="current_password" name="current_password" required>
+                <button type="button" class="pw-eye" onclick="pwToggle('current_password', this)" aria-label="Show password" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
 
             <label for="new_password">New Password</label>
-            <input type="password" id="new_password" name="new_password" required minlength="8">
+            <div class="pw-wrap">
+                <input type="password" id="new_password" name="new_password" required minlength="8">
+                <button type="button" class="pw-eye" onclick="pwToggle('new_password', this)" aria-label="Show password" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
 
             <label for="confirm_password">Confirm New Password</label>
-            <input type="password" id="confirm_password" name="confirm_password" required minlength="8">
+            <div class="pw-wrap">
+                <input type="password" id="confirm_password" name="confirm_password" required minlength="8">
+                <button type="button" class="pw-eye" onclick="pwToggle('confirm_password', this)" aria-label="Show password" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
 
             <button type="submit">Update Password</button>
         </form>
+        <script>
+        function pwToggle(id, btn) {
+            var i = document.getElementById(id);
+            i.type = i.type === 'password' ? 'text' : 'password';
+            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#64748B';
+        }
+        </script>
         <a class="back-link" href="<?= $landingPage ?>">&larr; Back to dashboard</a>
         <?php endif; ?>
     </div>

@@ -121,6 +121,12 @@ $headExtra = <<<CSS
 .locked-list .k { color: var(--text-muted); }
 .locked-list .v { font-weight: 600; }
 .locked-note { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; }
+
+.pw-wrap { position: relative; }
+.pw-wrap input { padding-right: 42px; }
+.pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px; display: flex; }
+.pw-eye:hover { color: var(--primary); }
+.pw-eye svg { width: 18px; height: 18px; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -189,16 +195,25 @@ require __DIR__ . '/partials/sidebar.php';
                         <input type="hidden" name="action" value="change_password">
                         <div class="pf-field">
                             <label for="pf_cur">Current password</label>
-                            <input type="password" id="pf_cur" name="current_password" required autocomplete="current-password">
+                            <div class="pw-wrap">
+                                <input type="password" id="pf_cur" name="current_password" required autocomplete="current-password">
+                                <button type="button" class="pw-eye" onclick="pwToggle('pf_cur', this)" aria-label="Show password" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                            </div>
                         </div>
                         <div class="pf-field">
                             <label for="pf_new">New password</label>
-                            <input type="password" id="pf_new" name="new_password" required minlength="8" autocomplete="new-password">
+                            <div class="pw-wrap">
+                                <input type="password" id="pf_new" name="new_password" required minlength="8" autocomplete="new-password">
+                                <button type="button" class="pw-eye" onclick="pwToggle('pf_new', this)" aria-label="Show password" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                            </div>
                             <div class="pf-hint">At least 8 characters.</div>
                         </div>
                         <div class="pf-field">
                             <label for="pf_conf">Confirm new password</label>
-                            <input type="password" id="pf_conf" name="confirm_password" required minlength="8" autocomplete="new-password">
+                            <div class="pw-wrap">
+                                <input type="password" id="pf_conf" name="confirm_password" required minlength="8" autocomplete="new-password">
+                                <button type="button" class="pw-eye" onclick="pwToggle('pf_conf', this)" aria-label="Show password" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                            </div>
                         </div>
                         <div style="display:flex;justify-content:flex-end;margin-top:6px;">
                             <button type="submit" class="btn">Update password</button>
@@ -224,5 +239,12 @@ require __DIR__ . '/partials/sidebar.php';
         </div>
     </div>
 </div>
+<script>
+function pwToggle(id, btn) {
+    var i = document.getElementById(id);
+    i.type = i.type === 'password' ? 'text' : 'password';
+    btn.style.color = i.type === 'text' ? 'var(--primary)' : '';
+}
+</script>
 </body>
 </html>

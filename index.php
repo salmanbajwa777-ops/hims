@@ -156,6 +156,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: #1A7F7E;
             text-decoration: none;
         }
+        .pw-wrap { position: relative; margin-bottom: 18px; }
+        .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
+        .pw-eye {
+            position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+            background: none; border: none; cursor: pointer; color: #64748B;
+            padding: 4px; width: auto; margin: 0; display: flex;
+        }
+        .pw-eye:hover { opacity: 1; color: var(--primary); }
+        .pw-eye svg { width: 18px; height: 18px; }
     </style>
 </head>
 <body>
@@ -172,10 +181,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="text" id="identifier" name="identifier" required autofocus>
 
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
+            <div class="pw-wrap">
+                <input type="password" id="password" name="password" required>
+                <button type="button" class="pw-eye" onclick="pwToggle('password', this)" aria-label="Show password" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
 
             <button type="submit">Sign In</button>
         </form>
+        <script>
+        function pwToggle(id, btn) {
+            var i = document.getElementById(id);
+            i.type = i.type === 'password' ? 'text' : 'password';
+            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#64748B';
+        }
+        </script>
 
         <p class="forgot">Forgot your password? Ask an administrator to reset it.</p>
     </div>
