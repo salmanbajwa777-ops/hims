@@ -4,6 +4,7 @@ require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
+require_once __DIR__ . '/config/notify.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_ISSUE_REFUNDS');
 
@@ -128,6 +129,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
             ]);
 
             $pdo->commit();
+
+            // Alert admin + the approving doctor (best-effort, after commit).
+            notify_refund_issued($pdo, $refundId);
+
             header('Location: refund.php?print=1&refund_id=' . $refundId);
             exit;
         }

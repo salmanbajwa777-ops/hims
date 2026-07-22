@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/config/guard_admin.php';
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/notify.php';
 
 $roles = ['ADMIN', 'DOCTOR', 'MANAGER', 'ACCOUNTANT', 'NURSE', 'RECEPTIONIST'];
 $docTypes = [
@@ -30,7 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $role = $_POST['base_role'] ?? '';
-    $password = DEFAULT_STAFF_PASSWORD;
+    // Admin may type a temporary password; blank falls back to the default.
+    // Either way the user must change it on first sign-in.
+    $password = trim($_POST['temp_password'] ?? '') !== '' ? trim($_POST['temp_password']) : DEFAULT_STAFF_PASSWORD;
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
     $docTypeInputs = $_POST['doc_type'] ?? [];
@@ -130,7 +133,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                     "Created user #$newUserId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : ''),
                 ]);
 
-                $success = "Account created for $name. Their password is " . DEFAULT_STAFF_PASSWORD . " — they must change it on first sign-in.";
+                // Welcome email with login link + temporary password (best-effort;
+                // silently skipped when the account has no email address).
+                notify_staff_welcome($pdo, $newUserId, $password);
+
+                $success = "Account created for $name. Their password is $password — they must change it on first sign-in."
+                    . ($email !== '' ? ' A welcome email with the sign-in link has been sent.' : '');
             }
         }
     }
@@ -717,6 +725,10 @@ require __DIR__ . '/partials/sidebar.php';
                             <label for="phone">Phone <span class="opt">(this is their login ID — optional if email set)</span></label>
                             <input type="text" id="phone" name="phone" placeholder="03xxxxxxxxx">
                         </div>
+                        <div class="field" id="tempPasswordField">
+                            <label for="temp_password">Temporary Password <span class="opt">(blank = <?= DEFAULT_STAFF_PASSWORD ?>; emailed to them, changed on first sign-in)</span></label>
+                            <input type="text" id="temp_password" name="temp_password" placeholder="<?= DEFAULT_STAFF_PASSWORD ?>" autocomplete="off">
+                        </div>
                         <div class="field" id="passwordField" style="display:none;">
                             <label>Password</label>
                             <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer;">
@@ -907,6 +919,7 @@ const docsSection = document.getElementById('docsSection');
 const infoBannerText = document.getElementById('infoBannerText');
 const submitBtn = document.getElementById('submitBtn');
 const passwordField = document.getElementById('passwordField');
+const tempPasswordField = document.getElementById('tempPasswordField');
 const specialtyField = document.getElementById('specialtyField');
 const baseRoleSelect = document.getElementById('base_role');
 
@@ -916,7 +929,7 @@ function updateSpecialtyVisibility() {
 baseRoleSelect.addEventListener('change', updateSpecialtyVisibility);
 
 const DEFAULT_PASSWORD = <?= json_encode(DEFAULT_STAFF_PASSWORD) ?>;
-const ADD_INFO_HTML = "Their password will be <strong>" + DEFAULT_PASSWORD + "</strong>. Tell them their login ID (phone or email) and this password — they'll be asked to change it on first sign-in. Documents are stored privately and only visible to admins.";
+const ADD_INFO_HTML = "If they have an email on file, a welcome email with the sign-in link and their temporary password is sent automatically — they'll be asked to change it on first sign-in. Documents are stored privately and only visible to admins.";
 const EDIT_INFO_HTML = "You can attach additional documents at any time. Existing documents are kept — new ones are added alongside them. Tick the password box only if they've forgotten theirs and need it set back to <strong>" + DEFAULT_PASSWORD + "</strong>. Documents are stored privately and only visible to admins.";
 
 function resetToAddMode() {
@@ -927,6 +940,7 @@ function resetToAddMode() {
     panelSub.textContent = "Create a login and file their onboarding documents in one go.";
     docsSection.style.display = '';
     passwordField.style.display = 'none';
+    tempPasswordField.style.display = '';
     infoBannerText.innerHTML = ADD_INFO_HTML;
     submitBtn.textContent = 'Create Account';
     document.getElementById('existingDocsWrap').style.display = 'none';
@@ -948,6 +962,7 @@ function openEditPanel(data) {
     panelSub.textContent = 'Update their details and manage their documents.';
     docsSection.style.display = '';
     passwordField.style.display = '';
+    tempPasswordField.style.display = 'none';
     document.getElementById('reset_password').checked = false;
     infoBannerText.innerHTML = EDIT_INFO_HTML;
     submitBtn.textContent = 'Save Changes';

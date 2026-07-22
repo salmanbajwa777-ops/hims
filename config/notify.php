@@ -1,0 +1,203 @@
+<?php
+// Event-level email notifications. One function per business event; each builds
+// the message and fans out to the right recipients (doctor's registered email,
+// admin alert address). All senders are fire-and-forget via send_mail() — see
+// config/mailer.php for the delivery rules.
+//
+// IMPORTANT: call these AFTER $pdo->commit(). SMTP can take a few seconds and
+// must never sit inside an open transaction or roll back a saved record.
+
+require_once __DIR__ . '/mailer.php';
+
+/** New consultation invoice raised → the visit's doctor. */
+function notify_invoice_raised(PDO $pdo, int $billId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT b.invoice_number, b.grand_total, v.token_no, v.doctor_id,
+                   p.name AS patient_name, p.mrn, du.name AS doctor_name,
+                   v.consultation_fee_type
+            FROM bills b
+            JOIN visits v ON v.id = b.visit_id
+            JOIN patients p ON p.id = v.patient_id
+            LEFT JOIN users du ON du.id = v.doctor_id
+            WHERE b.id = ?
+        ');
+        $stmt->execute([$billId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $docEmail = user_email($pdo, (int) $r['doctor_id']);
+        if (!$docEmail) { return; }
+
+        $feeLabels = [
+            'FULL' => 'Full consultation', 'FREE_FOLLOWUP' => 'Free follow-up',
+            'HALF_FOLLOWUP' => '50% follow-up', 'THREE_QUARTER_FOLLOWUP' => '75% follow-up',
+        ];
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been registered under your name and their invoice has been raised.</p>'
+            . mail_kv([
+                'Patient'       => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
+                'Token'         => '#' . $r['token_no'],
+                'Invoice'       => $r['invoice_number'],
+                'Type'          => $feeLabels[$r['consultation_fee_type']] ?? 'Consultation',
+                'Amount'        => 'Rs ' . number_format((float) $r['grand_total'], 2),
+                'Time'          => date('d M Y, h:i A'),
+            ]);
+        send_mail($pdo, $docEmail,
+            'New patient — ' . $r['patient_name'] . ' (Token #' . $r['token_no'] . ')',
+            mail_template('New Patient in Your Queue', $body),
+            'invoice:' . $r['invoice_number']);
+    } catch (Throwable $e) { /* never break the page for a notification */ }
+}
+
+/** Refund issued → admin + the approving doctor. */
+function notify_refund_issued(PDO $pdo, int $refundId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT r.refund_number, r.amount, r.reason, r.refund_mode,
+                   b.invoice_number, p.name AS patient_name, p.mrn,
+                   r.approved_by_id, du.name AS doctor_name, gu.name AS generated_by
+            FROM refunds r
+            JOIN bills b ON b.id = r.bill_id
+            JOIN visits v ON v.id = b.visit_id
+            JOIN patients p ON p.id = v.patient_id
+            LEFT JOIN users du ON du.id = r.approved_by_id
+            LEFT JOIN users gu ON gu.id = r.generated_by_id
+            WHERE r.id = ?
+        ');
+        $stmt->execute([$refundId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $to = array_filter([admin_alert_email(), user_email($pdo, (int) $r['approved_by_id'])]);
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A refund voucher has been issued.</p>'
+            . mail_kv([
+                'Refund voucher' => $r['refund_number'],
+                'Against invoice'=> $r['invoice_number'],
+                'Patient'        => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
+                'Amount'         => 'Rs ' . number_format((float) $r['amount'], 2),
+                'Reason'         => $r['reason'],
+                'Mode'           => ucwords(str_replace('_', ' ', $r['refund_mode'])),
+                'Approved by'    => 'Dr ' . $r['doctor_name'],
+                'Issued by'      => $r['generated_by'],
+                'Time'           => date('d M Y, h:i A'),
+            ]);
+        send_mail($pdo, $to,
+            'Refund ' . $r['refund_number'] . ' — Rs ' . number_format((float) $r['amount'], 0) . ' (' . $r['patient_name'] . ')',
+            mail_template('Refund Issued', $body),
+            'refund:' . $r['refund_number']);
+    } catch (Throwable $e) { /* best-effort */ }
+}
+
+/** Patient admitted → admin + admitting doctor (if a registered one was picked). */
+function notify_patient_admitted(PDO $pdo, int $admissionId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT a.admission_type, a.admitted_at, a.admitting_doctor_id,
+                   COALESCE(du.name, a.admitting_doctor_manual, "—") AS doctor_name,
+                   p.name AS patient_name, p.mrn, v.token_no
+            FROM admissions a
+            JOIN visits v ON v.id = a.visit_id
+            JOIN patients p ON p.id = v.patient_id
+            LEFT JOIN users du ON du.id = a.admitting_doctor_id
+            WHERE a.id = ?
+        ');
+        $stmt->execute([$admissionId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $typeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
+        $rows = [
+            'Patient'          => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
+            'Admission type'   => $typeLabels[$r['admission_type']] ?? $r['admission_type'],
+            'Admitting doctor' => $r['doctor_name'],
+            'Admitted at'      => date('d M Y, h:i A', strtotime($r['admitted_at'])),
+        ];
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted.</p>' . mail_kv($rows);
+
+        // Admin always; doctor additionally if they're a registered user with an email.
+        send_mail($pdo, admin_alert_email(),
+            'Admission — ' . $r['patient_name'] . ' (' . ($typeLabels[$r['admission_type']] ?? $r['admission_type']) . ')',
+            mail_template('Patient Admitted', $body),
+            'admission:' . $admissionId);
+
+        $docEmail = user_email($pdo, (int) $r['admitting_doctor_id']);
+        if ($docEmail) {
+            $docBody = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted under your care.</p>' . mail_kv($rows);
+            send_mail($pdo, $docEmail,
+                'Patient admitted under your care — ' . $r['patient_name'],
+                mail_template('Patient Admitted Under Your Care', $docBody),
+                'admission-doctor:' . $admissionId);
+        }
+    } catch (Throwable $e) { /* best-effort */ }
+}
+
+/** Discharge finalized (paid in full or write-off approved) → admin. */
+function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff = 0.0): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT a.admitted_at, a.discharge_finalized_at,
+                   COALESCE(du.name, a.admitting_doctor_manual, "—") AS doctor_name,
+                   p.name AS patient_name, p.mrn,
+                   ab.invoice_number, ab.grand_total, ab.paid_amount, ab.payment_method
+            FROM admissions a
+            JOIN visits v ON v.id = a.visit_id
+            JOIN patients p ON p.id = v.patient_id
+            LEFT JOIN users du ON du.id = a.admitting_doctor_id
+            LEFT JOIN admission_bills ab ON ab.admission_id = a.id
+            WHERE a.id = ?
+        ');
+        $stmt->execute([$admissionId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $rows = [
+            'Patient'        => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
+            'Doctor'         => $r['doctor_name'],
+            'Admitted'       => date('d M Y, h:i A', strtotime($r['admitted_at'])),
+            'Discharged'     => date('d M Y, h:i A', strtotime($r['discharge_finalized_at'] ?? 'now')),
+            'Admission bill' => $r['invoice_number'] ?? '—',
+            'Bill total'     => 'Rs ' . number_format((float) ($r['grand_total'] ?? 0), 2),
+            'Paid'           => 'Rs ' . number_format((float) ($r['paid_amount'] ?? 0), 2)
+                                . ($r['payment_method'] ? ' (' . $r['payment_method'] . ')' : ''),
+        ];
+        if ($writeOff > 0.001) {
+            $rows['WRITTEN OFF'] = 'Rs ' . number_format($writeOff, 2) . ' — gone forever, patient flagged';
+        }
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been discharged'
+              . ($writeOff > 0.001 ? ' <strong style="color:#b3261e;">with an approved write-off</strong>' : '')
+              . '.</p>' . mail_kv($rows);
+        send_mail($pdo, admin_alert_email(),
+            ($writeOff > 0.001 ? 'Discharge + WRITE-OFF — ' : 'Discharge — ') . $r['patient_name'],
+            mail_template('Patient Discharged', $body),
+            'discharge:' . $admissionId);
+    } catch (Throwable $e) { /* best-effort */ }
+}
+
+/** New staff account created → welcome email with login link + temporary password. */
+function notify_staff_welcome(PDO $pdo, int $userId, string $tempPassword): void {
+    try {
+        $stmt = $pdo->prepare('SELECT name, email, base_role FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+        $u = $stmt->fetch();
+        if (!$u || !$u['email']) { return; }
+
+        $base = (mail_config() ?? [])['base_url'] ?? 'https://hims.babymedics.com';
+        $login = ($u['email'] ?: '');
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Welcome to the Babymedics Hospital Management System, '
+              . htmlspecialchars(explode(' ', trim($u['name']))[0]) . '! Your account has been created.</p>'
+            . mail_kv([
+                'Name'               => $u['name'],
+                'Role'               => ucfirst(strtolower($u['base_role'])),
+                'Sign-in email'      => $login,
+                'Temporary password' => $tempPassword,
+            ])
+            . '<p style="font-size:14px;color:#41504f;margin:0 0 18px;">You will be asked to set your own password the first time you sign in.</p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 6px;"><tr><td style="background:#0E5456;border-radius:8px;">'
+            . '<a href="' . htmlspecialchars($base) . '/index.php" style="display:inline-block;padding:11px 26px;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;">Sign in to HMIS</a>'
+            . '</td></tr></table>';
+        send_mail($pdo, $u['email'],
+            'Your Babymedics HMIS account',
+            mail_template('Your Account Is Ready', $body, 'Keep this email private — it contains your temporary password.'),
+            'welcome:user#' . $userId);
+    } catch (Throwable $e) { /* best-effort */ }
+}

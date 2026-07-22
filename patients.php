@@ -4,6 +4,7 @@ require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
+require_once __DIR__ . '/config/notify.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_REGISTER_PATIENTS');
 
@@ -232,6 +233,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
                 $pdo->commit();
 
+                // Email the doctor about their new patient (best-effort, after commit).
+                notify_invoice_raised($pdo, $billId);
+
                 $doctorStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
                 $doctorStmt->execute([$doctorId]);
                 $doctorName = $doctorStmt->fetch()['name'] ?? '';
@@ -318,6 +322,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                     "Follow-up visit #$visitId for patient #$patientId ({$patient['mrn']}), {$quote['fee_type']} ({$quote['reason']}), token #$tokenNo"]);
 
             $pdo->commit();
+
+            // Email the doctor about the follow-up visit (best-effort, after commit).
+            notify_invoice_raised($pdo, $billId);
 
             $dStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
             $dStmt->execute([$doctorId]);

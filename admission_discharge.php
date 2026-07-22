@@ -12,6 +12,7 @@ require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
+require_once __DIR__ . '/config/notify.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -143,6 +144,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
             ->execute([$uid, 'admission_bill_paid', "Admission bill {$bill['invoice_number']} paid Rs " . number_format($paid, 2) . " ($method)"]);
         $pdo->commit();
+
+        // Alert admin: discharge complete, bill paid in full (best-effort, after commit).
+        notify_patient_discharged($pdo, $admissionId);
+
         header('Location: admission_discharge.php?id=' . $admissionId . '&paid=1'); exit;
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -173,6 +178,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
             $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
                 ->execute([$uid, 'admission_writeoff_approved', "Wrote off Rs " . number_format($short, 2) . " on {$bill['invoice_number']}: $reason"]);
             $pdo->commit();
+
+            // Alert admin: discharge with a write-off (best-effort, after commit).
+            notify_patient_discharged($pdo, $admissionId, $short);
+
             header('Location: admission_discharge.php?id=' . $admissionId . '&wroteoff=1'); exit;
         } catch (Throwable $e) {
             $pdo->rollBack();
