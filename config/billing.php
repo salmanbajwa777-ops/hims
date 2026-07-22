@@ -102,3 +102,67 @@ function create_bill_for_visit(
 
     return $billId;
 }
+
+// ============================================================================
+// Admission billing (Phase 1). The admission invoice is a SEPARATE document
+// from the consultation bill — its own tables (admission_bills /
+// admission_bill_items) and its own number series ("A" prefix). A doctor
+// advising admission after the paid OPD consultation raises a new, distinct
+// bill; the consultation `bills` table is never touched here.
+// ============================================================================
+
+// Admission invoice number: "A" + sequence + YY + MM, e.g. A1202607 is the 12th
+// admission invoice of July 2026. Same monthly-reset + atomic-upsert pattern as
+// generate_invoice_number(), but a separate counter table so the two series
+// never collide.
+function generate_admission_invoice_number(PDO $pdo): string {
+    $year = (int) date('Y');
+    $month = (int) date('n');
+
+    $stmt = $pdo->prepare('
+        INSERT INTO admission_invoice_counters (yr, mo, next_seq)
+        VALUES (?, ?, 2)
+        ON DUPLICATE KEY UPDATE next_seq = LAST_INSERT_ID(next_seq) + 1
+    ');
+    $stmt->execute([$year, $month]);
+    $seq = $stmt->rowCount() === 1 ? 1 : (int) $pdo->lastInsertId();
+
+    return 'A' . $seq
+        . substr((string) $year, 2, 2)
+        . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+}
+
+// Billed stay-hours from a raw minute count.
+//   0–44 completed minutes  -> 0.5 hour (flat half hour)
+//   45 minutes and above    -> round DOWN to the previous quarter-hour
+// e.g. 44->0.5, 45->0.75, 60->1.0, 100->1.5, 106->1.75.
+function admission_billed_hours(int $minutes): float {
+    if ($minutes < 45) {
+        return 0.5;
+    }
+    return floor($minutes / 15) / 4;
+}
+
+// Recompute an admission bill's subtotal/grand_total from its line items.
+// No tax (same policy as consultation invoices).
+function recalc_admission_bill_totals(PDO $pdo, int $admissionBillId): void {
+    $stmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS subtotal FROM admission_bill_items WHERE admission_bill_id = ?');
+    $stmt->execute([$admissionBillId]);
+    $subtotal = (float) $stmt->fetch()['subtotal'];
+
+    $pdo->prepare('
+        UPDATE admission_bills SET subtotal = ?, grand_total = ? WHERE id = ?
+    ')->execute([$subtotal, $subtotal, $admissionBillId]);
+}
+
+// The billed charge for one logged service, from its charge type.
+//   FLAT / PER_UNIT -> unit_charge * quantity
+//   HOURLY          -> unit_charge * (duration_minutes / 60)   [bed rounding is
+//                      NOT applied to services — only to stay-hours]
+function admission_service_charge(string $chargeType, float $unitCharge, int $quantity, ?int $durationMinutes): float {
+    if ($chargeType === 'HOURLY') {
+        $hours = ($durationMinutes ?? 0) / 60;
+        return round($unitCharge * $hours, 2);
+    }
+    return round($unitCharge * max(1, $quantity), 2);
+}

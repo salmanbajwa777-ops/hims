@@ -1,0 +1,256 @@
+<?php
+/**
+ * ER Services & Admission Rates — admin catalogue.
+ *
+ * Admin sets the per-hour/day admission rates and manages the ER service
+ * template (add services, set each rate, toggle active). Rates are stored, not
+ * hardcoded, so the clinic can change them anytime. Consumed by the admission
+ * service-logging + discharge billing screens.
+ */
+require_once __DIR__ . '/config/guard_admin.php';
+
+$error = '';
+$success = '';
+
+$serviceTypes = ['INJECTION_IM', 'INJECTION_IV', 'IV_DRIP', 'OXYGEN', 'PROCEDURE', 'OTHER'];
+$chargeTypes  = ['FLAT', 'HOURLY', 'PER_UNIT'];
+
+// ---- Save admission-type rates ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_rates') {
+    $rates = $_POST['rate'] ?? [];       // [ROUTINE => amount, ...]
+    $enabled = $_POST['enabled'] ?? [];  // [ROUTINE => '1', ...]
+    $upd = $pdo->prepare('UPDATE admission_rates SET rate_amount = ?, is_enabled = ?, updated_by_id = ? WHERE admission_type = ?');
+    foreach (['ROUTINE', 'PRIVATE', 'LONG_PRIVATE'] as $type) {
+        $amt = (float) ($rates[$type] ?? 0);
+        $en  = isset($enabled[$type]) ? 1 : 0;
+        $upd->execute([$amt, $en, $_SESSION['user_id'], $type]);
+    }
+    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+        ->execute([$_SESSION['user_id'], 'admission_rates_updated', 'Updated admission-type rates']);
+    $success = 'Admission rates saved.';
+}
+
+// ---- Add a new ER service ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_service') {
+    $type = $_POST['service_type'] ?? '';
+    $name = trim($_POST['service_name'] ?? '');
+    $charge = $_POST['charge_type'] ?? 'FLAT';
+    $base = (float) ($_POST['base_charge'] ?? 0);
+
+    if (!in_array($type, $serviceTypes, true) || $name === '' || !in_array($charge, $chargeTypes, true)) {
+        $error = 'Pick a service type, a name, and a charge type.';
+    } else {
+        $stmt = $pdo->prepare('
+            INSERT INTO er_services_master (service_type, service_name, charge_type, base_charge, created_by_id)
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE charge_type = VALUES(charge_type), base_charge = VALUES(base_charge), status = \'ACTIVE\'
+        ');
+        $stmt->execute([$type, $name, $charge, $base, $_SESSION['user_id']]);
+        $success = "Service \"$name\" saved.";
+    }
+}
+
+// ---- Edit an existing service (rate / charge type) ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_service') {
+    $id = (int) ($_POST['service_id'] ?? 0);
+    $charge = $_POST['charge_type'] ?? 'FLAT';
+    $base = (float) ($_POST['base_charge'] ?? 0);
+    if ($id > 0 && in_array($charge, $chargeTypes, true)) {
+        $pdo->prepare('UPDATE er_services_master SET charge_type = ?, base_charge = ? WHERE id = ?')
+            ->execute([$charge, $base, $id]);
+        $success = 'Service updated.';
+    }
+}
+
+// ---- Toggle active/inactive ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_service') {
+    $id = (int) ($_POST['service_id'] ?? 0);
+    if ($id > 0) {
+        $pdo->prepare("UPDATE er_services_master SET status = IF(status = 'ACTIVE', 'INACTIVE', 'ACTIVE') WHERE id = ?")
+            ->execute([$id]);
+        $success = 'Service status changed.';
+    }
+}
+
+$rateRows = $pdo->query('SELECT * FROM admission_rates ORDER BY FIELD(admission_type, "ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
+$rateByType = [];
+foreach ($rateRows as $r) { $rateByType[$r['admission_type']] = $r; }
+
+$services = $pdo->query('SELECT * FROM er_services_master ORDER BY service_type, service_name')->fetchAll();
+
+$typeLabels = [
+    'INJECTION_IM' => 'Injection (IM)', 'INJECTION_IV' => 'Injection (IV)',
+    'IV_DRIP' => 'IV Drip', 'OXYGEN' => 'Oxygen', 'PROCEDURE' => 'Procedure', 'OTHER' => 'Other',
+];
+$chargeLabels = ['FLAT' => 'Flat', 'HOURLY' => 'Per hour', 'PER_UNIT' => 'Per unit'];
+
+$pageTitle = 'ER Services & Rates';
+$headExtra = <<<CSS
+<style>
+.header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
+.header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
+.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+
+.rate-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.rate-card { border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: var(--bg); }
+.rate-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.rate-card .basis { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.rate-card .amt-row { display: flex; align-items: center; gap: 8px; }
+.rate-card .amt-row .cur { font-weight: 700; color: var(--text-muted); }
+.rate-card input[type=number] { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; background: #fff; }
+.rate-card input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.rate-card .en { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); }
+
+.add-row { display: grid; grid-template-columns: 1.1fr 1.4fr 1fr .9fr auto; gap: 10px; align-items: end; }
+.add-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
+.add-row input, .add-row select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
+.add-row input:focus, .add-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+
+.svc-type-tag { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); }
+.inline-edit { display: flex; gap: 6px; align-items: center; }
+.inline-edit select, .inline-edit input { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; }
+.inline-edit input { width: 90px; }
+.row-inactive td { opacity: .5; }
+.link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
+.link-btn.warn { color: var(--red-text); }
+</style>
+CSS;
+require __DIR__ . '/partials/head.php';
+$navActive = 'er_services';
+require __DIR__ . '/partials/sidebar.php';
+?>
+        <header class="header">
+            <div class="page-title" style="font-size:16px;">ER Services &amp; Rates</div>
+            <div class="header-right">
+                <span class="header-date"><?= date('D, d M Y') ?></span>
+                <a class="logout-link" href="logout.php">Logout</a>
+            </div>
+        </header>
+
+        <div class="content">
+            <div class="page-head">
+                <div>
+                    <div class="page-title">ER Services &amp; Admission Rates</div>
+                    <div class="page-sub">Set the room rates and the chargeable-service catalogue used during admissions</div>
+                </div>
+            </div>
+
+            <?php if ($error): ?><div class="alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+            <?php if ($success): ?><div class="alert success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
+
+            <!-- Admission-type rates -->
+            <div class="card">
+                <div class="section-title">Admission Room Rates</div>
+                <div class="section-sub">The hourly/daily rate charged for the stay, by admission type.</div>
+                <form method="POST" action="er_services.php">
+                    <input type="hidden" name="action" value="save_rates">
+                    <div class="rate-grid">
+                        <?php foreach (['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'] as $type => $label):
+                            $row = $rateByType[$type] ?? ['rate_amount' => 0, 'rate_basis' => 'HOURLY', 'is_enabled' => 0]; ?>
+                        <div class="rate-card">
+                            <h3><?= $label ?></h3>
+                            <div class="basis">Charged <?= $row['rate_basis'] === 'DAILY' ? 'per day' : 'per hour' ?></div>
+                            <div class="amt-row">
+                                <span class="cur">Rs</span>
+                                <input type="number" step="0.01" min="0" name="rate[<?= $type ?>]" value="<?= htmlspecialchars((string) $row['rate_amount']) ?>">
+                            </div>
+                            <label class="en">
+                                <input type="checkbox" name="enabled[<?= $type ?>]" value="1" <?= $row['is_enabled'] ? 'checked' : '' ?>>
+                                Enabled (selectable at admission)
+                            </label>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                        <button type="submit" class="btn">Save Rates</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Add a service -->
+            <div class="card">
+                <div class="section-title">Add a Service</div>
+                <div class="section-sub">Add to the ER service catalogue. Re-adding an existing name updates its rate.</div>
+                <form method="POST" action="er_services.php">
+                    <input type="hidden" name="action" value="add_service">
+                    <div class="add-row">
+                        <div>
+                            <label>Type</label>
+                            <select name="service_type">
+                                <?php foreach ($serviceTypes as $t): ?>
+                                <option value="<?= $t ?>"><?= htmlspecialchars($typeLabels[$t]) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Service name</label>
+                            <input type="text" name="service_name" placeholder="e.g. Paracetamol IV" required>
+                        </div>
+                        <div>
+                            <label>Charge type</label>
+                            <select name="charge_type">
+                                <?php foreach ($chargeTypes as $c): ?>
+                                <option value="<?= $c ?>"><?= htmlspecialchars($chargeLabels[$c]) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Rate (Rs)</label>
+                            <input type="number" step="0.01" min="0" name="base_charge" value="0">
+                        </div>
+                        <button type="submit" class="btn">Add</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Service list -->
+            <div class="card">
+                <div class="section-title">Service Catalogue</div>
+                <div class="section-sub">Set the rate for each service. Toggle off anything not offered.</div>
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr><th>Type</th><th>Service</th><th>Charge</th><th>Rate (Rs)</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$services): ?>
+                        <tr><td colspan="6" class="muted" style="padding:20px 10px;">No services yet — add one above.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($services as $s): ?>
+                        <tr class="<?= $s['status'] === 'INACTIVE' ? 'row-inactive' : '' ?>">
+                            <td><span class="svc-type-tag"><?= htmlspecialchars($typeLabels[$s['service_type']] ?? $s['service_type']) ?></span></td>
+                            <td style="font-weight:600;"><?= htmlspecialchars($s['service_name']) ?></td>
+                            <td colspan="2">
+                                <form method="POST" action="er_services.php" class="inline-edit">
+                                    <input type="hidden" name="action" value="edit_service">
+                                    <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
+                                    <select name="charge_type">
+                                        <?php foreach ($chargeTypes as $c): ?>
+                                        <option value="<?= $c ?>" <?= $s['charge_type'] === $c ? 'selected' : '' ?>><?= htmlspecialchars($chargeLabels[$c]) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <input type="number" step="0.01" min="0" name="base_charge" value="<?= htmlspecialchars((string) $s['base_charge']) ?>">
+                                    <button type="submit" class="link-btn">Save</button>
+                                </form>
+                            </td>
+                            <td><?= $s['status'] === 'ACTIVE' ? '<span class="status-pill active">Active</span>' : '<span class="status-pill on-leave">Inactive</span>' ?></td>
+                            <td>
+                                <form method="POST" action="er_services.php" style="display:inline;">
+                                    <input type="hidden" name="action" value="toggle_service">
+                                    <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
+                                    <button type="submit" class="link-btn <?= $s['status'] === 'ACTIVE' ? 'warn' : '' ?>"><?= $s['status'] === 'ACTIVE' ? 'Deactivate' : 'Activate' ?></button>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="assets/js/date-picker.js"></script>
+</body>
+</html>
