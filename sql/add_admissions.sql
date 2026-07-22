@@ -42,7 +42,7 @@ WHERE NOT EXISTS (SELECT 1 FROM admission_rates r WHERE r.admission_type = seed.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS er_services_master (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    service_type ENUM('INJECTION_IM','INJECTION_IV','IV_DRIP','OXYGEN','PROCEDURE','OTHER') NOT NULL,
+    service_type ENUM('SERVICE','PROCEDURE') NOT NULL,
     service_name VARCHAR(255) NOT NULL,
     charge_type ENUM('FLAT','HOURLY','PER_UNIT') NOT NULL DEFAULT 'FLAT',
     base_charge DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -57,15 +57,14 @@ CREATE TABLE IF NOT EXISTS er_services_master (
 -- Starter list (rate 0, admin edits). Names only; not exhaustive — admin adds more.
 INSERT INTO er_services_master (service_type, service_name, charge_type, base_charge)
 SELECT * FROM (
-    SELECT 'INJECTION_IM' AS service_type, 'IM Injection'      AS service_name, 'PER_UNIT' AS charge_type, 0 AS base_charge
-    UNION ALL SELECT 'INJECTION_IV', 'IV Injection',    'PER_UNIT', 0
-    UNION ALL SELECT 'IV_DRIP',      'IV Drip',         'FLAT',     0
-    UNION ALL SELECT 'OXYGEN',       'Oxygen (hourly)', 'HOURLY',   0
-    UNION ALL SELECT 'PROCEDURE',    'Nebulization',    'FLAT',     0
-    UNION ALL SELECT 'PROCEDURE',    'Dressing',        'FLAT',     0
-    UNION ALL SELECT 'PROCEDURE',    'Catheterization', 'FLAT',     0
-    UNION ALL SELECT 'PROCEDURE',    'ECG',             'FLAT',     0
-    UNION ALL SELECT 'OTHER',        'Other',           'FLAT',     0
+    SELECT 'SERVICE' AS service_type, 'IM Injection'      AS service_name, 'PER_UNIT' AS charge_type, 0 AS base_charge
+    UNION ALL SELECT 'SERVICE',   'IV Injection',    'PER_UNIT', 0
+    UNION ALL SELECT 'SERVICE',   'IV Drip',         'FLAT',     0
+    UNION ALL SELECT 'SERVICE',   'Oxygen (hourly)', 'HOURLY',   0
+    UNION ALL SELECT 'PROCEDURE', 'Nebulization',    'FLAT',     0
+    UNION ALL SELECT 'PROCEDURE', 'Dressing',        'FLAT',     0
+    UNION ALL SELECT 'PROCEDURE', 'Catheterization', 'FLAT',     0
+    UNION ALL SELECT 'PROCEDURE', 'ECG',             'FLAT',     0
 ) AS seed
 WHERE NOT EXISTS (
     SELECT 1 FROM er_services_master m
@@ -116,7 +115,7 @@ CREATE TABLE IF NOT EXISTS admission_services (
     id INT AUTO_INCREMENT PRIMARY KEY,
     admission_id INT NOT NULL,
     er_service_id INT NULL,                 -- FK to master; NULL if free-typed "Other"
-    service_type ENUM('INJECTION_IM','INJECTION_IV','IV_DRIP','OXYGEN','PROCEDURE','OTHER') NOT NULL,
+    service_type ENUM('SERVICE','PROCEDURE') NOT NULL,
     service_name VARCHAR(255) NOT NULL,     -- snapshot of the name at log time
     charge_type ENUM('FLAT','HOURLY','PER_UNIT') NOT NULL DEFAULT 'FLAT',
 

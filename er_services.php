@@ -12,7 +12,7 @@ require_once __DIR__ . '/config/guard_admin.php';
 $error = '';
 $success = '';
 
-$serviceTypes = ['INJECTION_IM', 'INJECTION_IV', 'IV_DRIP', 'OXYGEN', 'PROCEDURE', 'OTHER'];
+$serviceTypes = ['SERVICE', 'PROCEDURE'];
 $chargeTypes  = ['FLAT', 'HOURLY', 'PER_UNIT'];
 
 // ---- Save admission-type rates ----
@@ -79,8 +79,7 @@ foreach ($rateRows as $r) { $rateByType[$r['admission_type']] = $r; }
 $services = $pdo->query('SELECT * FROM er_services_master ORDER BY service_type, service_name')->fetchAll();
 
 $typeLabels = [
-    'INJECTION_IM' => 'Injection (IM)', 'INJECTION_IV' => 'Injection (IV)',
-    'IV_DRIP' => 'IV Drip', 'OXYGEN' => 'Oxygen', 'PROCEDURE' => 'Procedure', 'OTHER' => 'Other',
+    'SERVICE' => 'Service', 'PROCEDURE' => 'Procedure',
 ];
 $chargeLabels = ['FLAT' => 'Flat', 'HOURLY' => 'Per hour', 'PER_UNIT' => 'Per unit'];
 
