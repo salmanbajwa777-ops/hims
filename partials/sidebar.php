@@ -55,6 +55,7 @@ if (!function_exists('sb_icon')) {
             'bed'      => '<path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M3 16h18"/><path d="M7 10V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3"/>',
             'chart'    => '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
             'percent'  => '<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+            'user'     => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
         ];
         $p = $paths[$name] ?? '';
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
@@ -116,6 +117,13 @@ $sbGroups = [
         'items' => [
             ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
             ['slug' => 'reports', 'label' => 'Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
+        ],
+    ],
+    [
+        'label' => 'Account',
+        // Every role: self-service name/email/phone/password (profile.php).
+        'items' => [
+            ['slug' => 'profile', 'label' => 'My Profile', 'icon' => 'user', 'href' => 'profile.php'],
         ],
     ],
 ];

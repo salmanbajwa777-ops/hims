@@ -244,7 +244,7 @@ if ($qhIsNurse) {
         <div class="qh-row2-right">
             <button type="button" class="qh-icon-btn" aria-label="Notifications"><?= qh_icon('bell') ?><span class="dot"></span></button>
             <button type="button" class="qh-icon-btn" aria-label="Messages"><?= qh_icon('mail') ?></button>
-            <div class="qh-avatar"><?= htmlspecialchars($qhInitial) ?></div>
+            <a class="qh-avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= htmlspecialchars($qhInitial) ?></a>
             <a class="qh-logout" href="logout.php">Logout</a>
         </div>
     </div>
