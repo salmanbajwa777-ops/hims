@@ -56,6 +56,7 @@ if (!function_exists('sb_icon')) {
             'chart'    => '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
             'percent'  => '<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
             'user'     => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+            'clock'    => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
         ];
         $p = $paths[$name] ?? '';
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
@@ -94,6 +95,7 @@ $sbGroups = [
         'roles' => ['ADMIN', 'MANAGER', 'RECEPTIONIST', 'DOCTOR', 'ACCOUNTANT'],
         'items' => [
             ['slug' => 'patients',    'label' => 'Patients',        'icon' => 'users',    'href' => 'patients.php'],
+            ['slug' => 'doctor_timings', 'label' => 'Doctor Timings', 'icon' => 'clock',  'href' => 'doctor_timings.php'],
             ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php'],
             ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php'],
             ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php'],

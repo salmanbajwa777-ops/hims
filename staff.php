@@ -29,7 +29,8 @@ if (!is_dir($uploadDir)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_staff') {
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
+    // Canonical "0300…" storage so login-by-phone matches what people type.
+    $phone = normalize_staff_phone(trim($_POST['phone'] ?? ''));
     $role = $_POST['base_role'] ?? '';
     // Admin may type a temporary password; blank falls back to the default.
     // Either way the user must change it on first sign-in.
@@ -44,10 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
     } else {
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE (email = ? AND email IS NOT NULL AND email != "") OR (phone = ? AND phone IS NOT NULL AND phone != "") LIMIT 1');
-        $stmt->execute([$email, $phone]);
+        // Email exact; phone compared normalized across all stored formats
+        // (a legacy "+92300…" row must block a new "0300…" — same login).
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND email IS NOT NULL AND email != "" LIMIT 1');
+        $stmt->execute([$email]);
 
-        if ($stmt->fetch()) {
+        if ($stmt->fetch() || staff_phone_in_use($pdo, $phone)) {
             $error = 'A user with this email or phone already exists.';
         } else {
             // Validate documents before touching the database
@@ -148,7 +151,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $editId = (int) ($_POST['user_id'] ?? 0);
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
+    // Canonical "0300…" storage so login-by-phone matches what people type.
+    $phone = normalize_staff_phone(trim($_POST['phone'] ?? ''));
     $role = $_POST['base_role'] ?? '';
     $resetPassword = ($_POST['reset_password'] ?? '') === '1';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
@@ -161,10 +165,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
     } else {
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE id != ? AND ((email = ? AND email IS NOT NULL AND email != "") OR (phone = ? AND phone IS NOT NULL AND phone != ""))');
-        $stmt->execute([$editId, $email, $phone]);
+        // Email exact; phone compared normalized across all stored formats
+        // (a legacy "+92300…" row must block a new "0300…" — same login).
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE id != ? AND email = ? AND email IS NOT NULL AND email != ""');
+        $stmt->execute([$editId, $email]);
 
-        if ($stmt->fetch()) {
+        if ($stmt->fetch() || staff_phone_in_use($pdo, $phone, $editId)) {
             $error = 'Another user with this email or phone already exists.';
         } else {
             $pendingDocs = [];

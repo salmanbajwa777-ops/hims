@@ -174,6 +174,42 @@ $stats = [
     ['label' => 'Collected (net)', 'value' => 'Rs ' . number_format($netCollected), 'icon' => 'dollar-sign'],
 ];
 
+// ---------------- Today's doctor timings (shift-start popup) ----------------
+// First thing a receptionist must do on shift is confirm the doctors' timings
+// for the day. This popup shows the current confirmed sheet automatically ONCE
+// per login session (flag below); edits live on doctor_timings.php, and the
+// next shift sees whatever was last saved there.
+// Wrapped in try/catch so the console still loads if the migration
+// (sql/add_doctor_day_timings.sql) hasn't been run yet.
+$docTimings = [];
+$timingsLastTouch = null;
+try {
+    $tStmt = $pdo->prepare("
+        SELECT u.name, t.start_time, t.end_time, t.status, t.note, t.updated_at,
+               ub.name AS updated_by_name
+        FROM users u
+        LEFT JOIN doctor_day_timings t ON t.doctor_id = u.id AND t.timing_date = CURDATE()
+        LEFT JOIN users ub ON ub.id = t.updated_by
+        WHERE u.base_role = 'DOCTOR'
+        ORDER BY (t.status <=> 'OFF'), u.name
+    ");
+    $tStmt->execute();
+    $docTimings = $tStmt->fetchAll();
+    foreach ($docTimings as $t) {
+        if ($t['updated_at'] && (!$timingsLastTouch || $t['updated_at'] > $timingsLastTouch['at'])) {
+            $timingsLastTouch = ['at' => $t['updated_at'], 'by' => $t['updated_by_name']];
+        }
+    }
+} catch (Throwable $e) {
+    // Table missing — feature silently dormant until the migration runs.
+}
+
+// Auto-open once per login session, not on every visit to this page.
+$showTimingsPopup = !empty($docTimings) && empty($_SESSION['timings_popup_shown']);
+if ($showTimingsPopup) {
+    $_SESSION['timings_popup_shown'] = 1;
+}
+
 // Doctors seeing patients today, with how many each has left to see.
 $doctorSchedule = $pdo->query("
     SELECT dr.name,
@@ -297,6 +333,32 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .admit-field select, .admit-field input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); }
 .admit-field select:focus, .admit-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
 .admit-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 22px 22px; }
+
+/* ---------- Doctor-timings shift popup ---------- */
+.tim-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 70; align-items: center; justify-content: center; padding: 20px; }
+.tim-overlay.open { display: flex; }
+.tim-modal { background: var(--card); border-radius: var(--radius-card); width: 100%; max-width: 560px; box-shadow: var(--shadow-lg); overflow: hidden; display: flex; flex-direction: column; max-height: min(84vh, 640px); }
+.tim-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 8px; }
+.tim-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
+.tim-title { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.tim-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.tim-x { background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-muted); cursor: pointer; }
+.tim-body { padding: 8px 22px 4px; overflow-y: auto; }
+.tim-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.tim-row:last-child { border-bottom: none; }
+.tim-row .doc-avatar { width: 32px; height: 32px; font-size: 11.5px; }
+.tim-row.off { opacity: .55; }
+.tim-info { flex: 1; min-width: 0; }
+.tim-doc { font-size: 13.5px; font-weight: 600; }
+.tim-note { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+.tim-when { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tim-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+.tim-pill.avail { background: #ECFDF5; color: #047857; }
+.tim-pill.delay { background: #FFFBEB; color: #92400E; }
+.tim-pill.off { background: #FEF2F2; color: #B91C1C; }
+.tim-pill.unset { background: #F1F5F9; color: var(--text-secondary); }
+.tim-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px 20px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.tim-touch { font-size: 12px; color: var(--text-muted); }
 
 /* ---------- Password nag ---------- */
 .nag-banner {
@@ -458,8 +520,18 @@ require __DIR__ . '/partials/sidebar.php';
 
             <!-- Doctor Schedule -->
             <div class="card">
-                <div class="section-title">Doctors today</div>
-                <div class="section-sub">Who's in, and how many are still waiting to be seen</div>
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+                    <div>
+                        <div class="section-title">Doctors today</div>
+                        <div class="section-sub">Who's in, and how many are still waiting to be seen</div>
+                    </div>
+                    <?php if (!empty($docTimings)): ?>
+                    <div style="display:flex; gap:8px; flex-shrink:0;">
+                        <button type="button" class="qa" onclick="openTimings()">View timings</button>
+                        <a class="qa" href="doctor_timings.php">Edit timings</a>
+                    </div>
+                    <?php endif; ?>
+                </div>
                 <?php if (empty($doctorSchedule)): ?>
                     <div class="empty-state">No visits booked today yet.</div>
                 <?php else: ?>
@@ -480,6 +552,66 @@ require __DIR__ . '/partials/sidebar.php';
         </div>
     </div>
 </div>
+
+<!-- Doctor-timings shift popup -->
+<?php if (!empty($docTimings)): ?>
+<div class="tim-overlay<?= $showTimingsPopup ? ' open' : '' ?>" id="timOverlay" onclick="if(event.target===this)closeTimings()">
+    <div class="tim-modal" role="dialog" aria-modal="true" aria-labelledby="timTitle">
+        <div class="tim-head">
+            <div>
+                <div class="tim-eyebrow">Shift start</div>
+                <div class="tim-title" id="timTitle">Doctor timings today</div>
+                <div class="tim-sub"><?= date('l, d F Y') ?> &middot; confirm these are correct before you start the queue.</div>
+            </div>
+            <button type="button" class="tim-x" onclick="closeTimings()" aria-label="Close">&times;</button>
+        </div>
+        <div class="tim-body">
+            <?php foreach ($docTimings as $t): ?>
+                <?php
+                    $tst = $t['status']; // NULL means not confirmed yet today
+                    if ($tst === 'OFF') {
+                        $pill = ['off', 'Off today'];
+                        $when = '—';
+                    } elseif ($tst === 'DELAYED') {
+                        $pill = ['delay', 'Delayed'];
+                        $when = ($t['start_time'] ? date('g:i A', strtotime($t['start_time'])) : '?')
+                              . ' – ' . ($t['end_time'] ? date('g:i A', strtotime($t['end_time'])) : '?');
+                    } elseif ($tst === 'AVAILABLE') {
+                        $pill = ['avail', 'Available'];
+                        $when = ($t['start_time'] ? date('g:i A', strtotime($t['start_time'])) : '?')
+                              . ' – ' . ($t['end_time'] ? date('g:i A', strtotime($t['end_time'])) : '?');
+                    } else {
+                        $pill = ['unset', 'Not confirmed'];
+                        $when = '—';
+                    }
+                ?>
+                <div class="tim-row<?= $tst === 'OFF' ? ' off' : '' ?>">
+                    <div class="doc-avatar"><?= strtoupper(mb_substr($t['name'], 0, 1)) ?></div>
+                    <div class="tim-info">
+                        <div class="tim-doc"><?= htmlspecialchars($t['name']) ?></div>
+                        <?php if (!empty($t['note'])): ?><div class="tim-note"><?= htmlspecialchars($t['note']) ?></div><?php endif; ?>
+                    </div>
+                    <div class="tim-when"><?= htmlspecialchars($when) ?></div>
+                    <span class="tim-pill <?= $pill[0] ?>"><?= $pill[1] ?></span>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <div class="tim-foot">
+            <div class="tim-touch">
+                <?php if ($timingsLastTouch): ?>
+                    Last updated by <strong><?= htmlspecialchars($timingsLastTouch['by'] ?? 'unknown') ?></strong> at <?= date('H:i', strtotime($timingsLastTouch['at'])) ?>
+                <?php else: ?>
+                    Not confirmed for today yet — please set the timings.
+                <?php endif; ?>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button type="button" class="btn secondary" onclick="closeTimings()">Got it</button>
+                <a class="btn" href="doctor_timings.php">Edit timings</a>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Admit dialog -->
 <div class="admit-overlay" id="admitOverlay" onclick="if(event.target===this)closeAdmit()">
@@ -547,7 +679,9 @@ function openAdmit(visitId, patientName, doctorId, doctorName) {
     document.getElementById('admitOverlay').classList.add('open');
 }
 function closeAdmit() { document.getElementById('admitOverlay').classList.remove('open'); }
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAdmit(); });
+function openTimings() { var o = document.getElementById('timOverlay'); if (o) o.classList.add('open'); }
+function closeTimings() { var o = document.getElementById('timOverlay'); if (o) o.classList.remove('open'); }
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeAdmit(); closeTimings(); } });
 </script>
 <script src="assets/js/date-picker.js"></script>
 </body>

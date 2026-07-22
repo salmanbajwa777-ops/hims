@@ -23,17 +23,29 @@ $success = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_details') {
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
+    // Canonical local format ("03001234567") so login-by-phone always matches
+    // what people naturally type. +92 / spaces / dashes are folded away.
+    $phone = normalize_staff_phone(trim($_POST['phone'] ?? ''));
 
     if ($name === '' || ($email === '' && $phone === '')) {
         $error = 'A name and at least one of email / phone are required (you log in with them).';
     } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'That email address doesn\'t look valid.';
     } else {
-        // Same self-excluding dedupe as staff.php — email/phone are credentials.
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE id != ? AND ((email = ? AND email IS NOT NULL AND email != "") OR (phone = ? AND phone IS NOT NULL AND phone != ""))');
-        $stmt->execute([$uid, $email, $phone]);
-        if ($stmt->fetch()) {
+        // Self-excluding dedupe — email/phone are credentials. Email is an
+        // exact match; phone compares NORMALIZED (login treats "+92300…" and
+        // "0300…" as the same number, so uniqueness must too — legacy rows may
+        // still hold +92/spaced formats).
+        $clash = false;
+        if ($email !== '') {
+            $eStmt = $pdo->prepare('SELECT id FROM users WHERE id != ? AND email = ?');
+            $eStmt->execute([$uid, $email]);
+            $clash = (bool) $eStmt->fetch();
+        }
+        if (!$clash && staff_phone_in_use($pdo, $phone, $uid)) {
+            $clash = true;
+        }
+        if ($clash) {
             $error = 'Another user already uses that email or phone.';
         } else {
             $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?')
@@ -160,8 +172,8 @@ require __DIR__ . '/partials/sidebar.php';
                         </div>
                         <div class="pf-field">
                             <label for="pf_phone">Phone</label>
-                            <input type="text" id="pf_phone" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" placeholder="+92300…">
-                            <div class="pf-hint">Also accepted at the login screen.</div>
+                            <input type="text" id="pf_phone" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" placeholder="03001234567">
+                            <div class="pf-hint">Also accepted at the login screen — saved as 0300… (spaces, dashes and +92 are cleaned up automatically).</div>
                         </div>
                         <div style="display:flex;justify-content:flex-end;margin-top:6px;">
                             <button type="submit" class="btn">Save details</button>

@@ -30,10 +30,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$identifier, $identifier]);
         $user = $stmt->fetch();
 
+        // Phone logins are format-forgiving: "03001234567", "+92 300 1234567"
+        // and "0300-1234567" are the same number. If the exact match missed and
+        // the identifier looks like a phone, compare normalized digits against
+        // every stored phone (staff table is small). Also covers legacy rows
+        // saved in +92/spaced formats before normalization existed.
+        if (!$user) {
+            $normId = normalize_staff_phone($identifier);
+            if ($normId !== '' && strlen($normId) >= 7 && !str_contains($identifier, '@')) {
+                foreach ($pdo->query("SELECT * FROM users WHERE phone IS NOT NULL AND phone != ''") as $candidate) {
+                    if (normalize_staff_phone($candidate['phone']) === $normId) {
+                        $user = $candidate;
+                        break;
+                    }
+                }
+            }
+        }
+
         if ($user && password_verify($password, $user['password'])) {
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['base_role'] = $user['base_role'];
             $_SESSION['must_change_password'] = (bool) $user['must_change_password'];
+            // Fresh shift login → the doctor-timings popup fires again on the
+            // reception console (it sets this flag after showing once).
+            unset($_SESSION['timings_popup_shown']);
 
             require_once __DIR__ . '/config/permissions.php';
             refresh_session_permissions($pdo);
