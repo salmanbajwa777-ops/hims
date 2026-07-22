@@ -31,15 +31,22 @@ if ($baseRole !== 'NURSE' && $baseRole !== 'ADMIN' && !has_permission('RECEPTION
 
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 
+// Currently-admitted first (not date-scoped, so a stay crossing midnight still
+// shows), then today's discharged. Joined to the admissions record for status,
+// nurse and the manage link.
 $rows = $pdo->query("
-    SELECT v.id AS visit_id, v.token_no, v.consult_status, v.created_at,
+    SELECT a.id AS admission_id, a.status, a.admitted_at, a.admission_type,
+           v.token_no,
            p.mrn, p.name AS full_name, p.phone,
-           d.name AS doctor_name
-    FROM visits v
+           COALESCE(du.name, a.admitting_doctor_manual) AS doctor_name,
+           nu.name AS nurse_name
+    FROM admissions a
+    JOIN visits v ON v.id = a.visit_id
     JOIN patients p ON p.id = v.patient_id
-    LEFT JOIN users d ON d.id = v.doctor_id
-    WHERE v.visit_date = CURDATE() AND v.disposition = 'SHORT_STAY'
-    ORDER BY v.created_at DESC
+    LEFT JOIN users du ON du.id = a.admitting_doctor_id
+    LEFT JOIN users nu ON nu.id = a.assigned_nurse_id
+    WHERE a.status <> 'DISCHARGED' OR a.discharge_finalized_at >= CURDATE()
+    ORDER BY (a.status = 'DISCHARGED'), a.admitted_at DESC
 ")->fetchAll();
 
 $qhActive = 'admissions';
@@ -81,8 +88,8 @@ require __DIR__ . '/partials/sidebar.php';
     <div class="card">
         <?php if (!$rows): ?>
             <div class="empty">
-                <strong>No admissions today</strong>
-                Patients marked as a short stay at registration will appear here.
+                <strong>No active admissions</strong>
+                Admit a patient from the reception queue and the stay will appear here.
             </div>
         <?php else: ?>
         <div class="table-scroll">
@@ -91,31 +98,36 @@ require __DIR__ . '/partials/sidebar.php';
                     <tr>
                         <th>Token</th>
                         <th>Patient</th>
-                        <th>Phone</th>
+                        <th>Type</th>
                         <th>Doctor</th>
-                        <th>Consult</th>
+                        <th>Nurse</th>
+                        <th>Status</th>
                         <th>Admitted</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php foreach ($rows as $r): ?>
+                <?php
+                $stApill = [
+                    'PENDING_ASSIGNMENT' => ['pending', 'Awaiting nurse'],
+                    'ACTIVE' => ['in-consult', 'Active'],
+                    'DISCHARGE_IN_PROGRESS' => ['waiting', 'Discharging'],
+                    'DISCHARGED' => ['done', 'Discharged'],
+                ];
+                foreach ($rows as $r):
+                    [$cls, $lbl] = $stApill[$r['status']] ?? ['done', $r['status']]; ?>
                     <tr>
                         <td class="mrn">#<?= htmlspecialchars((string) $r['token_no']) ?></td>
                         <td>
                             <div class="name"><?= htmlspecialchars($r['full_name']) ?></div>
                             <div class="mrn"><?= htmlspecialchars($r['mrn']) ?></div>
                         </td>
-                        <td><?= htmlspecialchars($r['phone'] ?: '—') ?></td>
+                        <td><?= htmlspecialchars($r['admission_type']) ?></td>
                         <td><?= htmlspecialchars($r['doctor_name'] ?: '—') ?></td>
-                        <td>
-                            <?php
-                            $cs = $r['consult_status'];
-                            $cls = $cs === 'WAITING' ? 'waiting' : ($cs === 'IN_CONSULT' ? 'in-consult' : 'done');
-                            $lbl = $cs === 'WAITING' ? 'Waiting' : ($cs === 'IN_CONSULT' ? 'In Consult' : 'Done');
-                            ?>
-                            <span class="status-pill <?= $cls ?>"><?= $lbl ?></span>
-                        </td>
-                        <td><?= date('h:i A', strtotime($r['created_at'])) ?></td>
+                        <td><?= htmlspecialchars($r['nurse_name'] ?: '—') ?></td>
+                        <td><span class="status-pill <?= $cls ?>"><?= $lbl ?></span></td>
+                        <td><?= date('h:i A', strtotime($r['admitted_at'])) ?></td>
+                        <td><a class="edit-link" href="admission.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--primary);font-weight:600;font-size:12.5px;">Manage &rarr;</a></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
