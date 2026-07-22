@@ -173,6 +173,9 @@ $history = $historyStmt->fetchAll();
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Refund &middot; Invoice <?= htmlspecialchars($bill['invoice_number']) ?> - HIMS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
     --primary-dark: #0E5456; --primary: #1A7F7E; --primary-light: #E0F2F1;
@@ -180,7 +183,7 @@ $history = $historyStmt->fetchAll();
     --text: #0F172A; --text-muted: #64748B;
     --red-bg: #FEE2E2; --red-text: #B91C1C;
     --green-bg: #DCFCE7; --green-text: #15803D;
-    --radius: 10px;
+    --radius: 12px;
 }
 * { box-sizing: border-box; }
 body { font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; margin: 0; }

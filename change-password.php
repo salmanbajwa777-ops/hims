@@ -42,8 +42,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HIMS — Change Password</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary-start: #0E5456; --primary-end: #1A7F7E; }
+        :root { --primary-dark: #0E5456; --primary: #1A7F7E; }
         * { box-sizing: border-box; }
         body {
             margin: 0;
@@ -70,10 +73,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             width: 100%; padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 12px;
             font-size: 14px; margin-bottom: 16px;
         }
-        input:focus { outline: none; border-color: var(--primary-end); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
         button {
             width: 100%; padding: 11px; border: none; border-radius: 14px;
-            background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
             color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
         }
         button:hover { opacity: .92; }

@@ -250,18 +250,39 @@ $headExtra = <<<CSS
 .build-notice { background: #F1F5F9; border: 1px dashed var(--border); border-radius: 14px; padding: 12px 18px; font-size: 12.5px; color: var(--text-secondary); }
 
 @media (max-width: 1200px) { .grid-2 { grid-template-columns: 1fr; } .row-2 { grid-template-columns: 1fr; } }
-/* NOTE: this console keeps its OWN clinical sidebar, so it also owns its own
-   responsive behaviour. Pre-existing gap: at ≤900px the sidebar is simply hidden
-   with no drawer replacement (mobile nav follow-up — see report). Left as-is to
-   keep this migration scoped to the head. */
-@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } .content { padding: 20px 18px 48px; } }
+/* This console keeps its OWN clinical sidebar, so it also carries its own mobile
+   drawer — mirroring partials/sidebar.php's mechanism (body.nav-open + overlay)
+   so a doctor can reach the nav on a phone, which previously wasn't possible. */
+.doc-mobile-bar { display: none; }
+.doc-mobile-bar .hamburger { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; }
+.doc-mobile-bar .hamburger svg { width: 20px; height: 20px; }
+.doc-mobile-bar .m-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+.doc-mobile-bar .m-brand .logo-mark { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; }
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 40; }
+@media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; }
+    .content { padding: 20px 18px 48px; }
+    .doc-mobile-bar { display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 30; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
+    .sidebar { position: fixed; top: 0; left: 0; z-index: 50; width: min(84vw, 300px); height: 100vh; transform: translateX(-100%); transition: transform .22s ease; box-shadow: var(--shadow-lg); }
+    body.nav-open .sidebar { transform: translateX(0); }
+    body.nav-open .sidebar-overlay { display: block; }
+    .sidebar .nav-item.active::before { left: -8px; }
+}
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
 ?>
 <div class="app">
 
-    <aside class="sidebar">
+    <div class="doc-mobile-bar">
+        <button type="button" class="hamburger" aria-label="Open navigation" aria-expanded="false" onclick="himsToggleNav()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <a class="m-brand" href="doctor.php"><span class="logo-mark">H</span> HIMS</a>
+    </div>
+    <div class="sidebar-overlay" onclick="himsCloseNav()"></div>
+
+    <aside class="sidebar" id="himsSidebar">
         <div class="sidebar-brand"><div class="logo-mark">H</div> HIMS</div>
 
         <div class="nav-group">
@@ -472,6 +493,21 @@ require __DIR__ . '/partials/head.php';
         </div>
     </div>
 </div>
+<script>
+// Mobile drawer for the doctor console's own sidebar (same contract as partials/sidebar.php).
+function himsToggleNav() {
+    var open = document.body.classList.toggle('nav-open');
+    var btn = document.querySelector('.doc-mobile-bar .hamburger');
+    if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+}
+function himsCloseNav() {
+    document.body.classList.remove('nav-open');
+    var btn = document.querySelector('.doc-mobile-bar .hamburger');
+    if (btn) { btn.setAttribute('aria-expanded', 'false'); }
+}
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { himsCloseNav(); } });
+document.querySelectorAll('#himsSidebar .nav-item:not(.disabled)').forEach(function (a) { a.addEventListener('click', himsCloseNav); });
+</script>
 <script src="assets/js/date-picker.js"></script>
 </body>
 </html>
