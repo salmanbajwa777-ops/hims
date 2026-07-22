@@ -64,6 +64,22 @@ $admBilling = $pdo->query("
     FROM admission_bills WHERE DATE(paid_at) = CURDATE()
 ")->fetch();
 
+// ---- Counter expenses today (voided excluded) ----
+$exp = ['cnt' => 0, 'total' => 0.0];
+$expByCat = [];
+try {
+    $exp = $pdo->query("
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
+        FROM expenses WHERE expense_date = CURDATE() AND voided_at IS NULL
+    ")->fetch();
+    $expByCat = $pdo->query("
+        SELECT ec.name, COALESCE(SUM(e.amount), 0) AS total
+        FROM expenses e JOIN expense_categories ec ON ec.id = e.category_id
+        WHERE e.expense_date = CURDATE() AND e.voided_at IS NULL
+        GROUP BY ec.id, ec.name ORDER BY total DESC
+    ")->fetchAll();
+} catch (Throwable $e) { /* expense tables may not exist yet */ }
+
 // ---- Email failures today (so a broken SMTP surfaces in the summary itself) ----
 $mailFails = 0;
 try {
@@ -83,7 +99,17 @@ $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Here is the da
         'Discharges today'        => $discharged . ' (collected ' . $fmt($admBilling['collected'])
                                      . ((float) $admBilling['written_off'] > 0 ? ', WRITTEN OFF ' . $fmt($admBilling['written_off']) : '') . ')',
         'Patients still admitted' => $stillIn,
+        'Counter expenses'        => $exp['cnt'] . ' — ' . $fmt($exp['total']),
     ]);
+
+if ($expByCat) {
+    $expLines = [];
+    foreach ($expByCat as $c) {
+        $expLines[] = htmlspecialchars($c['name']) . ' ' . $fmt($c['total']);
+    }
+    $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#41504f;">Expenses by category: '
+        . implode(' · ', $expLines) . '</p>';
+}
 
 if ($byDoctor) {
     $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">By doctor</h3>'

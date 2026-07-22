@@ -20,6 +20,18 @@ $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 $hour = (int) date('G');
 $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good Evening');
 
+// Today's real counter-cash expenses (voided excluded). Guarded so the dashboard
+// keeps rendering if sql/add_expenses.sql hasn't been run yet.
+$todayExpenses = 0.0;
+try {
+    $todayExpenses = (float) $pdo->query('
+        SELECT COALESCE(SUM(amount), 0) FROM expenses
+        WHERE expense_date = CURDATE() AND voided_at IS NULL
+    ')->fetchColumn();
+} catch (Throwable $e) {
+    // Migration not applied yet — show zero rather than fatal.
+}
+
 function icon(string $name, int $size = 18): string {
     $paths = [
         'grid' => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -481,7 +493,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-sub">Today at a glance</div>
                     <div class="fin-grid">
                         <div class="fin-card"><div class="label">Collections</div><div class="value">82.5k</div><div class="trend up">&#9650; 6%</div></div>
-                        <div class="fin-card"><div class="label">Expenses</div><div class="value">21.3k</div><div class="trend down">&#9660; 2%</div></div>
+                        <a class="fin-card" href="expenses.php" style="text-decoration:none;color:inherit;"><div class="label">Expenses</div><div class="value"><?= $todayExpenses >= 1000 ? number_format($todayExpenses / 1000, 1) . 'k' : number_format($todayExpenses) ?></div><div class="trend">today</div></a>
                         <div class="fin-card"><div class="label">Doctor Share</div><div class="value">34.8k</div><div class="trend up">&#9650; 4%</div></div>
                         <div class="fin-card"><div class="label">Net Profit</div><div class="value">26.4k</div><div class="trend up">&#9650; 9%</div></div>
                     </div>

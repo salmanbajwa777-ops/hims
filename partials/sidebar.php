@@ -57,6 +57,7 @@ if (!function_exists('sb_icon')) {
             'percent'  => '<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
             'user'     => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
             'clock'    => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+            'wallet'   => '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
         ];
         $p = $paths[$name] ?? '';
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
@@ -99,16 +100,22 @@ $sbGroups = [
             ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php'],
             ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php'],
             ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php'],
+            ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',   'href' => 'expenses.php',
+             'roles' => ['ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT']],
+            ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'wallet',   'href' => 'shift_closing.php',
+             'roles' => ['ADMIN', 'RECEPTIONIST']],
         ],
     ],
     [
         'label' => 'Management',
         'admin' => true,
         'items' => [
+            ['slug' => 'handovers',   'label' => 'Cash Handovers',  'icon' => 'wallet',  'href' => 'admin_handovers.php'],
             ['slug' => 'staff',       'label' => 'Staff & Doctors', 'icon' => 'stetho',  'href' => 'staff.php'],
             ['slug' => 'locations',   'label' => 'Cities & Areas',  'icon' => 'pin',     'href' => 'locations.php'],
             ['slug' => 'er_services', 'label' => 'ER Services & Rates','icon' => 'receipt','href' => 'er_services.php'],
             ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
+            ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
             ['slug' => 'procedure_master', 'label' => 'Procedures',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
             ['slug' => 'permissions', 'label' => 'Permissions',     'icon' => 'lock',    'href' => 'permissions.php'],
         ],
@@ -138,6 +145,7 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive) 
         if (!empty($g['roles']) && !in_array($sbBaseRole, $g['roles'], true)) { continue; }
         echo '<div class="nav-group"><div class="nav-group-label">' . htmlspecialchars($g['label']) . '</div>';
         foreach ($g['items'] as $it) {
+            if (!empty($it['roles']) && !in_array($sbBaseRole, $it['roles'], true)) { continue; }
             $cls = 'nav-item';
             if (!empty($it['disabled']))     { $cls .= ' disabled'; }
             if ($navActive === $it['slug'])  { $cls .= ' active'; }

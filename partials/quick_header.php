@@ -70,6 +70,7 @@ function qh_icon(string $name): string {
         'search'     => '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
         'bell'       => '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
         'mail'       => '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/>',
+        'wallet'     => '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
     ];
     $p = $paths[$name] ?? '';
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
@@ -95,6 +96,16 @@ if ($qhIsNurse) {
         ['slug' => 'bookings',   'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php',     'tone' => 'blue',    'count' => null],
         ['slug' => 'register',   'label' => 'Add New Patient', 'icon' => 'plus',     'href' => 'patients.php?register=1', 'tone' => 'primary', 'count' => null],
     ];
+    // Counter cash going out is front-desk work too — but only for users who
+    // hold the posting permission (function guard in case a caller included
+    // this partial without config/permissions.php loaded).
+    if (function_exists('has_permission') && has_permission('FINANCIAL_POST_EXPENSES')) {
+        $qhButtons[] = ['slug' => 'expenses', 'label' => 'Expenses', 'icon' => 'wallet', 'href' => 'expenses.php', 'tone' => 'rose', 'count' => null];
+    }
+    // End-of-day cash tally & handover (shift_closing.php).
+    if (function_exists('has_permission') && has_permission('RECEPTION_CLOSE_DAY')) {
+        $qhButtons[] = ['slug' => 'shift_closing', 'label' => 'Day Closing', 'icon' => 'wallet', 'href' => 'shift_closing.php', 'tone' => 'amber', 'count' => null];
+    }
 }
 ?>
 <style>
