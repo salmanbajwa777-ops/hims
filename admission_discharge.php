@@ -161,7 +161,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
     $paid = max(0, min($paid, $total));
     $short = round($total - $paid, 2);
 
-    if ($short > 0.001) {
+    // A closed day accepts no more payments — the cash tally has been signed.
+    $dayLock = require_day_open($pdo);
+    if ($dayLock) {
+        $err = $dayLock;
+    } elseif ($short > 0.001) {
         // Partial → needs write-off approval before the stay closes. Record the
         // paid amount + finalize, but leave the admission DISCHARGE_IN_PROGRESS
         // and the bill 'finalized' (not yet 'paid') until approved.
@@ -197,7 +201,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
     $total = (float) $bill['grand_total'];
     $paid = (float) ($bill['paid_amount'] ?? 0);
     $short = round($total - $paid, 2);
-    if ($short <= 0) {
+    // The approval flips the bill to 'paid' with today's paid_at, which lands
+    // the partial cash on today's tally — so a closed day blocks this too.
+    $dayLock = require_day_open($pdo);
+    if ($dayLock) {
+        $err = $dayLock;
+    } elseif ($short <= 0) {
         $err = 'Nothing to write off.';
     } else {
         $pdo->beginTransaction();

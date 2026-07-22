@@ -79,6 +79,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
     $refundMode = $_POST['refund_mode'] ?? 'cash';
     $approvedById = (int) ($_POST['approved_by_id'] ?? 0);
 
+    // A closed day accepts no more refunds — cash refunds come out of the
+    // drawer that has already been counted and signed for.
+    $dayLock = require_day_open($pdo);
+
     try {
         $pdo->beginTransaction();
 
@@ -96,7 +100,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
         $paid = (float) ($bill['paid_amount'] ?? 0);
         $remaining = round($paid - $alreadyRefunded, 2);
 
-        if (!$bill || $bill['status'] !== 'paid') {
+        if ($dayLock) {
+            $error = $dayLock;
+        } elseif (!$bill || $bill['status'] !== 'paid') {
             $error = 'Only a paid invoice can be refunded.';
         } elseif ($amount <= 0) {
             $error = 'Enter a refund amount greater than zero.';

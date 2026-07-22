@@ -201,3 +201,51 @@ function notify_staff_welcome(PDO $pdo, int $userId, string $tempPassword): void
             'welcome:user#' . $userId);
     } catch (Throwable $e) { /* best-effort */ }
 }
+
+/** Day closed by reception → admin alert + the admin named on the handover. */
+function notify_day_closed(PDO $pdo, int $closingId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT c.*, cu.name AS cashier_name, au.name AS admin_name
+            FROM shift_closings c
+            JOIN users cu ON cu.id = c.cashier_id
+            JOIN users au ON au.id = c.handover_to_id
+            WHERE c.id = ?
+        ');
+        $stmt->execute([$closingId]);
+        $c = $stmt->fetch();
+        if (!$c) { return; }
+
+        $variance = (float) $c['variance'];
+        $varianceText = abs($variance) < 0.01 ? 'Balanced'
+            : 'Rs ' . number_format(abs($variance), 2) . ($variance < 0 ? ' SHORT' : ' OVER');
+
+        $netCollected = (float) $c['cash_consult_total'] + (float) $c['cash_admission_total']
+                      + (float) $c['online_total'] - (float) $c['cash_refund_total'];
+
+        $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Reception has closed the day. '
+              . 'The cash handover is awaiting your acknowledgment in the admin portal '
+              . '(Cash Handovers → recount + confirm the signed slip is filed).</p>'
+            . mail_kv([
+                'Closing slip'       => $c['closing_number'],
+                'Date'               => date('D d M Y', strtotime($c['closing_date'])),
+                'Cashier'            => $c['cashier_name'],
+                'Total collected'    => 'Rs ' . number_format($netCollected, 2),
+                'Cash'               => 'Rs ' . number_format((float) $c['cash_consult_total'] + (float) $c['cash_admission_total'], 2)
+                                        . ' (' . ((int) $c['cash_consult_count'] + (int) $c['cash_admission_count']) . ' payments)',
+                'Online'             => 'Rs ' . number_format((float) $c['online_total'], 2)
+                                        . ' (' . (int) $c['online_count'] . ' payments)',
+                'Cash refunds'       => 'Rs ' . number_format((float) $c['cash_refund_total'], 2),
+                'Expected in drawer' => 'Rs ' . number_format((float) $c['expected_cash'], 2),
+                'Counted'            => 'Rs ' . number_format((float) $c['counted_cash'], 2),
+                'Variance'           => $varianceText . ($c['variance_note'] ? ' — ' . $c['variance_note'] : ''),
+                'Handover declared'  => 'Rs ' . number_format((float) $c['handover_declared'], 2) . ' → ' . $c['admin_name'],
+            ]);
+        send_mail($pdo, $to,
+            'Day closed ' . date('d M', strtotime($c['closing_date'])) . ' — handover Rs '
+            . number_format((float) $c['handover_declared'], 0) . ' pending (' . $c['closing_number'] . ')',
+            mail_template('Day Closing & Cash Handover', $body),
+            'closing:' . $c['closing_number']);
+    } catch (Throwable $e) { /* best-effort */ }
+}

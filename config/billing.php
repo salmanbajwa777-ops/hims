@@ -279,3 +279,127 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
         'days_since' => $days, 'label' => '75% follow-up',
     ];
 }
+
+// ============================================================================
+// Day closing / cash tally / handover (approved 2026-07-23). Reception counts
+// the drawer against the system's expected-cash figure, declares the handover
+// to admin, and the day's payments lock. See sql/add_shift_closings.sql.
+//
+// "Cash vs online": patients only ever pay Cash or Online. Historically the
+// bills enum spelled online as card/bank_transfer/cheque (DIGITAL mapped to
+// 'card' at registration), so the tally treats every non-cash method as
+// online rather than migrating old rows.
+// ============================================================================
+
+// Yearly closing-slip number, e.g. "DC-2026-0187". Same atomic-upsert pattern
+// as generate_refund_number().
+function generate_closing_number(PDO $pdo): string {
+    $year = (int) date('Y');
+
+    $pdo->prepare('
+        INSERT INTO closing_sequences (sequence_year, last_sequence)
+        VALUES (?, 1)
+        ON DUPLICATE KEY UPDATE last_sequence = LAST_INSERT_ID(last_sequence) + 1
+    ')->execute([$year]);
+    $lastId = (int) $pdo->lastInsertId();
+    $seq = $lastId > 0 ? $lastId : 1;
+
+    return 'DC-' . $year . '-' . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+}
+
+// The drawer's opening float (admin-configurable via clinic_settings).
+function opening_float(PDO $pdo): float {
+    $stmt = $pdo->prepare("SELECT setting_value FROM clinic_settings WHERE setting_key = 'opening_float'");
+    $stmt->execute();
+    return (float) ($stmt->fetchColumn() ?: 0);
+}
+
+// The full system-side tally for one date: cash/online collections split by
+// document series, cash refunds out, and the expected-cash figure the physical
+// count is checked against. Everything keys off when money actually moved —
+// DATE(paid_at) for bills, DATE(created_at) for refunds.
+function day_cash_tally(PDO $pdo, string $date): array {
+    $t = [
+        'cash_consult_total' => 0.0, 'cash_consult_count' => 0,
+        'cash_admission_total' => 0.0, 'cash_admission_count' => 0,
+        'online_consult_total' => 0.0, 'online_consult_count' => 0,
+        'online_admission_total' => 0.0, 'online_admission_count' => 0,
+        'cash_refund_total' => 0.0, 'cash_refund_count' => 0,
+    ];
+
+    $stmt = $pdo->prepare("
+        SELECT (payment_method = 'cash') AS is_cash,
+               COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
+        FROM bills
+        WHERE status = 'paid' AND DATE(paid_at) = ?
+        GROUP BY is_cash
+    ");
+    $stmt->execute([$date]);
+    foreach ($stmt->fetchAll() as $r) {
+        $k = ((int) $r['is_cash']) ? 'cash_consult' : 'online_consult';
+        $t[$k . '_total'] = (float) $r['total'];
+        $t[$k . '_count'] = (int) $r['n'];
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT (payment_method = 'cash') AS is_cash,
+               COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
+        FROM admission_bills
+        WHERE status = 'paid' AND DATE(paid_at) = ?
+        GROUP BY is_cash
+    ");
+    $stmt->execute([$date]);
+    foreach ($stmt->fetchAll() as $r) {
+        $k = ((int) $r['is_cash']) ? 'cash_admission' : 'online_admission';
+        $t[$k . '_total'] = (float) $r['total'];
+        $t[$k . '_count'] = (int) $r['n'];
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
+        FROM refunds
+        WHERE refund_mode = 'cash' AND DATE(created_at) = ?
+    ");
+    $stmt->execute([$date]);
+    $r = $stmt->fetch();
+    $t['cash_refund_total'] = (float) $r['total'];
+    $t['cash_refund_count'] = (int) $r['n'];
+
+    $t['cash_total']   = round($t['cash_consult_total'] + $t['cash_admission_total'], 2);
+    $t['cash_count']   = $t['cash_consult_count'] + $t['cash_admission_count'];
+    $t['online_total'] = round($t['online_consult_total'] + $t['online_admission_total'], 2);
+    $t['online_count'] = $t['online_consult_count'] + $t['online_admission_count'];
+    $t['net_collected'] = round($t['cash_total'] + $t['online_total'] - $t['cash_refund_total'], 2);
+
+    $t['opening_float'] = opening_float($pdo);
+    $t['expected_cash'] = round($t['opening_float'] + $t['cash_total'] - $t['cash_refund_total'], 2);
+
+    return $t;
+}
+
+// The closing row for a date, or null while the day is still open.
+function day_closing(PDO $pdo, string $date): ?array {
+    $stmt = $pdo->prepare('SELECT * FROM shift_closings WHERE closing_date = ?');
+    $stmt->execute([$date]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+// Guard for every money-moving action: once a date is closed, payments and
+// refunds for that date are refused so the signed tally can never drift.
+// Returns an error string to surface, or null when the day is open. Tolerates
+// the migration not being run yet (table missing → treat as open).
+function require_day_open(PDO $pdo, ?string $date = null): ?string {
+    $date = $date ?: date('Y-m-d');
+    try {
+        $closing = day_closing($pdo, $date);
+    } catch (PDOException $e) {
+        return null;
+    }
+    if ($closing) {
+        return 'Day ' . date('d M Y', strtotime($date)) . ' is closed (slip '
+             . $closing['closing_number'] . ') — payments and refunds are locked '
+             . 'so the signed tally cannot drift. Record it tomorrow.';
+    }
+    return null;
+}

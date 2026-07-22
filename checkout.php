@@ -129,7 +129,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
     $billStmt->execute([$billId]);
     $bill = $billStmt->fetch();
 
-    if (!$bill) {
+    // Once the day is closed (signed cash tally), no more payments may be
+    // recorded against it — see shift_closing.php.
+    $dayLock = require_day_open($pdo);
+
+    if ($dayLock) {
+        $error = $dayLock;
+    } elseif (!$bill) {
         $error = 'Bill not found or not yet finalized.';
     } elseif (!in_array($paymentMethod, $allowedMethods, true)) {
         $error = 'Please select a valid payment method.';
