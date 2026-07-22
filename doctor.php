@@ -127,42 +127,17 @@ function icon(string $name, int $size = 18): string {
     $p = $paths[$name] ?? '';
     return '<svg width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
 }
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HIMS — Doctor Console</title>
-<style>
-:root {
-    --primary-dark: #0E5456;
-    --primary: #1A7F7E;
-    --primary-light: #E0F2F1;
-    --green: #10B981;
-    --amber: #F59E0B;
-    --red: #DC2626;
-    --bg: #F5F8F8;
-    --card: #FFFFFF;
-    --text: #0F172A;
-    --text-secondary: #334155;
-    --text-muted: #64748B;
-    --border: #E2E8F0;
-    --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
-    --shadow-md: 0 10px 25px rgba(15,23,42,.08);
-    --radius-card: 20px;
-    --radius-input: 12px;
-    --radius-btn: 14px;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-a { text-decoration: none; color: inherit; }
-button { font-family: inherit; cursor: pointer; }
-.tnum { font-variant-numeric: tabular-nums; }
 
-.app { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
-.main { display: flex; flex-direction: column; min-width: 0; }
-.content { padding: 28px 32px 60px; display: flex; flex-direction: column; gap: 24px; }
+$pageTitle = 'Doctor Console';
+$headExtra = <<<CSS
+<style>
+/* Doctor Console keeps its OWN clinical sidebar (different nav taxonomy from the
+   shared admin/reception sidebar), so it does NOT use partials/sidebar.php.
+   app.css provides the design tokens, reset, body/a/button, .app/.main/.content,
+   .card, .btn* aliases and the base .status-pill — those are dropped here.
+   What remains below is doctor-specific: the clinical sidebar, the top header
+   bar, and this page's bespoke components (hero, KPIs, queue, now-serving). */
+.tnum { font-variant-numeric: tabular-nums; }
 
 /* Sidebar */
 .sidebar { background: var(--card); border-right: 1px solid var(--border); padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
@@ -225,9 +200,10 @@ button { font-family: inherit; cursor: pointer; }
 
 /* Sections */
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+/* app.css .section-title is 16px; this console wants the larger 18px heading, and
+   its .section-sub carries no bottom margin (spacing handled per-block here). */
 .section-title { font-size: 18px; font-weight: 600; }
 .section-sub { font-size: 12.5px; color: var(--text-muted); }
-.card { background: var(--card); border-radius: var(--radius-card); border: 1px solid var(--border); box-shadow: var(--shadow-sm); padding: 22px 24px; }
 .row-2 { display: grid; grid-template-columns: 1.45fr 1fr; gap: 20px; align-items: start; }
 .stack { display: flex; flex-direction: column; gap: 20px; }
 
@@ -274,10 +250,15 @@ button { font-family: inherit; cursor: pointer; }
 .build-notice { background: #F1F5F9; border: 1px dashed var(--border); border-radius: 14px; padding: 12px 18px; font-size: 12.5px; color: var(--text-secondary); }
 
 @media (max-width: 1200px) { .grid-2 { grid-template-columns: 1fr; } .row-2 { grid-template-columns: 1fr; } }
+/* NOTE: this console keeps its OWN clinical sidebar, so it also owns its own
+   responsive behaviour. Pre-existing gap: at ≤900px the sidebar is simply hidden
+   with no drawer replacement (mobile nav follow-up — see report). Left as-is to
+   keep this migration scoped to the head. */
 @media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } .content { padding: 20px 18px 48px; } }
 </style>
-</head>
-<body>
+CSS;
+require __DIR__ . '/partials/head.php';
+?>
 <div class="app">
 
     <aside class="sidebar">

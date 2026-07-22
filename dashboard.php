@@ -50,142 +50,16 @@ function icon(string $name, int $size = 18): string {
     $p = $paths[$name] ?? '';
     return '<svg width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
 }
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HIMS — Dashboard</title>
-<style>
-:root {
-    --primary-dark: #0E5456;
-    --primary: #1A7F7E;
-    --primary-light: #E0F2F1;
-    --green: #10B981;
-    --amber: #F59E0B;
-    --red: #DC2626;
-    --bg: #F8FAFC;
-    --card: #FFFFFF;
-    --text: #0F172A;
-    --text-secondary: #334155;
-    --text-muted: #64748B;
-    --border: #E2E8F0;
-    --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
-    --shadow-md: 0 10px 25px rgba(15,23,42,.08);
-    --shadow-lg: 0 18px 40px rgba(15,23,42,.12);
-    --radius-card: 20px;
-    --radius-input: 12px;
-    --radius-btn: 14px;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    font-size: 14px;
-    line-height: 1.5;
-}
-a { text-decoration: none; color: inherit; }
 
-/* ---------- Layout ---------- */
-.app {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    min-height: 100vh;
-}
-.main {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
+$pageTitle = 'Dashboard';
+$headExtra = <<<CSS
+<style>
 .content {
     padding: 28px 32px 60px;
     display: flex;
     flex-direction: column;
     gap: 24px;
 }
-
-/* ---------- Sidebar ---------- */
-.sidebar {
-    background: var(--card);
-    border-right: 1px solid var(--border);
-    padding: 24px 16px;
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-}
-.sidebar-brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 8px 24px;
-    font-weight: 700;
-    font-size: 18px;
-}
-.sidebar-brand .logo-mark {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-weight: 700;
-    font-size: 14px;
-}
-.nav-group { margin-bottom: 18px; }
-.nav-group-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .06em;
-    color: var(--text-muted);
-    padding: 0 12px 8px;
-    text-transform: uppercase;
-}
-.nav-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 9px 12px;
-    border-radius: 12px;
-    color: var(--text-secondary);
-    font-weight: 500;
-    font-size: 13.5px;
-    transition: background .15s ease;
-}
-.nav-item:hover { background: #F8FAFC; }
-.nav-item.active {
-    background: var(--primary-light);
-    color: var(--primary-dark);
-    font-weight: 600;
-    position: relative;
-}
-.nav-item.active::before {
-    content: "";
-    position: absolute;
-    left: -16px;
-    top: 8px;
-    bottom: 8px;
-    width: 3px;
-    background: var(--primary);
-    border-radius: 0 3px 3px 0;
-}
-.nav-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    background: #F1F5F9;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: var(--text-secondary);
-}
-.nav-icon svg { width: 15px; height: 15px; }
-.nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
 
 /* ---------- Header ---------- */
 .header {
@@ -412,69 +286,13 @@ tabular { font-variant-numeric: tabular-nums; }
     .quick-actions, .fin-grid { grid-template-columns: repeat(2, 1fr); }
     .row-2 { grid-template-columns: 1fr; }
 }
-@media (max-width: 900px) {
-    .app { grid-template-columns: 1fr; }
-    .sidebar { display: none; }
-}
 </style>
-</head>
-<body>
-<div class="app">
-
-    <aside class="sidebar">
-        <div class="sidebar-brand">
-            <div class="logo-mark">H</div>
-            HIMS
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Overview</div>
-            <a class="nav-item active" href="dashboard.php"><span class="nav-icon"><?= icon('grid') ?></span> Dashboard</a>
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Operations</div>
-            <a class="nav-item" href="patients.php"><span class="nav-icon"><?= icon('users') ?></span> Patients</a>
-            <a class="nav-item" href="staff.php"><span class="nav-icon"><?= icon('stethoscope') ?></span> Doctors</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('calendar') ?></span> Appointments</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('bed') ?></span> Admissions</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('clipboard') ?></span> Procedures</a>
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Finance</div>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('card') ?></span> Billing</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('wallet') ?></span> Payments</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('bar-chart') ?></span> Settlements</a>
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Management</div>
-            <a class="nav-item" href="staff.php"><span class="nav-icon"><?= icon('user-group') ?></span> Staff</a>
-            <a class="nav-item" href="locations.php"><span class="nav-icon"><?= icon('bed') ?></span> Cities &amp; Areas</a>
-            <a class="nav-item" href="permissions.php"><span class="nav-icon"><?= icon('lock') ?></span> Permissions</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('box') ?></span> Inventory</a>
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Analytics</div>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('trending-up') ?></span> Reports</a>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('file-text') ?></span> Audit Logs</a>
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">System</div>
-            <a class="nav-item" href="#"><span class="nav-icon"><?= icon('settings') ?></span> Settings</a>
-        </div>
-    </aside>
-
-    <div class="main">
+CSS;
+require __DIR__ . '/partials/head.php';
+$navActive = 'dashboard';
+require __DIR__ . '/partials/sidebar.php';
+?>
         <header class="header">
-            <div class="sidebar-brand" style="padding:0;">
-                <div class="logo-mark" style="width:30px;height:30px;font-size:12px;">H</div>
-                <span style="font-size:15px;">HIMS</span>
-            </div>
-
             <div class="search-box">
                 <span class="icon"><?= icon('search') ?></span>
                 <input type="text" placeholder="Search patients, invoices, staff...">

@@ -297,66 +297,10 @@ function ageFromDob(?string $dob): ?int {
     if (!$dob) return null;
     return (new DateTime($dob))->diff(new DateTime())->y;
 }
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HIMS — <?= $showRegister ? 'New Patient Registration' : 'Patients' ?></title>
+
+$pageTitle = $showRegister ? 'New Patient Registration' : 'Patients';
+$headExtra = <<<CSS
 <style>
-:root {
-    --primary-dark: #0E5456;
-    --primary: #1A7F7E;
-    --primary-light: #E0F2F1;
-    --green: #10B981;
-    --green-bg: #ECFDF5;
-    --green-text: #047857;
-    --amber: #F59E0B;
-    --amber-bg: #FFFBEB;
-    --amber-text: #92400E;
-    --red: #DC2626;
-    --red-bg: #FEF2F2;
-    --red-text: #B91C1C;
-    --bg: #F8FAFC;
-    --card: #FFFFFF;
-    --text: #0F172A;
-    --text-secondary: #334155;
-    --text-muted: #64748B;
-    --border: #E2E8F0;
-    --border-strong: #CBD5E1;
-    --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
-    --shadow-md: 0 10px 25px rgba(15,23,42,.08);
-    --radius-card: 20px;
-    --radius-input: 12px;
-    --radius-btn: 14px;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
-a { text-decoration: none; color: inherit; }
-.app { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
-.main { display: flex; flex-direction: column; min-width: 0; }
-.content { padding: 28px 32px 60px; display: flex; flex-direction: column; gap: 24px; }
-
-.sidebar { background: var(--card); border-right: 1px solid var(--border); padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; font-weight: 700; font-size: 18px; }
-.sidebar-brand .logo-mark { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
-.nav-group { margin-bottom: 18px; }
-.nav-group-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--text-muted); padding: 0 12px 8px; text-transform: uppercase; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; color: var(--text-secondary); font-weight: 500; font-size: 13.5px; transition: background .15s ease; }
-.nav-item:hover { background: #F8FAFC; }
-.nav-item.active { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; position: relative; }
-.nav-item.active::before { content: ""; position: absolute; left: -16px; top: 8px; bottom: 8px; width: 3px; background: var(--primary); border-radius: 0 3px 3px 0; }
-.nav-item.disabled { opacity: .45; cursor: not-allowed; }
-.nav-icon { width: 28px; height: 28px; border-radius: 8px; background: #F1F5F9; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text-secondary); }
-.nav-icon svg { width: 15px; height: 15px; }
-.nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
-
-/* Header styles now ship with partials/quick_header.php. */
-
-.page-title { font-size: 22px; font-weight: 700; }
-.page-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
-.page-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 
 .card { background: var(--card); border-radius: var(--radius-card); border: 1px solid var(--border); box-shadow: var(--shadow-sm); padding: 22px 24px; }
 .section-title { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
@@ -377,7 +321,7 @@ a { text-decoration: none; color: inherit; }
 .search-card { display: flex; align-items: center; gap: 12px; }
 .search-field { flex: 1; position: relative; }
 .search-field input { width: 100%; padding: 12px 14px 12px 42px; border-radius: var(--radius-input); border: 1px solid var(--border); background: var(--bg); font-size: 14px; color: var(--text); font-family: inherit; }
-.search-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.12); background: #fff; }
+.search-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.12); background: #fff; }
 .search-field .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); display: flex; }
 .search-field .icon svg { width: 17px; height: 17px; }
 
@@ -425,7 +369,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .field label .locked-tag { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
 .field label .auto-tag { font-size: 10.5px; font-weight: 700; color: var(--green-text); background: var(--green-bg); padding: 1px 7px; border-radius: 20px; text-transform: uppercase; letter-spacing: .02em; }
 .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; background: var(--bg); color: var(--text); }
-.field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.15); background: var(--card); }
+.field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: var(--card); }
 .field input:disabled { background: var(--border); cursor: not-allowed; color: var(--text-muted); }
 .field input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
 .field .hint { font-size: 11.5px; color: var(--text-muted); }
@@ -530,37 +474,12 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .queue-token .num { font-size: 44px; font-weight: 800; color: var(--primary-dark); line-height: 1; }
 .queue-token .label { font-size: 12px; color: var(--text-muted); margin-top: 6px; text-transform: uppercase; letter-spacing: .05em; }
 
-@media (max-width: 900px) {
-    .app { grid-template-columns: 1fr; }
-    .sidebar { display: none; }
-}
-@media (max-width: 720px) {
-    .field-grid { grid-template-columns: 1fr; }
-}
 </style>
-</head>
-<body>
-<div class="app">
-    <aside class="sidebar">
-        <div class="sidebar-brand"><div class="logo-mark">H</div>HIMS</div>
-        <div class="nav-group">
-            <div class="nav-group-label">Overview</div>
-            <a class="nav-item" href="dashboard.php"><span class="nav-icon">▦</span> Dashboard</a>
-        </div>
-        <div class="nav-group">
-            <div class="nav-group-label">Reception</div>
-            <a class="nav-item active" href="patients.php"><span class="nav-icon">👥</span> Patients</a>
-        </div>
-        <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
-        <div class="nav-group">
-            <div class="nav-group-label">Management</div>
-            <a class="nav-item" href="staff.php"><span class="nav-icon">🩺</span> Staff &amp; Doctors</a>
-            <a class="nav-item" href="locations.php"><span class="nav-icon">📍</span> Cities &amp; Areas</a>
-        </div>
-        <?php endif; ?>
-    </aside>
-
-    <div class="main">
+CSS;
+require __DIR__ . '/partials/head.php';
+$navActive = 'patients';
+require __DIR__ . '/partials/sidebar.php';
+?>
         <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
         <div class="content">

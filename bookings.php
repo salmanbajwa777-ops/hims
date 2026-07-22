@@ -30,42 +30,17 @@ if (!has_permission('RECEPTION_REGISTER_PATIENTS') && ($_SESSION['base_role'] ??
 
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 $qhActive = 'bookings';
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HIMS — Bookings</title>
+
+$pageTitle = 'Bookings';
+// Page-specific: this placeholder card centers its content and overrides the
+// base .card padding. Everything else (tokens, reset, body, .content,
+// .page-title, .page-sub, base .card shell) comes from app.css.
+$headExtra = <<<CSS
 <style>
-:root {
-    --primary-dark: #0E5456; --primary: #1A7F7E; --primary-light: #E0F2F1;
-    --green: #10B981; --amber: #F59E0B; --red: #DC2626;
-    --bg: #F8FAFC; --card: #FFFFFF;
-    --text: #0F172A; --text-secondary: #334155; --text-muted: #64748B;
-    --border: #E2E8F0;
-    --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
-    --radius-card: 20px; --radius-input: 12px; --radius-btn: 14px;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5;
-}
-a { text-decoration: none; color: inherit; }
-
-.content { padding: 28px 32px 60px; display: flex; flex-direction: column; gap: 20px; }
-.page-title { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
-.page-sub { font-size: 13.5px; color: var(--text-muted); }
-
-.card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius-card); box-shadow: var(--shadow-sm);
-    padding: 56px 32px; text-align: center;
-}
+.card { padding: 56px 32px; text-align: center; }
 .card .mark {
     width: 54px; height: 54px; border-radius: 16px; margin: 0 auto 18px;
-    background: rgba(37,99,235,.10); color: #1D4ED8;
+    background: var(--primary-light); color: var(--primary);
     display: flex; align-items: center; justify-content: center;
 }
 .card .mark svg { width: 26px; height: 26px; }
@@ -78,8 +53,9 @@ a { text-decoration: none; color: inherit; }
     color: #fff; font-weight: 600; font-size: 13.5px;
 }
 </style>
-</head>
-<body>
+CSS;
+require __DIR__ . '/partials/head.php';
+?>
 
 <?php require __DIR__ . '/partials/quick_header.php'; ?>
 

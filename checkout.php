@@ -219,64 +219,14 @@ $pendingBills = $pdo->query("
     WHERE v.visit_date = CURDATE() AND b.status <> 'paid'
     ORDER BY b.id DESC
 ")->fetchAll();
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Checkout &amp; Billing - HIMS</title>
+
+$pageTitle = 'Checkout & Billing';
+$headExtra = <<<CSS
 <style>
-:root {
-    --primary-dark: #0E5456;
-    --primary: #1A7F7E;
-    --primary-light: #E0F2F1;
-    --bg: #F8FAFC;
-    --card: #FFFFFF;
-    --border: #E2E8F0;
-    --text: #0F172A;
-    --text-muted: #64748B;
-    --red-bg: #FEE2E2;
-    --red-text: #B91C1C;
-    --green-bg: #DCFCE7;
-    --green-text: #15803D;
-    --radius-input: 10px;
-    --radius-btn: 10px;
-}
-* { box-sizing: border-box; }
-body { font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; margin: 0; }
-.app { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh; }
-.sidebar { background: #fff; border-right: 1px solid var(--border); padding: 20px 14px; }
-.sidebar-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; padding: 0 8px 20px; }
-.logo-mark { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
-.nav-group { margin-bottom: 18px; }
-.nav-group-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--text-muted); padding: 0 12px 8px; text-transform: uppercase; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 13.5px; font-weight: 500; }
-.nav-item.active { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; }
-.main { display: flex; flex-direction: column; }
 .header { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; border-bottom: 1px solid var(--border); background: #fff; }
 .header-right { display: flex; align-items: center; gap: 16px; }
 .header-date { font-size: 12.5px; color: var(--text-muted); }
 .logout-link { font-size: 12.5px; color: var(--text-muted); text-decoration: none; }
-.content { padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
-.page-head { display: flex; align-items: flex-start; justify-content: space-between; }
-.page-title { font-size: 20px; font-weight: 700; }
-.page-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
-.section-title { font-size: 14.5px; font-weight: 700; margin-bottom: 4px; }
-.section-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
-table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
-td { padding: 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
-.muted { color: var(--text-muted); font-size: 12.5px; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--radius-btn); border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
-.btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
-.btn.small { padding: 6px 12px; font-size: 12.5px; }
-.btn.danger { background: var(--red-bg); color: var(--red-text); }
-.alert { padding: 12px 16px; border-radius: 10px; font-size: 13px; }
-.alert.error { background: var(--red-bg); color: var(--red-text); }
-.alert.success { background: var(--green-bg); color: var(--green-text); }
-.status-pill { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 .status-pill.draft { background: #FEF3C7; color: #92400E; }
 .status-pill.finalized { background: var(--primary-light); color: var(--primary-dark); }
 .status-pill.paid { background: var(--green-bg); color: var(--green-text); }
@@ -290,30 +240,11 @@ td { padding: 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
 .visit-pick-row:first-child { border-top: none; }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 </style>
-</head>
-<body>
-<div class="app">
-    <aside class="sidebar">
-        <div class="sidebar-brand"><div class="logo-mark">H</div>HIMS</div>
-        <div class="nav-group">
-            <div class="nav-group-label">Overview</div>
-            <a class="nav-item" href="dashboard.php"><span class="nav-icon">▦</span> Dashboard</a>
-        </div>
-        <div class="nav-group">
-            <div class="nav-group-label">Reception</div>
-            <a class="nav-item" href="patients.php"><span class="nav-icon">👥</span> Patients</a>
-            <a class="nav-item active" href="checkout.php"><span class="nav-icon">🧾</span> Checkout &amp; Billing</a>
-        </div>
-        <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
-        <div class="nav-group">
-            <div class="nav-group-label">Management</div>
-            <a class="nav-item" href="staff.php"><span class="nav-icon">🩺</span> Staff &amp; Doctors</a>
-            <a class="nav-item" href="locations.php"><span class="nav-icon">📍</span> Cities &amp; Areas</a>
-        </div>
-        <?php endif; ?>
-    </aside>
-
-    <div class="main">
+CSS;
+require __DIR__ . '/partials/head.php';
+$navActive = 'checkout';
+require __DIR__ . '/partials/sidebar.php';
+?>
         <header class="header">
             <div class="page-title" style="font-size:16px;">Checkout &amp; Billing</div>
             <div class="header-right">
