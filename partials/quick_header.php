@@ -178,17 +178,13 @@ if ($qhIsNurse) {
 .qh-row2 { display: flex; align-items: center; gap: 16px; padding: 11px 24px; }
 .qh-search { flex: 1; max-width: 560px; position: relative; display: flex; align-items: center; }
 .qh-search input {
-    width: 100%; height: 38px; padding: 0 74px 0 38px;
+    width: 100%; height: 38px; padding: 0 14px 0 38px;
     border-radius: var(--radius-input, 12px); border: 1px solid var(--border);
     background: #F8FAFC; font-size: 13.5px; color: var(--text); font-family: inherit;
 }
 .qh-search input:focus { outline: none; border-color: var(--primary); background: #fff; }
 .qh-search .qh-search-icon { position: absolute; left: 13px; display: flex; color: var(--text-muted); pointer-events: none; }
 .qh-search .qh-search-icon svg { width: 15px; height: 15px; }
-.qh-kbd {
-    position: absolute; right: 10px; font-size: 11px; color: var(--text-muted);
-    background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px;
-}
 .qh-row2-right { display: flex; align-items: center; gap: 14px; margin-left: auto; }
 .qh-icon-btn {
     width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border);
@@ -211,7 +207,7 @@ if ($qhIsNurse) {
 
 @media (max-width: 900px) {
     .qh-row1, .qh-row2 { padding-left: 16px; padding-right: 16px; }
-    .qh-date, .qh-kbd { display: none; }
+    .qh-date { display: none; }
     .qh-brand span { display: none; }
 }
 </style>
@@ -254,7 +250,6 @@ if ($qhIsNurse) {
             <span class="qh-search-icon"><?= qh_icon('search') ?></span>
             <input type="text" name="q" placeholder="Search patients by name, phone or MRN&hellip;"
                    value="<?= htmlspecialchars($_GET['q'] ?? '') ?>" aria-label="Search patients">
-            <span class="qh-kbd">Ctrl K</span>
         </form>
 
         <div class="qh-row2-right">
@@ -266,12 +261,3 @@ if ($qhIsNurse) {
     </div>
 </header>
 
-<script>
-// Ctrl/Cmd-K focuses the search field the header advertises.
-document.addEventListener('keydown', function (e) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        var input = document.querySelector('.qh-search input');
-        if (input) { e.preventDefault(); input.focus(); input.select(); }
-    }
-});
-</script>
