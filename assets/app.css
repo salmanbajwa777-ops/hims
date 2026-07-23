@@ -31,9 +31,11 @@
     /* Surfaces & text */
     --bg:             #F8FAFC;
     --card:           #FFFFFF;
-    --text:           #0F172A;
-    --text-secondary: #334155;
-    --text-muted:     #64748B;
+    /* Darkened 2026-07-23 for non-4K readability: secondary/muted text is now
+       near-black instead of slate grey. Hierarchy is carried by size/weight. */
+    --text:           #000000;
+    --text-secondary: #0A0F1A;
+    --text-muted:     #111827;
     --border:         #E2E8F0;
     --border-strong:  #CBD5E1;
 

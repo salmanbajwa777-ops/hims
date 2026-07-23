@@ -98,7 +98,7 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Tr
         .items th { background: #F4F4F4; font-weight: bold; text-align: center; }
         .items .desc { text-align: left; }
         .items .num { text-align: right; white-space: nowrap; }
-        .items .kind { color: #666; font-size: 8px; }
+        .items .kind { color: #111; font-size: 8px; }
         .totals { width: 55%; margin-left: auto; border-collapse: collapse; font-size: 10px; margin-top: -1px; }
         .totals td { border: 1px solid #C8C8C8; padding: 4px 6px; }
         .totals td.k { background: #F4F4F4; font-weight: bold; }

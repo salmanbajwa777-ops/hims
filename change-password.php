@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border: 1px solid #E2E8F0;
         }
         .card h1 { margin: 0 0 4px; font-size: 20px; color: #0F172A; }
-        .card p.subtitle { margin: 0 0 24px; color: #334155; font-size: 13.5px; }
+        .card p.subtitle { margin: 0 0 24px; color: #0A0F1A; font-size: 13.5px; }
         label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
         input[type="password"] {
             width: 100%; padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 12px;
@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #1A7F7E; }
         .pw-wrap { position: relative; margin-bottom: 16px; }
         .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
-        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748B; padding: 4px; width: auto; margin: 0; display: flex; }
+        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #111827; padding: 4px; width: auto; margin: 0; display: flex; }
         .pw-eye:hover { color: var(--primary); }
         .pw-eye svg { width: 18px; height: 18px; }
     </style>
@@ -124,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function pwToggle(id, btn) {
             var i = document.getElementById(id);
             i.type = i.type === 'password' ? 'text' : 'password';
-            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#64748B';
+            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#111827';
         }
         </script>
         <a class="back-link" href="<?= $landingPage ?>">&larr; Back to dashboard</a>

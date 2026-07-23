@@ -74,9 +74,9 @@ if (!$done) {
         body { margin: 0; font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #F8FAFC; padding: 20px; }
         .card { background: #fff; border-radius: 20px; padding: 36px; width: 100%; max-width: 520px; box-shadow: 0 10px 25px rgba(15,23,42,.08); border: 1px solid #E2E8F0; }
         h1 { margin: 0 0 4px; font-size: 20px; color: #0F172A; }
-        p.sub { margin: 0 0 20px; color: #334155; font-size: 13.5px; }
+        p.sub { margin: 0 0 20px; color: #0A0F1A; font-size: 13.5px; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 18px; }
-        th { text-align: left; font-size: 11px; text-transform: uppercase; color: #64748B; padding: 0 8px 8px; }
+        th { text-align: left; font-size: 11px; text-transform: uppercase; color: #111827; padding: 0 8px 8px; }
         td { padding: 8px; border-top: 1px solid #E2E8F0; }
         .ok { color: #047857; font-weight: 700; }
         .bad { color: #B91C1C; font-weight: 700; }
@@ -88,7 +88,7 @@ if (!$done) {
         .msg.done { background: #ECFDF5; color: #047857; }
         .pw-wrap { position: relative; }
         .pw-wrap input { padding-right: 42px; }
-        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748B; padding: 4px; width: auto; margin: 0; display: flex; }
+        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #111827; padding: 4px; width: auto; margin: 0; display: flex; }
         .pw-eye svg { width: 18px; height: 18px; }
     </style>
 </head>
@@ -140,7 +140,7 @@ if (!$done) {
         function tg(id, btn) {
             var i = document.getElementById(id);
             i.type = i.type === 'password' ? 'text' : 'password';
-            btn.style.color = i.type === 'text' ? '#1A7F7E' : '#64748B';
+            btn.style.color = i.type === 'text' ? '#1A7F7E' : '#111827';
         }
         </script>
         <?php endif; ?>
