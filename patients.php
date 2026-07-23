@@ -537,6 +537,9 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .muted { color: var(--text-muted); font-size: 12.5px; }
 .mrn { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); }
 .gender-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: #F1F5F9; color: var(--text-secondary); }
+.wa-link { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); text-decoration: none; font-size: 12.5px; }
+.wa-link svg { width: 15px; height: 15px; color: #25D366; flex-shrink: 0; }
+.wa-link:hover { color: #128C7E; text-decoration: underline; }
 .unpaid-badge { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--red-bg); color: var(--red-text); white-space: nowrap; }
 .dc-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); white-space: nowrap; }
 .dc-select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12px; background: #fff; color: var(--text-secondary); max-width: 140px; }
@@ -726,10 +729,10 @@ require __DIR__ . '/partials/sidebar.php';
                 <?php else: ?>
                 <table>
                     <thead>
-                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>Age / Gender</th><th>MRN</th><th>Last Visit</th><th>Discount</th><th>Actions</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
+                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>DOB / Gender</th><th>MRN</th><th>Last Visit</th><th>Discount</th><th>Actions</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($patients as $p): $age = $p['dob'] ? ageFromDob($p['dob']) : null; ?>
+                        <?php foreach ($patients as $p): ?>
                         <tr>
                             <td><div class="person"><span class="person-avatar"><?= htmlspecialchars(strtoupper(substr($p['name'], 0, 1))) ?></span>
                                 <span><?= htmlspecialchars($p['name']) ?>
@@ -739,8 +742,16 @@ require __DIR__ . '/partials/sidebar.php';
                                 </span>
                             </div></td>
                             <td class="muted"><?= htmlspecialchars($p['father_name'] ?: '—') ?></td>
-                            <td class="muted"><?= htmlspecialchars($p['phone']) ?></td>
-                            <td><span class="gender-tag"><?= $age !== null ? $age . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
+                            <td class="muted">
+                                <?php if ($p['phone']): ?>
+                                <!-- Phone stored as E.164 (+92300...) — wa.me wants digits only. Opens WhatsApp with a pre-filled message. -->
+                                <a class="wa-link" href="https://wa.me/<?= preg_replace('/\D/', '', $p['phone']) ?>?text=<?= rawurlencode('welcome') ?>" target="_blank" rel="noopener" title="Message on WhatsApp">
+                                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.64.07-.3-.15-1.26-.46-2.4-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.6-.91-2.2-.24-.58-.49-.5-.67-.5h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.06 2.87 1.21 3.07.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.08 1.76-.72 2-1.41.25-.7.25-1.29.18-1.42-.08-.12-.28-.2-.57-.34zM12.04 21.5h-.01a9.4 9.4 0 0 1-4.79-1.31l-.34-.2-3.56.93.95-3.47-.22-.36a9.4 9.4 0 0 1-1.44-5.02c0-5.2 4.24-9.43 9.45-9.43a9.4 9.4 0 0 1 6.68 2.77 9.37 9.37 0 0 1 2.76 6.67c0 5.2-4.24 9.43-9.44 9.43zm8.03-17.46A11.3 11.3 0 0 0 12.04.66C5.8.66.72 5.73.72 11.97c0 1.99.52 3.94 1.51 5.66L.63 23.5l6-1.57a11.34 11.34 0 0 0 5.4 1.37h.01c6.24 0 11.32-5.07 11.32-11.31 0-3.02-1.18-5.87-3.29-8.01z"/></svg>
+                                    <?= htmlspecialchars($p['phone']) ?>
+                                </a>
+                                <?php else: ?>—<?php endif; ?>
+                            </td>
+                            <td><span class="gender-tag"><?= $p['dob'] ? date('d M Y', strtotime($p['dob'])) . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
                             <td class="mrn"><?= htmlspecialchars($p['mrn']) ?></td>
                             <td class="muted"><?= $p['last_visit'] ? date('d M Y', strtotime($p['last_visit'])) : '—' ?></td>
                             <td>
