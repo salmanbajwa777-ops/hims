@@ -35,6 +35,30 @@ $navActive  = $navActive ?? '';
 $sbBaseRole = $_SESSION['base_role'] ?? '';
 $sbIsAdmin  = $sbBaseRole === 'ADMIN';
 
+// ---- DOCTOR delegation -----------------------------------------------------
+// A doctor must NEVER land in the reception/admin nav: their world is the
+// clinical sidebar (My Console / My Queue / Find Patient / My Schedule /
+// My Reports / My Profile). Any shared page a doctor opens (patients.php,
+// profile.php, ...) therefore renders doctor_sidebar.php here instead —
+// one fix for every current and future include of this partial.
+// Layout contracts differ (this partial opens .app/.main itself; the doctor
+// partial is included INSIDE .app with .main opened by the caller), so the
+// wrappers are emitted around it to keep the page markup identical.
+if ($sbBaseRole === 'DOCTOR') {
+    // Map the caller's reception slug onto the doctor nav's active states;
+    // unmapped pages simply highlight nothing.
+    $dsActive = ['patients' => 'patients', 'profile' => 'profile'][$navActive] ?? '';
+    if (!isset($dsUserName)) {
+        $sbMe = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+        $sbMe->execute([$_SESSION['user_id']]);
+        $dsUserName = (string) $sbMe->fetchColumn();
+    }
+    echo '<div class="app">';
+    require __DIR__ . '/doctor_sidebar.php';
+    echo '<div class="main">';
+    return; // caller closes .main and .app exactly as with the shared nav
+}
+
 // The "home" destination differs by role: admins land on the full dashboard,
 // reception on their own console, nurses on the ward list. Keeps one nav
 // definition working for all of them.

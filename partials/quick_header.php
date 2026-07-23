@@ -23,6 +23,11 @@ $qhActive   = $qhActive ?? '';
 $qhBrand    = $qhBrand ?? true;
 $qhBaseRole = $_SESSION['base_role'] ?? '';
 $qhIsNurse  = $qhBaseRole === 'NURSE';
+
+// Doctors never get the front-desk quick row (Today / Bookings / Add New
+// Patient are reception work) — shared pages like patients.php include this
+// unconditionally, so the role gate lives here.
+if ($qhBaseRole === 'DOCTOR') { return; }
 // Most callers already have the signed-in user loaded; those that don't get one
 // cheap lookup rather than an anonymous avatar.
 $qhName = $firstName ?? '';

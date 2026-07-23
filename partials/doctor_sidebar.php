@@ -7,7 +7,7 @@
  * the markup AND its CSS + mobile-drawer JS. Include it INSIDE <div class="app">
  * (it renders the mobile bar, the overlay and the <aside>), after setting:
  *
- *   $dsActive       — 'console' | 'analytics' | 'schedule' | 'timings' | 'profile' (which nav item highlights)
+ *   $dsActive       — 'console' | 'analytics' | 'schedule' | 'patients' | 'profile' (which nav item highlights)
  *   $dsUserName     — display name for the footer
  *   $dsWaitingCount — today's waiting count for the My Queue badge (0 hides it)
  *
@@ -93,9 +93,8 @@ function ds_icon(string $name): string {
 
     <div class="nav-group">
         <div class="nav-group-label">Records</div>
-        <a class="nav-item" href="patients.php"><span class="nav-icon"><?= ds_icon('search') ?></span> Find Patient</a>
+        <a class="nav-item <?= $dsActive === 'patients' ? 'active' : '' ?>" href="patients.php"><span class="nav-icon"><?= ds_icon('search') ?></span> Find Patient</a>
         <a class="nav-item <?= $dsActive === 'schedule' ? 'active' : '' ?>" href="my_schedule.php"><span class="nav-icon"><?= ds_icon('calendar') ?></span> My Schedule</a>
-        <a class="nav-item <?= $dsActive === 'timings' ? 'active' : '' ?>" href="doctor_timings.php"><span class="nav-icon"><?= ds_icon('clock') ?></span> Today's Timings</a>
     </div>
 
     <div class="nav-group">
