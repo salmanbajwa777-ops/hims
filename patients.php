@@ -448,7 +448,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     }
 }
 
-// ---------------- Search ----------------
+// ---------------- Search / recent patients ----------------
 $q = trim($_GET['q'] ?? '');
 $patients = [];
 if ($q !== '') {
@@ -464,6 +464,19 @@ if ($q !== '') {
         ORDER BY p.name ASC LIMIT 50
     ');
     $stmt->execute([$like, $like, $like, $like]);
+    $patients = $stmt->fetchAll();
+} else {
+    // No search yet: pre-load the 10 most recently registered patients (newest first)
+    // so the front desk can act on fresh registrations without typing a search.
+    $stmt = $pdo->query('
+        SELECT p.*, c.name AS city_name,
+            dc.name AS discount_category_name, dc.is_active AS discount_category_active,
+            (SELECT v.visit_date FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC LIMIT 1) AS last_visit
+        FROM patients p
+        LEFT JOIN cities c ON c.id = p.city_id
+        LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
+        ORDER BY p.id DESC LIMIT 10
+    ');
     $patients = $stmt->fetchAll();
 }
 
@@ -699,10 +712,15 @@ require __DIR__ . '/partials/sidebar.php';
                 <button class="btn secondary" type="submit">Search</button>
             </form>
 
-            <?php if ($q !== ''): ?>
+            <?php if ($q !== '' || !empty($patients)): ?>
             <div class="card">
+                <?php if ($q !== ''): ?>
                 <div class="section-title">Results</div>
                 <div class="section-sub"><?= count($patients) ?> patient<?= count($patients) === 1 ? '' : 's' ?> matched</div>
+                <?php else: ?>
+                <div class="section-title">Recently Registered</div>
+                <div class="section-sub">Last <?= count($patients) ?> registration<?= count($patients) === 1 ? '' : 's' ?> — newest first</div>
+                <?php endif; ?>
                 <?php if (empty($patients)): ?>
                     <div class="empty-state">No patients found for "<?= htmlspecialchars($q) ?>".</div>
                 <?php else: ?>
