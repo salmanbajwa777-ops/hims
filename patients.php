@@ -263,6 +263,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
     if ($phoneCc === '' || $phoneCc[0] !== '+') { $phoneCc = '+92'; }
     $phoneLocal = ltrim(preg_replace('/\D/', '', $_POST['phone'] ?? ''), '0');
     $phone = $phoneLocal !== '' ? $phoneCc . $phoneLocal : '';
+    // A Pakistan (+92) mobile local number is exactly 10 digits and never starts with 0
+    // (the leading 0 is stripped above, so a "0300…" entry lands as "300…" = 10 digits).
+    // Only enforced for +92; other country codes have their own lengths.
+    $phoneError = '';
+    if ($phoneCc === '+92' && !preg_match('/^[1-9]\d{9}$/', $phoneLocal)) {
+        $phoneError = 'Enter a valid 10-digit Pakistan mobile number (e.g. 3001234567).';
+    }
     $dob = trim($_POST['dob'] ?? '') ?: null;
     $gender = $_POST['gender'] ?? '';
     $cnic = trim($_POST['cnic'] ?? '') ?: null;
@@ -284,6 +291,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
     if ($name === '' || $phone === '' || !in_array($gender, ['MALE', 'FEMALE', 'OTHER'], true)) {
         $error = 'Name, phone, and gender are required.';
+    } elseif ($phoneError !== '') {
+        $error = $phoneError;
     } elseif ($registerOnly) {
         // Register-only path: minimal validation, then commit patient + MRN only.
         try {
@@ -1192,10 +1201,11 @@ require __DIR__ . '/partials/sidebar.php';
                                 <option value="+966">🇸🇦 +966</option>
                             </select>
                             <div class="cc-divider"></div>
-                            <input type="tel" id="phone" name="phone" inputmode="numeric" placeholder="3001234567" required>
+                            <input type="tel" id="phone" name="phone" inputmode="numeric" placeholder="3001234567"
+                                   maxlength="10" title="10 digits, and it can't start with 0" required>
                             <span class="flabel" data-for="phone">Phone <span class="req">*</span></span>
                         </div>
-                        <span class="hint">Type the local number — a leading 0 is dropped automatically.</span>
+                        <span class="hint">10-digit mobile number — don't type the leading 0.</span>
                     </div>
                     <div class="f">
                         <input type="date" id="dob" name="dob" class="always-float" placeholder=" ">
@@ -1556,6 +1566,13 @@ function fuApplyOverride() {
         form.querySelectorAll('input[name="payment_mode"]').forEach(function (el) {
             el.removeAttribute('required');
         });
+        // Same +92 phone rule as a normal save (form.submit() skips the submit listener).
+        if ((phoneCcSel ? phoneCcSel.value : '+92') === '+92'
+            && !/^[1-9]\d{9}$/.test(phoneInput.value)) {
+            phoneInput.setCustomValidity('Enter a 10-digit mobile number that does not start with 0.');
+            phoneInput.reportValidity();
+            return;
+        }
         if (form.reportValidity()) {
             btn.disabled = true;
             btn.textContent = 'Saving…';
@@ -1651,10 +1668,31 @@ document.querySelectorAll('.f > select').forEach(sel => {
 
 // ---- Phone: keep digits only, auto-drop leading zero(s) ----
 const phoneInput = document.getElementById('phone');
+const phoneCcSel = document.getElementById('phone_cc');
 phoneInput.addEventListener('input', () => {
+    // Digits only, drop leading zeros. For Pakistan (+92) a mobile local number is
+    // exactly 10 digits, so cap it there; other country codes keep their own lengths.
     let d = phoneInput.value.replace(/\D/g, '').replace(/^0+/, '');
+    if ((phoneCcSel ? phoneCcSel.value : '+92') === '+92') { d = d.slice(0, 10); }
     if (phoneInput.value !== d) phoneInput.value = d;
 });
+// Re-apply the cap when the country code changes (e.g. switching back to +92).
+if (phoneCcSel) {
+    phoneCcSel.addEventListener('change', () => phoneInput.dispatchEvent(new Event('input')));
+}
+// Block submit on an invalid +92 number with a clear message (server re-checks).
+const regForm = document.getElementById('patientForm');
+if (regForm) {
+    regForm.addEventListener('submit', (e) => {
+        if ((phoneCcSel ? phoneCcSel.value : '+92') === '+92'
+            && !/^[1-9]\d{9}$/.test(phoneInput.value)) {
+            e.preventDefault();
+            phoneInput.setCustomValidity('Enter a 10-digit mobile number that does not start with 0.');
+            phoneInput.reportValidity();
+        }
+    });
+    phoneInput.addEventListener('input', () => phoneInput.setCustomValidity(''));
+}
 
 const doctorSelect = document.getElementById('doctor');
 const typeField = document.getElementById('typeField');
