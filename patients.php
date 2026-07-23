@@ -12,6 +12,17 @@ $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$_SESSION['user_id']]);
 $currentUser = $stmt->fetch();
 
+// Doctors use this page as READ-ONLY patient lookup: no registration, no
+// invoicing, no mutations. Front-desk work stays with reception/admin even
+// though the DOCTOR role carries the page-view permission. Server-side gate —
+// any POST (register/invoice/discount/delete/ajax) from a doctor is refused,
+// and the register view below never renders for them.
+$isDoctorReadonly = ($_SESSION['base_role'] ?? '') === 'DOCTOR';
+if ($isDoctorReadonly && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    http_response_code(403);
+    exit('Forbidden — doctors have read-only patient lookup.');
+}
+
 // ---------------- AJAX: quick-add area (used from the registration panel) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_add_area') {
     header('Content-Type: application/json');
@@ -605,7 +616,8 @@ if ($q !== '') {
 
 // Full-page registration view: ?register=1 shows only the form (no list/search).
 // Also forced open when a submit failed validation so the entered data survives.
-$showRegister = isset($_GET['register']) || $error !== '';
+// Never for doctors — they get read-only lookup, so ?register=1 is ignored.
+$showRegister = !$isDoctorReadonly && (isset($_GET['register']) || $error !== '');
 $qhActive = $showRegister ? 'register' : 'patients';
 $qhBrand = false; // the sidebar already carries the HIMS mark
 
@@ -835,10 +847,10 @@ require __DIR__ . '/partials/sidebar.php';
             <?php if (!$showRegister): ?>
             <div class="page-head">
                 <div>
-                    <div class="page-title">Patients</div>
-                    <div class="page-sub">Search existing patients or register someone new</div>
+                    <div class="page-title"><?= $isDoctorReadonly ? 'Find Patient' : 'Patients' ?></div>
+                    <div class="page-sub"><?= $isDoctorReadonly ? 'Look up a patient by name, phone or MRN' : 'Search existing patients or register someone new' ?></div>
                 </div>
-                <a class="btn" href="patients.php?register=1">+ Register Patient</a>
+                <?php if (!$isDoctorReadonly): ?><a class="btn" href="patients.php?register=1">+ Register Patient</a><?php endif; ?>
             </div>
 
             <?php if ($success): ?>
@@ -867,7 +879,7 @@ require __DIR__ . '/partials/sidebar.php';
                 <?php else: ?>
                 <table>
                     <thead>
-                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>DOB / Gender</th><th>MRN</th><th>Last Visit</th><th>Discount</th><th>Actions</th><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
+                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>DOB / Gender</th><th>MRN</th><th>Last Visit</th><th>Discount</th><?php if (!$isDoctorReadonly): ?><th>Actions</th><?php endif; ?><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($patients as $p): ?>
@@ -916,6 +928,7 @@ require __DIR__ . '/partials/sidebar.php';
                                 <span class="muted">—</span>
                                 <?php endif; ?>
                             </td>
+                            <?php if (!$isDoctorReadonly): ?>
                             <td>
                                 <div class="row-acts">
                                     <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>)">New invoice</button>
@@ -923,6 +936,7 @@ require __DIR__ . '/partials/sidebar.php';
                                     <button class="qa" disabled title="Procedure billing is coming in a later phase">Procedure</button>
                                 </div>
                             </td>
+                            <?php endif; ?>
                             <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
                             <td>
                                 <form method="POST" action="patients.php" style="display:inline;" onsubmit="return confirm('Permanently delete <?= htmlspecialchars(addslashes($p['name'])) ?> (MRN <?= htmlspecialchars($p['mrn']) ?>)? This removes all their visit history and can\'t be undone.');">
