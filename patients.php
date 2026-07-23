@@ -596,50 +596,52 @@ if ($isDoctorReadonly) {
     // visit UNDER THIS DOCTOR (not the patient's global last visit), so the
     // column reflects "when I saw them". Search stays scoped to those patients;
     // the default view is the last 10 they saw, or a date-range roster.
+    // The doctor's own visits, aggregated to one row per patient (their last
+    // visit under this doctor). Kept as a derived table so the outer SELECT can
+    // pull p.*/city/category without fighting ONLY_FULL_GROUP_BY.
+    $mineSql = '
+        SELECT p.*, c.name AS city_name,
+            dc.name AS discount_category_name, dc.is_active AS discount_category_active,
+            seen.last_visit
+        FROM (
+            SELECT v.patient_id, MAX(v.visit_date) AS last_visit
+            FROM visits v
+            WHERE v.doctor_id = ? %RANGE%
+            GROUP BY v.patient_id
+        ) seen
+        JOIN patients p ON p.id = seen.patient_id
+        LEFT JOIN cities c ON c.id = p.city_id
+        LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
+        %WHERE%
+        ORDER BY seen.last_visit DESC%NAME% LIMIT %LIMIT%';
+
     if ($q !== '') {
         $like = '%' . $q . '%';
-        $stmt = $pdo->prepare('
-            SELECT p.*, c.name AS city_name,
-                dc.name AS discount_category_name, dc.is_active AS discount_category_active,
-                MAX(v.visit_date) AS last_visit
-            FROM patients p
-            JOIN visits v ON v.patient_id = p.id AND v.doctor_id = ?
-            LEFT JOIN cities c ON c.id = p.city_id
-            LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
-            WHERE (p.name LIKE ? OR p.phone LIKE ? OR p.father_name LIKE ? OR p.mrn LIKE ?)
-            GROUP BY p.id
-            ORDER BY last_visit DESC LIMIT 50
-        ');
+        $sql = str_replace(
+            ['%RANGE%', '%WHERE%', '%NAME%', '%LIMIT%'],
+            ['', 'WHERE (p.name LIKE ? OR p.phone LIKE ? OR p.father_name LIKE ? OR p.mrn LIKE ?)', '', '50'],
+            $mineSql
+        );
+        $stmt = $pdo->prepare($sql);
         $stmt->execute([$doctorId, $like, $like, $like, $like]);
         $patients = $stmt->fetchAll();
     } elseif ($docRangeActive) {
-        // All patients this doctor saw within the date range, most recent first.
-        $stmt = $pdo->prepare('
-            SELECT p.*, c.name AS city_name,
-                dc.name AS discount_category_name, dc.is_active AS discount_category_active,
-                MAX(v.visit_date) AS last_visit
-            FROM patients p
-            JOIN visits v ON v.patient_id = p.id AND v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
-            LEFT JOIN cities c ON c.id = p.city_id
-            LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
-            GROUP BY p.id
-            ORDER BY last_visit DESC, p.name ASC LIMIT 500
-        ');
+        $sql = str_replace(
+            ['%RANGE%', '%WHERE%', '%NAME%', '%LIMIT%'],
+            ['AND v.visit_date BETWEEN ? AND ?', '', ', p.name ASC', '500'],
+            $mineSql
+        );
+        $stmt = $pdo->prepare($sql);
         $stmt->execute([$doctorId, $docFrom, $docTo]);
         $patients = $stmt->fetchAll();
     } else {
         // Default: the 10 patients this doctor most recently saw.
-        $stmt = $pdo->prepare('
-            SELECT p.*, c.name AS city_name,
-                dc.name AS discount_category_name, dc.is_active AS discount_category_active,
-                MAX(v.visit_date) AS last_visit
-            FROM patients p
-            JOIN visits v ON v.patient_id = p.id AND v.doctor_id = ?
-            LEFT JOIN cities c ON c.id = p.city_id
-            LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
-            GROUP BY p.id
-            ORDER BY last_visit DESC LIMIT 10
-        ');
+        $sql = str_replace(
+            ['%RANGE%', '%WHERE%', '%NAME%', '%LIMIT%'],
+            ['', '', '', '10'],
+            $mineSql
+        );
+        $stmt = $pdo->prepare($sql);
         $stmt->execute([$doctorId]);
         $patients = $stmt->fetchAll();
     }
@@ -736,6 +738,14 @@ $headExtra = <<<CSS
 .search-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.12); background: #fff; }
 .search-field .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); display: flex; }
 .search-field .icon svg { width: 17px; height: 17px; }
+
+/* Doctor date-range roster bar */
+.range-bar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; padding: 16px 20px; }
+.range-lead { font-size: 13.5px; font-weight: 600; color: var(--text-secondary); align-self: center; }
+.range-field { display: flex; flex-direction: column; gap: 4px; }
+.range-field label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.range-field input[type=date] { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); }
+.range-field input[type=date]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.12); background: #fff; }
 
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
@@ -918,26 +928,43 @@ require __DIR__ . '/partials/sidebar.php';
             <form class="card search-card" method="GET" action="patients.php">
                 <div class="search-field">
                     <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></span>
-                    <input type="text" name="q" placeholder="Search by name, phone, father's name, or MRN..." value="<?= htmlspecialchars($q) ?>">
+                    <input type="text" name="q" placeholder="<?= $isDoctorReadonly ? 'Search patients you have seen…' : "Search by name, phone, father's name, or MRN..." ?>" value="<?= htmlspecialchars($q) ?>">
                 </div>
                 <button class="btn secondary" type="submit">Search</button>
             </form>
 
-            <?php if ($q !== '' || !empty($patients)): ?>
+            <?php if ($isDoctorReadonly && $q === ''): ?>
+            <!-- Doctor date-range roster: default shows the recent 10; pick a range for more. -->
+            <form class="card range-bar" method="GET" action="patients.php">
+                <div class="range-lead">Show patients I saw</div>
+                <div class="range-field"><label for="d-from">From</label><input id="d-from" type="date" name="from" value="<?= htmlspecialchars($docFrom) ?>" max="<?= date('Y-m-d') ?>"></div>
+                <div class="range-field"><label for="d-to">To</label><input id="d-to" type="date" name="to" value="<?= htmlspecialchars($docTo ?: date('Y-m-d')) ?>" max="<?= date('Y-m-d') ?>"></div>
+                <button class="btn" type="submit">Apply range</button>
+                <?php if ($docRangeActive): ?><a class="btn secondary" href="patients.php">Back to recent 10</a><?php endif; ?>
+            </form>
+            <?php endif; ?>
+
+            <?php if ($q !== '' || !empty($patients) || ($isDoctorReadonly && $docRangeActive)): ?>
             <div class="card">
                 <?php if ($q !== ''): ?>
                 <div class="section-title">Results</div>
-                <div class="section-sub"><?= count($patients) ?> patient<?= count($patients) === 1 ? '' : 's' ?> matched</div>
+                <div class="section-sub"><?= count($patients) ?> patient<?= count($patients) === 1 ? '' : 's' ?> matched<?= $isDoctorReadonly ? ' from your visits' : '' ?></div>
+                <?php elseif ($isDoctorReadonly && $docRangeActive): ?>
+                <div class="section-title">Patients I saw · <?= date('d M Y', strtotime($docFrom)) ?> – <?= date('d M Y', strtotime($docTo)) ?></div>
+                <div class="section-sub"><?= count($patients) ?> patient<?= count($patients) === 1 ? '' : 's' ?><?= count($patients) >= 500 ? ' (showing first 500 — narrow the range)' : '' ?></div>
+                <?php elseif ($isDoctorReadonly): ?>
+                <div class="section-title">Recent 10</div>
+                <div class="section-sub">The last <?= count($patients) ?> patient<?= count($patients) === 1 ? '' : 's' ?> you saw — pick a date range above for more</div>
                 <?php else: ?>
                 <div class="section-title">Recently Registered</div>
                 <div class="section-sub">Last <?= count($patients) ?> registration<?= count($patients) === 1 ? '' : 's' ?> — newest first</div>
                 <?php endif; ?>
                 <?php if (empty($patients)): ?>
-                    <div class="empty-state">No patients found for "<?= htmlspecialchars($q) ?>".</div>
+                    <div class="empty-state"><?= $q !== '' ? 'No patients found for "' . htmlspecialchars($q) . '".' : 'You have not seen any patients in this date range.' ?></div>
                 <?php else: ?>
                 <table>
                     <thead>
-                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>DOB / Gender</th><th>MRN</th><th>Last Visit</th><th>Discount</th><?php if (!$isDoctorReadonly): ?><th>Actions</th><?php endif; ?><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
+                        <tr><th>Patient</th><th>Father / Guardian</th><th>Phone</th><th>DOB / Gender</th><th>MRN</th><th><?= $isDoctorReadonly ? 'Last Seen' : 'Last Visit' ?></th><th>Discount</th><?php if (!$isDoctorReadonly): ?><th>Actions</th><?php endif; ?><?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?><th></th><?php endif; ?></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($patients as $p): ?>
