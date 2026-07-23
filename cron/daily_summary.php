@@ -80,6 +80,21 @@ try {
     ")->fetchAll();
 } catch (Throwable $e) { /* expense tables may not exist yet */ }
 
+// ---- Bookings today (this runs at 21:00, BEFORE the 22:00 no-show sweep, so
+// unconsumed bookings are reported while they're still actionable) ----
+$bkStats = null;
+try {
+    $bkStats = $pdo->query("
+        SELECT COUNT(*) AS total,
+               SUM(status = 'ARRIVED') AS arrived,
+               SUM(status = 'BOOKED') AS still_open,
+               SUM(status = 'CANCELLED') AS cancelled,
+               SUM(status = 'NO_SHOW') AS no_show
+        FROM bookings WHERE booking_date = CURDATE()
+    ")->fetch();
+    if ((int) $bkStats['total'] === 0) { $bkStats = null; }
+} catch (Throwable $e) { /* bookings table may not exist yet */ }
+
 // ---- Email failures today (so a broken SMTP surfaces in the summary itself) ----
 $mailFails = 0;
 try {
@@ -109,6 +124,17 @@ if ($expByCat) {
     }
     $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#41504f;">Expenses by category: '
         . implode(' · ', $expLines) . '</p>';
+}
+
+if ($bkStats) {
+    $bkLine = (int) $bkStats['total'] . ' booked — ' . (int) $bkStats['arrived'] . ' arrived';
+    if ((int) $bkStats['cancelled'] > 0) { $bkLine .= ', ' . (int) $bkStats['cancelled'] . ' cancelled'; }
+    if ((int) $bkStats['no_show'] > 0)   { $bkLine .= ', ' . (int) $bkStats['no_show'] . ' no-show'; }
+    $body .= '<p style="margin:10px 0 0;font-size:12.5px;color:#41504f;">Phone bookings today: ' . $bkLine . '.</p>';
+    if ((int) $bkStats['still_open'] > 0) {
+        $body .= '<p style="margin:4px 0 0;font-size:12.5px;color:#b45309;"><strong>'
+            . (int) $bkStats['still_open'] . ' booking(s) still unconsumed</strong> — the 10 pm sweep will mark them no-show unless the patient arrives.</p>';
+    }
 }
 
 if ($byDoctor) {

@@ -202,6 +202,90 @@ function notify_staff_welcome(PDO $pdo, int $userId, string $tempPassword): void
     } catch (Throwable $e) { /* best-effort */ }
 }
 
+/** New phone booking taken → the booked doctor. Amount-less by design: fees
+ *  are an arrival-time concern (revisit engine + discounts), never quoted on
+ *  the phone. */
+function notify_booking_created(PDO $pdo, int $bookingId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT bk.person_name, bk.phone, bk.booking_date, bk.preferred_time, bk.note,
+                   bk.doctor_id, dct.label AS purpose,
+                   p.name AS patient_name, p.mrn,
+                   cu.name AS taken_by
+            FROM bookings bk
+            JOIN doctor_consult_types dct ON dct.id = bk.doctor_consult_type_id
+            LEFT JOIN patients p ON p.id = bk.patient_id
+            LEFT JOIN users cu ON cu.id = bk.created_by_id
+            WHERE bk.id = ?
+        ');
+        $stmt->execute([$bookingId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $docEmail = user_email($pdo, (int) $r['doctor_id']);
+        if (!$docEmail) { return; }
+
+        $who = $r['patient_name']
+            ? $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')'
+            : $r['person_name'] . ' (new caller)';
+        $kv = [
+            'Patient'  => $who,
+            'Purpose'  => $r['purpose'],
+            'Date'     => date('l, d M Y', strtotime($r['booking_date'])),
+        ];
+        if ($r['preferred_time']) { $kv['Preferred time'] = $r['preferred_time']; }
+        if ($r['note'])           { $kv['Note'] = $r['note']; }
+        $kv['Phone']    = $r['phone'];
+        $kv['Taken by'] = $r['taken_by'] ?: 'Reception';
+
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Reception has booked an appointment under your name.</p>'
+            . mail_kv($kv);
+        send_mail($pdo, $docEmail,
+            'New booking — ' . $r['person_name'] . ' (' . $r['purpose'] . ', ' . date('d M', strtotime($r['booking_date'])) . ')',
+            mail_template('New Appointment Booked', $body),
+            'booking:' . $bookingId);
+    } catch (Throwable $e) { /* never break the page for a notification */ }
+}
+
+/** Booking cancelled → the booked doctor, with the reason. */
+function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT bk.person_name, bk.booking_date, bk.cancel_reason,
+                   bk.doctor_id, dct.label AS purpose,
+                   p.name AS patient_name, p.mrn,
+                   cu.name AS cancelled_by
+            FROM bookings bk
+            JOIN doctor_consult_types dct ON dct.id = bk.doctor_consult_type_id
+            LEFT JOIN patients p ON p.id = bk.patient_id
+            LEFT JOIN users cu ON cu.id = bk.cancelled_by_id
+            WHERE bk.id = ?
+        ');
+        $stmt->execute([$bookingId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $docEmail = user_email($pdo, (int) $r['doctor_id']);
+        if (!$docEmail) { return; }
+
+        $who = $r['patient_name']
+            ? $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')'
+            : $r['person_name'];
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">An appointment booked under your name has been cancelled.</p>'
+            . mail_kv([
+                'Patient'      => $who,
+                'Purpose'      => $r['purpose'],
+                'Was booked for' => date('l, d M Y', strtotime($r['booking_date'])),
+                'Reason'       => $r['cancel_reason'] ?: '—',
+                'Cancelled by' => $r['cancelled_by'] ?: 'Reception',
+            ]);
+        send_mail($pdo, $docEmail,
+            'Booking cancelled — ' . $r['person_name'] . ' (' . date('d M', strtotime($r['booking_date'])) . ')',
+            mail_template('Appointment Cancelled', $body),
+            'booking-cancel:' . $bookingId);
+    } catch (Throwable $e) { /* never break the page for a notification */ }
+}
+
 /** Day closed by reception → admin alert + the admin named on the handover. */
 function notify_day_closed(PDO $pdo, int $closingId): void {
     try {

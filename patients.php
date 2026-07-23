@@ -83,6 +83,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'revisit
     exit;
 }
 
+// ---------------- AJAX: today's open bookings for a phone / patient ----------------
+// The booking-match guard (Popup B): before an invoice is raised, check whether
+// this phone (or this patient) has a live booking today, so the desk can
+// consume the appointment instead of silently generating a fresh walk-in that
+// would later rot into a false no-show.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'booking_check') {
+    header('Content-Type: application/json');
+    $phone = trim($_GET['phone'] ?? '');
+    $pid = (int) ($_GET['patient_id'] ?? 0);
+    $rows = [];
+    try {
+        if ($pid > 0) {
+            // Revisit path: match by the patient link OR the patient's own phone.
+            $stmt = $pdo->prepare("
+                SELECT bk.id, bk.person_name, bk.preferred_time, bk.note,
+                       bk.doctor_id, bk.doctor_consult_type_id,
+                       du.name AS doctor_name, dct.label AS purpose
+                FROM bookings bk
+                JOIN users du ON du.id = bk.doctor_id
+                JOIN doctor_consult_types dct ON dct.id = bk.doctor_consult_type_id
+                WHERE bk.booking_date = CURDATE() AND bk.status = 'BOOKED'
+                  AND (bk.patient_id = ? OR bk.phone = (SELECT phone FROM patients WHERE id = ?))
+                ORDER BY bk.patient_id = ? DESC, bk.created_at
+            ");
+            $stmt->execute([$pid, $pid, $pid]);
+            $rows = $stmt->fetchAll();
+        } elseif ($phone !== '') {
+            $stmt = $pdo->prepare("
+                SELECT bk.id, bk.person_name, bk.preferred_time, bk.note,
+                       bk.doctor_id, bk.doctor_consult_type_id,
+                       du.name AS doctor_name, dct.label AS purpose
+                FROM bookings bk
+                JOIN users du ON du.id = bk.doctor_id
+                JOIN doctor_consult_types dct ON dct.id = bk.doctor_consult_type_id
+                WHERE bk.booking_date = CURDATE() AND bk.status = 'BOOKED' AND bk.phone = ?
+                ORDER BY bk.created_at
+            ");
+            $stmt->execute([$phone]);
+            $rows = $stmt->fetchAll();
+        }
+    } catch (Throwable $e) {
+        // bookings table missing — feature silently dormant until the migration runs.
+    }
+    echo json_encode(['bookings' => $rows]);
+    exit;
+}
+
 // ---------------- AJAX: duplicate-patient check ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'check_duplicate') {
     header('Content-Type: application/json');
@@ -107,10 +154,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'check_d
     exit;
 }
 
+/**
+ * Consume a booking inside the caller's open transaction: link the visit and
+ * flip BOOKED → ARRIVED. Deliberately called at SAVE time, never when the
+ * popup's "Yes" is clicked — abandoning the form must leave the booking live,
+ * so a dangling ARRIVED-without-visit can never exist. The status guard also
+ * makes double-submits harmless. Best-effort: a missing bookings table (or a
+ * booking already consumed elsewhere) never fails the registration.
+ */
+function consume_booking(PDO $pdo, int $bookingId, int $visitId): void {
+    if ($bookingId <= 0) { return; }
+    try {
+        $upd = $pdo->prepare("UPDATE bookings SET status = 'ARRIVED', visit_id = ? WHERE id = ? AND status = 'BOOKED'");
+        $upd->execute([$visitId, $bookingId]);
+        if ($upd->rowCount()) {
+            $pdo->prepare('UPDATE visits SET booking_id = ? WHERE id = ?')->execute([$bookingId, $visitId]);
+        }
+    } catch (Throwable $e) { /* bookings migration not run yet */ }
+}
+
+/**
+ * Authoritative server-side re-check for the booking-match guard: the client
+ * popup can be skipped by a fast Enter, so the POST itself looks up any live
+ * booking for today on this phone/patient. Returns the matches (empty when the
+ * form already answered the question via booking_id / booking_dismissed).
+ */
+function pending_booking_guard(PDO $pdo, string $phone, int $patientId = 0): array {
+    if (($_POST['booking_id'] ?? '') !== '' || ($_POST['booking_dismissed'] ?? '') === '1') {
+        return []; // desk already said Yes (consume) or No (separate walk-in)
+    }
+    try {
+        if ($patientId > 0) {
+            $stmt = $pdo->prepare("
+                SELECT bk.id, bk.person_name, du.name AS doctor_name, dct.label AS purpose
+                FROM bookings bk
+                JOIN users du ON du.id = bk.doctor_id
+                JOIN doctor_consult_types dct ON dct.id = bk.doctor_consult_type_id
+                WHERE bk.booking_date = CURDATE() AND bk.status = 'BOOKED'
+                  AND (bk.patient_id = ? OR bk.phone = (SELECT phone FROM patients WHERE id = ?))
+            ");
+            $stmt->execute([$patientId, $patientId]);
+        } else {
+            if ($phone === '') { return []; }
+            $stmt = $pdo->prepare("
+                SELECT bk.id, bk.person_name, du.name AS doctor_name, dct.label AS purpose
+                FROM bookings bk
+                JOIN users du ON du.id = bk.doctor_id
+                JOIN doctor_consult_types dct ON dct.id = bk.doctor_consult_type_id
+                WHERE bk.booking_date = CURDATE() AND bk.status = 'BOOKED' AND bk.phone = ?
+            ");
+            $stmt->execute([$phone]);
+        }
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return []; // bookings migration not run yet
+    }
+}
+
 // ---------------- Register patient + create visit (one transaction) ----------------
 $error = '';
 $success = '';
 $successVisit = null;
+// Set when the server-side guard interrupts a submit: re-renders the form with
+// the booking question asked as a banner instead of the JS popup.
+$pendingBookings = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register_patient') {
     $name = trim($_POST['name'] ?? '');
@@ -138,6 +245,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
         $error = 'Name, phone, and gender are required.';
     } elseif ($doctorId <= 0 || $consultTypeId <= 0 || !in_array($paymentMode, ['CASH', 'DIGITAL'], true)) {
         $error = 'Doctor, consultation type, and payment mode are required.';
+    } elseif (($pendingBookings = pending_booking_guard($pdo, $phone)) !== []) {
+        // Authoritative booking-match guard: this phone has a live booking today
+        // and the form answered neither Yes nor No — re-render with the question.
+        $error = 'This number has a booking today — please answer the appointment question below before saving.';
     } else {
         // Fee is always looked up server-side from doctor_consult_types — never trust a
         // client-submitted fee value, even though the UI already disables that field.
@@ -219,6 +330,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 ]);
                 $visitId = (int) $pdo->lastInsertId();
 
+                // Booking consumed at Save, in the same transaction as the visit
+                // — the popup's "Yes" only stashed the id in a hidden field.
+                consume_booking($pdo, (int) ($_POST['booking_id'] ?? 0), $visitId);
+
                 // Registration doubles as checkout: the consultation invoice is raised now so
                 // the front desk can print it straight away instead of revisiting checkout.php.
                 $typeStmt = $pdo->prepare('SELECT label FROM doctor_consult_types WHERE id = ?');
@@ -291,6 +406,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
     if (!$patient || !$ctRow || !in_array($paymentMode, ['CASH', 'DIGITAL'], true)) {
         $error = 'Pick a patient, doctor, consultation type and payment mode.';
+    } elseif (pending_booking_guard($pdo, '', $patientId) !== []) {
+        // The follow-up panel asks its booking question via the JS popup before
+        // submit; a bypassed popup lands here. No form re-render path for the
+        // modal, so reject with instructions rather than losing the answer.
+        $error = 'This patient has a booking today — reopen "New invoice" and answer the appointment prompt (it appears when you pick the patient).';
     } else {
         $fullFee = (float) $ctRow['fee'];
         $quote = revisit_consultation_fee($pdo, $patientId, $doctorId, $consultTypeId, $fullFee);
@@ -347,6 +467,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 $categoryPct > 0 ? $categoryId : null, $categoryPct, $categoryAmount,
             ]);
             $visitId = (int) $pdo->lastInsertId();
+
+            // Booking consumed at Save, same transaction — see consume_booking().
+            consume_booking($pdo, (int) ($_POST['booking_id'] ?? 0), $visitId);
 
             $billId = create_bill_for_visit(
                 $pdo, $visitId, $ctRow['label'], $fullFee, $discountPct, (int) $_SESSION['user_id'], $paymentMode
@@ -485,6 +608,21 @@ if ($q !== '') {
 $showRegister = isset($_GET['register']) || $error !== '';
 $qhActive = $showRegister ? 'register' : 'patients';
 $qhBrand = false; // the sidebar already carries the HIMS mark
+
+// Arrived → register from a booking (?booking=ID): pre-fill phone/name/doctor/
+// purpose from the booking and pre-answer the popup. Only a still-open booking
+// pre-fills — a consumed/cancelled id silently degrades to a plain blank form.
+$prefillBooking = null;
+if ($showRegister && (int) ($_GET['booking'] ?? 0) > 0) {
+    try {
+        $pbStmt = $pdo->prepare("
+            SELECT id, phone, person_name, doctor_id, doctor_consult_type_id
+            FROM bookings WHERE id = ? AND status = 'BOOKED'
+        ");
+        $pbStmt->execute([(int) $_GET['booking']]);
+        $prefillBooking = $pbStmt->fetch() ?: null;
+    } catch (Throwable $e) { /* bookings migration not run yet */ }
+}
 
 $doctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
 // Active discount categories for the admin's assignment dropdown in the results table.
@@ -811,6 +949,26 @@ require __DIR__ . '/partials/sidebar.php';
 
         <form class="patient-form" method="POST" action="patients.php" id="patientForm">
             <input type="hidden" name="action" value="register_patient">
+            <!-- Booking-match guard state: booking_id = "Yes, this visit is that
+                 appointment" (consumed at save); booking_dismissed = "No, separate
+                 walk-in" (booking stays live). Both empty → the POST rejects and
+                 re-renders; re-entering the phone re-asks via the popup. -->
+            <input type="hidden" name="booking_id" id="regBookingId" value="">
+            <input type="hidden" name="booking_dismissed" id="regBookingDismissed" value="">
+
+            <?php if ($pendingBookings): ?>
+            <!-- Server-side guard tripped (client popup bypassed). The re-render
+                 doesn't echo the submitted values, so no resubmit shortcut here —
+                 name who's booked and let the phone field re-trigger the popup. -->
+            <div class="match-banner show">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+                <div style="flex:1;">
+                    That number has a booking today:
+                    <?php foreach ($pendingBookings as $i => $pb): ?><?= $i ? '; ' : ' ' ?><b><?= htmlspecialchars($pb['person_name']) ?></b> (<?= htmlspecialchars($pb['doctor_name']) ?>, <?= htmlspecialchars($pb['purpose']) ?>)<?php endforeach; ?>.
+                    Re-enter the phone number below — you'll be asked whether this visit is that appointment.
+                </div>
+            </div>
+            <?php endif; ?>
 
             <div class="match-banner" id="matchBanner">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
@@ -980,6 +1138,9 @@ require __DIR__ . '/partials/sidebar.php';
         <form method="POST" action="patients.php" id="fuForm">
             <input type="hidden" name="action" value="register_followup">
             <input type="hidden" name="patient_id" id="fuPatientId">
+            <!-- Booking-match guard state — see the registration form's twin fields. -->
+            <input type="hidden" name="booking_id" id="fuBookingId" value="">
+            <input type="hidden" name="booking_dismissed" id="fuBookingDismissed" value="">
             <div class="fu-head">
                 <div>
                     <div class="fu-eyebrow">New consultation invoice</div>
@@ -1024,6 +1185,74 @@ require __DIR__ . '/partials/sidebar.php';
         </form>
     </div>
 </div>
+<!-- Booking-match guard (Popup B) — shared by registration and follow-up.
+     "Yes" pre-fills doctor/purpose (still editable) and stashes booking_id; the
+     SAVE consumes the booking, not this click. "No" leaves the booking live. -->
+<style>
+.bg-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:80; align-items:center; justify-content:center; padding:20px; }
+.bg-overlay.open { display:flex; }
+.bg-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:460px; box-shadow:var(--shadow-lg); overflow:hidden; }
+.bg-head { padding:20px 22px 6px; }
+.bg-eyebrow { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--primary); }
+.bg-title { font-size:17px; font-weight:700; margin-top:2px; }
+.bg-sub { font-size:12.5px; color:var(--text-muted); margin-top:3px; }
+.bg-body { padding:10px 22px 6px; display:flex; flex-direction:column; gap:8px; }
+.bg-row { display:flex; align-items:center; gap:12px; border:1px solid var(--border); border-radius:12px; padding:11px 14px; cursor:pointer; }
+.bg-row:hover { border-color:var(--primary); background:var(--primary-light); }
+.bg-row .b-name { font-size:13.5px; font-weight:600; }
+.bg-row .b-meta { font-size:12px; color:var(--text-muted); margin-top:1px; }
+.bg-row .b-yes { margin-left:auto; font-size:11.5px; font-weight:700; color:var(--primary-dark); white-space:nowrap; }
+.bg-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 22px 20px; }
+</style>
+<div class="bg-overlay" id="bgOverlay">
+    <div class="bg-modal" role="dialog" aria-modal="true" aria-labelledby="bgTitle">
+        <div class="bg-head">
+            <div class="bg-eyebrow">Booking found</div>
+            <div class="bg-title" id="bgTitle">This number has a booking today</div>
+            <div class="bg-sub">Is this visit that appointment? Choosing it pre-fills the doctor and purpose — you can still change them at the counter.</div>
+        </div>
+        <div class="bg-body" id="bgList"></div>
+        <div class="bg-foot">
+            <button type="button" class="btn secondary" id="bgNoBtn">No — separate walk-in</button>
+        </div>
+    </div>
+</div>
+<script>
+// ---------------- Booking-match guard (Popup B) ----------------
+// bgAsk(bookings, onYes, onNo): shows the popup once per lookup. The AJAX
+// pre-check drives it; the POST re-checks server-side so a bypassed popup
+// still gets caught (see pending_booking_guard()).
+let bgOnYes = null, bgOnNo = null;
+function bgEscape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function bgAsk(bookings, onYes, onNo) {
+    if (!bookings || !bookings.length) { return; }
+    bgOnYes = onYes; bgOnNo = onNo;
+    const list = document.getElementById('bgList');
+    list.innerHTML = '';
+    bookings.forEach(b => {
+        const row = document.createElement('div');
+        row.className = 'bg-row';
+        row.innerHTML = '<span><span class="b-name">' + bgEscape(b.person_name) + '</span>'
+            + '<div class="b-meta">' + bgEscape(b.doctor_name) + ' &middot; ' + bgEscape(b.purpose)
+            + (b.preferred_time ? ' &middot; ' + bgEscape(b.preferred_time) : '') + '</div></span>'
+            + '<span class="b-yes">Yes — use booking</span>';
+        row.addEventListener('click', () => {
+            document.getElementById('bgOverlay').classList.remove('open');
+            if (bgOnYes) bgOnYes(b);
+        });
+        list.appendChild(row);
+    });
+    document.getElementById('bgOverlay').classList.add('open');
+}
+document.getElementById('bgNoBtn').addEventListener('click', () => {
+    document.getElementById('bgOverlay').classList.remove('open');
+    if (bgOnNo) bgOnNo();
+});
+// Deliberately NO backdrop-click / Escape close: the receptionist must answer
+// Yes or No — silently dismissing is exactly the mistake this popup prevents.
+</script>
 <script>
 let fuFullFee = 0, fuQuoteFee = 0, fuCatPct = 0, fuCatName = '', fuQuoteLabel = '', fuQuoteType = '';
 function openFollowup(pid, name, mrn) {
@@ -1035,12 +1264,32 @@ function openFollowup(pid, name, mrn) {
     document.getElementById('fuTag').style.display = 'none';
     document.getElementById('fuOverride').checked = false;
     document.getElementById('fuSubmit').disabled = true;
+    document.getElementById('fuBookingId').value = '';
+    document.getElementById('fuBookingDismissed').value = '';
     document.getElementById('fuOverlay').classList.add('open');
+
+    // Booking-match guard: does this patient (or their phone) have a live
+    // booking today? Ask before the desk fills the panel.
+    fetch('patients.php?action=booking_check&patient_id=' + pid)
+        .then(r => r.json())
+        .then(res => {
+            bgAsk(res.bookings, function (b) {
+                // Yes: stash the id (consumed at save) and pre-fill — still editable.
+                document.getElementById('fuBookingId').value = b.id;
+                const dSel = document.getElementById('fuDoctor');
+                if (dSel.querySelector('option[value="' + b.doctor_id + '"]')) {
+                    dSel.value = String(b.doctor_id);
+                    fuLoadTypes(b.doctor_consult_type_id);
+                }
+            }, function () {
+                document.getElementById('fuBookingDismissed').value = '1';
+            });
+        });
 }
 function fuClose() { document.getElementById('fuOverlay').classList.remove('open'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') fuClose(); });
 
-function fuLoadTypes() {
+function fuLoadTypes(preselectTypeId) {
     const did = document.getElementById('fuDoctor').value;
     const t = document.getElementById('fuType');
     t.innerHTML = '<option value="">Loading…</option>'; t.disabled = true;
@@ -1057,6 +1306,11 @@ function fuLoadTypes() {
                 t.appendChild(o);
             });
             t.disabled = false;
+            // Booking pre-fill: select the booked purpose and quote it (editable).
+            if (preselectTypeId && t.querySelector('option[value="' + preselectTypeId + '"]')) {
+                t.value = String(preselectTypeId);
+                fuQuote();
+            }
         });
 }
 function fuQuote() {
@@ -1176,6 +1430,9 @@ const feeField = document.getElementById('feeField');
 const feeDisplay = document.getElementById('fee_display');
 
 let currentDoctorTypes = [];
+// Set by the booking-match guard before it triggers a doctor change: carries
+// the booked purpose across the async type-list rebuild (one-shot).
+let bookingPreselectTypeId = null;
 
 function applyFee() {
     const chosen = currentDoctorTypes.find(t => String(t.id) === typeSelect.value);
@@ -1212,7 +1469,10 @@ doctorSelect.addEventListener('change', () => {
                 return;
             }
 
-            const defaultType = types.find(t => Number(t.is_default) === 1) || types[0];
+            // A booking pre-fill wins over the doctor's default type (one-shot).
+            const booked = bookingPreselectTypeId ? types.find(t => Number(t.id) === Number(bookingPreselectTypeId)) : null;
+            bookingPreselectTypeId = null;
+            const defaultType = booked || types.find(t => Number(t.is_default) === 1) || types[0];
             typeSelect.innerHTML = types.map(t =>
                 `<option value="${t.id}" ${t.id === defaultType.id ? 'selected' : ''}>${t.label}</option>`
             ).join('');
@@ -1349,6 +1609,76 @@ function checkForMatch() {
     document.getElementById(id).addEventListener('input', checkForMatch);
     document.getElementById(id).addEventListener('change', checkForMatch);
 });
+
+// ---------------- Booking-match guard on the phone field ----------------
+// When the typed number matches a live booking today, ask before the desk goes
+// any further. Asked once per distinct number; the POST re-checks regardless.
+let bkGuardAskedFor = '';
+function regBookingCheck() {
+    const ccSel = document.getElementById('phone_cc');
+    const local = phoneInput.value.replace(/\D/g, '').replace(/^0+/, '');
+    if (local.length < 9) return; // wait for a plausibly-complete number
+    const e164 = (ccSel ? ccSel.value : '+92') + local;
+    if (e164 === bkGuardAskedFor) return;
+    bkGuardAskedFor = e164;
+    // New number: previous answer no longer applies.
+    document.getElementById('regBookingId').value = '';
+    document.getElementById('regBookingDismissed').value = '';
+    fetch('patients.php?action=booking_check&phone=' + encodeURIComponent(e164))
+        .then(r => r.json())
+        .then(res => {
+            bgAsk(res.bookings, function (b) {
+                // Yes: stash the id (consumed at save) and pre-fill — still editable.
+                document.getElementById('regBookingId').value = b.id;
+                if (b.person_name && !document.getElementById('name').value.trim()) {
+                    document.getElementById('name').value = b.person_name;
+                }
+                if (doctorSelect.querySelector('option[value="' + b.doctor_id + '"]')) {
+                    doctorSelect.value = String(b.doctor_id);
+                    setFilled(doctorSelect);
+                    bookingPreselectTypeId = b.doctor_consult_type_id;
+                    doctorSelect.dispatchEvent(new Event('change'));
+                }
+            }, function () {
+                document.getElementById('regBookingDismissed').value = '1';
+            });
+        })
+        .catch(() => {});
+}
+phoneInput.addEventListener('blur', regBookingCheck);
+phoneInput.addEventListener('change', regBookingCheck);
+
+// Arrived → register from bookings.php (?booking=ID): the booking pre-answers
+// the popup and pre-fills phone/name/doctor/purpose — everything stays editable.
+<?php if ($prefillBooking): ?>
+(function () {
+    const pb = <?= json_encode([
+        'id' => (int) $prefillBooking['id'],
+        'phone' => $prefillBooking['phone'],
+        'person_name' => $prefillBooking['person_name'],
+        'doctor_id' => (int) $prefillBooking['doctor_id'],
+        'consult_type_id' => (int) $prefillBooking['doctor_consult_type_id'],
+    ]) ?>;
+    document.getElementById('regBookingId').value = pb.id;
+    bkGuardAskedFor = pb.phone; // suppress the popup — already answered
+
+    // Split E.164 back into the cc dropdown + local digits (fall back to +92).
+    const ccSel = document.getElementById('phone_cc');
+    let local = pb.phone;
+    for (const opt of ccSel.options) {
+        if (pb.phone.indexOf(opt.value) === 0) { ccSel.value = opt.value; local = pb.phone.slice(opt.value.length); break; }
+    }
+    phoneInput.value = local.replace(/\D/g, '');
+    document.getElementById('name').value = pb.person_name;
+
+    if (doctorSelect.querySelector('option[value="' + pb.doctor_id + '"]')) {
+        doctorSelect.value = String(pb.doctor_id);
+        setFilled(doctorSelect);
+        bookingPreselectTypeId = pb.consult_type_id;
+        doctorSelect.dispatchEvent(new Event('change'));
+    }
+})();
+<?php endif; ?>
 </script>
 <?php endif; ?>
 <script src="assets/js/date-picker.js"></script>

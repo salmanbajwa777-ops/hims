@@ -211,6 +211,35 @@ if ($showTimingsPopup) {
     $_SESSION['timings_popup_shown'] = 1;
 }
 
+// ---------------- Today's bookings (shift-start popup B-side + panel) ----------------
+// Phone appointments still expected today. Shown once per session as a popup
+// (sequenced AFTER the timings popup — never stacked) and always as a panel.
+// try/catch so the console loads if sql/add_bookings.sql hasn't been run yet.
+$todayBookings = [];
+try {
+    $todayBookings = $pdo->query("
+        SELECT bk.id, bk.person_name, bk.phone, bk.preferred_time, bk.note, bk.status,
+               bk.patient_id, p.name AS patient_name, p.mrn,
+               du.name AS doctor_name, dct.label AS purpose
+        FROM bookings bk
+        JOIN users du ON du.id = bk.doctor_id
+        JOIN doctor_consult_types dct ON dct.id = bk.doctor_consult_type_id
+        LEFT JOIN patients p ON p.id = bk.patient_id
+        WHERE bk.booking_date = CURDATE() AND bk.status IN ('BOOKED', 'ARRIVED')
+        ORDER BY (bk.status = 'ARRIVED'), du.name, bk.created_at
+    ")->fetchAll();
+} catch (Throwable $e) {
+    // Table missing — feature silently dormant until the migration runs.
+}
+$openBookings = array_values(array_filter($todayBookings, fn ($b) => $b['status'] === 'BOOKED'));
+
+// Auto-open once per session, only when something is still expected. When the
+// timings popup also fires this session, this one queues behind it (JS below).
+$showBookingsPopup = !empty($openBookings) && empty($_SESSION['bookings_popup_shown']);
+if ($showBookingsPopup) {
+    $_SESSION['bookings_popup_shown'] = 1;
+}
+
 // Doctors seeing patients today, with how many each has left to see.
 $doctorSchedule = $pdo->query("
     SELECT dr.name,
@@ -360,6 +389,20 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .tim-pill.unset { background: #F1F5F9; color: var(--text-secondary); }
 .tim-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px 20px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .tim-touch { font-size: 12px; color: var(--text-muted); }
+
+/* ---------- Today's-bookings shift popup + panel ---------- */
+/* Same shell as the timings popup; own overlay id so the two can be sequenced. */
+.bkp-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 70; align-items: center; justify-content: center; padding: 20px; }
+.bkp-overlay.open { display: flex; }
+.bk-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.bk-row:last-child { border-bottom: none; }
+.bk-row.arrived { opacity: .55; }
+.bk-info { flex: 1; min-width: 0; }
+.bk-who { font-size: 13.5px; font-weight: 600; }
+.bk-what { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+.bk-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+.bk-pill.booked { background: var(--primary-light); color: var(--primary-dark); }
+.bk-pill.arrived { background: #EDE7FB; color: #6D28D9; }
 
 /* ---------- Password nag ---------- */
 .nag-banner {
@@ -550,6 +593,50 @@ require __DIR__ . '/partials/sidebar.php';
                 <?php endif; ?>
             </div>
 
+            <!-- Today's bookings (phone appointments) -->
+            <div class="card">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+                    <div>
+                        <div class="section-title">Bookings today</div>
+                        <div class="section-sub"><?= count($openBookings) ?> still expected &middot; arriving patients are matched automatically at registration</div>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-shrink:0;">
+                        <?php if (!empty($openBookings)): ?>
+                        <button type="button" class="qa" onclick="openBookingsPopup()">View expected</button>
+                        <?php endif; ?>
+                        <a class="qa" href="bookings.php">Manage bookings</a>
+                    </div>
+                </div>
+                <?php if (empty($todayBookings)): ?>
+                    <div class="empty-state">No phone bookings for today.</div>
+                <?php else: ?>
+                <div class="sched-list">
+                    <?php foreach ($todayBookings as $b): ?>
+                        <div class="bk-row<?= $b['status'] === 'ARRIVED' ? ' arrived' : '' ?>">
+                            <div class="doc-avatar"><?= strtoupper(mb_substr($b['patient_name'] ?: $b['person_name'], 0, 1)) ?></div>
+                            <div class="bk-info">
+                                <div class="bk-who"><?= htmlspecialchars($b['patient_name'] ?: $b['person_name']) ?></div>
+                                <div class="bk-what">
+                                    <?= htmlspecialchars($b['doctor_name']) ?> &middot; <?= htmlspecialchars($b['purpose']) ?>
+                                    <?= $b['preferred_time'] ? ' · ' . htmlspecialchars($b['preferred_time']) : '' ?>
+                                </div>
+                            </div>
+                            <?php if ($b['status'] === 'BOOKED'): ?>
+                                <?php // Arrive → register jumps into the pre-filled flow; the SAVE there consumes the booking. ?>
+                                <?php if ($b['patient_id']): ?>
+                                    <a class="qa" href="patients.php?q=<?= urlencode($b['mrn']) ?>">Arrived</a>
+                                <?php else: ?>
+                                    <a class="qa" href="patients.php?register=1&amp;booking=<?= (int) $b['id'] ?>">Arrived</a>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="bk-pill arrived">Arrived</span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
         </div>
     </div>
 </div>
@@ -623,6 +710,46 @@ require __DIR__ . '/partials/sidebar.php';
 </div>
 <?php endif; ?>
 
+<!-- Today's-bookings shift popup (sequenced AFTER the timings popup) -->
+<?php if (!empty($openBookings)): ?>
+<div class="bkp-overlay" id="bkpOverlay" onclick="if(event.target===this)closeBookingsPopup()">
+    <div class="tim-modal" role="dialog" aria-modal="true" aria-labelledby="bkpTitle">
+        <div class="tim-head">
+            <div>
+                <div class="tim-eyebrow">Shift start</div>
+                <div class="tim-title" id="bkpTitle">Expected today — phone bookings</div>
+                <div class="tim-sub"><?= count($openBookings) ?> appointment<?= count($openBookings) === 1 ? '' : 's' ?> not yet arrived. Registration will match them by phone number automatically.</div>
+            </div>
+            <button type="button" class="tim-x" onclick="closeBookingsPopup()" aria-label="Close">&times;</button>
+        </div>
+        <div class="tim-body">
+            <?php foreach ($openBookings as $b): ?>
+            <div class="bk-row">
+                <div class="doc-avatar"><?= strtoupper(mb_substr($b['patient_name'] ?: $b['person_name'], 0, 1)) ?></div>
+                <div class="bk-info">
+                    <div class="bk-who"><?= htmlspecialchars($b['patient_name'] ?: $b['person_name']) ?><?= $b['mrn'] ? ' <span style="font-weight:400;color:var(--text-muted);font-size:11.5px;">' . htmlspecialchars($b['mrn']) . '</span>' : '' ?></div>
+                    <div class="bk-what">
+                        <?= htmlspecialchars($b['doctor_name']) ?> &middot; <?= htmlspecialchars($b['purpose']) ?>
+                        <?= $b['preferred_time'] ? ' · ' . htmlspecialchars($b['preferred_time']) : '' ?>
+                        &middot; <?= htmlspecialchars($b['phone']) ?>
+                    </div>
+                    <?php if ($b['note']): ?><div class="bk-what"><?= htmlspecialchars($b['note']) ?></div><?php endif; ?>
+                </div>
+                <span class="bk-pill booked">Expected</span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <div class="tim-foot">
+            <div class="tim-touch">When they arrive, register or invoice as usual — the booking is matched and consumed on save.</div>
+            <div style="display:flex; gap:10px;">
+                <button type="button" class="btn secondary" onclick="closeBookingsPopup()">Got it</button>
+                <a class="btn" href="bookings.php">Manage bookings</a>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Admit dialog -->
 <div class="admit-overlay" id="admitOverlay" onclick="if(event.target===this)closeAdmit()">
     <div class="admit-modal" role="dialog" aria-modal="true" aria-labelledby="admitTitle">
@@ -690,8 +817,27 @@ function openAdmit(visitId, patientName, doctorId, doctorName) {
 }
 function closeAdmit() { document.getElementById('admitOverlay').classList.remove('open'); }
 function openTimings() { var o = document.getElementById('timOverlay'); if (o) o.classList.add('open'); }
-function closeTimings() { var o = document.getElementById('timOverlay'); if (o) o.classList.remove('open'); }
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeAdmit(); closeTimings(); } });
+function openBookingsPopup() { var o = document.getElementById('bkpOverlay'); if (o) o.classList.add('open'); }
+function closeBookingsPopup() { var o = document.getElementById('bkpOverlay'); if (o) o.classList.remove('open'); }
+
+// Shift-start sequencing: timings first, then today's bookings — never stacked.
+// The server marks which should auto-open this session; closing the timings
+// popup releases the queued bookings popup.
+var bookingsPopupQueued = <?= $showBookingsPopup ? 'true' : 'false' ?>;
+function closeTimings() {
+    var o = document.getElementById('timOverlay');
+    var wasOpen = o && o.classList.contains('open');
+    if (o) o.classList.remove('open');
+    // Release the queued bookings popup only on a real close — an Escape press
+    // with the timings popup already shut must not surprise-open it.
+    if (wasOpen && bookingsPopupQueued) { bookingsPopupQueued = false; openBookingsPopup(); }
+}
+<?php if ($showBookingsPopup && !$showTimingsPopup): ?>
+// No timings popup this session — the bookings popup opens directly.
+bookingsPopupQueued = false;
+openBookingsPopup();
+<?php endif; ?>
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeAdmit(); closeTimings(); closeBookingsPopup(); } });
 </script>
 <script src="assets/js/date-picker.js"></script>
 </body>
