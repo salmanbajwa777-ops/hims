@@ -167,9 +167,23 @@ foreach ($todayRows as $row) {
 }
 $netCollected = $grossCollected - $totalRefunded;
 
+// Bookings still to walk in today: phone appointments taken for CURDATE() that
+// haven't been consumed (arrived), cancelled or swept as no-show. This is the
+// number reception actually chases through the day. try/catch so an un-migrated
+// bookings table degrades to zero rather than 500ing the whole console.
+$pendingBookings = 0;
+try {
+    $pendingBookings = (int) $pdo->query("
+        SELECT COUNT(*) FROM bookings
+        WHERE booking_date = CURDATE() AND status = 'BOOKED'
+    ")->fetchColumn();
+} catch (Throwable $e) {
+    // bookings not set up yet — leave at zero.
+}
+
 $stats = [
-    ['label' => 'Registered Today', 'value' => (string) count($todayRows), 'icon' => 'users'],
-    ['label' => 'Waiting', 'value' => (string) $countWaiting, 'icon' => 'calendar'],
+    ['label' => 'Pending Bookings', 'value' => (string) $pendingBookings, 'icon' => 'calendar', 'href' => 'bookings.php'],
+    ['label' => 'Waiting', 'value' => (string) $countWaiting, 'icon' => 'users'],
     ['label' => 'In Consult', 'value' => (string) $countInConsult, 'icon' => 'stethoscope'],
     ['label' => 'Collected (net)', 'value' => 'Rs ' . number_format($netCollected), 'icon' => 'dollar-sign'],
 ];
@@ -255,35 +269,37 @@ $pageTitle = 'Reception Desk';
 $headExtra = <<<CSS
 <style>
 /* ---------- Hero ---------- */
+/* Compact greeting strip — name + date on one line, no oversized band. */
 .hero {
     background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    border-radius: var(--radius-card); padding: 32px 36px; min-height: 160px;
-    display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; gap: 24px; color: #fff; position: relative; overflow: hidden;
+    border-radius: var(--radius-card); padding: 16px 22px;
+    display: flex; align-items: baseline; justify-content: space-between;
+    flex-wrap: wrap; gap: 6px 16px; color: #fff;
 }
-.hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.08); }
-.hero::before { width: 220px; height: 220px; top: -80px; right: 120px; }
-.hero::after { width: 140px; height: 140px; bottom: -60px; right: -20px; }
-.hero-greeting .eyebrow { font-size: 14px; opacity: .85; font-weight: 500; }
-.hero-greeting h1 { font-size: 30px; font-weight: 700; margin: 4px 0 8px; }
-.hero-greeting .date { font-size: 13.5px; opacity: .85; }
+.hero-greeting { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hero-greeting .eyebrow { font-size: 13px; opacity: .8; font-weight: 500; }
+.hero-greeting h1 { font-size: 20px; font-weight: 700; margin: 0; }
+.hero-greeting .date { font-size: 13px; opacity: .82; }
 
 /* ---------- Stat cards ---------- */
-.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .kpi-card {
-    background: var(--card); border-radius: var(--radius-card); padding: 20px 22px;
+    background: var(--card); border-radius: var(--radius-card); padding: 14px 16px;
     box-shadow: var(--shadow-sm); border: 1px solid var(--border);
-    transition: transform .25s ease, box-shadow .25s ease;
+    display: flex; align-items: center; gap: 13px; text-decoration: none; color: inherit;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
-.kpi-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
-.kpi-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+a.kpi-card:hover { border-color: var(--primary); }
 .kpi-icon {
-    width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 11px; flex: none;
+    display: flex; align-items: center; justify-content: center;
     background: var(--primary-light); color: var(--primary-dark);
 }
-.kpi-icon svg { width: 20px; height: 20px; }
-.kpi-value { font-size: 28px; font-weight: 700; margin-bottom: 2px; }
-.kpi-label { font-size: 13px; color: var(--text-secondary); }
+.kpi-icon svg { width: 19px; height: 19px; }
+.kpi-body { min-width: 0; }
+.kpi-value { font-size: 24px; font-weight: 700; line-height: 1.1; }
+.kpi-label { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
 
 /* ---------- Section shell ---------- */
 .section-title { font-size: 18px; font-weight: 600; margin-bottom: 2px; }
@@ -452,13 +468,14 @@ require __DIR__ . '/partials/sidebar.php';
             <!-- Stat cards -->
             <div class="grid-4">
                 <?php foreach ($stats as $s): ?>
-                <div class="kpi-card">
-                    <div class="kpi-top">
-                        <div class="kpi-icon"><?= icon($s['icon'], 20) ?></div>
+                <?php $tag = !empty($s['href']) ? 'a' : 'div'; $attr = !empty($s['href']) ? ' href="' . htmlspecialchars($s['href']) . '"' : ''; ?>
+                <<?= $tag ?> class="kpi-card"<?= $attr ?>>
+                    <div class="kpi-icon"><?= icon($s['icon'], 19) ?></div>
+                    <div class="kpi-body">
+                        <div class="kpi-value"><?= htmlspecialchars($s['value']) ?></div>
+                        <div class="kpi-label"><?= htmlspecialchars($s['label']) ?></div>
                     </div>
-                    <div class="kpi-value"><?= htmlspecialchars($s['value']) ?></div>
-                    <div class="kpi-label"><?= htmlspecialchars($s['label']) ?></div>
-                </div>
+                </<?= $tag ?>>
                 <?php endforeach; ?>
             </div>
 
