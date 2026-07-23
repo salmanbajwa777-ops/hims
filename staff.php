@@ -662,7 +662,7 @@ require __DIR__ . '/partials/sidebar.php';
         <header class="header">
             <div class="page-title" style="font-size:16px;">Staff &amp; Doctors</div>
             <div class="header-right">
-                <span class="header-date"><?= date('D, d M Y') ?></span>
+                <span class="header-date"><?= date('D, d/m/Y') ?></span>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>
         </header>
@@ -729,7 +729,7 @@ require __DIR__ . '/partials/sidebar.php';
                                     <span class="doc-count-link none">None</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="muted"><?= date('d M Y', strtotime($s['created_at'])) ?></td>
+                            <td class="muted"><?= date('d/m/Y', strtotime($s['created_at'])) ?></td>
                             <td>
                                 <a href="#" class="edit-link"
                                    data-id="<?= (int) $s['id'] ?>"

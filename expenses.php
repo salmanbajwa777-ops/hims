@@ -297,7 +297,7 @@ if (!$isAdmin) {
         <header class="header" style="height:72px;position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:rgba(255,255,255,.80);backdrop-filter:blur(18px);border-bottom:1px solid var(--border);">
             <div class="page-title" style="font-size:16px;">Expenses</div>
             <div style="display:flex;align-items:center;gap:18px;margin-left:auto;">
-                <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap;"><?= date('D, d M Y') ?></span>
+                <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap;"><?= date('D, d/m/Y') ?></span>
                 <a style="font-size:13px;color:var(--text-secondary);font-weight:500;" href="logout.php">Logout</a>
             </div>
         </header>
@@ -388,7 +388,7 @@ if (!$isAdmin) {
                     <?php endif; ?>
 
                     <div class="total-strip">
-                        <span class="total-chip">Total (<?= $filterFrom === $filterTo ? htmlspecialchars(date('d M', strtotime($filterFrom))) : htmlspecialchars(date('d M', strtotime($filterFrom)) . ' – ' . date('d M', strtotime($filterTo))) ?>): <strong>Rs <?= number_format($rangeTotal, 2) ?></strong></span>
+                        <span class="total-chip">Total (<?= $filterFrom === $filterTo ? htmlspecialchars(date('d/m', strtotime($filterFrom))) : htmlspecialchars(date('d/m', strtotime($filterFrom)) . ' – ' . date('d/m', strtotime($filterTo))) ?>): <strong>Rs <?= number_format($rangeTotal, 2) ?></strong></span>
                         <?php foreach ($userTotals as $ut): ?>
                         <span class="total-chip"><?= htmlspecialchars($ut['name']) ?>: <strong>Rs <?= number_format((float) $ut['total']) ?></strong> (<?= (int) $ut['cnt'] ?>)</span>
                         <?php endforeach; ?>
@@ -419,7 +419,7 @@ if (!$isAdmin) {
                                     <span class="exp-no"><?= htmlspecialchars($r['expense_number']) ?></span>
                                     <?php if ($voided): ?><br><span class="void-chip" title="<?= htmlspecialchars('By ' . ($r['voided_by_name'] ?? '') . ': ' . ($r['void_reason'] ?? '')) ?>">VOID</span><?php endif; ?>
                                 </td>
-                                <?php if ($isAdmin): ?><td style="white-space:nowrap;"><?= htmlspecialchars(date('d M Y', strtotime($r['expense_date']))) ?></td><?php endif; ?>
+                                <?php if ($isAdmin): ?><td style="white-space:nowrap;"><?= htmlspecialchars(date('d/m/Y', strtotime($r['expense_date']))) ?></td><?php endif; ?>
                                 <td><?= htmlspecialchars($r['category_name']) ?></td>
                                 <td><?= htmlspecialchars($r['description']) ?></td>
                                 <td><?= htmlspecialchars($r['paid_to'] ?? '—') ?></td>
@@ -448,5 +448,6 @@ if (!$isAdmin) {
         </div>
     </div>
 </div>
+<script src="assets/js/date-picker.js"></script>
 </body>
 </html>

@@ -445,7 +445,7 @@ require __DIR__ . '/partials/sidebar.php';
                 <div class="hero-greeting">
                     <div class="eyebrow"><?= $greeting ?></div>
                     <h1><?= htmlspecialchars($user['name']) ?></h1>
-                    <div class="date"><?= date('l') ?>, <?= date('d F Y') ?></div>
+                    <div class="date"><?= date('l') ?>, <?= date('d/m/Y') ?></div>
                 </div>
             </section>
 
@@ -656,7 +656,7 @@ require __DIR__ . '/partials/sidebar.php';
             <div>
                 <div class="tim-eyebrow">Shift start</div>
                 <div class="tim-title" id="timTitle">Doctor timings today</div>
-                <div class="tim-sub"><?= date('l, d F Y') ?> &middot; confirm these are correct before you start the queue.</div>
+                <div class="tim-sub"><?= date('l, d/m/Y') ?> &middot; confirm these are correct before you start the queue.</div>
             </div>
             <button type="button" class="tim-x" onclick="closeTimings()" aria-label="Close">&times;</button>
         </div>

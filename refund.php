@@ -346,7 +346,7 @@ td { padding: 9px 10px; border-top: 1px solid var(--border); font-size: 13px; }
                     <td class="mono">Rs <?= number_format((float) $h['amount'], 2) ?></td>
                     <td><?= htmlspecialchars($h['reason']) ?></td>
                     <td><?= htmlspecialchars($h['generated_by_name']) ?></td>
-                    <td><?= date('d M Y H:i', strtotime($h['created_at'])) ?></td>
+                    <td><?= date('d/m/Y H:i', strtotime($h['created_at'])) ?></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>

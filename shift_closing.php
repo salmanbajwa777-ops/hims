@@ -388,7 +388,7 @@ require __DIR__ . '/partials/sidebar.php';
 <div class="content">
 
     <div class="page-head">
-        <h1>My Shift Closing — <?= date('D d M Y') ?></h1>
+        <h1>My Shift Closing — <?= date('D d/m/Y') ?></h1>
         <p><?= htmlspecialchars($myName) ?>'s own takings only: payments you recorded, refunds you issued, expenses you posted. Colleagues close their shifts separately.</p>
     </div>
 

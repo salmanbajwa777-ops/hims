@@ -82,7 +82,7 @@ require __DIR__ . '/partials/sidebar.php';
 <div class="content">
     <div>
         <div class="page-title">Admissions</div>
-        <div class="page-sub">Short-stay patients admitted today &mdash; <?= date('l, d F Y') ?></div>
+        <div class="page-sub">Short-stay patients admitted today &mdash; <?= date('l, d/m/Y') ?></div>
     </div>
 
     <?php

@@ -220,7 +220,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <?php $pEdited = $p['status'] === 'EDITED'; ?>
                     <div class="pend"<?= $pEdited ? ' style="border-color:var(--amber);background:var(--amber-bg);"' : '' ?>>
                         <div>
-                            <div class="who"><?= htmlspecialchars($p['cashier_name']) ?> — <?= date('D d M Y', strtotime($p['closing_date'])) ?>
+                            <div class="who"><?= htmlspecialchars($p['cashier_name']) ?> — <?= date('D d/m/Y', strtotime($p['closing_date'])) ?>
                                 <?php if ($pEdited): ?><span class="ho-pill amber" style="margin-left:6px;">EDITED ×<?= (int) $p['edit_count'] ?> — review changes</span><?php endif; ?>
                             </div>
                             <div class="det">
@@ -304,7 +304,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <?php foreach ($history as $h): ?>
                     <?php $disc = round((float) $h['handover_received'] - (float) $h['handover_declared'], 2); ?>
                     <tr>
-                        <td><?= date('D d M', strtotime($h['closing_date'])) ?></td>
+                        <td><?= date('D d/m', strtotime($h['closing_date'])) ?></td>
                         <td><a class="slip-link" href="shift_closing.php?print=1&closing_id=<?= (int) $h['id'] ?>" target="_blank"><?= htmlspecialchars($h['closing_number']) ?></a></td>
                         <td><?= htmlspecialchars($h['cashier_name']) ?></td>
                         <td class="num"><?= number_format((float) $h['handover_declared'], 0) ?></td>

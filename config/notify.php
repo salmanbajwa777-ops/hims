@@ -40,7 +40,7 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
                 'Invoice'       => $r['invoice_number'],
                 'Type'          => $feeLabels[$r['consultation_fee_type']] ?? 'Consultation',
                 'Amount'        => 'Rs ' . number_format((float) $r['grand_total'], 2),
-                'Time'          => date('d M Y, h:i A'),
+                'Time'          => date('d/m/Y, h:i A'),
             ]);
         send_mail($pdo, $docEmail,
             'New patient — ' . $r['patient_name'] . ' (Token #' . $r['token_no'] . ')',
@@ -79,7 +79,7 @@ function notify_refund_issued(PDO $pdo, int $refundId): void {
                 'Mode'           => ucwords(str_replace('_', ' ', $r['refund_mode'])),
                 'Approved by'    => 'Dr ' . $r['doctor_name'],
                 'Issued by'      => $r['generated_by'],
-                'Time'           => date('d M Y, h:i A'),
+                'Time'           => date('d/m/Y, h:i A'),
             ]);
         send_mail($pdo, $to,
             'Refund ' . $r['refund_number'] . ' — Rs ' . number_format((float) $r['amount'], 0) . ' (' . $r['patient_name'] . ')',
@@ -110,7 +110,7 @@ function notify_patient_admitted(PDO $pdo, int $admissionId): void {
             'Patient'          => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
             'Admission type'   => $typeLabels[$r['admission_type']] ?? $r['admission_type'],
             'Admitting doctor' => $r['doctor_name'],
-            'Admitted at'      => date('d M Y, h:i A', strtotime($r['admitted_at'])),
+            'Admitted at'      => date('d/m/Y, h:i A', strtotime($r['admitted_at'])),
         ];
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted.</p>' . mail_kv($rows);
 
@@ -153,8 +153,8 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
         $rows = [
             'Patient'        => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
             'Doctor'         => $r['doctor_name'],
-            'Admitted'       => date('d M Y, h:i A', strtotime($r['admitted_at'])),
-            'Discharged'     => date('d M Y, h:i A', strtotime($r['discharge_finalized_at'] ?? 'now')),
+            'Admitted'       => date('d/m/Y, h:i A', strtotime($r['admitted_at'])),
+            'Discharged'     => date('d/m/Y, h:i A', strtotime($r['discharge_finalized_at'] ?? 'now')),
             'Admission bill' => $r['invoice_number'] ?? '—',
             'Bill total'     => 'Rs ' . number_format((float) ($r['grand_total'] ?? 0), 2),
             'Paid'           => 'Rs ' . number_format((float) ($r['paid_amount'] ?? 0), 2)
@@ -231,7 +231,7 @@ function notify_booking_created(PDO $pdo, int $bookingId): void {
         $kv = [
             'Patient'  => $who,
             'Purpose'  => $r['purpose'],
-            'Date'     => date('l, d M Y', strtotime($r['booking_date'])),
+            'Date'     => date('l, d/m/Y', strtotime($r['booking_date'])),
         ];
         if ($r['preferred_time']) { $kv['Preferred time'] = $r['preferred_time']; }
         if ($r['note'])           { $kv['Note'] = $r['note']; }
@@ -241,7 +241,7 @@ function notify_booking_created(PDO $pdo, int $bookingId): void {
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Reception has booked an appointment under your name.</p>'
             . mail_kv($kv);
         send_mail($pdo, $docEmail,
-            'New booking — ' . $r['person_name'] . ' (' . $r['purpose'] . ', ' . date('d M', strtotime($r['booking_date'])) . ')',
+            'New booking — ' . $r['person_name'] . ' (' . $r['purpose'] . ', ' . date('d/m', strtotime($r['booking_date'])) . ')',
             mail_template('New Appointment Booked', $body),
             'booking:' . $bookingId);
     } catch (Throwable $e) { /* never break the page for a notification */ }
@@ -275,12 +275,12 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
             . mail_kv([
                 'Patient'      => $who,
                 'Purpose'      => $r['purpose'],
-                'Was booked for' => date('l, d M Y', strtotime($r['booking_date'])),
+                'Was booked for' => date('l, d/m/Y', strtotime($r['booking_date'])),
                 'Reason'       => $r['cancel_reason'] ?: '—',
                 'Cancelled by' => $r['cancelled_by'] ?: 'Reception',
             ]);
         send_mail($pdo, $docEmail,
-            'Booking cancelled — ' . $r['person_name'] . ' (' . date('d M', strtotime($r['booking_date'])) . ')',
+            'Booking cancelled — ' . $r['person_name'] . ' (' . date('d/m', strtotime($r['booking_date'])) . ')',
             mail_template('Appointment Cancelled', $body),
             'booking-cancel:' . $bookingId);
     } catch (Throwable $e) { /* never break the page for a notification */ }
@@ -314,7 +314,7 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
               . '(Cash Handovers → recount + confirm the signed slip is filed).</p>'
             . mail_kv([
                 'Closing slip'       => $c['closing_number'],
-                'Shift date'         => date('D d M Y', strtotime($c['closing_date'])),
+                'Shift date'         => date('D d/m/Y', strtotime($c['closing_date'])),
                 'Cashier'            => $c['cashier_name'],
                 'Their collections'  => 'Rs ' . number_format($netCollected, 2),
                 'Cash'               => 'Rs ' . number_format((float) $c['cash_consult_total'] + (float) $c['cash_admission_total'], 2)
@@ -330,7 +330,7 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
                 'Handover declared'  => 'Rs ' . number_format((float) $c['handover_declared'], 2) . ' → ' . $c['admin_name'],
             ]);
         send_mail($pdo, $to,
-            'Shift closed — ' . $c['cashier_name'] . ' ' . date('d M', strtotime($c['closing_date']))
+            'Shift closed — ' . $c['cashier_name'] . ' ' . date('d/m', strtotime($c['closing_date']))
             . ' — handover Rs ' . number_format((float) $c['handover_declared'], 0) . ' pending (' . $c['closing_number'] . ')',
             mail_template('Shift Closing & Cash Handover', $body),
             'closing:' . $c['closing_number']);
@@ -367,7 +367,7 @@ function notify_closing_edited(PDO $pdo, int $closingId, int $round): void {
         $chStmt->execute([$closingId, $round]);
         $kv = [
             'Closing slip' => $c['closing_number'],
-            'Shift date'   => date('D d M Y', strtotime($c['closing_date'])),
+            'Shift date'   => date('D d/m/Y', strtotime($c['closing_date'])),
             'Cashier'      => $c['cashier_name'],
             'Edit round'   => '#' . $round . ' of this closing',
         ];

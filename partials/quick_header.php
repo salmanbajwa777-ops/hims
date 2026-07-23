@@ -246,7 +246,7 @@ if ($qhIsNurse) {
         </nav>
 
         <span class="qh-spacer"></span>
-        <span class="qh-date"><?= date('D, d M Y') ?></span>
+        <span class="qh-date"><?= date('D, d/m/Y') ?></span>
     </div>
 
     <div class="qh-row2">

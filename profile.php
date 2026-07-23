@@ -136,7 +136,7 @@ require __DIR__ . '/partials/sidebar.php';
         <header class="header">
             <div class="page-title" style="font-size:16px;">My Profile</div>
             <div class="header-right">
-                <span class="header-date"><?= date('D, d M Y') ?></span>
+                <span class="header-date"><?= date('D, d/m/Y') ?></span>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>
         </header>
@@ -231,7 +231,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php if ($user['base_role'] === 'DOCTOR'): ?>
                         <div class="row"><span class="k">Specialty</span><span class="v"><?= htmlspecialchars(ucfirst(strtolower($user['specialty'] ?? 'GENERAL'))) ?></span></div>
                         <?php endif; ?>
-                        <div class="row"><span class="k">Member since</span><span class="v"><?= $user['created_at'] ? date('d M Y', strtotime($user['created_at'])) : '—' ?></span></div>
+                        <div class="row"><span class="k">Member since</span><span class="v"><?= $user['created_at'] ? date('d/m/Y', strtotime($user['created_at'])) : '—' ?></span></div>
                     </div>
                     <div class="locked-note">Need a role or cap change? Ask an administrator<?= ($user['base_role'] === 'ADMIN') ? ' — or edit it yourself in Staff &amp; Doctors' : '' ?>.</div>
                 </div>

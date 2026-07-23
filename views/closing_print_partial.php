@@ -90,7 +90,7 @@ $isEdited = ($closing['status'] ?? '') === 'EDITED' || (int) ($closing['edit_cou
         <div class="refno"><?= htmlspecialchars($closing['closing_number']) ?> &middot; <?= date('Y-m-d H:i', strtotime($closing['created_at'])) ?></div>
         <?php if ($isEdited): ?>
         <div style="text-align:center;font-size:9.5px;font-weight:bold;letter-spacing:1px;border:1.5px solid #000;padding:2px 6px;margin:3px auto 0;width:fit-content;">
-            REVISED — EDIT #<?= (int) ($closing['edit_count'] ?? 0) ?> ON <?= $closing['edited_at'] ? date('d M Y H:i', strtotime($closing['edited_at'])) : '—' ?> · REPLACES EARLIER PRINT
+            REVISED — EDIT #<?= (int) ($closing['edit_count'] ?? 0) ?> ON <?= $closing['edited_at'] ? date('d/m/Y H:i', strtotime($closing['edited_at'])) : '—' ?> · REPLACES EARLIER PRINT
         </div>
         <?php endif; ?>
 
@@ -98,7 +98,7 @@ $isEdited = ($closing['status'] ?? '') === 'EDITED' || (int) ($closing['edit_cou
 
         <table class="meta-table">
             <tr>
-                <td class="k">Shift date</td><td><?= date('D d M Y', strtotime($closing['closing_date'])) ?></td>
+                <td class="k">Shift date</td><td><?= date('D d/m/Y', strtotime($closing['closing_date'])) ?></td>
                 <td class="k">Closed at</td><td><?= date('H:i', strtotime($closing['created_at'])) ?></td>
             </tr>
             <tr>

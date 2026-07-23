@@ -25,7 +25,7 @@ if (php_sapi_name() !== 'cli' && ($_GET['key'] ?? '') !== $cronKey) {
 }
 
 $today = date('Y-m-d');
-$niceDate = date('l, d M Y');
+$niceDate = date('l, d/m/Y');
 
 // ---- Registrations & revenue (consultation bills created today) ----
 $reg = $pdo->query("
@@ -163,7 +163,7 @@ if ($mailFails > 0) {
 $ok = send_mail(
     $pdo,
     admin_alert_email(),
-    'HMIS daily summary — ' . date('d M') . ' · ' . $fmt($reg['collected'] + $admBilling['collected']) . ' collected',
+    'HMIS daily summary — ' . date('d/m') . ' · ' . $fmt($reg['collected'] + $admBilling['collected']) . ' collected',
     mail_template('Daily Summary — ' . $niceDate, $body),
     'daily-summary:' . $today
 );

@@ -329,8 +329,8 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
 
                 <div class="time-strip">
-                    <div><div class="k">Admitted</div><div class="v"><?= date('d M, H:i', strtotime($adm['admitted_at'])) ?></div></div>
-                    <div><div class="k">Discharged</div><div class="v"><?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '—' ?></div></div>
+                    <div><div class="k">Admitted</div><div class="v"><?= date('d/m, H:i', strtotime($adm['admitted_at'])) ?></div></div>
+                    <div><div class="k">Discharged</div><div class="v"><?= $adm['discharged_at'] ? date('d/m, H:i', strtotime($adm['discharged_at'])) : '—' ?></div></div>
                     <div><div class="k">Total stay</div><div class="v"><?= $stayLabel ?></div></div>
                 </div>
 

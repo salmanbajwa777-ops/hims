@@ -314,7 +314,7 @@ require __DIR__ . '/partials/sidebar.php';
             <div class="header-right">
                 <button class="icon-btn"><?= icon('bell', 17) ?><span class="dot"></span></button>
                 <button class="icon-btn"><?= icon('mail', 17) ?></button>
-                <span class="header-date"><?= date('D, d M Y') ?></span>
+                <span class="header-date"><?= date('D, d/m/Y') ?></span>
                 <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= strtoupper(substr($firstName, 0, 1)) ?></a>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>
@@ -332,7 +332,7 @@ require __DIR__ . '/partials/sidebar.php';
             <!-- Greeting -->
             <div class="welcome-line">
                 <h1><?= $greeting ?>, <?= htmlspecialchars($user['name']) ?></h1>
-                <span class="welcome-date"><?= date('l, d F Y') ?></span>
+                <span class="welcome-date"><?= date('l, d/m/Y') ?></span>
             </div>
 
             <!-- Quick Actions -->

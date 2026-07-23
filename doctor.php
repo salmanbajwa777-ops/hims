@@ -326,7 +326,7 @@ require __DIR__ . '/partials/head.php';
     <div class="main">
         <header class="header">
             <div class="header-greet">
-                <div class="greet-line"><?= $greeting ?>, <?= date('l j F') ?></div>
+                <div class="greet-line"><?= $greeting ?>, <?= date('l, d/m') ?></div>
                 <div class="greet-name"><?= htmlspecialchars($user['name']) ?></div>
             </div>
             <form class="search-box" method="GET" action="patients.php">
@@ -335,7 +335,7 @@ require __DIR__ . '/partials/head.php';
             </form>
             <div class="header-right">
                 <button class="icon-btn" type="button"><?= icon('bell', 17) ?></button>
-                <span class="header-date tnum"><?= date('D, d M Y') ?></span>
+                <span class="header-date tnum"><?= date('D, d/m/Y') ?></span>
                 <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= htmlspecialchars(strtoupper(substr($user['name'], 0, 1))) ?></a>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>

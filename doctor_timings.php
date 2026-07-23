@@ -212,7 +212,7 @@ require __DIR__ . '/partials/sidebar.php';
             <div class="page-head">
                 <div>
                     <h1>Doctor Timings — Today</h1>
-                    <div class="sub"><?= date('l, d F Y') ?> &middot; confirm each doctor's hours for the day; this is what every reception shift sees.</div>
+                    <div class="sub"><?= date('l, d/m/Y') ?> &middot; confirm each doctor's hours for the day; this is what every reception shift sees.</div>
                 </div>
                 <?php if ($lastTouch): ?>
                 <div class="last-touch">Last updated by <strong><?= htmlspecialchars($lastTouch['by'] ?? 'unknown') ?></strong> at <?= date('H:i', strtotime($lastTouch['at'])) ?></div>

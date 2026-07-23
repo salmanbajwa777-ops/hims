@@ -143,7 +143,7 @@ require __DIR__ . '/partials/sidebar.php';
         <header class="header">
             <div class="page-title" style="font-size:16px;">Cities &amp; Areas</div>
             <div class="header-right">
-                <span class="header-date"><?= date('D, d M Y') ?></span>
+                <span class="header-date"><?= date('D, d/m/Y') ?></span>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>
         </header>
@@ -173,7 +173,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="pending-row">
                         <div class="info">
                             <div class="area-name">"<?= htmlspecialchars($p['name']) ?>" <span class="muted">— <?= htmlspecialchars($p['city_name']) ?></span></div>
-                            <div class="meta">Added by <?= htmlspecialchars($p['added_by_name'] ?? 'Unknown') ?> &middot; <?= $patientCounts[(int) $p['id']] ?? 0 ?> patient(s) using it &middot; <?= date('d M Y', strtotime($p['created_at'])) ?></div>
+                            <div class="meta">Added by <?= htmlspecialchars($p['added_by_name'] ?? 'Unknown') ?> &middot; <?= $patientCounts[(int) $p['id']] ?? 0 ?> patient(s) using it &middot; <?= date('d/m/Y', strtotime($p['created_at'])) ?></div>
                         </div>
                         <form method="POST" action="locations.php">
                             <input type="hidden" name="action" value="approve_area">

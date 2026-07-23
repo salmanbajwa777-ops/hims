@@ -585,7 +585,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 // ---------------- Search / recent patients ----------------
 $q = trim($_GET['q'] ?? '');
 $patients = [];
-if ($q !== '') {
+
+// Doctor date-range filter for the default (no-search) list. Empty = "recent 10".
+$docFrom = ($isDoctorReadonly && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '')) ? $_GET['from'] : '';
+$docTo   = ($isDoctorReadonly && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '')) ? $_GET['to'] : '';
+$docRangeActive = $isDoctorReadonly && $docFrom !== '' && $docTo !== '';
+
+if ($isDoctorReadonly) {
+    // Doctors only ever see patients THEY have seen. `last_visit` is the last
+    // visit UNDER THIS DOCTOR (not the patient's global last visit), so the
+    // column reflects "when I saw them". Search stays scoped to those patients;
+    // the default view is the last 10 they saw, or a date-range roster.
+    if ($q !== '') {
+        $like = '%' . $q . '%';
+        $stmt = $pdo->prepare('
+            SELECT p.*, c.name AS city_name,
+                dc.name AS discount_category_name, dc.is_active AS discount_category_active,
+                MAX(v.visit_date) AS last_visit
+            FROM patients p
+            JOIN visits v ON v.patient_id = p.id AND v.doctor_id = ?
+            LEFT JOIN cities c ON c.id = p.city_id
+            LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
+            WHERE (p.name LIKE ? OR p.phone LIKE ? OR p.father_name LIKE ? OR p.mrn LIKE ?)
+            GROUP BY p.id
+            ORDER BY last_visit DESC LIMIT 50
+        ');
+        $stmt->execute([$doctorId, $like, $like, $like, $like]);
+        $patients = $stmt->fetchAll();
+    } elseif ($docRangeActive) {
+        // All patients this doctor saw within the date range, most recent first.
+        $stmt = $pdo->prepare('
+            SELECT p.*, c.name AS city_name,
+                dc.name AS discount_category_name, dc.is_active AS discount_category_active,
+                MAX(v.visit_date) AS last_visit
+            FROM patients p
+            JOIN visits v ON v.patient_id = p.id AND v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
+            LEFT JOIN cities c ON c.id = p.city_id
+            LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
+            GROUP BY p.id
+            ORDER BY last_visit DESC, p.name ASC LIMIT 500
+        ');
+        $stmt->execute([$doctorId, $docFrom, $docTo]);
+        $patients = $stmt->fetchAll();
+    } else {
+        // Default: the 10 patients this doctor most recently saw.
+        $stmt = $pdo->prepare('
+            SELECT p.*, c.name AS city_name,
+                dc.name AS discount_category_name, dc.is_active AS discount_category_active,
+                MAX(v.visit_date) AS last_visit
+            FROM patients p
+            JOIN visits v ON v.patient_id = p.id AND v.doctor_id = ?
+            LEFT JOIN cities c ON c.id = p.city_id
+            LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
+            GROUP BY p.id
+            ORDER BY last_visit DESC LIMIT 10
+        ');
+        $stmt->execute([$doctorId]);
+        $patients = $stmt->fetchAll();
+    }
+} elseif ($q !== '') {
     $like = '%' . $q . '%';
     $stmt = $pdo->prepare('
         SELECT p.*, c.name AS city_name,
@@ -902,9 +960,9 @@ require __DIR__ . '/partials/sidebar.php';
                                 </a>
                                 <?php else: ?>—<?php endif; ?>
                             </td>
-                            <td><span class="gender-tag"><?= $p['dob'] ? date('d M Y', strtotime($p['dob'])) . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
+                            <td><span class="gender-tag"><?= $p['dob'] ? date('d/m/Y', strtotime($p['dob'])) . ' · ' : '' ?><?= htmlspecialchars(substr($p['gender'], 0, 1)) ?></span></td>
                             <td class="mrn"><?= htmlspecialchars($p['mrn']) ?></td>
-                            <td class="muted"><?= $p['last_visit'] ? date('d M Y', strtotime($p['last_visit'])) : '—' ?></td>
+                            <td class="muted"><?= $p['last_visit'] ? date('d/m/Y', strtotime($p['last_visit'])) : '—' ?></td>
                             <td>
                                 <?php if (($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
                                 <!-- Admin: assign the standing discount category; auto-saves on change. -->

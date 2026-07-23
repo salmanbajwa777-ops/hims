@@ -134,7 +134,7 @@ require __DIR__ . '/partials/sidebar.php';
         <header class="header">
             <div class="page-title" style="font-size:16px;">Discount Report</div>
             <div class="header-right">
-                <span class="header-date"><?= date('D, d M Y') ?></span>
+                <span class="header-date"><?= date('D, d/m/Y') ?></span>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>
         </header>
@@ -210,7 +210,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endif; ?>
                         <?php foreach ($consultDetail as $r): ?>
                         <tr>
-                            <td class="muted"><?= date('d M', strtotime($r['d'])) ?></td>
+                            <td class="muted"><?= date('d/m', strtotime($r['d'])) ?></td>
                             <td class="mono"><?= htmlspecialchars($r['invoice_number'] ?? '—') ?></td>
                             <td style="font-weight:600;"><?= htmlspecialchars($r['patient_name']) ?> <span class="muted mono"><?= htmlspecialchars($r['mrn']) ?></span></td>
                             <td class="muted"><?= htmlspecialchars($r['doctor_name'] ?? '—') ?></td>
@@ -240,7 +240,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endif; ?>
                         <?php foreach ($admDetail as $r): ?>
                         <tr>
-                            <td class="muted"><?= date('d M', strtotime($r['d'])) ?></td>
+                            <td class="muted"><?= date('d/m', strtotime($r['d'])) ?></td>
                             <td class="mono"><?= htmlspecialchars($r['invoice_number']) ?></td>
                             <td style="font-weight:600;"><?= htmlspecialchars($r['patient_name']) ?> <span class="muted mono"><?= htmlspecialchars($r['mrn']) ?></span></td>
                             <td><span class="cat-tag"><?= htmlspecialchars($r['cat_name']) ?></span></td>

@@ -109,7 +109,7 @@ require __DIR__ . '/partials/sidebar.php';
         <header class="header">
             <div class="page-title" style="font-size:16px;">Discount Categories</div>
             <div class="header-right">
-                <span class="header-date"><?= date('D, d M Y') ?></span>
+                <span class="header-date"><?= date('D, d/m/Y') ?></span>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>
         </header>

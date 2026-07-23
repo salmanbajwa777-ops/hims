@@ -238,8 +238,8 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
                 <div class="kv" style="margin-top:14px;">
                     <div><div class="k">Type</div><div class="v"><?= $typeLabels[$adm['admission_type']] ?? $adm['admission_type'] ?></div></div>
-                    <div><div class="k">Admitted</div><div class="v"><?= date('d M, H:i', strtotime($adm['admitted_at'])) ?></div></div>
-                    <div><div class="k">Discharged</div><div class="v"><?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '—' ?></div></div>
+                    <div><div class="k">Admitted</div><div class="v"><?= date('d/m, H:i', strtotime($adm['admitted_at'])) ?></div></div>
+                    <div><div class="k">Discharged</div><div class="v"><?= $adm['discharged_at'] ? date('d/m, H:i', strtotime($adm['discharged_at'])) : '—' ?></div></div>
                     <div><div class="k"><?= $isOpen && !$adm['discharged_at'] ? 'Stay so far' : 'Total stay' ?></div><div class="v"><?= fmt_dur($stayMins) ?></div></div>
                     <div><div class="k">Doctor</div><div class="v"><?= htmlspecialchars($adm['doctor_name'] ?: '—') ?></div></div>
                     <div><div class="k">Nurse</div><div class="v"><?= htmlspecialchars($adm['nurse_name'] ?: 'Unassigned') ?></div></div>
@@ -306,7 +306,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <?php foreach ($handovers as $h): ?>
                     <div class="ho-item">
                         <b><?= htmlspecialchars($h['from_name']) ?></b> &rarr; <b><?= htmlspecialchars($h['to_name']) ?></b>
-                        &middot; <?= date('d M H:i', strtotime($h['handover_time'])) ?> &middot; <?= htmlspecialchars($h['status_at_handover']) ?>
+                        &middot; <?= date('d/m H:i', strtotime($h['handover_time'])) ?> &middot; <?= htmlspecialchars($h['status_at_handover']) ?>
                         <?php if ($h['notes']): ?><div class="muted" style="margin-top:2px;"><?= htmlspecialchars($h['notes']) ?></div><?php endif; ?>
                     </div>
                     <?php endforeach; ?>
@@ -381,10 +381,10 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php if ($canBillHere): ?>
                         <a class="btn" style="width:100%;text-align:center;" href="admission_discharge.php?id=<?= $admissionId ?>">Go to billing</a>
                         <?php else: ?>
-                        <div class="muted">Discharge submitted <?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '' ?> — with reception for billing.</div>
+                        <div class="muted">Discharge submitted <?= $adm['discharged_at'] ? date('d/m, H:i', strtotime($adm['discharged_at'])) : '' ?> — with reception for billing.</div>
                         <?php endif; ?>
                         <?php elseif ($adm['status'] === 'DISCHARGED'): ?>
-                        <div class="muted">Discharged <?= $adm['discharged_at'] ? date('d M, H:i', strtotime($adm['discharged_at'])) : '' ?>.</div>
+                        <div class="muted">Discharged <?= $adm['discharged_at'] ? date('d/m, H:i', strtotime($adm['discharged_at'])) : '' ?>.</div>
                         <?php endif; ?>
                     </div>
                 </div>

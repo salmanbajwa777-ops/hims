@@ -431,7 +431,7 @@ function require_day_open(PDO $pdo, ?string $date = null, ?int $userId = null): 
         return null;
     }
     if ($closing) {
-        return 'Your shift for ' . date('d M Y', strtotime($date)) . ' is closed (slip '
+        return 'Your shift for ' . date('d/m/Y', strtotime($date)) . ' is closed (slip '
              . $closing['closing_number'] . ') — your payments and refunds for that day are locked. '
              . 'To correct the count, edit the closing itself on the Day Closing page.';
     }

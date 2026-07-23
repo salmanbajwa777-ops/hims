@@ -429,7 +429,7 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="card">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                 <div>
-                    <div class="section-title"><?= $listDate === date('Y-m-d') ? 'Today' : date('l, d M Y', strtotime($listDate)) ?></div>
+                    <div class="section-title"><?= $listDate === date('Y-m-d') ? 'Today' : date('l, d/m/Y', strtotime($listDate)) ?></div>
                     <div class="section-sub"><?= count($bookings) ?> booking<?= count($bookings) === 1 ? '' : 's' ?> &middot; <?= $openCount ?> still expected</div>
                 </div>
                 <form class="bk-filters" method="GET" action="bookings.php">

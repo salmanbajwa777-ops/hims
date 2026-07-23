@@ -184,3 +184,70 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 @media (max-width: 720px) {
     .field-grid { grid-template-columns: 1fr; }
 }
+
+/* ============================================================================
+   dd/mm/yyyy date picker (assets/js/date-picker.js)
+   The visible text proxy inherits each field's own classes/inline styles, so it
+   already matches its surroundings — only the floating calendar is styled here.
+   ============================================================================ */
+.ddmy-cal {
+    position: absolute;
+    z-index: 9999;
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+    padding: 10px;
+    width: 244px;
+    font-family: inherit;
+    user-select: none;
+}
+.ddmy-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.ddmy-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.ddmy-nav {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--text-secondary);
+}
+.ddmy-nav:hover { background: var(--primary-light); color: var(--primary-dark); }
+.ddmy-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+.ddmy-dow {
+    text-align: center;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    padding: 2px 0 4px;
+}
+.ddmy-day {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    height: 30px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-family: inherit;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.ddmy-day:hover { background: var(--primary-light); color: var(--primary-dark); }
+.ddmy-day.today { box-shadow: inset 0 0 0 1px var(--border-strong); font-weight: 700; }
+.ddmy-day.sel { background: var(--primary); color: #fff; font-weight: 700; }
+.ddmy-day.sel:hover { background: var(--primary-dark); }
+.ddmy-day.disabled { color: var(--border-strong); cursor: not-allowed; }
+.ddmy-day.disabled:hover { background: transparent; color: var(--border-strong); }

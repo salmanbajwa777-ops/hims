@@ -501,7 +501,7 @@ require __DIR__ . '/partials/head.php';
                     </select>
                 </form>
                 <?php endif; ?>
-                <span class="header-date tnum"><?= date('D, d M Y') ?></span>
+                <span class="header-date tnum"><?= date('D, d/m/Y') ?></span>
                 <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= htmlspecialchars(strtoupper(substr($user['name'], 0, 1))) ?></a>
                 <a class="logout-link" href="logout.php">Logout</a>
             </div>
@@ -696,7 +696,7 @@ require __DIR__ . '/partials/head.php';
                         $billed = $r['grand_total'] !== null ? $r['grand_total'] : $r['fee'];
                     ?>
                         <tr>
-                            <td class="tnum"><?= date('M j', strtotime($r['visit_date'])) ?>, <?= date('g:i A', strtotime($r['created_at'])) ?></td>
+                            <td class="tnum"><?= date('d/m', strtotime($r['visit_date'])) ?>, <?= date('g:i A', strtotime($r['created_at'])) ?></td>
                             <td><a class="plink" href="patients.php?q=<?= urlencode($r['mrn']) ?>"><?= htmlspecialchars($r['patient_name']) ?></a> <span class="mrn"><?= htmlspecialchars($r['mrn']) ?></span></td>
                             <td><?= htmlspecialchars($r['type_label'] ?? '—') ?></td>
                             <td><span class="status-pill <?= $ftTone ?>"><?= $ftLabel ?></span><?php if ($r['fee_overridden']): ?> <span class="status-pill grey">Fee overridden</span><?php endif; ?></td>
