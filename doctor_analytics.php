@@ -158,24 +158,12 @@ if ($view === 'patients') {
 // VIEW: revenue — build series for the chart + summary
 // ============================================================================
 if ($view === 'revenue') {
-    $gran = in_array($_GET['gran'] ?? '', ['day', 'month', 'year'], true) ? $_GET['gran'] : 'day';
+    // Day granularity was cut (2026-07-23, user request): Month and Year only.
+    $gran = in_array($_GET['gran'] ?? '', ['month', 'year'], true) ? $_GET['gran'] : 'month';
     $compare = ($_GET['compare'] ?? '1') !== '0';
 
-    // Anchor period. day → a month of daily bars; month → a year of monthly
-    // bars; year → the last 6 years.
-    if ($gran === 'day') {
-        $period = preg_match('/^\d{4}-\d{2}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y-m');
-        $curStart = $period . '-01';
-        $curEnd = date('Y-m-t', strtotime($curStart));
-        $prevStart = date('Y-m-01', strtotime($curStart . ' -1 month'));
-        $prevEnd = date('Y-m-t', strtotime($prevStart));
-        $bucketExpr = 'DAY(%s)';
-        $bucketCount = (int) date('t', strtotime($curStart));
-        $periodLabel = date('F Y', strtotime($curStart));
-        $prevLabel = date('F Y', strtotime($prevStart));
-        $navPrev = date('Y-m', strtotime($curStart . ' -1 month'));
-        $navNext = date('Y-m', strtotime($curStart . ' +1 month'));
-    } elseif ($gran === 'month') {
+    // Anchor period. month → a year of monthly bars; year → the last 6 years.
+    if ($gran === 'month') {
         $period = preg_match('/^\d{4}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y');
         $curStart = $period . '-01-01';
         $curEnd = $period . '-12-31';
@@ -551,7 +539,6 @@ require __DIR__ . '/partials/head.php';
             <div class="card">
                 <div class="ctrl-bar" style="margin-bottom:18px">
                     <div class="seg" role="group" aria-label="Granularity">
-                        <a class="<?= $gran === 'day' ? 'on' : '' ?>" href="<?= qs_view('revenue', ['gran' => 'day']) ?>">Day</a>
                         <a class="<?= $gran === 'month' ? 'on' : '' ?>" href="<?= qs_view('revenue', ['gran' => 'month']) ?>">Month</a>
                         <a class="<?= $gran === 'year' ? 'on' : '' ?>" href="<?= qs_view('revenue', ['gran' => 'year']) ?>">Year</a>
                     </div>
@@ -622,9 +609,7 @@ require __DIR__ . '/partials/head.php';
                         $cf = (float)($c['full'] ?? 0); $cr = (float)($c['revisit'] ?? 0); $ca = (float)($c['adm'] ?? 0);
                         $ctot = $cf + $cr + $ca;
                         $x = $compare ? $slotX + ($slotW - 2 * $barW - 3) / 2 : $slotX + ($slotW - $barW) / 2;
-                        if ($gran === 'day') { $lab = (string) $bk; }
-                        elseif ($gran === 'month') { $lab = date('M', mktime(0, 0, 0, $bk, 1)); }
-                        else { $lab = (string) $bk; }
+                        $lab = ($gran === 'month') ? date('M', mktime(0, 0, 0, $bk, 1)) : (string) $bk;
                         $tip = htmlspecialchars("$lab — Full: " . fmt_amt($cf) . " · Revisits: " . fmt_amt($cr) . " · Admissions: " . fmt_amt($ca) . " · Total: " . fmt_amt($ctot) . " PKR");
                     ?>
                     <g class="bar-g">
@@ -646,12 +631,7 @@ require __DIR__ . '/partials/head.php';
                         <?php if ($pr > 0): ?><rect x="<?= round($px,1) ?>" y="<?= round($y2,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y1 - $y2,1) ?>" fill="#A5E5F0" rx="1.5"/><?php endif; ?>
                         <?php if ($pa > 0): ?><rect x="<?= round($px,1) ?>" y="<?= round($y3,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y2 - $y3,1) ?>" fill="#F3CFA0" rx="1.5"/><?php endif; ?>
                         <?php endif; endif; ?>
-                        <?php
-                        // Label density: for day view label every 3rd bucket; else all.
-                        $showLab = ($gran !== 'day') || ($bk % 3 === 1) || $bk === $bucketCount;
-                        if ($showLab): ?>
                         <text class="axis-lab" text-anchor="middle" x="<?= round($slotX + $slotW / 2, 1) ?>" y="<?= $H - $padB + 16 ?>"><?= htmlspecialchars($lab) ?></text>
-                        <?php endif; ?>
                     </g>
                     <?php endforeach; ?>
                 </svg>
