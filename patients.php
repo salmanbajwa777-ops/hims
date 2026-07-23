@@ -289,6 +289,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
     // NO visit, NO token, NO invoice. Used to enter existing patients' demographics
     // without starting a consultation. A visit-less patient is a valid state — no bill
     // is created, so none of the doctor/consult/payment/day-lock checks apply.
+    // Register-only (backfill) is a DEDICATED submit button — its name/value reaches the
+    // server ONLY when that button was pressed, so a full "Register & Add to Queue"
+    // submit can never be mistaken for a backfill (no stale flag). The consultation
+    // fields are simply ignored on this path.
     $registerOnly = ($_POST['register_only'] ?? '') === '1';
 
     if ($name === '' || $phone === '' || !in_array($gender, ['MALE', 'FEMALE', 'OTHER'], true)) {
@@ -1294,17 +1298,16 @@ require __DIR__ . '/partials/sidebar.php';
 
             </div>
 
-            <!-- Set to 1 by the "Register only" button; commits patient + MRN with no
-                 visit/invoice. Cleared on a normal submit. -->
-            <input type="hidden" name="register_only" id="registerOnly" value="">
-
             <div class="form-footer">
                 <span class="foot-note">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
                     A unique MRN is generated on save and the visit goes straight to the doctor's queue.
                 </span>
                 <a href="patients.php" class="btn secondary">Cancel</a>
-                <button type="button" class="btn secondary" id="registerOnlyBtn" title="Save the patient's details only — no consultation, no invoice, no queue token">Register only</button>
+                <!-- Register-only is a distinct SUBMIT button: its name/value is sent ONLY
+                     when it is the button that submits, so the server can never confuse a
+                     full registration for a backfill (no stuck hidden flag possible). -->
+                <button type="submit" class="btn secondary" name="register_only" value="1" id="registerOnlyBtn" formnovalidate title="Save the patient's details only — no consultation, no invoice, no queue token">Register only</button>
                 <button type="submit" class="btn" id="submitBtn">Register &amp; Add to Queue</button>
             </div>
         </form>
@@ -1568,37 +1571,27 @@ function fuApplyOverride() {
 }
 
 // ---------------- Register-only (backfill, no visit/invoice) ----------------
-// The consultation fields (doctor / consult type / payment mode) are `required` for a
-// normal registration. "Register only" saves just the patient record, so we clear the
-// hidden flag path: strip `required` off those fields, mark register_only=1, submit.
-// Name/phone/gender stay required (and are re-checked server-side).
+// "Register only" is a native submit button (name="register_only" value="1",
+// formnovalidate) — so which button was pressed is unambiguous server-side and the
+// consultation `required` fields don't block a backfill. formnovalidate also skips the
+// +92 phone check, so we re-apply just that one rule here (name/phone/gender are
+// re-validated server-side regardless).
 (function () {
     var btn = document.getElementById('registerOnlyBtn');
-    var form = document.getElementById('patientForm');
-    if (!btn || !form) { return; }
-    btn.addEventListener('click', function () {
-        document.getElementById('registerOnly').value = '1';
-        ['doctor_id', 'doctor_consult_type_id'].forEach(function (n) {
-            var el = form.querySelector('[name="' + n + '"]');
-            if (el) { el.removeAttribute('required'); }
-        });
-        form.querySelectorAll('input[name="payment_mode"]').forEach(function (el) {
-            el.removeAttribute('required');
-        });
-        // Same +92 phone rule as a normal save (form.submit() skips the submit listener).
-        // Look the fields up here — they live in a different <script> block, so the
-        // module-scoped consts aren't visible in this IIFE.
+    if (!btn) { return; }
+    btn.addEventListener('click', function (e) {
         var pInput = document.getElementById('phone');
         var pCc = document.getElementById('phone_cc');
-        if ((pCc ? pCc.value : '+92') === '+92' && !/^[1-9]\d{9}$/.test(pInput.value)) {
-            pInput.setCustomValidity('Enter a 10-digit mobile number that does not start with 0.');
-            pInput.reportValidity();
-            return;
-        }
-        if (form.reportValidity()) {
-            btn.disabled = true;
-            btn.textContent = 'Saving…';
-            form.submit();
+        var nameOk = (document.getElementById('name').value.trim() !== '');
+        var phoneOk = !((pCc ? pCc.value : '+92') === '+92') || /^[1-9]\d{9}$/.test(pInput.value);
+        if (!nameOk || !phoneOk) {
+            e.preventDefault();
+            if (!phoneOk) {
+                pInput.setCustomValidity('Enter a 10-digit mobile number that does not start with 0.');
+                pInput.reportValidity();
+            } else {
+                document.getElementById('name').reportValidity();
+            }
         }
     });
 })();
@@ -1612,10 +1605,13 @@ function fuApplyOverride() {
 ['patientForm', 'fuForm'].forEach(function (id) {
     var form = document.getElementById(id);
     if (!form) { return; }
-    form.addEventListener('submit', function () {
+    form.addEventListener('submit', function (e) {
+        // Disable the button that actually submitted (the patient form now has two:
+        // Register-only and Register & Add to Queue). Fall back to the first submit
+        // button if the browser doesn't report a submitter.
+        var btn = e.submitter || form.querySelector('button[type="submit"]');
         // Defer so this runs after any other submit handler that might cancel it.
         setTimeout(function () {
-            var btn = form.querySelector('button[type="submit"]');
             if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
         }, 0);
     });
