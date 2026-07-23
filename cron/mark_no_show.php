@@ -5,8 +5,12 @@
  * Register on Hostinger (hPanel → Advanced → Cron Jobs), daily at 22:00 PKT
  * (a SECOND entry, next to the 21:00 daily_summary — the summary deliberately
  * runs first so it can report unconsumed bookings while they're still open):
- *   /usr/bin/php /home/u402528120/domains/babymedics.com/public_html/hims/cron/mark_no_show.php
- * (adjust the path to wherever hims/ lives under public_html — check File Manager)
+ *   /usr/bin/php /home/u402528120/public_html/hims/cron/mark_no_show.php
+ * In hPanel's PHP-mode form the /usr/bin/php and /home/u402528120/ parts are
+ * pre-filled, so the box only takes:  public_html/hims/cron/mark_no_show.php
+ * (Path verified against File Manager 2026-07-24 — hims sits DIRECTLY under
+ * public_html; there is no domains/babymedics.com/ segment despite hims
+ * being served from the hims.babymedics.com subdomain.)
  *
  * Also runnable from the browser as a one-off test:
  *   https://hims.babymedics.com/cron/mark_no_show.php?key=hims-daily-2026

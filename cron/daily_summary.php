@@ -3,8 +3,12 @@
  * Admin daily summary email — one email each evening to the admin alert address.
  *
  * Register on Hostinger (hPanel → Advanced → Cron Jobs), daily at 21:00 PKT:
- *   /usr/bin/php /home/u402528120/domains/babymedics.com/public_html/hims/cron/daily_summary.php
- * (adjust the path to wherever hims/ lives under public_html — check File Manager)
+ *   /usr/bin/php /home/u402528120/public_html/hims/cron/daily_summary.php
+ * In hPanel's PHP-mode form the /usr/bin/php and /home/u402528120/ parts are
+ * pre-filled, so the box only takes:  public_html/hims/cron/daily_summary.php
+ * (Path verified against File Manager 2026-07-24 — hims sits DIRECTLY under
+ * public_html; there is no domains/babymedics.com/ segment despite hims
+ * being served from the hims.babymedics.com subdomain.)
  *
  * Also runnable from the browser as a one-off test:
  *   https://hims.babymedics.com/cron/daily_summary.php?key=hims-daily-2026

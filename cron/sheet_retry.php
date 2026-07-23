@@ -10,7 +10,12 @@
  * might look after a later edit.
  *
  * Register on Hostinger (hPanel → Advanced → Cron Jobs), hourly:
- *   /usr/bin/php /home/u402528120/domains/babymedics.com/public_html/hims/cron/sheet_retry.php
+ *   /usr/bin/php /home/u402528120/public_html/hims/cron/sheet_retry.php
+ * In hPanel's PHP-mode form the /usr/bin/php and /home/u402528120/ parts are
+ * pre-filled, so the box only takes:  public_html/hims/cron/sheet_retry.php
+ * (Path verified against File Manager 2026-07-24 — hims sits DIRECTLY under
+ * public_html; there is no domains/babymedics.com/ segment despite hims
+ * being served from the hims.babymedics.com subdomain.)
  *
  * Also runnable from the browser as a one-off:
  *   https://hims.babymedics.com/cron/sheet_retry.php?key=hims-daily-2026
