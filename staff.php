@@ -37,6 +37,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     $password = trim($_POST['temp_password'] ?? '') !== '' ? trim($_POST['temp_password']) : DEFAULT_STAFF_PASSWORD;
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
+    // Consultation revenue share (doctors only; zeroed for other roles).
+    // Rule: tax comes off the FULL fee first, then the share % splits the net —
+    // see sql/add_consult_revenue_share.sql. Non-taxable doctors split the full fee.
+    $consultSharePct = trim($_POST['consult_share_pct'] ?? '') !== '' ? (float) $_POST['consult_share_pct'] : 0;
+    $consultHasTax = !empty($_POST['consult_has_tax']) ? 1 : 0;
+    $consultTaxPct = $consultHasTax && trim($_POST['consult_tax_pct'] ?? '') !== '' ? (float) $_POST['consult_tax_pct'] : 0;
+    if ($role !== 'DOCTOR') {
+        $consultSharePct = 0; $consultHasTax = 0; $consultTaxPct = 0;
+    }
     $docTypeInputs = $_POST['doc_type'] ?? [];
     $docFiles = $_FILES['doc_file'] ?? null;
 
@@ -44,6 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
+    } elseif ($consultSharePct < 0 || $consultSharePct > 100) {
+        $error = 'Consultation share must be between 0 and 100.';
+    } elseif ($consultHasTax && ($consultTaxPct <= 0 || $consultTaxPct > 100)) {
+        $error = 'Enter a tax % (above 0, up to 100) when tax deduction is enabled.';
     } else {
         // Email exact; phone compared normalized across all stored formats
         // (a legacy "+92300…" row must block a new "0300…" — same login).
@@ -100,16 +113,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
             } else {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
 
-                $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, max_discount_pct, specialty, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, 1)');
-                $insert->execute([
-                    $name,
-                    $email !== '' ? $email : null,
-                    $phone !== '' ? $phone : null,
-                    $hash,
-                    $role,
-                    $maxDiscountPct,
-                    $specialty,
-                ]);
+                // Falls back to the pre-migration column set if
+                // sql/add_consult_revenue_share.sql hasn't been applied yet.
+                try {
+                    $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, max_discount_pct, specialty, consult_share_pct, consult_has_tax, consult_tax_pct, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)');
+                    $insert->execute([
+                        $name,
+                        $email !== '' ? $email : null,
+                        $phone !== '' ? $phone : null,
+                        $hash,
+                        $role,
+                        $maxDiscountPct,
+                        $specialty,
+                        $consultSharePct,
+                        $consultHasTax,
+                        $consultTaxPct,
+                    ]);
+                } catch (PDOException $e) {
+                    $insert = $pdo->prepare('INSERT INTO users (name, email, phone, password, base_role, max_discount_pct, specialty, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, 1)');
+                    $insert->execute([
+                        $name,
+                        $email !== '' ? $email : null,
+                        $phone !== '' ? $phone : null,
+                        $hash,
+                        $role,
+                        $maxDiscountPct,
+                        $specialty,
+                    ]);
+                }
 
                 $newUserId = (int) $pdo->lastInsertId();
 
@@ -157,6 +188,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $resetPassword = ($_POST['reset_password'] ?? '') === '1';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
+    // Consultation revenue share — same rules as add_staff (tax off the full fee
+    // first, then the share split; zeroed for non-doctor roles).
+    $consultSharePct = trim($_POST['consult_share_pct'] ?? '') !== '' ? (float) $_POST['consult_share_pct'] : 0;
+    $consultHasTax = !empty($_POST['consult_has_tax']) ? 1 : 0;
+    $consultTaxPct = $consultHasTax && trim($_POST['consult_tax_pct'] ?? '') !== '' ? (float) $_POST['consult_tax_pct'] : 0;
+    if ($role !== 'DOCTOR') {
+        $consultSharePct = 0; $consultHasTax = 0; $consultTaxPct = 0;
+    }
     $docTypeInputs = $_POST['doc_type'] ?? [];
     $docFiles = $_FILES['doc_file'] ?? null;
 
@@ -164,6 +203,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         $error = 'Please provide a name, at least one of email/phone, and a valid role.';
     } elseif ($maxDiscountPct < 0 || $maxDiscountPct > 100) {
         $error = 'Discount cap must be between 0 and 100.';
+    } elseif ($consultSharePct < 0 || $consultSharePct > 100) {
+        $error = 'Consultation share must be between 0 and 100.';
+    } elseif ($consultHasTax && ($consultTaxPct <= 0 || $consultTaxPct > 100)) {
+        $error = 'Enter a tax % (above 0, up to 100) when tax deduction is enabled.';
     } else {
         // Email exact; phone compared normalized across all stored formats
         // (a legacy "+92300…" row must block a new "0300…" — same login).
@@ -217,30 +260,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
             if ($docError !== '') {
                 $error = $docError;
             } else {
-                if ($resetPassword) {
-                    $hash = password_hash(DEFAULT_STAFF_PASSWORD, PASSWORD_BCRYPT);
-                    $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ?, password = ?, must_change_password = 1 WHERE id = ?');
-                    $update->execute([
-                        $name,
-                        $email !== '' ? $email : null,
-                        $phone !== '' ? $phone : null,
-                        $role,
-                        $maxDiscountPct,
-                        $specialty,
-                        $hash,
-                        $editId,
-                    ]);
-                } else {
-                    $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ? WHERE id = ?');
-                    $update->execute([
-                        $name,
-                        $email !== '' ? $email : null,
-                        $phone !== '' ? $phone : null,
-                        $role,
-                        $maxDiscountPct,
-                        $specialty,
-                        $editId,
-                    ]);
+                // Same pre-migration fallback as add_staff: retry without the
+                // revenue-share columns if the migration hasn't been applied.
+                try {
+                    if ($resetPassword) {
+                        $hash = password_hash(DEFAULT_STAFF_PASSWORD, PASSWORD_BCRYPT);
+                        $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ?, consult_share_pct = ?, consult_has_tax = ?, consult_tax_pct = ?, password = ?, must_change_password = 1 WHERE id = ?');
+                        $update->execute([
+                            $name,
+                            $email !== '' ? $email : null,
+                            $phone !== '' ? $phone : null,
+                            $role,
+                            $maxDiscountPct,
+                            $specialty,
+                            $consultSharePct,
+                            $consultHasTax,
+                            $consultTaxPct,
+                            $hash,
+                            $editId,
+                        ]);
+                    } else {
+                        $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ?, consult_share_pct = ?, consult_has_tax = ?, consult_tax_pct = ? WHERE id = ?');
+                        $update->execute([
+                            $name,
+                            $email !== '' ? $email : null,
+                            $phone !== '' ? $phone : null,
+                            $role,
+                            $maxDiscountPct,
+                            $specialty,
+                            $consultSharePct,
+                            $consultHasTax,
+                            $consultTaxPct,
+                            $editId,
+                        ]);
+                    }
+                } catch (PDOException $e) {
+                    if ($resetPassword) {
+                        $hash = password_hash(DEFAULT_STAFF_PASSWORD, PASSWORD_BCRYPT);
+                        $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ?, password = ?, must_change_password = 1 WHERE id = ?');
+                        $update->execute([
+                            $name,
+                            $email !== '' ? $email : null,
+                            $phone !== '' ? $phone : null,
+                            $role,
+                            $maxDiscountPct,
+                            $specialty,
+                            $hash,
+                            $editId,
+                        ]);
+                    } else {
+                        $update = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, base_role = ?, max_discount_pct = ?, specialty = ? WHERE id = ?');
+                        $update->execute([
+                            $name,
+                            $email !== '' ? $email : null,
+                            $phone !== '' ? $phone : null,
+                            $role,
+                            $maxDiscountPct,
+                            $specialty,
+                            $editId,
+                        ]);
+                    }
                 }
 
                 $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
@@ -409,7 +488,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     }
 }
 
-$staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, specialty, created_at FROM users ORDER BY name ASC')->fetchAll();
+// Consultation revenue-share columns arrive with sql/add_consult_revenue_share.sql;
+// tolerate the migration not being run yet so the page keeps working pre-migration.
+try {
+    $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, specialty, consult_share_pct, consult_has_tax, consult_tax_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
+} catch (PDOException $e) {
+    $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, specialty, 0 AS consult_share_pct, 0 AS consult_has_tax, 0 AS consult_tax_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
+}
 $doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
 $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
 
@@ -622,7 +707,14 @@ require __DIR__ . '/partials/sidebar.php';
                                 </div>
                             </td>
                             <td class="muted"><?= htmlspecialchars($s['email'] ?: $s['phone'] ?: '—') ?></td>
-                            <td><span class="role-badge" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= htmlspecialchars($s['base_role']) ?></span></td>
+                            <td>
+                                <span class="role-badge" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= htmlspecialchars($s['base_role']) ?></span>
+                                <?php if ($s['base_role'] === 'DOCTOR' && (float) ($s['consult_share_pct'] ?? 0) > 0): ?>
+                                <div class="muted" style="font-size:11.5px; margin-top:4px;">
+                                    Share <?= rtrim(rtrim(number_format((float) $s['consult_share_pct'], 2), '0'), '.') ?>%<?php if ((int) ($s['consult_has_tax'] ?? 0) === 1): ?> · tax <?= rtrim(rtrim(number_format((float) $s['consult_tax_pct'], 2), '0'), '.') ?>%<?php else: ?> · no tax<?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <?php if ($s['must_change_password']): ?>
                                     <span class="status-pill pending">Pending first login</span>
@@ -647,6 +739,9 @@ require __DIR__ . '/partials/sidebar.php';
                                    data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
                                    data-discount="<?= htmlspecialchars((string) $s['max_discount_pct'], ENT_QUOTES) ?>"
                                    data-specialty="<?= htmlspecialchars($s['specialty'], ENT_QUOTES) ?>"
+                                   data-sharepct="<?= htmlspecialchars((string) $s['consult_share_pct'], ENT_QUOTES) ?>"
+                                   data-hastax="<?= (int) $s['consult_has_tax'] ?>"
+                                   data-taxpct="<?= htmlspecialchars((string) $s['consult_tax_pct'], ENT_QUOTES) ?>"
                                    onclick="openEditPanel(this.dataset); return false;">Edit</a>
                                 &nbsp;·&nbsp;
                                 <?php
@@ -763,6 +858,27 @@ require __DIR__ . '/partials/sidebar.php';
                                 <option value="GENERAL">General</option>
                                 <option value="DENTAL">Dental</option>
                             </select>
+                        </div>
+                        <div class="field" id="consultShareField" style="display:none;">
+                            <label for="consult_share_pct">Consultation Revenue Share <span class="opt">(doctor's % of each consultation fee; clinic keeps the rest)</span></label>
+                            <div style="position:relative;">
+                                <input type="number" id="consult_share_pct" name="consult_share_pct" value="0" min="0" max="100" step="0.01" style="padding-right:34px;">
+                                <span style="position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:13px; color:var(--text-muted); font-weight:600;">%</span>
+                            </div>
+                        </div>
+                        <div class="field" id="consultTaxField" style="display:none;">
+                            <label>Tax Deduction <span class="opt">(taken off the full fee first, then the share is split)</span></label>
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer; white-space:nowrap;">
+                                    <input type="checkbox" id="consult_has_tax" name="consult_has_tax" value="1" style="width:15px; height:15px; margin:0; accent-color:var(--primary);">
+                                    <span>Taxable</span>
+                                </label>
+                                <div style="position:relative; flex:1; display:none;" id="consultTaxPctWrap">
+                                    <input type="number" id="consult_tax_pct" name="consult_tax_pct" min="0" max="100" step="0.01" placeholder="Tax %" style="padding-right:34px; width:100%;">
+                                    <span style="position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:13px; color:var(--text-muted); font-weight:600;">%</span>
+                                </div>
+                            </div>
+                            <div class="opt" id="consultShareHint" style="margin-top:6px; font-size:12px; color:var(--text-muted);"></div>
                         </div>
                     </div>
                 </div>
@@ -928,11 +1044,40 @@ const passwordField = document.getElementById('passwordField');
 const tempPasswordField = document.getElementById('tempPasswordField');
 const specialtyField = document.getElementById('specialtyField');
 const baseRoleSelect = document.getElementById('base_role');
+const consultShareField = document.getElementById('consultShareField');
+const consultTaxField = document.getElementById('consultTaxField');
+const consultShareInput = document.getElementById('consult_share_pct');
+const consultHasTaxCb = document.getElementById('consult_has_tax');
+const consultTaxPctWrap = document.getElementById('consultTaxPctWrap');
+const consultTaxPctInput = document.getElementById('consult_tax_pct');
+const consultShareHint = document.getElementById('consultShareHint');
 
 function updateSpecialtyVisibility() {
-    specialtyField.style.display = baseRoleSelect.value === 'DOCTOR' ? '' : 'none';
+    const isDoctor = baseRoleSelect.value === 'DOCTOR';
+    specialtyField.style.display = isDoctor ? '' : 'none';
+    consultShareField.style.display = isDoctor ? '' : 'none';
+    consultTaxField.style.display = isDoctor ? '' : 'none';
 }
 baseRoleSelect.addEventListener('change', updateSpecialtyVisibility);
+
+// Live payout preview on a Rs 1,000 example: tax comes off the FULL fee first,
+// then the share % splits what's left (matches the server-side rule).
+function refreshConsultShareHint() {
+    consultTaxPctWrap.style.display = consultHasTaxCb.checked ? '' : 'none';
+    if (!consultHasTaxCb.checked) consultTaxPctInput.value = '';
+
+    const share = parseFloat(consultShareInput.value);
+    if (isNaN(share) || share <= 0) { consultShareHint.textContent = ''; return; }
+    const tax = consultHasTaxCb.checked ? (parseFloat(consultTaxPctInput.value) || 0) : 0;
+    const net = 1000 * (1 - tax / 100);
+    const docCut = Math.round(net * share / 100);
+    consultShareHint.textContent = 'On a Rs 1,000 fee: '
+        + (tax > 0 ? 'Rs ' + Math.round(1000 - net) + ' tax withheld first, then ' : '')
+        + 'doctor gets Rs ' + docCut + ', clinic keeps Rs ' + (Math.round(net) - docCut) + '.';
+}
+consultShareInput.addEventListener('input', refreshConsultShareHint);
+consultHasTaxCb.addEventListener('change', refreshConsultShareHint);
+consultTaxPctInput.addEventListener('input', refreshConsultShareHint);
 
 const DEFAULT_PASSWORD = <?= json_encode(DEFAULT_STAFF_PASSWORD) ?>;
 const ADD_INFO_HTML = "If they have an email on file, a welcome email with the sign-in link and their temporary password is sent automatically — they'll be asked to change it on first sign-in. Documents are stored privately and only visible to admins.";
@@ -951,7 +1096,11 @@ function resetToAddMode() {
     submitBtn.textContent = 'Create Account';
     document.getElementById('existingDocsWrap').style.display = 'none';
     document.getElementById('specialty').value = 'GENERAL';
+    consultShareInput.value = '0';
+    consultHasTaxCb.checked = false;
+    consultTaxPctInput.value = '';
     updateSpecialtyVisibility();
+    refreshConsultShareHint();
 }
 
 function openEditPanel(data) {
@@ -964,6 +1113,9 @@ function openEditPanel(data) {
     document.getElementById('base_role').value = data.role || '';
     document.getElementById('max_discount_pct').value = data.discount || '0';
     document.getElementById('specialty').value = data.specialty || 'GENERAL';
+    consultShareInput.value = data.sharepct || '0';
+    consultHasTaxCb.checked = data.hastax === '1';
+    consultTaxPctInput.value = consultHasTaxCb.checked ? (data.taxpct || '') : '';
     panelTitle.textContent = 'Edit Doctor / Staff';
     panelSub.textContent = 'Update their details and manage their documents.';
     docsSection.style.display = '';
@@ -973,6 +1125,7 @@ function openEditPanel(data) {
     infoBannerText.innerHTML = EDIT_INFO_HTML;
     submitBtn.textContent = 'Save Changes';
     updateSpecialtyVisibility();
+    refreshConsultShareHint();
     renderExistingDocs(data.id);
     addPanelOverlay.classList.add('open');
 }
