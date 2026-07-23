@@ -41,6 +41,16 @@ $discountAmount = round($grossFee * ($discountPct / 100), 2);
 $netFee = round($grossFee - $discountAmount, 2);
 $consultLabel = $items[0]['description'] ?? 'Consultation';
 
+// Payment mode is captured and settled at registration (see config/billing.php),
+// so it is a real, confirmed value on the printed slip — not "Pending". A free
+// follow-up (net 0, status 'waived') prints "Waived" rather than a cash/card mode.
+$paymentModeLabels = ['cash' => 'Cash', 'card' => 'Online / Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
+if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
+    $paymentModeDisplay = 'Waived (free visit)';
+} else {
+    $paymentModeDisplay = $paymentModeLabels[$bill['payment_method'] ?? ''] ?? '—';
+}
+
 // Everything below the vitals row is left blank on purpose: it is the doctor's
 // handwriting area, so the sheet must not stretch to fill it.
 ?>
@@ -119,7 +129,7 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
         .ids td.v { font-weight: bold; }
 
         /* ---------- Fee line + vitals ---------- */
-        .fee-table, .vitals-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+        .fee-table, .vitals-table, .pay-mode-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
         /* Butted straight against the header box: -1px so the two share a single rule
            rather than showing a gap or a doubled border. */
         .fee-table { margin-top: -1px; }
@@ -130,6 +140,11 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
         .fee-table th, .vitals-table th { background: #F4F4F4; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: center; }
+        /* Payment mode strip: same seam-sharing -1px, same grey label column as .meta. */
+        .pay-mode-table { margin-top: -1px; }
+        .pay-mode-table td { border: 1px solid #C8C8C8; padding: 4px 6px; }
+        .pay-mode-table td.k { background: #F4F4F4; font-weight: bold; }
+        .pay-mode-table td.v { font-weight: bold; }
         .vitals-table { margin-top: -1px; }
         /* Write-in row: tall enough to take a handwritten figure, at least the height
            of the label row above it. */
@@ -215,6 +230,18 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
                     <td class="num"><?= number_format($netFee, 0) ?></td>
                 </tr>
             </tbody>
+        </table>
+
+        <!-- Payment mode: captured + settled at registration, printed before the slip
+             leaves the desk. Shares the fee-table column grid so the seam lines up. -->
+        <table class="pay-mode-table">
+            <colgroup>
+                <col style="width:40%"><col style="width:60%">
+            </colgroup>
+            <tr>
+                <td class="k">Payment Mode</td>
+                <td class="v"><?= htmlspecialchars($paymentModeDisplay) ?></td>
+            </tr>
         </table>
 
         <!-- Butted directly against the fee table: border-top is suppressed so the two

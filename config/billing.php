@@ -69,7 +69,17 @@ function refunded_total(PDO $pdo, int $billId): float {
 }
 
 // Creates the bill for a freshly registered visit, seeded with the consultation
-// fee line. Must be called inside an open transaction; returns the new bill id.
+// fee line, and SETTLES it in the same transaction. Must be called inside an open
+// transaction; returns the new bill id.
+//
+// Registration IS the point of sale: reception collects the fee (or the visit is a
+// free follow-up) before the slip prints, so the bill is born settled rather than
+// left 'draft' for a separate checkout step. Two settled outcomes:
+//   - non-zero net fee  -> status 'paid',   paid_amount = net fee, cash tally counts it.
+//   - zero net fee      -> status 'waived',  paid_amount = 0, EXCLUDED from cash counts
+//                          (free follow-up / 100% discount — still tokened & queued).
+// The caller must already have run require_day_open(): once a shift is closed no new
+// paid bill may land on the signed tally.
 function create_bill_for_visit(
     PDO $pdo,
     int $visitId,
@@ -81,18 +91,31 @@ function create_bill_for_visit(
 ): int {
     $invoiceNumber = generate_invoice_number($pdo);
 
-    // Reception picks CASH/DIGITAL at registration; carry it onto the bill so the printed
-    // invoice shows a real payment mode instead of "Pending". Actual settlement still
-    // happens via record_payment, which overwrites this with the confirmed method.
+    // Reception picks CASH/DIGITAL at registration; this IS the confirmed method — the
+    // bill is settled here, not later. A free visit keeps a mode for the record even
+    // though no money moved.
     $paymentMethod = $visitPaymentMode === 'CASH' ? 'cash' : ($visitPaymentMode === 'DIGITAL' ? 'card' : null);
 
-    $pdo->prepare('
-        INSERT INTO bills (invoice_number, visit_id, sales_tax_percent, consolidation_rate_percent, payment_method, created_by_id)
-        VALUES (?, ?, 0, 0, ?, ?)
-    ')->execute([$invoiceNumber, $visitId, $paymentMethod, $userId]);
+    $consultFee = round($fee * (1 - ($discountPct / 100)), 2);
+    // A zero net fee is a waived (free) visit — settled but off the cash tally.
+    $status = $consultFee > 0 ? 'paid' : 'waived';
+
+    // paid_by_id owns the money on the collector's shift tally. Fall back to the
+    // pre-per-user-closings insert if that column isn't present yet, so registration
+    // never breaks mid-deploy (same pattern as checkout.php record_payment).
+    try {
+        $pdo->prepare('
+            INSERT INTO bills (invoice_number, visit_id, sales_tax_percent, consolidation_rate_percent, payment_method, status, paid_amount, paid_at, paid_by_id, created_by_id)
+            VALUES (?, ?, 0, 0, ?, ?, ?, NOW(), ?, ?)
+        ')->execute([$invoiceNumber, $visitId, $paymentMethod, $status, $consultFee, $userId, $userId]);
+    } catch (PDOException $e) {
+        $pdo->prepare('
+            INSERT INTO bills (invoice_number, visit_id, sales_tax_percent, consolidation_rate_percent, payment_method, status, paid_amount, paid_at, created_by_id)
+            VALUES (?, ?, 0, 0, ?, ?, ?, NOW(), ?)
+        ')->execute([$invoiceNumber, $visitId, $paymentMethod, $status, $consultFee, $userId]);
+    }
     $billId = (int) $pdo->lastInsertId();
 
-    $consultFee = round($fee * (1 - ($discountPct / 100)), 2);
     $pdo->prepare('
         INSERT INTO bill_items (bill_id, description, quantity, unit_rate, amount)
         VALUES (?, ?, 1, ?, ?)

@@ -90,7 +90,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remove_service' && $canLog) {
     $sid = (int) ($_POST['service_id'] ?? 0);
     $pdo->prepare('DELETE FROM admission_services WHERE id = ? AND admission_id = ?')->execute([$sid, $admissionId]);
+    // Removing a chargeable line is a money-affecting edit — audit it (matches the
+    // audit discipline on every other bill mutation).
+    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+        ->execute([$uid, 'admission_service_removed', "Removed service #$sid from admission #$admissionId"]);
     $flash = 'Service removed.';
+}
+
+// ---------------- Record vitals ----------------
+// Clinical, non-chargeable. Gated on NURSING_RECORD_VITALS (nurse + doctor). Every
+// field is optional — the nurse saves whatever she measured. Wrapped in try/catch so
+// the page still works if add_admission_vitals.sql hasn't been applied yet.
+$canRecordVitals = $isOpen && (has_permission('NURSING_RECORD_VITALS') || in_array($baseRole, ['ADMIN','MANAGER'], true));
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_vitals' && $canRecordVitals) {
+    // Nullable numeric helper: '' -> null, else typed value.
+    $num = function (string $k, string $type = 'int') {
+        $v = trim($_POST[$k] ?? '');
+        if ($v === '') { return null; }
+        return $type === 'float' ? (float) $v : (int) $v;
+    };
+    $vitalNotes = trim($_POST['vital_notes'] ?? '') ?: null;
+    $role = in_array($baseRole, ['NURSE','DOCTOR','ADMIN','MANAGER','RECEPTIONIST'], true) ? $baseRole : 'NURSE';
+    try {
+        $pdo->prepare('
+            INSERT INTO admission_vitals
+                (admission_id, recorded_at, temp_c, pulse_bpm, resp_rate, systolic_bp, diastolic_bp,
+                 spo2_pct, blood_glucose, weight_kg, height_cm, ofc_cm, pain_score, notes, recorded_by_id, recorded_by_role)
+            VALUES (?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ')->execute([
+            $admissionId,
+            $num('temp_c', 'float'), $num('pulse_bpm'), $num('resp_rate'),
+            $num('systolic_bp'), $num('diastolic_bp'), $num('spo2_pct'),
+            $num('blood_glucose', 'float'), $num('weight_kg', 'float'),
+            $num('height_cm', 'float'), $num('ofc_cm', 'float'), $num('pain_score'),
+            $vitalNotes, $uid, $role,
+        ]);
+        $flash = 'Vitals recorded.';
+    } catch (PDOException $e) {
+        $err = 'Could not record vitals — the vitals table may not be set up yet.';
+    }
+    $adm = load_admission($pdo, $admissionId);
 }
 
 // ---------------- Assign / pick up nurse ----------------
@@ -149,6 +188,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
 $services = $pdo->prepare('SELECT * FROM admission_services WHERE admission_id = ? ORDER BY logged_at');
 $services->execute([$admissionId]);
 $services = $services->fetchAll();
+
+// Vitals timeline (newest first). Tolerate the table not existing yet so a mid-deploy
+// gap degrades to "no vitals" rather than fataling the whole stay page.
+$vitals = [];
+$canViewVitals = has_permission('CLINICAL_VIEW_VITALS_HISTORY') || has_permission('NURSING_RECORD_VITALS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+if ($canViewVitals) {
+    try {
+        $vStmt = $pdo->prepare('
+            SELECT v.*, u.name AS recorded_by_name
+            FROM admission_vitals v JOIN users u ON u.id = v.recorded_by_id
+            WHERE v.admission_id = ? ORDER BY v.recorded_at DESC, v.id DESC
+        ');
+        $vStmt->execute([$admissionId]);
+        $vitals = $vStmt->fetchAll();
+    } catch (PDOException $e) {
+        $vitals = [];   // table not migrated yet
+    }
+}
 $servicesTotal = 0.0;
 foreach ($services as $s) { if ($s['is_billable']) { $servicesTotal += (float) $s['calculated_charge']; } }
 
@@ -209,6 +266,13 @@ $headExtra = <<<CSS
 .link-btn { background: none; border: none; color: var(--red-text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; }
 .ho-item { border-top: 1px solid var(--border); padding: 10px 0; font-size: 12.5px; }
 .ho-item:first-child { border-top: none; }
+.vit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
+.vit-grid label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+.vit-grid input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
+.vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.vitals-log { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.vitals-log th, .vitals-log td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.vitals-log th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
 @media (max-width: 960px) { .a-grid { grid-template-columns: 1fr; } }
 </style>
 CSS;
@@ -389,6 +453,64 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                 </div>
             </div>
+
+            <!-- Vitals (clinical, non-chargeable) — full width below the two columns. -->
+            <?php if ($canRecordVitals || $canViewVitals): ?>
+            <div class="card" style="margin-top:20px;">
+                <div class="section-title">Vitals</div>
+                <div class="section-sub">Clinical observations during the stay — not billed.</div>
+
+                <?php if ($canRecordVitals): ?>
+                <form method="POST" action="admission.php?id=<?= $admissionId ?>" style="margin:14px 0 4px;">
+                    <input type="hidden" name="action" value="add_vitals">
+                    <div class="vit-grid">
+                        <div><label>Temp (&deg;C)</label><input type="number" step="0.1" name="temp_c" placeholder="37.0"></div>
+                        <div><label>Pulse (bpm)</label><input type="number" name="pulse_bpm" placeholder="—"></div>
+                        <div><label>Resp (/min)</label><input type="number" name="resp_rate" placeholder="—"></div>
+                        <div><label>SpO&#8322; (%)</label><input type="number" name="spo2_pct" placeholder="—"></div>
+                        <div><label>BP Sys</label><input type="number" name="systolic_bp" placeholder="—"></div>
+                        <div><label>BP Dia</label><input type="number" name="diastolic_bp" placeholder="—"></div>
+                        <div><label>Glucose</label><input type="number" step="0.1" name="blood_glucose" placeholder="mg/dL"></div>
+                        <div><label>Pain (0&ndash;10)</label><input type="number" min="0" max="10" name="pain_score" placeholder="—"></div>
+                        <div><label>Weight (kg)</label><input type="number" step="0.1" name="weight_kg" placeholder="—"></div>
+                        <div><label>Height (cm)</label><input type="number" step="0.1" name="height_cm" placeholder="—"></div>
+                        <div><label>OFC (cm)</label><input type="number" step="0.1" name="ofc_cm" placeholder="—"></div>
+                        <div style="display:flex;align-items:flex-end;"><button type="submit" class="btn secondary" style="width:100%;">Record</button></div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <input type="text" name="vital_notes" placeholder="Notes (optional)" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:10px;font:inherit;font-size:13.5px;background:var(--bg);">
+                    </div>
+                </form>
+                <?php endif; ?>
+
+                <div style="overflow-x:auto;margin-top:12px;">
+                <table class="vitals-log">
+                    <thead><tr><th>Time</th><th>Temp</th><th>Pulse</th><th>Resp</th><th>SpO&#8322;</th><th>BP</th><th>Glu</th><th>Pain</th><th>By</th></tr></thead>
+                    <tbody>
+                        <?php if (!$vitals): ?>
+                        <tr><td colspan="9" class="muted" style="padding:18px 10px;">No vitals recorded yet.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($vitals as $vt): ?>
+                        <tr>
+                            <td class="mono"><?= date('d/m H:i', strtotime($vt['recorded_at'])) ?></td>
+                            <td><?= $vt['temp_c'] !== null ? htmlspecialchars($vt['temp_c']) : '—' ?></td>
+                            <td><?= $vt['pulse_bpm'] !== null ? (int) $vt['pulse_bpm'] : '—' ?></td>
+                            <td><?= $vt['resp_rate'] !== null ? (int) $vt['resp_rate'] : '—' ?></td>
+                            <td><?= $vt['spo2_pct'] !== null ? (int) $vt['spo2_pct'] . '%' : '—' ?></td>
+                            <td><?= ($vt['systolic_bp'] !== null || $vt['diastolic_bp'] !== null) ? ((int) $vt['systolic_bp'] . '/' . (int) $vt['diastolic_bp']) : '—' ?></td>
+                            <td><?= $vt['blood_glucose'] !== null ? htmlspecialchars($vt['blood_glucose']) : '—' ?></td>
+                            <td><?= $vt['pain_score'] !== null ? (int) $vt['pain_score'] : '—' ?></td>
+                            <td class="muted"><?= htmlspecialchars($vt['recorded_by_name']) ?></td>
+                        </tr>
+                        <?php if (!empty($vt['notes'])): ?>
+                        <tr><td></td><td colspan="8" class="muted" style="font-size:12px;padding-top:0;">&#8627; <?= htmlspecialchars($vt['notes']) ?></td></tr>
+                        <?php endif; ?>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

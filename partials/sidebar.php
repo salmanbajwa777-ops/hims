@@ -123,6 +123,7 @@ $sbGroups = [
             ['slug' => 'doctor_timings', 'label' => 'Doctor Timings', 'icon' => 'clock',  'href' => 'doctor_timings.php'],
             ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php'],
             ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php'],
+            ['slug' => 'indoor',      'label' => 'In-Door Admission','icon'=> 'bed',      'href' => '#', 'disabled' => true],
             ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php'],
             ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',   'href' => 'expenses.php',
              'roles' => ['ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT']],

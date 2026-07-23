@@ -25,65 +25,19 @@ if (!has_permission('RECEPTION_REGISTER_PATIENTS')) {
 
 // ---------------- Admit a patient (start a short-stay admission) ----------------
 // The doctor advises admission; reception starts it from the queue. Creates the
-// admission record (clock starts now) and flags the visit SHORT_STAY. The
-// admission bill is raised later, at discharge (separate document).
+// admission record (clock starts now) and flags the visit SHORT_STAY. The admission
+// bill is raised later, at discharge (separate document). The actual logic lives in
+// the shared handler so reception, doctor console, and the all-patients list all admit
+// through one code path (config/admission_actions.php).
+require_once __DIR__ . '/config/admission_actions.php';
 $admitError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit_patient') {
-    if (!has_permission('RECEPTION_ADMIT_PATIENTS')) {
-        http_response_code(403);
-        exit('Forbidden — you cannot admit patients.');
+    $result = handle_admit_patient($pdo);
+    if ($result['ok']) {
+        header('Location: receptionist.php?admitted=1');
+        exit;
     }
-    $visitId = (int) ($_POST['visit_id'] ?? 0);
-    $admType = $_POST['admission_type'] ?? '';
-    $docId   = (int) ($_POST['admitting_doctor_id'] ?? 0) ?: null;
-    $docManual = trim($_POST['admitting_doctor_manual'] ?? '') ?: null;
-
-    // Validate the type is one that's currently enabled.
-    $rateOk = $pdo->prepare('SELECT 1 FROM admission_rates WHERE admission_type = ? AND is_enabled = 1');
-    $rateOk->execute([$admType]);
-
-    if ($visitId <= 0 || !$rateOk->fetchColumn()) {
-        $admitError = 'Pick a valid, enabled admission type.';
-    } else {
-        // Guard: one admission per visit (admissions.visit_id is UNIQUE).
-        $exists = $pdo->prepare('SELECT 1 FROM admissions WHERE visit_id = ?');
-        $exists->execute([$visitId]);
-        if ($exists->fetchColumn()) {
-            $admitError = 'This visit is already admitted.';
-        } else {
-            $pdo->beginTransaction();
-            try {
-                $ins = $pdo->prepare('
-                    INSERT INTO admissions
-                        (visit_id, admission_type, admitted_by_id, admitted_by_role, admitted_at,
-                         admitting_doctor_id, admitting_doctor_manual, status)
-                    VALUES (?, ?, ?, ?, NOW(), ?, ?, \'PENDING_ASSIGNMENT\')
-                ');
-                $ins->execute([
-                    $visitId, $admType, $_SESSION['user_id'], $_SESSION['base_role'],
-                    $docId, $docId ? null : $docManual,
-                ]);
-                $admissionId = (int) $pdo->lastInsertId();
-
-                $pdo->prepare('UPDATE visits SET disposition = \'SHORT_STAY\', admission_type = ?, admitted_at = NOW() WHERE id = ?')
-                    ->execute([$admType, $visitId]);
-
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$_SESSION['user_id'], 'patient_admitted', "Admitted visit #$visitId ($admType), admission #$admissionId"]);
-
-                $pdo->commit();
-
-                // Alert admin + admitting doctor (best-effort, after commit).
-                notify_patient_admitted($pdo, $admissionId);
-
-                header('Location: receptionist.php?admitted=1');
-                exit;
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                $admitError = 'Could not admit — please try again.';
-            }
-        }
-    }
+    $admitError = $result['error'];
 }
 
 // Enabled admission types (for the dialog) + doctors (for the admitting-doctor picker).
@@ -565,7 +519,7 @@ require __DIR__ . '/partials/sidebar.php';
                                         <a class="qa warn" href="admission_discharge.php?id=<?= (int) $row['admission_id'] ?>">Bill discharge</a>
                                     <?php elseif ($isAdmitted && $row['admission_id']): ?>
                                         <a class="qa" href="admission.php?id=<?= (int) $row['admission_id'] ?>">Manage stay</a>
-                                    <?php elseif (has_permission('RECEPTION_ADMIT_PATIENTS')): ?>
+                                    <?php elseif (has_permission('ADMISSION_ADMIT_PATIENT') || has_permission('RECEPTION_ADMIT_PATIENTS')): ?>
                                         <button type="button" class="qa"
                                             onclick="openAdmit(<?= (int) $row['visit_id'] ?>, <?= htmlspecialchars(json_encode($row['patient_name']), ENT_QUOTES) ?>, <?= (int) $row['doctor_id'] ?>, <?= htmlspecialchars(json_encode($row['doctor_name']), ENT_QUOTES) ?>)">Admit</button>
                                     <?php endif; ?>

@@ -221,9 +221,11 @@ if (isset($_GET['bill_id'])) {
     }
 }
 
-// Today's open bills, most recent first. Bills are raised automatically at registration
-// (see patients.php), so this list is what's still awaiting items/finalize/payment —
-// not un-billed visits, which no longer occur.
+// Today's open bills, most recent first. Consultation bills are now SETTLED at
+// registration (paid, or 'waived' for a free follow-up — see config/billing.php), so a
+// freshly registered patient does NOT appear here. This list is only genuinely-open
+// bills: legacy/manual drafts or finalized-but-unpaid rows still awaiting payment.
+// 'paid' and 'waived' are both settled and excluded.
 $pendingBills = $pdo->query("
     SELECT b.id, b.invoice_number, b.status, b.grand_total,
            v.token_no, p.name AS patient_name, p.mrn, dr.name AS doctor_name, dct.label AS consult_label
@@ -232,7 +234,7 @@ $pendingBills = $pdo->query("
     JOIN patients p ON p.id = v.patient_id
     JOIN users dr ON dr.id = v.doctor_id
     JOIN doctor_consult_types dct ON dct.id = v.doctor_consult_type_id
-    WHERE v.visit_date = CURDATE() AND b.status <> 'paid'
+    WHERE v.visit_date = CURDATE() AND b.status NOT IN ('paid', 'waived')
     ORDER BY b.id DESC
 ")->fetchAll();
 
@@ -246,6 +248,7 @@ $headExtra = <<<CSS
 .status-pill.draft { background: #FEF3C7; color: #92400E; }
 .status-pill.finalized { background: var(--primary-light); color: var(--primary-dark); }
 .status-pill.paid { background: var(--green-bg); color: var(--green-text); }
+.status-pill.waived { background: #DCFCE7; color: #166534; }
 .item-row-form { display: grid; grid-template-columns: 1fr 90px 130px auto; gap: 10px; align-items: end; margin-top: 14px; }
 .item-row-form label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
 .item-row-form input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; }

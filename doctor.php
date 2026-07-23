@@ -3,6 +3,8 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+require_once __DIR__ . '/config/notify.php';
+require_once __DIR__ . '/config/admission_actions.php';
 refresh_session_permissions($pdo);
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
@@ -68,8 +70,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: doctor.php' . ($flash ? '?done=' . urlencode($flash) : ''));
         exit;
     }
+
+    // ---------------- Admit a patient (doctor-initiated) ----------------
+    // A doctor can admit straight from their console. The shared handler admits against
+    // the passed visit (their queue row) and starts the stay clock.
+    if ($action === 'admit_patient') {
+        $result = handle_admit_patient($pdo);
+        if ($result['ok']) {
+            header('Location: admission.php?id=' . (int) $result['admission_id']);
+            exit;
+        }
+        header('Location: doctor.php?admit_error=' . urlencode($result['error']));
+        exit;
+    }
 }
 $flash = trim($_GET['done'] ?? '');
+$admitError = trim($_GET['admit_error'] ?? '');
 
 $mustChangePassword = (bool) $user['must_change_password'];
 $hour = (int) date('G');
@@ -81,14 +97,25 @@ $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good
 $queueStmt = $pdo->prepare("
     SELECT v.id AS visit_id, v.token_no, v.consult_status, v.started_at, v.created_at,
            p.name AS patient_name, p.gender, p.dob, p.mrn,
-           t.label AS type_label
+           t.label AS type_label, v.consultation_fee_type,
+           a.id AS admission_id
     FROM visits v
     JOIN patients p ON p.id = v.patient_id
     LEFT JOIN doctor_consult_types t ON t.id = v.doctor_consult_type_id
+    LEFT JOIN admissions a ON a.visit_id = v.id
     WHERE v.doctor_id = ? AND v.visit_date = CURDATE()
     ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_no
 ");
 $queueStmt->execute([$doctorId]);
+
+// Admit-modal data for the doctor console (doctors can admit from their queue).
+$canDoctorAdmit = has_permission('ADMISSION_ADMIT_PATIENT');
+$admTypes = $admDoctors = [];
+$admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
+if ($canDoctorAdmit) {
+    $admTypes = $pdo->query('SELECT admission_type, rate_amount, rate_basis FROM admission_rates WHERE is_enabled = 1 ORDER BY FIELD(admission_type,"ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
+    $admDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
+}
 $visits = $queueStmt->fetchAll();
 
 $waiting   = array_values(array_filter($visits, fn($v) => $v['consult_status'] === 'WAITING'));
@@ -251,6 +278,10 @@ a.kpi-cell:hover { background: var(--primary-light); }
 .q-token { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; background: var(--primary-light); color: var(--primary-dark); }
 .q-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .q-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 1px 7px; border-radius: 6px; background: rgba(26,127,126,.12); color: var(--primary); }
+/* Free follow-up: green, reads as "no fee" not "unpaid, chase it". */
+.q-tag.q-tag-free { background: #DCFCE7; color: #166534; }
+/* Discounted revisit (50%/75%): neutral amber so it's distinct from full-fee. */
+.q-tag.q-tag-revisit { background: #FEF3C7; color: #92400E; }
 .q-meta { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
 .q-right { display: flex; align-items: center; gap: 12px; }
 .status-pill { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
@@ -380,6 +411,18 @@ require __DIR__ . '/partials/head.php';
                             <div class="q-name"><?= htmlspecialchars($v['patient_name']) ?>
                                 <?php if ($st === 'IN_CONSULT'): ?><span class="pulse"></span><span class="status-pill in-consult">Now serving</span><?php endif; ?>
                                 <?php if (!empty($v['type_label'])): ?><span class="q-tag"><?= htmlspecialchars($v['type_label']) ?></span><?php endif; ?>
+                                <?php
+                                // Fee-type badge: the doctor sees at a glance that a visit is a
+                                // free follow-up (no fee, a consumed free turn) or a discounted
+                                // revisit. Full-fee visits carry no badge. Purely informational.
+                                $feeBadges = [
+                                    'FREE_FOLLOWUP' => ['Free follow-up', 'q-tag-free'],
+                                    'HALF_FOLLOWUP' => ['50% follow-up', 'q-tag-revisit'],
+                                    'THREE_QUARTER_FOLLOWUP' => ['75% follow-up', 'q-tag-revisit'],
+                                ];
+                                if (isset($feeBadges[$v['consultation_fee_type'] ?? ''])):
+                                    [$badgeText, $badgeClass] = $feeBadges[$v['consultation_fee_type']];
+                                ?><span class="q-tag <?= $badgeClass ?>"><?= $badgeText ?></span><?php endif; ?>
                             </div>
                             <div class="q-meta">
                                 <?= $age !== null ? 'Age ' . $age . ' · ' : '' ?>
@@ -410,6 +453,14 @@ require __DIR__ . '/partials/head.php';
                                 </form>
                             <?php else: ?>
                                 <span class="status-pill done">Done</span>
+                            <?php endif; ?>
+                            <?php if ($canDoctorAdmit): ?>
+                                <?php if (!empty($v['admission_id'])): ?>
+                                    <a class="btn-ghost" href="admission.php?id=<?= (int) $v['admission_id'] ?>">Manage stay</a>
+                                <?php else: ?>
+                                    <button class="btn-ghost" type="button"
+                                        onclick="openAdmit(<?= (int) $v['visit_id'] ?>, <?= htmlspecialchars(json_encode($v['patient_name']), ENT_QUOTES) ?>, <?= (int) $doctorId ?>, '', false)">Admit</button>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -524,6 +575,10 @@ require __DIR__ . '/partials/head.php';
         </div>
     </div>
 </div>
+<?php if ($canDoctorAdmit) { require __DIR__ . '/partials/admit_modal.php'; } ?>
+<?php if ($admitError): ?>
+<script>window.addEventListener('load', function () { alert(<?= json_encode($admitError) ?>); });</script>
+<?php endif; ?>
 <script src="assets/js/date-picker.js"></script>
 </body>
 </html>

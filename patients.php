@@ -23,6 +23,30 @@ if ($isDoctorReadonly && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit('Forbidden — doctors have read-only patient lookup.');
 }
 
+// ---------------- Admit a patient from the all-patients list ----------------
+// Reception can admit any patient here (doctors admit from their own console). The
+// shared handler resolves today's visit or creates a shell, so a patient with no
+// visit today can still be admitted. Doctors never reach this (POST blocked above).
+require_once __DIR__ . '/config/admission_actions.php';
+$admitError = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit_patient') {
+    $result = handle_admit_patient($pdo);
+    if ($result['ok']) {
+        header('Location: admission.php?id=' . (int) $result['admission_id']);
+        exit;
+    }
+    $admitError = $result['error'];
+}
+
+// Admit-modal data (only needed for reception; harmless if the modal isn't shown).
+$canAdmitHere = !$isDoctorReadonly && (has_permission('ADMISSION_ADMIT_PATIENT') || has_permission('RECEPTION_ADMIT_PATIENTS'));
+$admTypes = $admDoctors = [];
+$admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
+if ($canAdmitHere) {
+    $admTypes = $pdo->query('SELECT admission_type, rate_amount, rate_basis FROM admission_rates WHERE is_enabled = 1 ORDER BY FIELD(admission_type,"ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
+    $admDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
+}
+
 // ---------------- AJAX: quick-add area (used from the registration panel) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_add_area') {
     header('Content-Type: application/json');
@@ -252,8 +276,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
     $paymentMode = $_POST['payment_mode'] ?? '';
     $discountPct = trim($_POST['discount_pct'] ?? '') !== '' ? (float) $_POST['discount_pct'] : 0;
 
+    // Register-only (backfill): save the patient record to the registration point with
+    // NO visit, NO token, NO invoice. Used to enter existing patients' demographics
+    // without starting a consultation. A visit-less patient is a valid state — no bill
+    // is created, so none of the doctor/consult/payment/day-lock checks apply.
+    $registerOnly = ($_POST['register_only'] ?? '') === '1';
+
     if ($name === '' || $phone === '' || !in_array($gender, ['MALE', 'FEMALE', 'OTHER'], true)) {
         $error = 'Name, phone, and gender are required.';
+    } elseif ($registerOnly) {
+        // Register-only path: minimal validation, then commit patient + MRN only.
+        try {
+            $pdo->beginTransaction();
+
+            $insertPatient = $pdo->prepare('
+                INSERT INTO patients (mrn, name, father_name, dob, gender, phone, alt_phone, cnic, city_id, area_id, address, created_by_id)
+                VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ');
+            $insertPatient->execute([
+                $name, $fatherName ?: null, $dob, $gender,
+                $phone, $altPhone, $cnic, $cityId, $areaId, $address, $_SESSION['user_id'],
+            ]);
+            $patientId = (int) $pdo->lastInsertId();
+
+            // Same race-safe monthly MRN counter as a full registration.
+            $year = (int) date('Y');
+            $month = (int) date('n');
+            $mrnStmt = $pdo->prepare('
+                INSERT INTO mrn_counters (yr, mo, next_seq)
+                VALUES (?, ?, 2)
+                ON DUPLICATE KEY UPDATE next_seq = LAST_INSERT_ID(next_seq) + 1
+            ');
+            $mrnStmt->execute([$year, $month]);
+            $mrnSeq = $mrnStmt->rowCount() === 1 ? 1 : (int) $pdo->lastInsertId();
+            $mrn = substr((string) $year, 2, 2)
+                . str_pad((string) $mrnSeq, 4, '0', STR_PAD_LEFT)
+                . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+            $pdo->prepare('UPDATE patients SET mrn = ? WHERE id = ?')->execute([$mrn, $patientId]);
+
+            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+                ->execute([$_SESSION['user_id'], 'patient_registered_only',
+                    "Registered patient #$patientId ($name, MRN $mrn) — record only, no visit/invoice"]);
+
+            $pdo->commit();
+
+            $success = "Patient saved — MRN $mrn. No visit or invoice was created.";
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            $error = 'Could not save the patient record. Please try again.';
+        }
     } elseif ($doctorId <= 0 || $consultTypeId <= 0 || !in_array($paymentMode, ['CASH', 'DIGITAL'], true)) {
         $error = 'Doctor, consultation type, and payment mode are required.';
     } elseif (($pendingBookings = pending_booking_guard($pdo, $phone)) !== []) {
@@ -271,6 +342,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
             $error = 'Invalid doctor / consultation type combination.';
         } elseif ($discountPct < 0 || $discountPct > (float) $currentUser['max_discount_pct']) {
             $error = 'Discount exceeds your permitted limit of ' . $currentUser['max_discount_pct'] . '%.';
+        } elseif (($dayLock = require_day_open($pdo)) !== null) {
+            // Registration settles the consultation bill (create_bill_for_visit), so it
+            // is a money-moving action: once this receptionist's shift is closed, no new
+            // paid bill may land on the signed tally.
+            $error = $dayLock;
         } else {
             $fee = (float) $feeRow['fee'];
 
@@ -422,6 +498,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
         // submit; a bypassed popup lands here. No form re-render path for the
         // modal, so reject with instructions rather than losing the answer.
         $error = 'This patient has a booking today — reopen "New invoice" and answer the appointment prompt (it appears when you pick the patient).';
+    } elseif (($dayLock = require_day_open($pdo)) !== null) {
+        // A follow-up also settles its bill at registration — same day-lock guard as
+        // the new-patient path. A free follow-up is settled 'waived' (no cash), but the
+        // action still writes a settled bill row, so the shift must be open.
+        $error = $dayLock;
     } else {
         $fullFee = (float) $ctRow['fee'];
         $quote = revisit_consultation_fee($pdo, $patientId, $doctorId, $consultTypeId, $fullFee);
@@ -1017,6 +1098,11 @@ require __DIR__ . '/partials/sidebar.php';
                             <td>
                                 <div class="row-acts">
                                     <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>)">New invoice</button>
+                                    <?php if (has_permission('ADMISSION_ADMIT_PATIENT') || has_permission('RECEPTION_ADMIT_PATIENTS')): ?>
+                                    <!-- Admit from the all-patients list: the shared handler reuses today's
+                                         visit or creates a shell (byPatient=true). -->
+                                    <button type="button" class="qa" onclick="openAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, 0, '', true)">Admit</button>
+                                    <?php endif; ?>
                                     <!-- Procedure billing (e.g. ear piercing) is a separate, one-time flow — placeholder for a later phase. -->
                                     <button class="qa" disabled title="Procedure billing is coming in a later phase">Procedure</button>
                                 </div>
@@ -1194,12 +1280,17 @@ require __DIR__ . '/partials/sidebar.php';
 
             </div>
 
+            <!-- Set to 1 by the "Register only" button; commits patient + MRN with no
+                 visit/invoice. Cleared on a normal submit. -->
+            <input type="hidden" name="register_only" id="registerOnly" value="">
+
             <div class="form-footer">
                 <span class="foot-note">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
                     A unique MRN is generated on save and the visit goes straight to the doctor's queue.
                 </span>
                 <a href="patients.php" class="btn secondary">Cancel</a>
+                <button type="button" class="btn secondary" id="registerOnlyBtn" title="Save the patient's details only — no consultation, no invoice, no queue token">Register only</button>
                 <button type="submit" class="btn" id="submitBtn">Register &amp; Add to Queue</button>
             </div>
         </form>
@@ -1446,6 +1537,50 @@ function fuApplyOverride() {
         renderQuote(fee, 'Full fee (override)', 'FULL');
     } else { renderQuote(fuQuoteFee, fuQuoteLabel, fuQuoteType); }
 }
+
+// ---------------- Register-only (backfill, no visit/invoice) ----------------
+// The consultation fields (doctor / consult type / payment mode) are `required` for a
+// normal registration. "Register only" saves just the patient record, so we clear the
+// hidden flag path: strip `required` off those fields, mark register_only=1, submit.
+// Name/phone/gender stay required (and are re-checked server-side).
+(function () {
+    var btn = document.getElementById('registerOnlyBtn');
+    var form = document.getElementById('patientForm');
+    if (!btn || !form) { return; }
+    btn.addEventListener('click', function () {
+        document.getElementById('registerOnly').value = '1';
+        ['doctor_id', 'doctor_consult_type_id'].forEach(function (n) {
+            var el = form.querySelector('[name="' + n + '"]');
+            if (el) { el.removeAttribute('required'); }
+        });
+        form.querySelectorAll('input[name="payment_mode"]').forEach(function (el) {
+            el.removeAttribute('required');
+        });
+        if (form.reportValidity()) {
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+            form.submit();
+        }
+    });
+})();
+
+// ---------------- Double-submit guard ----------------
+// Registration now SETTLES the consultation bill on save (config/billing.php), so a
+// double-click would create two paid bills = a phantom collection. Disable the submit
+// button on the first submit; the browser still posts the (already-populated) form once.
+// Guarded per-form so a validation-blocked submit doesn't lock the user out — we only
+// disable when the form actually passes its own submit handlers.
+['patientForm', 'fuForm'].forEach(function (id) {
+    var form = document.getElementById(id);
+    if (!form) { return; }
+    form.addEventListener('submit', function () {
+        // Defer so this runs after any other submit handler that might cancel it.
+        setTimeout(function () {
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+        }, 0);
+    });
+});
 </script>
 
 <?php
@@ -1780,6 +1915,10 @@ phoneInput.addEventListener('change', regBookingCheck);
 })();
 <?php endif; ?>
 </script>
+<?php endif; ?>
+<?php if ($canAdmitHere) { require __DIR__ . '/partials/admit_modal.php'; } ?>
+<?php if ($admitError): ?>
+<script>window.addEventListener('load', function () { alert(<?= json_encode($admitError) ?>); });</script>
 <?php endif; ?>
 <script src="assets/js/date-picker.js"></script>
 </body>
