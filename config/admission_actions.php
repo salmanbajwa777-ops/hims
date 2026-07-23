@@ -18,6 +18,11 @@
  * decides how to redirect / surface the result.
  */
 
+// Required here rather than left to the callers: admits arrive from three pages
+// (receptionist.php, doctor.php, patients.php) and only one of them loaded this
+// library, so a sheet row silently went missing from the other two.
+require_once __DIR__ . '/sheets.php';
+
 function handle_admit_patient(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
 
@@ -139,6 +144,11 @@ function handle_admit_patient(PDO $pdo): array {
         // Alert admin + admitting doctor (best-effort, after commit).
         if (function_exists('notify_patient_admitted')) {
             notify_patient_admitted($pdo, $admissionId);
+        }
+        // Log the admission to the yearly Google Sheet, money columns blank — the
+        // bill only exists at discharge, which pushes its own row (best-effort).
+        if (function_exists('sheet_push')) {
+            sheet_push($pdo, 'ADMISSION', $admissionId, $uid);
         }
 
         $out['ok'] = true;

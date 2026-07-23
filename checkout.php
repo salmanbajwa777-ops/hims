@@ -11,6 +11,7 @@ $currentUser->execute([$_SESSION['user_id']]);
 $currentUser = $currentUser->fetch();
 
 require_once __DIR__ . '/config/billing.php';
+require_once __DIR__ . '/config/sheets.php';
 
 $error = '';
 $success = '';
@@ -157,6 +158,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
 
         $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
         $log->execute([$_SESSION['user_id'], 'bill_paid', "Recorded payment for bill #$billId ({$bill['invoice_number']}), method $paymentMethod, amount {$bill['grand_total']}"]);
+
+        // Log the settled invoice to the yearly Google Sheet. Bills raised at
+        // registration already pushed their row and sheet_push() skips anything
+        // already 'sent', so this only catches invoices that reached the desk
+        // through manual checkout (best-effort, never blocks the payment).
+        sheet_push($pdo, 'INVOICE', $billId, (int) $_SESSION['user_id']);
 
         header('Location: checkout.php?bill_id=' . $billId);
         exit;

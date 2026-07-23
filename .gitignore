@@ -1,5 +1,6 @@
 config/db.php
 config/db.local.php
 config/mail.php
+config/sheets_config.php
 uploads/
 *.log

@@ -13,6 +13,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
+require_once __DIR__ . '/config/sheets.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -193,6 +194,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
 
         // Alert admin: discharge complete, bill paid in full (best-effort, after commit).
         notify_patient_discharged($pdo, $admissionId);
+        // Log the discharge bill to the yearly Google Sheet (best-effort, after commit).
+        sheet_push($pdo, 'DISCHARGE', (int) $bill['id'], $uid);
 
         header('Location: admission_discharge.php?id=' . $admissionId . '&paid=1'); exit;
     } catch (Throwable $e) {
@@ -241,6 +244,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
 
             // Alert admin: discharge with a write-off (best-effort, after commit).
             notify_patient_discharged($pdo, $admissionId, $short);
+            // Log the discharge bill to the yearly Google Sheet — the Payment Method
+            // cell carries the written-off shortfall (best-effort, after commit).
+            sheet_push($pdo, 'DISCHARGE', (int) $bill['id'], $uid);
 
             header('Location: admission_discharge.php?id=' . $admissionId . '&wroteoff=1'); exit;
         } catch (Throwable $e) {

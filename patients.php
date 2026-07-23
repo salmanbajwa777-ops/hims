@@ -5,6 +5,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
+require_once __DIR__ . '/config/sheets.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_REGISTER_PATIENTS');
 
@@ -274,6 +275,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
     }
     $dob = trim($_POST['dob'] ?? '') ?: null;
     $gender = $_POST['gender'] ?? '';
+    // Optional — the patient record and the yearly invoice sheet both carry it. A
+    // malformed address is dropped rather than blocking the registration: an email
+    // is never worth turning a paying patient away at the desk.
+    $email = trim($_POST['email'] ?? '');
+    $email = ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) ? $email : null;
+    // patients.email arrives with sql/add_sheet_sync.sql. Code auto-deploys on push
+    // but migrations are run by hand, so the column may not exist yet — writing to
+    // it unconditionally would fail EVERY registration in that window. Probed once
+    // per request; when absent the field is simply dropped from the INSERT.
+    $hasEmailCol = false;
+    try {
+        $pdo->query('SELECT email FROM patients LIMIT 0');
+        $hasEmailCol = true;
+    } catch (PDOException $e) { /* pre-migration — registration continues without it */ }
     $cnic = trim($_POST['cnic'] ?? '') ?: null;
     $altPhone = trim($_POST['alt_phone'] ?? '') ?: null;
     $cityId = (int) ($_POST['city_id'] ?? 0) ?: null;
@@ -305,13 +320,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
             $pdo->beginTransaction();
 
             $insertPatient = $pdo->prepare('
-                INSERT INTO patients (mrn, name, father_name, dob, gender, phone, alt_phone, cnic, city_id, area_id, address, created_by_id)
-                VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO patients (mrn, name, father_name, dob, gender, phone, ' . ($hasEmailCol ? 'email, ' : '') . 'alt_phone, cnic, city_id, area_id, address, created_by_id)
+                VALUES (NULL, ?, ?, ?, ?, ?, ' . ($hasEmailCol ? '?, ' : '') . '?, ?, ?, ?, ?, ?)
             ');
-            $insertPatient->execute([
-                $name, $fatherName ?: null, $dob, $gender,
-                $phone, $altPhone, $cnic, $cityId, $areaId, $address, $_SESSION['user_id'],
-            ]);
+            $insertPatient->execute(array_merge(
+                [$name, $fatherName ?: null, $dob, $gender, $phone],
+                $hasEmailCol ? [$email] : [],
+                [$altPhone, $cnic, $cityId, $areaId, $address, $_SESSION['user_id']]
+            ));
             $patientId = (int) $pdo->lastInsertId();
 
             // Same race-safe monthly MRN counter as a full registration.
@@ -373,13 +389,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 // the same value to both before either commits. Both use an atomic upsert so MySQL
                 // serializes concurrent increments via row locking.
                 $insertPatient = $pdo->prepare('
-                    INSERT INTO patients (mrn, name, father_name, dob, gender, phone, alt_phone, cnic, city_id, area_id, address, created_by_id)
-                    VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO patients (mrn, name, father_name, dob, gender, phone, ' . ($hasEmailCol ? 'email, ' : '') . 'alt_phone, cnic, city_id, area_id, address, created_by_id)
+                    VALUES (NULL, ?, ?, ?, ?, ?, ' . ($hasEmailCol ? '?, ' : '') . '?, ?, ?, ?, ?, ?)
                 ');
-                $insertPatient->execute([
-                    $name, $fatherName ?: null, $dob, $gender,
-                    $phone, $altPhone, $cnic, $cityId, $areaId, $address, $_SESSION['user_id'],
-                ]);
+                $insertPatient->execute(array_merge(
+                    [$name, $fatherName ?: null, $dob, $gender, $phone],
+                    $hasEmailCol ? [$email] : [],
+                    [$altPhone, $cnic, $cityId, $areaId, $address, $_SESSION['user_id']]
+                ));
                 $patientId = (int) $pdo->lastInsertId();
 
                 // MRN = YY + NNNN + MM, where NNNN resets to 0001 each month (e.g. the first
@@ -464,6 +481,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
                 // Email the doctor about their new patient (best-effort, after commit).
                 notify_invoice_raised($pdo, $billId);
+                // Log the invoice to the yearly Google Sheet (best-effort, after commit).
+                sheet_push($pdo, 'INVOICE', $billId, (int) $_SESSION['user_id']);
 
                 $doctorStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
                 $doctorStmt->execute([$doctorId]);
@@ -591,6 +610,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
             // Email the doctor about the follow-up visit (best-effort, after commit).
             notify_invoice_raised($pdo, $billId);
+            // Log the invoice to the yearly Google Sheet (best-effort, after commit).
+            sheet_push($pdo, 'INVOICE', $billId, (int) $_SESSION['user_id']);
 
             $dStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
             $dStmt->execute([$doctorId]);
@@ -1219,6 +1240,10 @@ require __DIR__ . '/partials/sidebar.php';
                         <input type="date" id="dob" name="dob" class="always-float" placeholder=" ">
                         <span class="flabel always-float">Date of Birth <span class="opt">(optional)</span></span>
                         <span class="hint">Leave blank if unknown</span>
+                    </div>
+                    <div class="f">
+                        <input type="email" id="email" name="email" placeholder=" " autocomplete="email">
+                        <span class="flabel" data-for="email">Email <span class="opt">(optional)</span></span>
                     </div>
                     <div class="f">
                         <div class="mini-label">Gender <span class="req">*</span></div>

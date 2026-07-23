@@ -142,6 +142,7 @@ $sbGroups = [
             ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
             ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
             ['slug' => 'procedure_master', 'label' => 'Procedures',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
+            ['slug' => 'sheet_log',   'label' => 'Google Sheet Sync','icon' => 'receipt', 'href' => 'sheet_log.php'],
             ['slug' => 'permissions', 'label' => 'Permissions',     'icon' => 'lock',    'href' => 'permissions.php'],
         ],
     ],
