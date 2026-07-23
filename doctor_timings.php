@@ -109,6 +109,33 @@ try {
     exit('Doctor timings is not set up yet — run sql/add_doctor_day_timings.sql in phpMyAdmin first.');
 }
 
+// Unconfirmed rows prefill from the doctor's own weekly template (my_schedule.php):
+// a doctor whose standing pattern says today is off shows up pre-marked OFF, and
+// fixed hours land in the inputs. Reception still confirms by saving — only rows
+// with no doctor_day_timings entry for today are touched, and only in-memory.
+// try/catch: template table may not be migrated yet; feature silently dormant.
+try {
+    $tpl = $pdo->prepare('SELECT doctor_id, is_off, start_time, end_time, start_time_2, end_time_2
+                          FROM doctor_weekly_schedule WHERE weekday = ?');
+    $tpl->execute([(int) date('N')]);
+    $tplByDoc = [];
+    foreach ($tpl->fetchAll() as $t) {
+        $tplByDoc[(int) $t['doctor_id']] = $t;
+    }
+    foreach ($doctors as &$d) {
+        if ($d['status'] !== null || !isset($tplByDoc[(int) $d['id']])) { continue; }
+        $t = $tplByDoc[(int) $d['id']];
+        $d['status']       = $t['is_off'] ? 'OFF' : 'AVAILABLE';
+        $d['start_time']   = $t['start_time'];
+        $d['end_time']     = $t['end_time'];
+        $d['start_time_2'] = $t['start_time_2'];
+        $d['end_time_2']   = $t['end_time_2'];
+    }
+    unset($d);
+} catch (Throwable $e) {
+    // doctor_weekly_schedule not migrated yet — sheet starts blank as before.
+}
+
 // Sheet-level "last updated" line: the most recent touch across all rows.
 $lastTouch = null;
 foreach ($doctors as $d) {
@@ -261,7 +288,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
 
                     <div class="sheet-foot">
-                        <div class="hint">Timings apply to <strong>today only</strong> and reset each day. Session 2 is optional — leave it blank for single-sitting doctors. Mark a doctor <strong>Off today</strong> to grey out their windows.</div>
+                        <div class="hint">Timings apply to <strong>today only</strong> and reset each day. Unconfirmed rows prefill from each doctor's own weekly schedule — saving confirms them. Session 2 is optional; mark a doctor <strong>Off today</strong> to grey out their windows.</div>
                         <?php if ($canEdit): ?>
                         <button type="submit" class="btn">Save today's timings</button>
                         <?php endif; ?>
