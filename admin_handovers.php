@@ -25,7 +25,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
         $pdo->beginTransaction();
 
         // Lock the row so two admins can't both acknowledge the same handover.
-        $stmt = $pdo->prepare("SELECT * FROM shift_closings WHERE id = ? AND status = 'PENDING_RECEIPT' FOR UPDATE");
+        // EDITED closings are receivable too — marking received IS the approval
+        // of the cashier's post-close changes.
+        $stmt = $pdo->prepare("SELECT * FROM shift_closings WHERE id = ? AND status IN ('PENDING_RECEIPT','EDITED') FOR UPDATE");
         $stmt->execute([$closingId]);
         $closing = $stmt->fetch();
 
@@ -47,11 +49,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
 
             $declared = (float) $closing['handover_declared'];
             $discrepancy = round($received - $declared, 2);
+            $wasEdited = $closing['status'] === 'EDITED';
             $detail = "Handover {$closing['closing_number']} received: Rs " . number_format($received, 2)
                     . ' (declared Rs ' . number_format($declared, 2) . ')'
                     . (abs($discrepancy) > 0.009
                         ? ' — DISCREPANCY Rs ' . number_format($discrepancy, 2)
                         : ' — matches declared')
+                    . ($wasEdited ? '; cashier edits (×' . (int) $closing['edit_count'] . ') APPROVED' : '')
                     . '; signed slip filed.';
             $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
                 ->execute([$_SESSION['user_id'], 'handover_received', $detail]);
@@ -82,18 +86,47 @@ try {
         SELECT c.*, cu.name AS cashier_name
         FROM shift_closings c
         JOIN users cu ON cu.id = c.cashier_id
-        WHERE c.status = 'PENDING_RECEIPT'
-        ORDER BY c.closing_date DESC
+        WHERE c.status IN ('PENDING_RECEIPT','EDITED')
+        ORDER BY c.closing_date DESC, c.id
     ");
     $pending = $pendingStmt->fetchAll();
 } catch (PDOException $e) {
     http_response_code(500);
-    die('Day-closing tables missing — run sql/add_shift_closings.sql first.');
+    die('Shift-closing tables missing or outdated — run sql/add_per_user_closings.sql.');
 }
+
+// Per-field change history for the pending EDITED closings, newest round first.
+$editLogs = [];
+if ($pending) {
+    $ids = array_column($pending, 'id');
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    try {
+        $elStmt = $pdo->prepare("
+            SELECT e.*, u.name AS edited_by_name
+            FROM shift_closing_edits e
+            JOIN users u ON u.id = e.edited_by_id
+            WHERE e.closing_id IN ($ph)
+            ORDER BY e.closing_id, e.edit_round DESC, e.id
+        ");
+        $elStmt->execute($ids);
+        foreach ($elStmt->fetchAll() as $row) {
+            $editLogs[(int) $row['closing_id']][] = $row;
+        }
+    } catch (PDOException $e) {
+        // edits table not migrated yet — show closings without change detail
+    }
+}
+
+$FIELD_LABELS = [
+    'counted_cash'      => 'Counted cash',
+    'handover_declared' => 'Handover declared',
+    'variance_note'     => 'Variance note',
+    'denominations'     => 'Denominations',
+];
 
 $historyStmt = $pdo->query("
     SELECT c.closing_number, c.closing_date, c.handover_declared, c.handover_received,
-           c.variance, c.received_at, c.id,
+           c.variance, c.received_at, c.id, c.edit_count,
            cu.name AS cashier_name, ru.name AS received_by_name
     FROM shift_closings c
     JOIN users cu ON cu.id = c.cashier_id
@@ -144,6 +177,12 @@ require __DIR__ . '/partials/sidebar.php';
 .ho-pill.amber { background: var(--amber-bg); color: var(--amber-text); }
 .ho-pill.red { background: var(--red-bg); color: var(--red-text); }
 
+.edit-log { margin-top: 12px; border: 1px solid var(--amber); border-radius: var(--radius-input); background: var(--amber-bg); padding: 12px 14px; overflow-x: auto; }
+.edit-log-title { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--amber-text); margin-bottom: 8px; }
+.edit-log .htable td, .edit-log .htable th { border-color: rgba(146,64,14,.25); }
+.chg-old { color: var(--red-text); text-decoration: line-through; }
+.chg-new { color: var(--green-text); font-weight: 700; }
+.edit-log-note { font-size: 11.5px; color: var(--amber-text); margin-top: 8px; }
 .alert-error { background: var(--red-bg); color: var(--red-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 500; }
 .alert-ok { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 500; }
 .empty { text-align: center; color: var(--text-muted); padding: 26px 0; font-size: 13.5px; }
@@ -154,7 +193,7 @@ require __DIR__ . '/partials/sidebar.php';
 
     <div class="page-head">
         <h1>Cash Handovers</h1>
-        <p>Day closings from reception land here. Recount the cash, confirm the signed slip is filed, then mark received.</p>
+        <p>Each receptionist's shift closing lands here separately. Recount their cash, review any highlighted post-close edits, confirm the signed slip is filed, then mark received — that locks the shift for good.</p>
     </div>
 
     <?php if ($error): ?><div class="alert-error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
@@ -178,12 +217,16 @@ require __DIR__ . '/partials/sidebar.php';
                     <input type="hidden" name="action" value="mark_received">
                     <input type="hidden" name="closing_id" value="<?= (int) $p['id'] ?>">
 
-                    <div class="pend">
+                    <?php $pEdited = $p['status'] === 'EDITED'; ?>
+                    <div class="pend"<?= $pEdited ? ' style="border-color:var(--amber);background:var(--amber-bg);"' : '' ?>>
                         <div>
-                            <div class="who"><?= htmlspecialchars($p['cashier_name']) ?> — <?= date('D d M Y', strtotime($p['closing_date'])) ?></div>
+                            <div class="who"><?= htmlspecialchars($p['cashier_name']) ?> — <?= date('D d M Y', strtotime($p['closing_date'])) ?>
+                                <?php if ($pEdited): ?><span class="ho-pill amber" style="margin-left:6px;">EDITED ×<?= (int) $p['edit_count'] ?> — review changes</span><?php endif; ?>
+                            </div>
                             <div class="det">
                                 Slip <a class="slip-link" href="shift_closing.php?print=1&closing_id=<?= (int) $p['id'] ?>" target="_blank"><?= htmlspecialchars($p['closing_number']) ?></a>
                                 · closed <?= date('H:i', strtotime($p['created_at'])) ?>
+                                <?= $pEdited && $p['edited_at'] ? ' · last edit ' . date('H:i', strtotime($p['edited_at'])) : '' ?>
                                 · variance <?= number_format((float) $p['variance'], 2) ?><?= $p['variance_note'] ? ' (note attached)' : '' ?>
                             </div>
                         </div>
@@ -192,6 +235,25 @@ require __DIR__ . '/partials/sidebar.php';
                             <div class="det" style="text-align:right;">declared handover</div>
                         </div>
                     </div>
+
+                    <?php if (!empty($editLogs[(int) $p['id']])): ?>
+                    <div class="edit-log">
+                        <div class="edit-log-title">What the cashier changed after closing</div>
+                        <table class="htable">
+                            <tr><th>Round</th><th>Field</th><th>Was</th><th>Now</th><th>When</th></tr>
+                            <?php foreach ($editLogs[(int) $p['id']] as $e): ?>
+                            <tr>
+                                <td>#<?= (int) $e['edit_round'] ?></td>
+                                <td><?= htmlspecialchars($FIELD_LABELS[$e['field_name']] ?? $e['field_name']) ?></td>
+                                <td class="chg-old"><?= htmlspecialchars($e['old_value'] ?? '—') ?></td>
+                                <td class="chg-new"><?= htmlspecialchars($e['new_value'] ?? '—') ?></td>
+                                <td style="white-space:nowrap;"><?= date('H:i', strtotime($e['created_at'])) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </table>
+                        <p class="edit-log-note">Marking received approves these changes and locks the closing permanently.</p>
+                    </div>
+                    <?php endif; ?>
 
                     <?php if ($p['variance_note']): ?>
                         <p style="font-size:12.5px;color:var(--text-secondary);margin-top:10px;"><b>Variance note:</b> <?= htmlspecialchars($p['variance_note']) ?></p>
@@ -219,10 +281,10 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
 
                     <button class="rcv-btn" type="submit"
-                            onclick="return confirm('Mark this handover received? Your name and the time will be stamped on <?= htmlspecialchars($p['closing_number']) ?>.');">
-                        Mark received
+                            onclick="return confirm('<?= $pEdited ? 'Mark received AND approve the cashier\'s edits? The closing locks permanently.' : 'Mark this handover received? Your name and the time will be stamped on ' . htmlspecialchars($p['closing_number']) . '.' ?>');">
+                        <?= $pEdited ? 'Approve changes &amp; mark received' : 'Mark received' ?>
                     </button>
-                    <p class="hint-note">Stamps your name + time on <?= htmlspecialchars($p['closing_number']) ?> and completes the day's audit trail.</p>
+                    <p class="hint-note">Stamps your name + time on <?= htmlspecialchars($p['closing_number']) ?><?= $pEdited ? ', approves the highlighted changes,' : '' ?> and locks the shift's audit trail.</p>
                 </form>
                 <?php endforeach; ?>
             </div>
@@ -252,6 +314,9 @@ require __DIR__ . '/partials/sidebar.php';
                                 <span class="ho-pill red"><?= $disc < 0 ? '− ' : '+ ' ?><?= number_format(abs($disc), 0) ?> discrepancy</span>
                             <?php else: ?>
                                 <span class="ho-pill green">Received · filed</span>
+                            <?php endif; ?>
+                            <?php if ((int) ($h['edit_count'] ?? 0) > 0): ?>
+                                <span class="ho-pill amber" title="Cashier edited before receipt; approved at mark-received">edited ×<?= (int) $h['edit_count'] ?></span>
                             <?php endif; ?>
                         </td>
                     </tr>

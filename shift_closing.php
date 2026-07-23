@@ -1,13 +1,19 @@
 <?php
-// Day closing & cash handover — reception side (approved mock 2026-07-23).
+// Shift closing & cash handover — reception side (approved 2026-07-23;
+// reworked to PER-RECEPTIONIST + post-close edits the same day).
 //
-// Live tally of today's collections (consultation bills + admission bills +
-// cash refunds), a denomination counter for the physical drawer count, the
-// declared handover amount, then submit → the day LOCKS, the A5 closing slip
-// (?print=1) opens for signatures, and the handover queues for admin in
-// admin_handovers.php.
+// Each receptionist closes THEIR OWN shift: live tally of the payments they
+// recorded, the refunds they generated, the expenses they posted. No float in
+// personal tallies. Submit → their own money actions lock for the day, the
+// A5 slip (?print=1) opens, and the handover queues in admin_handovers.php.
 //
-// Requires sql/add_shift_closings.sql to be applied.
+// EDITS: while status is PENDING_RECEIPT or EDITED, the same cashier may
+// reopen the count/handover figures. Changes apply immediately, flip status
+// to EDITED, log per-field in shift_closing_edits, and email admin — who
+// approves them implicitly at mark-received time. Once RECEIVED: locked.
+//
+// Requires sql/add_shift_closings.sql + add_closing_expenses.sql +
+// add_per_user_closings.sql to be applied.
 
 require_once __DIR__ . '/config/auth.php';
 require_login();
@@ -20,10 +26,27 @@ require_permission('RECEPTION_CLOSE_DAY');
 
 $error = '';
 $today = date('Y-m-d');
+$uid = (int) $_SESSION['user_id'];
 
 // PKR note faces, largest first. face_value 1 is the "Coins" line — its qty is
 // entered as a rupee amount, not a piece count.
 $DENOMS = [5000, 1000, 500, 100, 50, 20, 10, 1];
+
+// Rebuild the physical count server-side from posted quantities; the
+// client-side totals are display sugar only.
+function sc_parse_denoms(array $denomFaces): array {
+    $counted = 0.0;
+    $rows = [];
+    foreach ($denomFaces as $face) {
+        $qty = max(0, (int) ($_POST['denom'][$face] ?? 0));
+        $amount = $face === 1 ? (float) $qty : (float) ($face * $qty);
+        if ($qty > 0) {
+            $rows[] = [$face, $qty, $amount];
+        }
+        $counted += $amount;
+    }
+    return [round($counted, 2), $rows];
+}
 
 // ---------------- Print view (A5 closing slip) ----------------
 if (isset($_GET['print']) && isset($_GET['closing_id'])) {
@@ -63,30 +86,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
     try {
         $pdo->beginTransaction();
 
-        if (day_closing($pdo, $today)) {
-            $error = 'Today has already been closed.';
+        if (day_closing($pdo, $today, $uid)) {
+            $error = 'You have already closed your shift today. Use "Edit my closing" below to correct it.';
         } elseif ($handoverToId <= 0) {
             $error = 'Pick the admin you are handing the cash to.';
         } elseif ($handoverDeclared < 0) {
             $error = 'The handover amount cannot be negative.';
         } else {
-            // Rebuild the count server-side from the posted quantities — the
-            // client-side totals are display sugar only.
-            $counted = 0.0;
-            $denomRows = [];
-            foreach ($DENOMS as $face) {
-                $qty = max(0, (int) ($_POST['denom'][$face] ?? 0));
-                $amount = $face === 1 ? (float) $qty : (float) ($face * $qty);
-                if ($qty > 0) {
-                    $denomRows[] = [$face, $qty, $amount];
-                }
-                $counted += $amount;
-            }
-            $counted = round($counted, 2);
+            [$counted, $denomRows] = sc_parse_denoms($DENOMS);
 
-            $tally = day_cash_tally($pdo, $today);
+            $tally = day_cash_tally($pdo, $today, $uid);
             $variance = round($counted - $tally['expected_cash'], 2);
-            $floatRetained = min($tally['opening_float'], $counted);
 
             if (abs($variance) > 0.009 && $varianceNote === '') {
                 $error = 'The count is ' . ($variance < 0 ? 'short' : 'over') . ' by Rs '
@@ -106,16 +116,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                          expense_total, expense_count,
                          expected_cash, counted_cash, variance, variance_note,
                          float_retained, handover_declared, handover_to_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 ')->execute([
-                    $closingNumber, $today, $_SESSION['user_id'], $tally['opening_float'],
+                    $closingNumber, $today, $uid,
                     $tally['cash_consult_total'], $tally['cash_consult_count'],
                     $tally['cash_admission_total'], $tally['cash_admission_count'],
                     $tally['online_total'], $tally['online_count'],
                     $tally['cash_refund_total'], $tally['cash_refund_count'],
                     $tally['expense_total'], $tally['expense_count'],
                     $tally['expected_cash'], $counted, $variance, $varianceNote ?: null,
-                    $floatRetained, $handoverDeclared, $handoverToId,
+                    $handoverDeclared, $handoverToId,
                 ]);
                 $closingId = (int) $pdo->lastInsertId();
 
@@ -129,8 +139,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
 
                 $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
                 $log->execute([
-                    $_SESSION['user_id'],
-                    'day_closed',
+                    $uid,
+                    'shift_closed',
                     "Closing $closingNumber for $today: counted Rs " . number_format($counted, 2)
                     . ' vs expected Rs ' . number_format($tally['expected_cash'], 2)
                     . ' (variance ' . number_format($variance, 2) . '), handover declared Rs '
@@ -152,7 +162,124 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        $error = 'Could not close the day. Please try again.';
+        $error = 'Could not close the shift. Please try again.';
+    }
+}
+
+// ---------------- Edit a closed shift (same cashier, before admin receives) --
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_closing') {
+    $handoverDeclared = round((float) str_replace(',', '', $_POST['handover_declared'] ?? '0'), 2);
+    $varianceNote = trim($_POST['variance_note'] ?? '');
+
+    try {
+        $pdo->beginTransaction();
+
+        // Lock the row: only the cashier themself, only while not yet received.
+        $stmt = $pdo->prepare("
+            SELECT * FROM shift_closings
+            WHERE closing_date = ? AND cashier_id = ? AND status IN ('PENDING_RECEIPT','EDITED')
+            FOR UPDATE
+        ");
+        $stmt->execute([$today, $uid]);
+        $closing = $stmt->fetch();
+
+        if (!$closing) {
+            $error = 'Nothing editable — either your shift is not closed yet, or admin has already received the handover (locked).';
+        } elseif ($handoverDeclared < 0) {
+            $error = 'The handover amount cannot be negative.';
+        } else {
+            [$counted, $denomRows] = sc_parse_denoms($DENOMS);
+            $expected = (float) $closing['expected_cash'];   // system side is not re-tallied — the shift's money is locked
+            $variance = round($counted - $expected, 2);
+
+            if (abs($variance) > 0.009 && $varianceNote === '') {
+                $error = 'The count is ' . ($variance < 0 ? 'short' : 'over') . ' by Rs '
+                       . number_format(abs($variance), 2) . ' — a variance note is required.';
+            } elseif ($handoverDeclared > $counted) {
+                $error = 'You cannot hand over more than the Rs ' . number_format($counted, 2) . ' counted.';
+            } else {
+                $round = (int) $closing['edit_count'] + 1;
+
+                // Per-field change log — only what actually moved.
+                $changes = [];
+                if (abs((float) $closing['counted_cash'] - $counted) > 0.009) {
+                    $changes['counted_cash'] = [number_format((float) $closing['counted_cash'], 2, '.', ''), number_format($counted, 2, '.', '')];
+                }
+                if (abs((float) $closing['handover_declared'] - $handoverDeclared) > 0.009) {
+                    $changes['handover_declared'] = [number_format((float) $closing['handover_declared'], 2, '.', ''), number_format($handoverDeclared, 2, '.', '')];
+                }
+                if (($closing['variance_note'] ?? '') !== $varianceNote) {
+                    $changes['variance_note'] = [$closing['variance_note'] ?? '', $varianceNote];
+                }
+
+                // Denomination diff, summarised as one loggable line each way.
+                $oldDenoms = [];
+                $dStmt = $pdo->prepare('SELECT face_value, qty FROM shift_closing_denominations WHERE closing_id = ? ORDER BY face_value DESC');
+                $dStmt->execute([(int) $closing['id']]);
+                foreach ($dStmt->fetchAll() as $d) {
+                    $oldDenoms[] = ((int) $d['face_value'] === 1 ? 'Coins Rs' : $d['face_value'] . '×') . $d['qty'];
+                }
+                $newDenoms = [];
+                foreach ($denomRows as [$face, $qty, $amount]) {
+                    $newDenoms[] = ($face === 1 ? 'Coins Rs' : $face . '×') . $qty;
+                }
+                $oldDenomStr = implode(', ', $oldDenoms);
+                $newDenomStr = implode(', ', $newDenoms);
+                if ($oldDenomStr !== $newDenomStr) {
+                    $changes['denominations'] = [$oldDenomStr, $newDenomStr];
+                }
+
+                if (!$changes) {
+                    $error = 'Nothing changed — the figures are the same as before.';
+                } else {
+                    $editIns = $pdo->prepare('
+                        INSERT INTO shift_closing_edits (closing_id, edit_round, field_name, old_value, new_value, edited_by_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ');
+                    foreach ($changes as $field => [$old, $new]) {
+                        $editIns->execute([(int) $closing['id'], $round, $field, $old !== '' ? $old : null, $new !== '' ? $new : null, $uid]);
+                    }
+
+                    $pdo->prepare("
+                        UPDATE shift_closings
+                        SET counted_cash = ?, variance = ?, variance_note = ?,
+                            handover_declared = ?, status = 'EDITED',
+                            edited_at = NOW(), edit_count = ?
+                        WHERE id = ?
+                    ")->execute([$counted, $variance, $varianceNote ?: null, $handoverDeclared, $round, (int) $closing['id']]);
+
+                    // Replace the denomination rows with the new count.
+                    $pdo->prepare('DELETE FROM shift_closing_denominations WHERE closing_id = ?')->execute([(int) $closing['id']]);
+                    $denomIns = $pdo->prepare('
+                        INSERT INTO shift_closing_denominations (closing_id, face_value, qty, amount)
+                        VALUES (?, ?, ?, ?)
+                    ');
+                    foreach ($denomRows as [$face, $qty, $amount]) {
+                        $denomIns->execute([(int) $closing['id'], $face, $qty, $amount]);
+                    }
+
+                    $changedList = implode(', ', array_keys($changes));
+                    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+                        ->execute([$uid, 'shift_closing_edited',
+                            "Closing {$closing['closing_number']} edited (round $round): $changedList"]);
+
+                    $pdo->commit();
+
+                    // Alert admin: the signed figures changed (best-effort).
+                    notify_closing_edited($pdo, (int) $closing['id'], $round);
+
+                    header('Location: shift_closing.php?print=1&closing_id=' . (int) $closing['id']);
+                    exit;
+                }
+            }
+        }
+
+        $pdo->rollBack();
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $error = 'Could not save the edit. Please try again.';
     }
 }
 
@@ -160,17 +287,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
 $closing = null;
 $tally = null;
 try {
-    $closing = day_closing($pdo, $today);
-    $tally = day_cash_tally($pdo, $today);
+    $closing = day_closing($pdo, $today, $uid);
+    $tally = day_cash_tally($pdo, $today, $uid);
 } catch (PDOException $e) {
     http_response_code(500);
-    die('Day-closing tables missing — run sql/add_shift_closings.sql first.');
+    die('Shift-closing tables missing or outdated — run sql/add_per_user_closings.sql.');
 }
 
 $adminsStmt = $pdo->query("SELECT id, name FROM users WHERE base_role = 'ADMIN' ORDER BY name");
 $admins = $adminsStmt->fetchAll();
 
-$suggestedHandover = max(0, round($tally['expected_cash'] - $tally['opening_float'], 2));
+// Edit mode: the closed shift reopened for correction (?edit=1, editable states only).
+$editMode = $closing && isset($_GET['edit'])
+    && in_array($closing['status'], ['PENDING_RECEIPT', 'EDITED'], true);
+
+$savedDenoms = [];
+if ($editMode) {
+    $dStmt = $pdo->prepare('SELECT face_value, qty FROM shift_closing_denominations WHERE closing_id = ?');
+    $dStmt->execute([(int) $closing['id']]);
+    foreach ($dStmt->fetchAll() as $d) {
+        $savedDenoms[(int) $d['face_value']] = (int) $d['qty'];
+    }
+}
+
+// The form serves both modes; in edit mode expected cash comes from the
+// snapshot (the shift's money is locked, so the system side cannot change).
+$formExpected = $editMode ? (float) $closing['expected_cash'] : $tally['expected_cash'];
+$suggestedHandover = $editMode ? (float) $closing['handover_declared'] : max(0, $tally['expected_cash']);
+$showForm = !$closing || $editMode;
+
+$meStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+$meStmt->execute([$uid]);
+$myName = $meStmt->fetchColumn() ?: 'Me';
 
 $pageTitle = 'Day Closing';
 require __DIR__ . '/partials/head.php';
@@ -225,79 +373,94 @@ require __DIR__ . '/partials/sidebar.php';
 
 .close-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: var(--radius-btn); font: inherit; font-weight: 600; font-size: 14px; padding: 12px 22px; cursor: pointer; background: var(--primary-dark); color: #fff; width: 100%; }
 .close-btn:hover { background: var(--primary); }
-.close-btn[disabled] { opacity: .55; cursor: not-allowed; }
+.close-btn.amber { background: var(--amber); color: #3B2E08; }
 .lock-note { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 10px; }
 .alert-error { background: var(--red-bg); color: var(--red-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 500; }
 .closed-box { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-card); padding: 20px 22px; }
+.closed-box.amberish { background: var(--amber-bg); color: var(--amber-text); }
 .closed-box b { font-size: 15px; }
 .closed-box .row { margin-top: 6px; font-size: 13.5px; }
 .closed-actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
 .closed-actions a { display: inline-flex; align-items: center; padding: 9px 16px; border-radius: var(--radius-btn); font-weight: 600; font-size: 13px; background: var(--card); color: var(--text); border: 1px solid var(--border); }
+.edit-banner { background: var(--amber-bg); color: var(--amber-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 600; }
 </style>
 
 <div class="content">
 
     <div class="page-head">
-        <h1>Day Closing — <?= date('D d M Y') ?></h1>
-        <p>Count the drawer against the system tally, declare the cash handover, and lock the day.</p>
+        <h1>My Shift Closing — <?= date('D d M Y') ?></h1>
+        <p><?= htmlspecialchars($myName) ?>'s own takings only: payments you recorded, refunds you issued, expenses you posted. Colleagues close their shifts separately.</p>
     </div>
 
     <?php if ($error): ?>
         <div class="alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <?php if ($closing): ?>
+    <?php if ($closing && !$editMode): ?>
 
-        <div class="closed-box">
-            <b>Today is closed — slip <?= htmlspecialchars($closing['closing_number']) ?></b>
+        <div class="closed-box<?= $closing['status'] === 'EDITED' ? ' amberish' : '' ?>">
+            <b>Your shift is closed — slip <?= htmlspecialchars($closing['closing_number']) ?><?= $closing['status'] === 'EDITED' ? ' (edited ×' . (int) $closing['edit_count'] . ', awaiting admin review)' : '' ?></b>
             <div class="row">
                 Counted Rs <?= number_format((float) $closing['counted_cash'], 2) ?>
                 vs expected Rs <?= number_format((float) $closing['expected_cash'], 2) ?>
                 (variance <?= number_format((float) $closing['variance'], 2) ?>)
                 &middot; handover declared Rs <?= number_format((float) $closing['handover_declared'], 2) ?>
-                &middot; status: <?= $closing['status'] === 'RECEIVED' ? 'received by admin' : 'awaiting admin receipt' ?>
+                &middot; status: <?= $closing['status'] === 'RECEIVED' ? 'received by admin (locked)' : 'awaiting admin receipt' ?>
             </div>
             <div class="closed-actions">
                 <a href="shift_closing.php?print=1&closing_id=<?= (int) $closing['id'] ?>" target="_blank">Reprint A5 closing slip</a>
+                <?php if (in_array($closing['status'], ['PENDING_RECEIPT', 'EDITED'], true)): ?>
+                    <a href="shift_closing.php?edit=1" style="border-color:var(--amber);color:var(--amber-text);background:var(--amber-bg);">Edit my closing</a>
+                <?php endif; ?>
             </div>
         </div>
 
-    <?php else: ?>
+    <?php endif; ?>
+
+    <?php if ($showForm): ?>
+
+    <?php if ($editMode): ?>
+        <div class="edit-banner">
+            Editing closing <?= htmlspecialchars($closing['closing_number']) ?> — your count and handover figures reopen below.
+            Every change is logged old&rarr;new, highlighted for admin, and admin is emailed immediately.
+            The shift's payments stay locked; only the physical-count side can change.
+        </div>
+    <?php endif; ?>
 
     <div class="tiles">
         <div class="tile">
-            <div class="lbl">Total collected</div>
+            <div class="lbl">My collections</div>
             <div class="val">Rs <?= number_format($tally['net_collected'], 0) ?></div>
-            <div class="hint"><?= $tally['cash_count'] + $tally['online_count'] ?> payments today</div>
+            <div class="hint"><?= $tally['cash_count'] + $tally['online_count'] ?> payments recorded by me</div>
         </div>
         <div class="tile">
-            <div class="lbl">Cash</div>
+            <div class="lbl">My cash</div>
             <div class="val">Rs <?= number_format($tally['cash_total'] - $tally['cash_refund_total'], 0) ?></div>
             <div class="hint"><?= $tally['cash_count'] ?> payments<?= $tally['cash_refund_count'] ? ' − ' . $tally['cash_refund_count'] . ' refund' . ($tally['cash_refund_count'] > 1 ? 's' : '') : '' ?></div>
         </div>
         <div class="tile">
-            <div class="lbl">Online</div>
+            <div class="lbl">My online</div>
             <div class="val">Rs <?= number_format($tally['online_total'], 0) ?></div>
             <div class="hint"><?= $tally['online_count'] ?> payments · bank a/c</div>
         </div>
         <div class="tile hero">
-            <div class="lbl">Expected cash in drawer</div>
-            <div class="val">Rs <?= number_format($tally['expected_cash'], 0) ?></div>
-            <div class="hint">Float <?= number_format($tally['opening_float'], 0) ?> + cash <?= number_format($tally['cash_total'], 0) ?> − refunds <?= number_format($tally['cash_refund_total'], 0) ?> − expenses <?= number_format($tally['expense_total'], 0) ?></div>
+            <div class="lbl">Expected cash in hand</div>
+            <div class="val">Rs <?= number_format($formExpected, 0) ?></div>
+            <div class="hint">Cash <?= number_format($tally['cash_total'], 0) ?> − refunds <?= number_format($tally['cash_refund_total'], 0) ?> − expenses <?= number_format($tally['expense_total'], 0) ?></div>
         </div>
     </div>
 
     <form method="POST" action="shift_closing.php" id="closeForm">
-    <input type="hidden" name="action" value="close_day">
+    <input type="hidden" name="action" value="<?= $editMode ? 'edit_closing' : 'close_day' ?>">
 
     <div class="close-grid">
 
-        <!-- ==== LEFT: system-side ledger ==== -->
+        <!-- ==== LEFT: system-side ledger (this user only) ==== -->
         <div class="close-col">
 
             <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Collections by method</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Consultation invoices and admission bills paid today. System figures — nothing to enter here.</p>
+                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">My collections by method</h2>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Consultation invoices and admission bills where <b>you</b> recorded the payment. System figures — nothing to enter here.</p>
                 <div style="overflow-x:auto;">
                 <table class="ttable">
                     <tr class="section"><td colspan="3">Money in</td></tr>
@@ -314,16 +477,16 @@ require __DIR__ . '/partials/sidebar.php';
                     <tr class="section"><td colspan="3">Money out</td></tr>
                     <tr>
                         <td>Refunds — cash <span class="count-chip"><?= $tally['cash_refund_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)"><?= $tally['cash_refund_count'] ? 'paid from the drawer' : 'none today' ?></td>
+                        <td class="num" style="color:var(--text-muted)"><?= $tally['cash_refund_count'] ? 'issued by me' : 'none today' ?></td>
                         <td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td>
                     </tr>
                     <tr>
                         <td>Expenses — counter <span class="count-chip"><?= $tally['expense_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)"><?= $tally['expense_count'] ? '<a href="expenses.php" style="color:var(--primary-dark);text-decoration:underline;">EXP vouchers</a>' : 'none today' ?></td>
+                        <td class="num" style="color:var(--text-muted)"><?= $tally['expense_count'] ? '<a href="expenses.php" style="color:var(--primary-dark);text-decoration:underline;">my EXP vouchers</a>' : 'none today' ?></td>
                         <td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td>
                     </tr>
                     <tr class="total">
-                        <td colspan="2">Net collected today</td>
+                        <td colspan="2">My net collected today</td>
                         <td class="num">Rs <?= number_format($tally['net_collected'], 2) ?></td>
                     </tr>
                 </table>
@@ -331,25 +494,27 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
 
             <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Cash drawer math</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">What should physically be in the drawer right now.</p>
+                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Cash-in-hand math</h2>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">What you should physically be holding right now. (The drawer float is admin's, not part of your tally.)</p>
                 <div style="overflow-x:auto;">
                 <table class="ttable">
-                    <tr><td>Opening float (carried in)</td><td class="num"><?= number_format($tally['opening_float'], 2) ?></td></tr>
-                    <tr><td>+ Cash payments received</td><td class="num"><?= number_format($tally['cash_total'], 2) ?></td></tr>
-                    <tr><td>− Cash refunds paid out</td><td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td></tr>
-                    <tr><td>− Counter expenses (EXP vouchers)</td><td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td></tr>
-                    <tr class="grand"><td>Expected cash in drawer</td><td class="num">Rs <?= number_format($tally['expected_cash'], 2) ?></td></tr>
+                    <tr><td>My cash payments received</td><td class="num"><?= number_format($tally['cash_total'], 2) ?></td></tr>
+                    <tr><td>− My cash refunds paid out</td><td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td></tr>
+                    <tr><td>− My counter expenses (EXP)</td><td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td></tr>
+                    <tr class="grand"><td>Expected cash in hand</td><td class="num">Rs <?= number_format($tally['expected_cash'], 2) ?></td></tr>
                 </table>
                 </div>
+                <?php if ($editMode && abs($tally['expected_cash'] - $formExpected) > 0.009): ?>
+                <p style="font-size:12px;color:var(--amber-text);margin-top:10px;">Note: the closing snapshot (Rs <?= number_format($formExpected, 2) ?>) is the figure your count is checked against — it was frozen when you closed.</p>
+                <?php endif; ?>
             </div>
 
             <div class="card">
                 <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Online — verify, don't count</h2>
                 <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:0;">
-                    Match today's <b><?= $tally['online_count'] ?></b> online payment<?= $tally['online_count'] === 1 ? '' : 's' ?>
+                    Match your <b><?= $tally['online_count'] ?></b> online payment<?= $tally['online_count'] === 1 ? '' : 's' ?>
                     totalling <b>Rs <?= number_format($tally['online_total'], 2) ?></b> against the bank app before closing.
-                    Online money never touches the drawer.
+                    Online money never passes through your hands.
                 </p>
             </div>
 
@@ -360,12 +525,13 @@ require __DIR__ . '/partials/sidebar.php';
 
             <div class="card">
                 <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Physical cash count</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Count the drawer by denomination — totals compute themselves. "Coins" takes a rupee amount.</p>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Count your cash by denomination — totals compute themselves. "Coins" takes a rupee amount.</p>
                 <div>
                     <?php foreach ($DENOMS as $face): ?>
                     <div class="denom-row">
                         <span class="note-face"><?= $face === 1 ? 'Coins' : number_format($face) ?></span>
-                        <input class="denom-qty" type="number" min="0" step="1" name="denom[<?= $face ?>]" value="0"
+                        <input class="denom-qty" type="number" min="0" step="1" name="denom[<?= $face ?>]"
+                               value="<?= (int) ($savedDenoms[$face] ?? 0) ?>"
                                data-face="<?= $face ?>" inputmode="numeric"
                                aria-label="<?= $face === 1 ? 'Coins total in rupees' : 'Number of ' . $face . ' notes' ?>">
                         <span class="denom-amt" data-amt="<?= $face ?>">0</span>
@@ -377,21 +543,23 @@ require __DIR__ . '/partials/sidebar.php';
                     <span class="v">Rs <span id="countedTotal">0</span></span>
                 </div>
                 <div class="variance-strip ok" id="varianceStrip">
-                    <span id="varianceLabel">Variance vs expected (<?= number_format($tally['expected_cash'], 0) ?>)</span>
-                    <span class="amt" id="varianceAmt">− Rs <?= number_format($tally['expected_cash'], 0) ?></span>
+                    <span id="varianceLabel">Variance vs expected (<?= number_format($formExpected, 0) ?>)</span>
+                    <span class="amt" id="varianceAmt">&nbsp;</span>
                 </div>
             </div>
 
             <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Handover &amp; close</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">The float (Rs <?= number_format($tally['opening_float'], 0) ?>) stays in the drawer for tomorrow; the rest goes to admin. Write the amount you are physically handing over.</p>
+                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;"><?= $editMode ? 'Corrected handover' : 'Handover & close' ?></h2>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">All your counted cash goes to admin. Write the amount you are physically handing over.</p>
 
                 <div class="cfield">
                     <label for="handover_declared">Cash handed to admin (Rs)</label>
                     <input id="handover_declared" name="handover_declared" type="number" min="0" step="1"
                            value="<?= number_format($suggestedHandover, 0, '.', '') ?>"
+                           <?= $editMode ? 'data-touched="1"' : '' ?>
                            style="font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;">
                 </div>
+                <?php if (!$editMode): ?>
                 <div class="cfield">
                     <label for="handover_to_id">Handing over to (admin)</label>
                     <select id="handover_to_id" name="handover_to_id" required>
@@ -400,16 +568,26 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <?php endif; ?>
                 <div class="cfield">
                     <label for="variance_note">Variance note <span style="font-weight:400;color:var(--text-muted)">(required when short/over)</span></label>
-                    <textarea id="variance_note" name="variance_note" maxlength="255" placeholder="Explain any difference between counted and expected cash"></textarea>
+                    <textarea id="variance_note" name="variance_note" maxlength="255"
+                              placeholder="Explain any difference between counted and expected cash"><?= $editMode ? htmlspecialchars($closing['variance_note'] ?? '') : '' ?></textarea>
                 </div>
 
+                <?php if ($editMode): ?>
+                <button class="close-btn amber" type="submit"
+                        onclick="return confirm('Save the corrected figures? Admin will be notified immediately and the changes highlighted for approval.');">
+                    Save changes &amp; notify admin
+                </button>
+                <p class="lock-note">Reprints the slip with the corrected figures — sign the new copy and replace the filed one.</p>
+                <?php else: ?>
                 <button class="close-btn" type="submit"
-                        onclick="return confirm('Close the day? Payments and refunds for today will be locked, and the A5 closing slip will open for printing.');">
+                        onclick="return confirm('Close your shift? Your payments and refunds for today will be locked, and the A5 closing slip will open for printing.');">
                     Submit closing &amp; open A5 slip
                 </button>
-                <p class="lock-note">Locks today's payments, prints the closing slip (sign both lines, file the paper), and queues the handover in the admin portal.</p>
+                <p class="lock-note">Locks your payments for today, prints the closing slip (sign both lines, file the paper), and queues the handover in the admin portal. You can still edit the count until admin marks it received.</p>
+                <?php endif; ?>
             </div>
 
         </div>
@@ -425,8 +603,7 @@ require __DIR__ . '/partials/sidebar.php';
 // Live denomination math. Server recomputes everything from the raw
 // quantities — this is display convenience only.
 (function () {
-    var expected = <?= json_encode(round($tally['expected_cash'], 2)) ?>;
-    var floatAmt = <?= json_encode(round($tally['opening_float'], 2)) ?>;
+    var expected = <?= json_encode(round($formExpected, 2)) ?>;
     var inputs = document.querySelectorAll('.denom-qty');
     if (!inputs.length) return;
 
@@ -463,7 +640,7 @@ require __DIR__ . '/partials/sidebar.php';
         // Suggested handover follows the count until the cashier edits it.
         var ho = document.getElementById('handover_declared');
         if (ho && !ho.dataset.touched) {
-            ho.value = Math.max(0, total - floatAmt);
+            ho.value = Math.max(0, total);
         }
     }
 

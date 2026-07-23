@@ -281,9 +281,16 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
 }
 
 // ============================================================================
-// Day closing / cash tally / handover (approved 2026-07-23). Reception counts
-// the drawer against the system's expected-cash figure, declares the handover
-// to admin, and the day's payments lock. See sql/add_shift_closings.sql.
+// Shift closing / cash tally / handover (approved 2026-07-23; reworked to
+// PER-RECEPTIONIST the same day — see sql/add_per_user_closings.sql).
+//
+// Each receptionist closes THEIR OWN shift: expected cash = the cash payments
+// THEY recorded (bills/admission_bills.paid_by_id) − the cash refunds THEY
+// generated − the expenses THEY posted. No float in personal tallies (the
+// physical drawer float is admin's concern). Closing locks only that user's
+// money actions; colleagues keep working. The cashier may edit their closing
+// while PENDING_RECEIPT/EDITED — changes apply immediately, log per-field in
+// shift_closing_edits, and email admin for approval at mark-received time.
 //
 // "Cash vs online": patients only ever pay Cash or Online. Historically the
 // bills enum spelled online as card/bank_transfer/cheque (DIGITAL mapped to
@@ -314,11 +321,13 @@ function opening_float(PDO $pdo): float {
     return (float) ($stmt->fetchColumn() ?: 0);
 }
 
-// The full system-side tally for one date: cash/online collections split by
-// document series, cash refunds out, and the expected-cash figure the physical
-// count is checked against. Everything keys off when money actually moved —
-// DATE(paid_at) for bills, DATE(created_at) for refunds.
-function day_cash_tally(PDO $pdo, string $date): array {
+// One receptionist's system-side tally for one date: the cash/online payments
+// THEY recorded (paid_by_id), the cash refunds THEY generated, the expenses
+// THEY posted, and the expected-cash figure their physical count is checked
+// against. No float — expected = own cash − own cash refunds − own expenses.
+// Keys off when money actually moved: DATE(paid_at) for bills,
+// DATE(created_at) for refunds, expense_date for expenses.
+function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     $t = [
         'cash_consult_total' => 0.0, 'cash_consult_count' => 0,
         'cash_admission_total' => 0.0, 'cash_admission_count' => 0,
@@ -332,10 +341,10 @@ function day_cash_tally(PDO $pdo, string $date): array {
         SELECT (payment_method = 'cash') AS is_cash,
                COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
         FROM bills
-        WHERE status = 'paid' AND DATE(paid_at) = ?
+        WHERE status = 'paid' AND DATE(paid_at) = ? AND paid_by_id = ?
         GROUP BY is_cash
     ");
-    $stmt->execute([$date]);
+    $stmt->execute([$date, $userId]);
     foreach ($stmt->fetchAll() as $r) {
         $k = ((int) $r['is_cash']) ? 'cash_consult' : 'online_consult';
         $t[$k . '_total'] = (float) $r['total'];
@@ -346,10 +355,10 @@ function day_cash_tally(PDO $pdo, string $date): array {
         SELECT (payment_method = 'cash') AS is_cash,
                COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
         FROM admission_bills
-        WHERE status = 'paid' AND DATE(paid_at) = ?
+        WHERE status = 'paid' AND DATE(paid_at) = ? AND paid_by_id = ?
         GROUP BY is_cash
     ");
-    $stmt->execute([$date]);
+    $stmt->execute([$date, $userId]);
     foreach ($stmt->fetchAll() as $r) {
         $k = ((int) $r['is_cash']) ? 'cash_admission' : 'online_admission';
         $t[$k . '_total'] = (float) $r['total'];
@@ -359,23 +368,23 @@ function day_cash_tally(PDO $pdo, string $date): array {
     $stmt = $pdo->prepare("
         SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
         FROM refunds
-        WHERE refund_mode = 'cash' AND DATE(created_at) = ?
+        WHERE refund_mode = 'cash' AND DATE(created_at) = ? AND generated_by_id = ?
     ");
-    $stmt->execute([$date]);
+    $stmt->execute([$date, $userId]);
     $r = $stmt->fetch();
     $t['cash_refund_total'] = (float) $r['total'];
     $t['cash_refund_count'] = (int) $r['n'];
 
-    // Counter expenses (EXP- vouchers) come straight out of the drawer.
-    // Voided rows are excluded; the expenses table may predate this feature
-    // being deployed together, so tolerate it missing.
+    // Counter expenses (EXP- vouchers) this user paid out of their takings.
+    // Voided rows are excluded; tolerate the expenses table missing.
     try {
         $stmt = $pdo->prepare("
             SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
             FROM expenses
-            WHERE source = 'CASH_COUNTER' AND expense_date = ? AND voided_at IS NULL
+            WHERE source = 'CASH_COUNTER' AND expense_date = ? AND posted_by_id = ?
+              AND voided_at IS NULL
         ");
-        $stmt->execute([$date]);
+        $stmt->execute([$date, $userId]);
         $r = $stmt->fetch();
         $t['expense_total'] = (float) $r['total'];
         $t['expense_count'] = (int) $r['n'];
@@ -389,37 +398,42 @@ function day_cash_tally(PDO $pdo, string $date): array {
     $t['online_count'] = $t['online_consult_count'] + $t['online_admission_count'];
     $t['net_collected'] = round($t['cash_total'] + $t['online_total'] - $t['cash_refund_total'], 2);
 
-    $t['opening_float'] = opening_float($pdo);
+    // Personal accountability only — no drawer float here.
     $t['expected_cash'] = round(
-        $t['opening_float'] + $t['cash_total'] - $t['cash_refund_total'] - $t['expense_total'], 2
+        $t['cash_total'] - $t['cash_refund_total'] - $t['expense_total'], 2
     );
 
     return $t;
 }
 
-// The closing row for a date, or null while the day is still open.
-function day_closing(PDO $pdo, string $date): ?array {
-    $stmt = $pdo->prepare('SELECT * FROM shift_closings WHERE closing_date = ?');
-    $stmt->execute([$date]);
+// One user's closing row for a date, or null while their shift is still open.
+function day_closing(PDO $pdo, string $date, int $userId): ?array {
+    $stmt = $pdo->prepare('SELECT * FROM shift_closings WHERE closing_date = ? AND cashier_id = ?');
+    $stmt->execute([$date, $userId]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
 
-// Guard for every money-moving action: once a date is closed, payments and
-// refunds for that date are refused so the signed tally can never drift.
-// Returns an error string to surface, or null when the day is open. Tolerates
+// Guard for money-moving actions: once THIS USER has closed their shift for a
+// date, their own payments/refunds/expenses on that date are refused so the
+// signed tally can never drift. Other receptionists are unaffected. Returns an
+// error string to surface, or null when the user's shift is open. Tolerates
 // the migration not being run yet (table missing → treat as open).
-function require_day_open(PDO $pdo, ?string $date = null): ?string {
+function require_day_open(PDO $pdo, ?string $date = null, ?int $userId = null): ?string {
     $date = $date ?: date('Y-m-d');
+    $userId = $userId ?: (int) ($_SESSION['user_id'] ?? 0);
+    if ($userId <= 0) {
+        return null;
+    }
     try {
-        $closing = day_closing($pdo, $date);
+        $closing = day_closing($pdo, $date, $userId);
     } catch (PDOException $e) {
         return null;
     }
     if ($closing) {
-        return 'Day ' . date('d M Y', strtotime($date)) . ' is closed (slip '
-             . $closing['closing_number'] . ') — payments and refunds are locked '
-             . 'so the signed tally cannot drift. Record it tomorrow.';
+        return 'Your shift for ' . date('d M Y', strtotime($date)) . ' is closed (slip '
+             . $closing['closing_number'] . ') — your payments and refunds for that day are locked. '
+             . 'To correct the count, edit the closing itself on the Day Closing page.';
     }
     return null;
 }

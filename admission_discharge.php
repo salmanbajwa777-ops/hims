@@ -177,8 +177,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
     // Full payment → close it.
     $pdo->beginTransaction();
     try {
-        $pdo->prepare('UPDATE admission_bills SET status = \'paid\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ? WHERE id = ?')
-            ->execute([$method, $paid, $uid, $bill['id']]);
+        // paid_by_id fallback pattern: see checkout.php record_payment.
+        try {
+            $pdo->prepare('UPDATE admission_bills SET status = \'paid\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ?, paid_by_id = ? WHERE id = ?')
+                ->execute([$method, $paid, $uid, $uid, $bill['id']]);
+        } catch (PDOException $e) {
+            $pdo->prepare('UPDATE admission_bills SET status = \'paid\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ? WHERE id = ?')
+                ->execute([$method, $paid, $uid, $bill['id']]);
+        }
         $pdo->prepare('UPDATE admissions SET status = \'DISCHARGED\', discharge_finalized_by_id = ?, discharge_finalized_at = NOW() WHERE id = ?')
             ->execute([$uid, $admissionId]);
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
@@ -201,9 +207,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
     $total = (float) $bill['grand_total'];
     $paid = (float) ($bill['paid_amount'] ?? 0);
     $short = round($total - $paid, 2);
-    // The approval flips the bill to 'paid' with today's paid_at, which lands
-    // the partial cash on today's tally — so a closed day blocks this too.
-    $dayLock = require_day_open($pdo);
+    // The approval flips the bill to 'paid' with today's paid_at, landing the
+    // partial cash on the COLLECTOR's shift today — so if that receptionist
+    // has already closed, block until tomorrow.
+    $dayLock = require_day_open($pdo, null, (int) ($bill['finalized_by_id'] ?? 0) ?: null);
     if ($dayLock) {
         $err = $dayLock;
     } elseif ($short <= 0) {
@@ -211,8 +218,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
     } else {
         $pdo->beginTransaction();
         try {
-            $pdo->prepare('UPDATE admission_bills SET status = \'paid\', write_off_amount = ?, paid_at = NOW() WHERE id = ?')
-                ->execute([$short, $bill['id']]);
+            // Collector = whoever took the partial payment at discharge, not the
+            // approving admin — their shift owns the cash. Fallback pattern: see
+            // checkout.php record_payment.
+            try {
+                $pdo->prepare('UPDATE admission_bills SET status = \'paid\', write_off_amount = ?, paid_at = NOW(), paid_by_id = COALESCE(finalized_by_id, ?) WHERE id = ?')
+                    ->execute([$short, $uid, $bill['id']]);
+            } catch (PDOException $e) {
+                $pdo->prepare('UPDATE admission_bills SET status = \'paid\', write_off_amount = ?, paid_at = NOW() WHERE id = ?')
+                    ->execute([$short, $bill['id']]);
+            }
             $pdo->prepare('INSERT INTO admission_writeoffs (admission_id, admission_bill_id, patient_id, amount_written_off, approved_by_id, approved_by_role, reason, shift_tally_date) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE())')
                 ->execute([$admissionId, $bill['id'], (int) $adm['patient_id'], $short, $uid, ($baseRole === 'MANAGER' ? 'MANAGER' : 'ADMIN'), $reason]);
             // Patient rollup for the alert badge.

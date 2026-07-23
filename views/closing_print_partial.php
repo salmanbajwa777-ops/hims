@@ -19,6 +19,8 @@ $printTimestamp = date('Y-m-d H:i:s');
 $varianceVal = (float) $closing['variance'];
 $varianceLabel = abs($varianceVal) < 0.01 ? 'Balanced'
     : number_format(abs($varianceVal), 2) . ($varianceVal < 0 ? ' SHORT' : ' OVER');
+// Per-user model: this slip is one receptionist's shift, not the whole day.
+$isEdited = ($closing['status'] ?? '') === 'EDITED' || (int) ($closing['edit_count'] ?? 0) > 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -84,14 +86,19 @@ $varianceLabel = abs($varianceVal) < 0.01 ? 'Balanced'
             </div>
         </div>
 
-        <div class="doctype">DAY CLOSING SLIP</div>
+        <div class="doctype">SHIFT CLOSING SLIP</div>
         <div class="refno"><?= htmlspecialchars($closing['closing_number']) ?> &middot; <?= date('Y-m-d H:i', strtotime($closing['created_at'])) ?></div>
+        <?php if ($isEdited): ?>
+        <div style="text-align:center;font-size:9.5px;font-weight:bold;letter-spacing:1px;border:1.5px solid #000;padding:2px 6px;margin:3px auto 0;width:fit-content;">
+            REVISED — EDIT #<?= (int) ($closing['edit_count'] ?? 0) ?> ON <?= $closing['edited_at'] ? date('d M Y H:i', strtotime($closing['edited_at'])) : '—' ?> · REPLACES EARLIER PRINT
+        </div>
+        <?php endif; ?>
 
         <hr>
 
         <table class="meta-table">
             <tr>
-                <td class="k">Closing date</td><td><?= date('D d M Y', strtotime($closing['closing_date'])) ?></td>
+                <td class="k">Shift date</td><td><?= date('D d M Y', strtotime($closing['closing_date'])) ?></td>
                 <td class="k">Closed at</td><td><?= date('H:i', strtotime($closing['created_at'])) ?></td>
             </tr>
             <tr>
@@ -100,7 +107,7 @@ $varianceLabel = abs($varianceVal) < 0.01 ? 'Balanced'
             </tr>
         </table>
 
-        <div class="section-title">COLLECTIONS</div>
+        <div class="section-title">COLLECTIONS — THIS CASHIER ONLY</div>
         <table class="amounts-table">
             <tr><th>Method</th><th class="text-right">Count</th><th class="text-right">Amount (Rs)</th></tr>
             <tr><td>Cash — consultations</td><td class="text-right"><?= (int) $closing['cash_consult_count'] ?></td><td class="text-right"><?= number_format((float) $closing['cash_consult_total'], 2) ?></td></tr>
@@ -116,16 +123,14 @@ $varianceLabel = abs($varianceVal) < 0.01 ? 'Balanced'
             <tr class="net"><td><strong>TOTAL COLLECTED</strong></td><td class="text-right"><?= (int) $closing['cash_consult_count'] + (int) $closing['cash_admission_count'] + (int) $closing['online_count'] ?></td><td class="text-right"><strong><?= number_format($netCollected, 2) ?></strong></td></tr>
         </table>
 
-        <div class="section-title">CASH DRAWER</div>
+        <div class="section-title">CASH IN HAND</div>
         <table class="amounts-table">
-            <tr><td>Opening float</td><td class="text-right"><?= number_format((float) $closing['opening_float'], 2) ?></td></tr>
-            <?php if ($slipExpenses > 0): ?>
+            <tr><td>Cash payments received</td><td class="text-right"><?= number_format((float) $closing['cash_consult_total'] + (float) $closing['cash_admission_total'], 2) ?></td></tr>
+            <tr><td>Less: cash refunds paid</td><td class="text-right">(<?= number_format((float) $closing['cash_refund_total'], 2) ?>)</td></tr>
             <tr><td>Less: counter expenses</td><td class="text-right">(<?= number_format($slipExpenses, 2) ?>)</td></tr>
-            <?php endif; ?>
-            <tr><td>Expected cash in drawer</td><td class="text-right"><?= number_format((float) $closing['expected_cash'], 2) ?></td></tr>
+            <tr><td>Expected cash in hand</td><td class="text-right"><?= number_format((float) $closing['expected_cash'], 2) ?></td></tr>
             <tr><td>Counted cash</td><td class="text-right"><?= number_format((float) $closing['counted_cash'], 2) ?></td></tr>
             <tr><td>Variance</td><td class="text-right"><?= $varianceLabel ?></td></tr>
-            <tr><td>Float retained for next day</td><td class="text-right"><?= number_format((float) $closing['float_retained'], 2) ?></td></tr>
             <tr class="net"><td><strong>CASH HANDED TO ADMIN (Rs)</strong></td><td class="text-right"><strong><?= number_format((float) $closing['handover_declared'], 2) ?></strong></td></tr>
         </table>
 

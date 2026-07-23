@@ -308,14 +308,15 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
                       + (float) $c['online_total'] - (float) $c['cash_refund_total'];
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Reception has closed the day. '
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+              . htmlspecialchars($c['cashier_name']) . ' has closed their shift. '
               . 'The cash handover is awaiting your acknowledgment in the admin portal '
               . '(Cash Handovers → recount + confirm the signed slip is filed).</p>'
             . mail_kv([
                 'Closing slip'       => $c['closing_number'],
-                'Date'               => date('D d M Y', strtotime($c['closing_date'])),
+                'Shift date'         => date('D d M Y', strtotime($c['closing_date'])),
                 'Cashier'            => $c['cashier_name'],
-                'Total collected'    => 'Rs ' . number_format($netCollected, 2),
+                'Their collections'  => 'Rs ' . number_format($netCollected, 2),
                 'Cash'               => 'Rs ' . number_format((float) $c['cash_consult_total'] + (float) $c['cash_admission_total'], 2)
                                         . ' (' . ((int) $c['cash_consult_count'] + (int) $c['cash_admission_count']) . ' payments)',
                 'Online'             => 'Rs ' . number_format((float) $c['online_total'], 2)
@@ -323,15 +324,72 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
                 'Cash refunds'       => 'Rs ' . number_format((float) $c['cash_refund_total'], 2),
                 'Counter expenses'   => 'Rs ' . number_format((float) ($c['expense_total'] ?? 0), 2)
                                         . ' (' . (int) ($c['expense_count'] ?? 0) . ' vouchers)',
-                'Expected in drawer' => 'Rs ' . number_format((float) $c['expected_cash'], 2),
+                'Expected in hand'   => 'Rs ' . number_format((float) $c['expected_cash'], 2),
                 'Counted'            => 'Rs ' . number_format((float) $c['counted_cash'], 2),
                 'Variance'           => $varianceText . ($c['variance_note'] ? ' — ' . $c['variance_note'] : ''),
                 'Handover declared'  => 'Rs ' . number_format((float) $c['handover_declared'], 2) . ' → ' . $c['admin_name'],
             ]);
         send_mail($pdo, $to,
-            'Day closed ' . date('d M', strtotime($c['closing_date'])) . ' — handover Rs '
-            . number_format((float) $c['handover_declared'], 0) . ' pending (' . $c['closing_number'] . ')',
-            mail_template('Day Closing & Cash Handover', $body),
+            'Shift closed — ' . $c['cashier_name'] . ' ' . date('d M', strtotime($c['closing_date']))
+            . ' — handover Rs ' . number_format((float) $c['handover_declared'], 0) . ' pending (' . $c['closing_number'] . ')',
+            mail_template('Shift Closing & Cash Handover', $body),
             'closing:' . $c['closing_number']);
+    } catch (Throwable $e) { /* best-effort */ }
+}
+
+/** Cashier edited their closed shift (before admin receipt) → admin alert +
+ *  the admin named on the handover, with every changed field old→new. */
+function notify_closing_edited(PDO $pdo, int $closingId, int $round): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT c.*, cu.name AS cashier_name, au.name AS admin_name
+            FROM shift_closings c
+            JOIN users cu ON cu.id = c.cashier_id
+            JOIN users au ON au.id = c.handover_to_id
+            WHERE c.id = ?
+        ');
+        $stmt->execute([$closingId]);
+        $c = $stmt->fetch();
+        if (!$c) { return; }
+
+        $labels = [
+            'counted_cash'      => 'Counted cash',
+            'handover_declared' => 'Handover declared',
+            'variance_note'     => 'Variance note',
+            'denominations'     => 'Denominations',
+        ];
+        $chStmt = $pdo->prepare('
+            SELECT field_name, old_value, new_value
+            FROM shift_closing_edits
+            WHERE closing_id = ? AND edit_round = ?
+            ORDER BY id
+        ');
+        $chStmt->execute([$closingId, $round]);
+        $kv = [
+            'Closing slip' => $c['closing_number'],
+            'Shift date'   => date('D d M Y', strtotime($c['closing_date'])),
+            'Cashier'      => $c['cashier_name'],
+            'Edit round'   => '#' . $round . ' of this closing',
+        ];
+        foreach ($chStmt->fetchAll() as $ch) {
+            $kv[$labels[$ch['field_name']] ?? $ch['field_name']] =
+                ($ch['old_value'] !== null && $ch['old_value'] !== '' ? $ch['old_value'] : '—')
+                . '  →  '
+                . ($ch['new_value'] !== null && $ch['new_value'] !== '' ? $ch['new_value'] : '—');
+        }
+        $kv['Now declares'] = 'Rs ' . number_format((float) $c['handover_declared'], 2)
+                            . ' (counted Rs ' . number_format((float) $c['counted_cash'], 2) . ')';
+
+        $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
+        $body = '<p style="font-size:14px;color:#B45309;font-weight:bold;margin:0 0 14px;">'
+              . htmlspecialchars($c['cashier_name']) . ' EDITED their closed shift after submitting it. '
+              . 'The changes below are already in force and are highlighted on the Cash Handovers page — '
+              . 'marking the handover received approves them.</p>'
+            . mail_kv($kv);
+        send_mail($pdo, $to,
+            'EDITED closing ' . $c['closing_number'] . ' — ' . $c['cashier_name']
+            . ' changed their shift figures (round ' . $round . ')',
+            mail_template('Shift Closing Edited — Review Required', $body),
+            'closing-edit:' . $c['closing_number'] . ':' . $round);
     } catch (Throwable $e) { /* best-effort */ }
 }

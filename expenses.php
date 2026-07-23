@@ -151,15 +151,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
     $id = (int) ($_POST['expense_id'] ?? 0);
     $reason = trim($_POST['void_reason'] ?? '');
 
-    // A void changes that day's expected-cash figure — if the expense's own
-    // date has already been closed (signed tally), refuse it.
-    $expDate = null;
+    // A void changes the POSTER's expected-cash for the expense's date — if
+    // that receptionist has already closed that day (signed tally), refuse.
+    $expRow = null;
     if ($id > 0) {
-        $dStmt = $pdo->prepare('SELECT expense_date FROM expenses WHERE id = ?');
+        $dStmt = $pdo->prepare('SELECT expense_date, posted_by_id FROM expenses WHERE id = ?');
         $dStmt->execute([$id]);
-        $expDate = $dStmt->fetchColumn() ?: null;
+        $expRow = $dStmt->fetch() ?: null;
     }
-    $dayLock = $expDate ? require_day_open($pdo, $expDate) : null;
+    $dayLock = $expRow ? require_day_open($pdo, $expRow['expense_date'], (int) $expRow['posted_by_id']) : null;
 
     if ($dayLock) {
         $error = $dayLock . ' Voiding this expense would change that day\'s signed tally.';

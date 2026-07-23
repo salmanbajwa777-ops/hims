@@ -140,10 +140,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
     } elseif (!in_array($paymentMethod, $allowedMethods, true)) {
         $error = 'Please select a valid payment method.';
     } else {
-        $pdo->prepare("
-            UPDATE bills SET status = 'paid', payment_method = ?, paid_amount = ?, paid_at = NOW()
-            WHERE id = ?
-        ")->execute([$paymentMethod, $bill['grand_total'], $billId]);
+        // paid_by_id = who collected the money — that user's shift tally owns it.
+        // Falls back to the legacy statement if add_per_user_closings.sql hasn't
+        // been applied yet, so taking payments never breaks mid-deploy.
+        try {
+            $pdo->prepare("
+                UPDATE bills SET status = 'paid', payment_method = ?, paid_amount = ?, paid_at = NOW(), paid_by_id = ?
+                WHERE id = ?
+            ")->execute([$paymentMethod, $bill['grand_total'], $_SESSION['user_id'], $billId]);
+        } catch (PDOException $e) {
+            $pdo->prepare("
+                UPDATE bills SET status = 'paid', payment_method = ?, paid_amount = ?, paid_at = NOW()
+                WHERE id = ?
+            ")->execute([$paymentMethod, $bill['grand_total'], $billId]);
+        }
 
         $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
         $log->execute([$_SESSION['user_id'], 'bill_paid', "Recorded payment for bill #$billId ({$bill['invoice_number']}), method $paymentMethod, amount {$bill['grand_total']}"]);
