@@ -3,7 +3,8 @@
  * Doctor Analytics — "My Reports" for the doctor console.
  *
  * Four views on ?view= :
- *   revenue    — stacked bar chart (Full / Revisits / Admissions), day-month-year
+ *   revenue    — stacked bar chart (Full / Revisits — consultation money only,
+ *                ER admission bills are clinic revenue and excluded), month-year
  *                granularity, previous-period comparison, summary cards
  *   patients   — filterable consultation table + CSV export
  *   revisits   — tier breakdown with anchor → revisit chains
@@ -13,9 +14,10 @@
  * doctor picker (?doctor_id=). No schema changes — everything reads visits,
  * bills, admissions, admission_bills, admission_handovers.
  *
- * Revenue is BILLED revenue (paid bills under this doctor's visits +
- * paid admission bills where they were the admitting doctor) — not the
- * doctor's earnings; the commission engine is Phase 3A and not built.
+ * Revenue is BILLED consultation revenue (paid bills under this doctor's
+ * visits) — not the doctor's earnings (commission engine is Phase 3A), and
+ * NOT admission money: ER admission bills are clinic revenue and are excluded
+ * from all revenue figures (the Admissions tab stays as operational history).
  */
 require_once __DIR__ . '/config/auth.php';
 require_login();
@@ -192,9 +194,10 @@ if ($view === 'revenue') {
 
     if (!isset($firstYear)) { $firstYear = null; }
 
-    // One period's stacked series: [bucket => [full, revisit, admission]].
+    // One period's stacked series: [bucket => [full, revisit]].
     // Consultations count when their bill is PAID, attributed to visit_date.
-    // Admissions count when the admission bill is PAID, attributed to paid date.
+    // ER admission bills are deliberately EXCLUDED (2026-07-23): admission money
+    // is clinic revenue, not the doctor's — it does not belong on this chart.
     $seriesFor = function (string $start, string $end) use ($pdo, $doctorId, $bucketExpr): array {
         $buckets = [];
 
@@ -217,24 +220,6 @@ if ($view === 'revenue') {
             $buckets[(int) $r['b']]['full_n'] = (int) $r['full_n'];
             $buckets[(int) $r['b']]['revisit_n'] = (int) $r['revisit_n'];
         }
-
-        $aSql = "
-            SELECT " . sprintf($bucketExpr, 'COALESCE(ab.paid_at, ab.created_at)') . " AS b,
-                   SUM(ab.grand_total) AS amt, COUNT(*) AS n
-            FROM admission_bills ab
-            JOIN admissions a ON a.id = ab.admission_id
-            JOIN visits v ON v.id = a.visit_id
-            WHERE ab.status = 'paid'
-              AND COALESCE(a.admitting_doctor_id, v.doctor_id) = ?
-              AND DATE(COALESCE(ab.paid_at, ab.created_at)) BETWEEN ? AND ?
-            GROUP BY b
-        ";
-        $a = $pdo->prepare($aSql);
-        $a->execute([$doctorId, $start, $end]);
-        foreach ($a->fetchAll() as $r) {
-            $buckets[(int) $r['b']]['adm'] = (float) $r['amt'];
-            $buckets[(int) $r['b']]['adm_n'] = (int) $r['n'];
-        }
         return $buckets;
     };
 
@@ -254,10 +239,9 @@ if ($view === 'revenue') {
     $tot = [
         'full' => $sum($curSeries, 'full'),   'full_n' => (int) $sum($curSeries, 'full_n'),
         'revisit' => $sum($curSeries, 'revisit'), 'revisit_n' => (int) $sum($curSeries, 'revisit_n'),
-        'adm' => $sum($curSeries, 'adm'),     'adm_n' => (int) $sum($curSeries, 'adm_n'),
     ];
-    $totAll = $tot['full'] + $tot['revisit'] + $tot['adm'];
-    $prevAll = $sum($prevSeries, 'full') + $sum($prevSeries, 'revisit') + $sum($prevSeries, 'adm');
+    $totAll = $tot['full'] + $tot['revisit'];
+    $prevAll = $sum($prevSeries, 'full') + $sum($prevSeries, 'revisit');
 
     // Revisit mix inside the period (counts by tier) for the summary card.
     $mixQ = $pdo->prepare("
@@ -446,7 +430,7 @@ $headExtra = <<<CSS
 .bar-g:hover rect { opacity: .85; }
 
 /* Summary cards */
-.sum-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
 .sum { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
 .sum .lab { font-size: 11.5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
 .sum .val { font-size: 18px; font-weight: 700; margin-top: 4px; }
@@ -557,7 +541,6 @@ require __DIR__ . '/partials/head.php';
                     <div class="chart-legend">
                         <span><span class="dotk" style="background:var(--primary)"></span>Full</span>
                         <span><span class="dotk" style="background:#0891B2"></span>Revisits</span>
-                        <span><span class="dotk" style="background:#D97706"></span>Admissions</span>
                         <?php if ($compare): ?><span style="color:var(--text-muted)"><span class="dotk" style="background:#A7D8D7"></span><?= htmlspecialchars($prevLabel) ?> (faded)</span><?php endif; ?>
                     </div>
                 </div>
@@ -573,8 +556,8 @@ require __DIR__ . '/partials/head.php';
                     $c = $curSeries[$key] ?? [];
                     $p = $prevSeries[$key] ?? [];
                     $maxVal = max($maxVal,
-                        (float)($c['full'] ?? 0) + (float)($c['revisit'] ?? 0) + (float)($c['adm'] ?? 0),
-                        (float)($p['full'] ?? 0) + (float)($p['revisit'] ?? 0) + (float)($p['adm'] ?? 0));
+                        (float)($c['full'] ?? 0) + (float)($c['revisit'] ?? 0),
+                        (float)($p['full'] ?? 0) + (float)($p['revisit'] ?? 0));
                 }
                 // Round the axis top to a friendly step.
                 $step = $maxVal > 0 ? pow(10, floor(log10($maxVal))) : 1;
@@ -588,7 +571,7 @@ require __DIR__ . '/partials/head.php';
                 $gridLines = 4;
                 ?>
                 <div class="chart-wrap">
-                <svg viewBox="0 0 <?= $W ?> <?= $H ?>" role="img" aria-label="Stacked revenue by period: full consultations, revisits, admissions">
+                <svg viewBox="0 0 <?= $W ?> <?= $H ?>" role="img" aria-label="Stacked revenue by period: full consultations and revisits">
                     <g stroke="var(--border)" stroke-width="1">
                         <?php for ($g = 0; $g <= $gridLines; $g++):
                             $gy = $padT + $plotH * $g / $gridLines; ?>
@@ -606,30 +589,28 @@ require __DIR__ . '/partials/head.php';
                         $key = ($gran === 'year') ? $bk : ($i + 1);
                         $slotX = $padL + $slotW * $i;
                         $c = $curSeries[$key] ?? [];
-                        $cf = (float)($c['full'] ?? 0); $cr = (float)($c['revisit'] ?? 0); $ca = (float)($c['adm'] ?? 0);
-                        $ctot = $cf + $cr + $ca;
+                        $cf = (float)($c['full'] ?? 0); $cr = (float)($c['revisit'] ?? 0);
+                        $ctot = $cf + $cr;
                         $x = $compare ? $slotX + ($slotW - 2 * $barW - 3) / 2 : $slotX + ($slotW - $barW) / 2;
                         $lab = ($gran === 'month') ? date('M', mktime(0, 0, 0, $bk, 1)) : (string) $bk;
-                        $tip = htmlspecialchars("$lab — Full: " . fmt_amt($cf) . " · Revisits: " . fmt_amt($cr) . " · Admissions: " . fmt_amt($ca) . " · Total: " . fmt_amt($ctot) . " PKR");
+                        $tip = htmlspecialchars("$lab — Full: " . fmt_amt($cf) . " · Revisits: " . fmt_amt($cr) . " · Total: " . fmt_amt($ctot) . " PKR");
                     ?>
                     <g class="bar-g">
                         <title><?= $tip ?></title>
                         <?php if ($ctot > 0):
-                            $y0 = $yFor(0); $y1 = $yFor($cf); $y2 = $yFor($cf + $cr); $y3 = $yFor($ctot); ?>
+                            $y0 = $yFor(0); $y1 = $yFor($cf); $y2 = $yFor($ctot); ?>
                         <?php if ($cf > 0): ?><rect x="<?= round($x,1) ?>" y="<?= round($y1,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y0 - $y1,1) ?>" fill="var(--primary)" rx="1.5"/><?php endif; ?>
                         <?php if ($cr > 0): ?><rect x="<?= round($x,1) ?>" y="<?= round($y2,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y1 - $y2,1) ?>" fill="#0891B2" rx="1.5"/><?php endif; ?>
-                        <?php if ($ca > 0): ?><rect x="<?= round($x,1) ?>" y="<?= round($y3,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y2 - $y3,1) ?>" fill="#D97706" rx="1.5"/><?php endif; ?>
                         <?php endif; ?>
                         <?php if ($compare):
                             $p = $prevSeries[$key] ?? [];
-                            $pf = (float)($p['full'] ?? 0); $pr = (float)($p['revisit'] ?? 0); $pa = (float)($p['adm'] ?? 0);
-                            $ptot = $pf + $pr + $pa;
+                            $pf = (float)($p['full'] ?? 0); $pr = (float)($p['revisit'] ?? 0);
+                            $ptot = $pf + $pr;
                             $px = $x + $barW + 3;
                             if ($ptot > 0):
-                                $y0 = $yFor(0); $y1 = $yFor($pf); $y2 = $yFor($pf + $pr); $y3 = $yFor($ptot); ?>
+                                $y0 = $yFor(0); $y1 = $yFor($pf); $y2 = $yFor($ptot); ?>
                         <?php if ($pf > 0): ?><rect x="<?= round($px,1) ?>" y="<?= round($y1,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y0 - $y1,1) ?>" fill="#A7D8D7" rx="1.5"/><?php endif; ?>
                         <?php if ($pr > 0): ?><rect x="<?= round($px,1) ?>" y="<?= round($y2,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y1 - $y2,1) ?>" fill="#A5E5F0" rx="1.5"/><?php endif; ?>
-                        <?php if ($pa > 0): ?><rect x="<?= round($px,1) ?>" y="<?= round($y3,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y2 - $y3,1) ?>" fill="#F3CFA0" rx="1.5"/><?php endif; ?>
                         <?php endif; endif; ?>
                         <text class="axis-lab" text-anchor="middle" x="<?= round($slotX + $slotW / 2, 1) ?>" y="<?= $H - $padB + 16 ?>"><?= htmlspecialchars($lab) ?></text>
                     </g>
@@ -648,11 +629,6 @@ require __DIR__ . '/partials/head.php';
                         <div class="val tnum"><?= fmt_amt($tot['revisit']) ?> PKR</div>
                         <div class="cnt tnum"><?= $tot['revisit_n'] ?> revisit<?= $tot['revisit_n'] === 1 ? '' : 's' ?>
                             (<?= (int) ($revisitMix['FREE_FOLLOWUP'] ?? 0) ?> free · <?= (int) ($revisitMix['HALF_FOLLOWUP'] ?? 0) ?> half · <?= (int) ($revisitMix['THREE_QUARTER_FOLLOWUP'] ?? 0) ?> at 75%)</div>
-                    </div>
-                    <div class="sum">
-                        <div class="lab"><span class="dotk" style="background:#D97706"></span>ER admissions</div>
-                        <div class="val tnum"><?= fmt_amt($tot['adm']) ?> PKR</div>
-                        <div class="cnt tnum"><?= $tot['adm_n'] ?> admission bill<?= $tot['adm_n'] === 1 ? '' : 's' ?></div>
                     </div>
                 </div>
                 <div class="rev-total">

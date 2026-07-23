@@ -125,19 +125,10 @@ $moConsultN = (int) ($mo['n'] ?? 0);
 $moRevisitN = (int) (($mo['free_n'] ?? 0) + ($mo['half_n'] ?? 0) + ($mo['tq_n'] ?? 0));
 $moRevisitRate = $moConsultN > 0 ? $moRevisitN / $moConsultN * 100 : 0.0;
 
-// Paid admission bills where this doctor admitted (falls back to the visit's doctor).
-$moA = $pdo->prepare("
-    SELECT COALESCE(SUM(ab.grand_total), 0) AS amt, COUNT(*) AS n
-    FROM admission_bills ab
-    JOIN admissions a ON a.id = ab.admission_id
-    JOIN visits v ON v.id = a.visit_id
-    WHERE ab.status = 'paid'
-      AND COALESCE(a.admitting_doctor_id, v.doctor_id) = ?
-      AND DATE(COALESCE(ab.paid_at, ab.created_at)) BETWEEN ? AND ?
-");
-$moA->execute([$doctorId, $moStart, $moEnd]);
-$moAdm = $moA->fetch() ?: ['amt' => 0, 'n' => 0];
-$moTotal = (float) ($mo['full_amt'] ?? 0) + (float) ($mo['revisit_amt'] ?? 0) + (float) $moAdm['amt'];
+// ER admission money is deliberately EXCLUDED from the doctor's revenue figures
+// (2026-07-23): it's clinic revenue, not the doctor's. The active-admissions
+// cards below stay — they're operational (who's in the ward), not revenue.
+$moTotal = (float) ($mo['full_amt'] ?? 0) + (float) ($mo['revisit_amt'] ?? 0);
 
 // Currently-active admissions under this doctor (cards, with running charge).
 $actQ = $pdo->prepare("
@@ -429,8 +420,7 @@ require __DIR__ . '/partials/head.php';
                 <?php
                 $moFull = (float) ($mo['full_amt'] ?? 0);
                 $moRev = (float) ($mo['revisit_amt'] ?? 0);
-                $moAdmAmt = (float) $moAdm['amt'];
-                $moMax = max(1.0, $moFull, $moRev, $moAdmAmt);
+                $moMax = max(1.0, $moFull, $moRev);
                 ?>
                 <div class="stack">
                     <div class="kpi-grid">
@@ -450,7 +440,7 @@ require __DIR__ . '/partials/head.php';
                         <a class="kpi-cell" href="doctor_analytics.php?view=revenue">
                             <div class="kpi-value tnum"><?= number_format($moTotal) ?> <small>PKR</small></div>
                             <div class="kpi-label">Billed — <?= date('M') ?></div>
-                            <div class="kpi-sub">Consults + admissions</div>
+                            <div class="kpi-sub">Paid consultations</div>
                         </a>
                     </div>
 
@@ -465,11 +455,6 @@ require __DIR__ . '/partials/head.php';
                             <span>Revisits</span>
                             <div class="bar-track"><div class="bar-fill" style="width:<?= round($moRev / $moMax * 100) ?>%;background:#0891B2"></div></div>
                             <span class="amt tnum"><?= number_format($moRev) ?></span>
-                        </div>
-                        <div class="rev-row">
-                            <span>ER admissions</span>
-                            <div class="bar-track"><div class="bar-fill" style="width:<?= round($moAdmAmt / $moMax * 100) ?>%;background:#D97706"></div></div>
-                            <span class="amt tnum"><?= number_format($moAdmAmt) ?></span>
                         </div>
                         <div class="rev-total"><span>Total billed</span><span class="tnum"><?= number_format($moTotal) ?> PKR</span></div>
                     </div>
