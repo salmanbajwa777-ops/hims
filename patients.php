@@ -1567,10 +1567,13 @@ function fuApplyOverride() {
             el.removeAttribute('required');
         });
         // Same +92 phone rule as a normal save (form.submit() skips the submit listener).
-        if ((phoneCcSel ? phoneCcSel.value : '+92') === '+92'
-            && !/^[1-9]\d{9}$/.test(phoneInput.value)) {
-            phoneInput.setCustomValidity('Enter a 10-digit mobile number that does not start with 0.');
-            phoneInput.reportValidity();
+        // Look the fields up here — they live in a different <script> block, so the
+        // module-scoped consts aren't visible in this IIFE.
+        var pInput = document.getElementById('phone');
+        var pCc = document.getElementById('phone_cc');
+        if ((pCc ? pCc.value : '+92') === '+92' && !/^[1-9]\d{9}$/.test(pInput.value)) {
+            pInput.setCustomValidity('Enter a 10-digit mobile number that does not start with 0.');
+            pInput.reportValidity();
             return;
         }
         if (form.reportValidity()) {
