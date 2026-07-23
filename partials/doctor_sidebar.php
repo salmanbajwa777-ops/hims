@@ -7,7 +7,7 @@
  * the markup AND its CSS + mobile-drawer JS. Include it INSIDE <div class="app">
  * (it renders the mobile bar, the overlay and the <aside>), after setting:
  *
- *   $dsActive       — 'console' | 'analytics' | 'schedule' (which nav item highlights)
+ *   $dsActive       — 'console' | 'analytics' | 'schedule' | 'timings' | 'profile' (which nav item highlights)
  *   $dsUserName     — display name for the footer
  *   $dsWaitingCount — today's waiting count for the My Queue badge (0 hides it)
  *
@@ -29,6 +29,8 @@ function ds_icon(string $name): string {
         'search'  => '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>',
         'calendar'=> '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
         'chart'   => '<path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4"/>',
+        'clock'   => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+        'user'    => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
     ];
     return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . ($paths[$name] ?? '') . '</svg>';
 }
@@ -93,11 +95,17 @@ function ds_icon(string $name): string {
         <div class="nav-group-label">Records</div>
         <a class="nav-item" href="patients.php"><span class="nav-icon"><?= ds_icon('search') ?></span> Find Patient</a>
         <a class="nav-item <?= $dsActive === 'schedule' ? 'active' : '' ?>" href="my_schedule.php"><span class="nav-icon"><?= ds_icon('calendar') ?></span> My Schedule</a>
+        <a class="nav-item <?= $dsActive === 'timings' ? 'active' : '' ?>" href="doctor_timings.php"><span class="nav-icon"><?= ds_icon('clock') ?></span> Today's Timings</a>
     </div>
 
     <div class="nav-group">
         <div class="nav-group-label">Analytics</div>
         <a class="nav-item <?= $dsActive === 'analytics' ? 'active' : '' ?>" href="doctor_analytics.php"><span class="nav-icon"><?= ds_icon('chart') ?></span> My Reports</a>
+    </div>
+
+    <div class="nav-group">
+        <div class="nav-group-label">Account</div>
+        <a class="nav-item <?= $dsActive === 'profile' ? 'active' : '' ?>" href="profile.php"><span class="nav-icon"><?= ds_icon('user') ?></span> My Profile</a>
     </div>
 
     <div class="sidebar-foot">

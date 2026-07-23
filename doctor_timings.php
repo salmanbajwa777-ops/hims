@@ -199,8 +199,23 @@ tr.is-off .time-stack, tr.is-off .note-input { opacity: .4; pointer-events: none
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
-$navActive = 'doctor_timings';
-require __DIR__ . '/partials/sidebar.php';
+// Doctors land here from their clinical console — keep them in the doctor
+// sidebar (My Console / My Reports / My Profile) rather than switching them
+// into the reception nav. Everyone else gets the shared sidebar as before.
+// Layout contracts differ: sidebar.php opens .app/.main itself, while
+// doctor_sidebar.php is included INSIDE .app with .main opened by the caller.
+if (($_SESSION['base_role'] ?? '') === 'DOCTOR') {
+    $me = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+    $me->execute([$_SESSION['user_id']]);
+    $dsActive = 'timings';
+    $dsUserName = (string) $me->fetchColumn();
+    echo '<div class="app">';
+    require __DIR__ . '/partials/doctor_sidebar.php';
+    echo '<div class="main">';
+} else {
+    $navActive = 'doctor_timings';
+    require __DIR__ . '/partials/sidebar.php';
+}
 ?>
         <div class="content">
 
