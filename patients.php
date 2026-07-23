@@ -82,7 +82,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'doctor_consult_types') {
     header('Content-Type: application/json');
     $doctorId = (int) ($_GET['doctor_id'] ?? 0);
-    $stmt = $pdo->prepare('SELECT id, label, fee, is_default, is_revisit_eligible FROM doctor_consult_types WHERE doctor_id = ? ORDER BY label');
+    // Default type first (so the follow-up panel can auto-select the doctor's default),
+    // then alphabetical.
+    $stmt = $pdo->prepare('SELECT id, label, fee, is_default, is_revisit_eligible FROM doctor_consult_types WHERE doctor_id = ? ORDER BY is_default DESC, label');
     $stmt->execute([$doctorId]);
     echo json_encode($stmt->fetchAll());
     exit;
@@ -740,7 +742,8 @@ if ($isDoctorReadonly) {
     $stmt = $pdo->prepare('
         SELECT p.*, c.name AS city_name,
             dc.name AS discount_category_name, dc.is_active AS discount_category_active,
-            (SELECT v.visit_date FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC LIMIT 1) AS last_visit
+            (SELECT v.visit_date FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC LIMIT 1) AS last_visit,
+            (SELECT v.doctor_id FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC, v.id DESC LIMIT 1) AS last_doctor_id
         FROM patients p
         LEFT JOIN cities c ON c.id = p.city_id
         LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
@@ -755,7 +758,8 @@ if ($isDoctorReadonly) {
     $stmt = $pdo->query('
         SELECT p.*, c.name AS city_name,
             dc.name AS discount_category_name, dc.is_active AS discount_category_active,
-            (SELECT v.visit_date FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC LIMIT 1) AS last_visit
+            (SELECT v.visit_date FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC LIMIT 1) AS last_visit,
+            (SELECT v.doctor_id FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC, v.id DESC LIMIT 1) AS last_doctor_id
         FROM patients p
         LEFT JOIN cities c ON c.id = p.city_id
         LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
@@ -1106,7 +1110,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <?php if (!$isDoctorReadonly): ?>
                             <td>
                                 <div class="row-acts">
-                                    <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>)">New invoice</button>
+                                    <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>, <?= (int) ($p['last_doctor_id'] ?? 0) ?>)">New invoice</button>
                                     <?php if (has_permission('ADMISSION_ADMIT_PATIENT') || has_permission('RECEPTION_ADMIT_PATIENTS')): ?>
                                     <!-- Admit from the all-patients list: the shared handler reuses today's
                                          visit or creates a shell (byPatient=true). -->
@@ -1456,7 +1460,7 @@ document.getElementById('bgNoBtn').addEventListener('click', () => {
 </script>
 <script>
 let fuFullFee = 0, fuQuoteFee = 0, fuCatPct = 0, fuCatName = '', fuQuoteLabel = '', fuQuoteType = '';
-function openFollowup(pid, name, mrn) {
+function openFollowup(pid, name, mrn, lastDoctorId) {
     document.getElementById('fuPatientId').value = pid;
     document.getElementById('fuName').textContent = name + '  ·  ' + mrn;
     document.getElementById('fuDoctor').value = '';
@@ -1469,6 +1473,14 @@ function openFollowup(pid, name, mrn) {
     document.getElementById('fuBookingDismissed').value = '';
     document.getElementById('fuOverlay').classList.add('open');
 
+    // Pre-fill the patient's most-recent-visit doctor (still changeable) and load that
+    // doctor's default consultation type + quote. A live booking, if any, overrides this.
+    const dSel = document.getElementById('fuDoctor');
+    if (lastDoctorId && dSel.querySelector('option[value="' + lastDoctorId + '"]')) {
+        dSel.value = String(lastDoctorId);
+        fuLoadTypes();   // no explicit type -> defaults to the doctor's first type + quotes
+    }
+
     // Booking-match guard: does this patient (or their phone) have a live
     // booking today? Ask before the desk fills the panel.
     fetch('patients.php?action=booking_check&patient_id=' + pid)
@@ -1476,8 +1488,8 @@ function openFollowup(pid, name, mrn) {
         .then(res => {
             bgAsk(res.bookings, function (b) {
                 // Yes: stash the id (consumed at save) and pre-fill — still editable.
+                // The booked doctor/purpose wins over the last-visit auto-fill.
                 document.getElementById('fuBookingId').value = b.id;
-                const dSel = document.getElementById('fuDoctor');
                 if (dSel.querySelector('option[value="' + b.doctor_id + '"]')) {
                     dSel.value = String(b.doctor_id);
                     fuLoadTypes(b.doctor_consult_type_id);
@@ -1510,6 +1522,13 @@ function fuLoadTypes(preselectTypeId) {
             // Booking pre-fill: select the booked purpose and quote it (editable).
             if (preselectTypeId && t.querySelector('option[value="' + preselectTypeId + '"]')) {
                 t.value = String(preselectTypeId);
+                fuQuote();
+            } else if (!preselectTypeId && types.length) {
+                // No explicit type: default to the doctor's default consultation type
+                // (or the first one) and quote it, so the fee shows immediately.
+                // Reception can still change it.
+                const def = types.find(ct => Number(ct.is_default) === 1) || types[0];
+                t.value = String(def.id);
                 fuQuote();
             }
         });
