@@ -122,14 +122,21 @@ function doPost(e) {
 
       var rowIndex = sheet.getLastRow() + 1;
 
-      // Force the date cells to plain text BEFORE writing — the format has to be
-      // in place at write time or Sheets parses "01/07/2026" as a US date (or a
-      // serial number) on the way in and the cell is already wrong. Deliberately
-      // only the date columns: text-formatting the whole row would turn
-      // TotalAmount / Net Total into strings and break any SUM over them.
+      // Force identifier and date cells to plain text BEFORE writing — the format
+      // has to be in place at write time or Sheets parses "01/07/2026" as a US
+      // date (or a serial number) on the way in and the cell is already wrong.
+      //
+      // Invoice Number / RNumber / Phone are all-digit IDENTIFIERS, not
+      // quantities: left as numbers, Sheets right-aligns them and would drop a
+      // leading zero, so "0926 07" style values could not round-trip. Deliberately
+      // NOT the money columns — text-formatting TotalAmount / Net Total would turn
+      // them into strings and break any SUM over them.
+      var TEXT_COLS = {
+        'Date': 1, 'Date Of Birth': 1, 'Invoice Number': 1,
+        'RNumber': 1, 'Phone/Mobile': 1
+      };
       for (var d = 0; d < header.length; d++) {
-        var hn = String(header[d]).trim();
-        if (hn === 'Date' || hn === 'Date Of Birth') {
+        if (TEXT_COLS[String(header[d]).trim()]) {
           sheet.getRange(rowIndex, d + 1).setNumberFormat('@');
         }
       }
