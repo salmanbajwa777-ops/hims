@@ -39,52 +39,62 @@ if ($baseRole === 'ADMIN' && (int) ($_GET['doctor_id'] ?? 0) > 0) {
 
 $weekdays = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday'];
 
-// ---------------- Save the whole week at once ----------------
+// ---------------- Save: one set of hours + off days, expanded to the week ----------------
+// The doctor enters their hours ONCE (in/out, optional session 2), ticks which
+// days are off, and the server stamps the same window onto every working day.
 $saved = false;
 $saveError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_schedule') {
-    $rows = $_POST['w'] ?? [];
-    if (!is_array($rows)) { $rows = []; }
-
     // <input type=time> gives HH:MM; anything else (or empty) becomes NULL.
     $tParse = static fn ($v) => preg_match('/^\d{2}:\d{2}$/', trim($v ?? '')) ? trim($v) . ':00' : null;
 
-    $pdo->beginTransaction();
-    try {
-        $up = $pdo->prepare('
-            INSERT INTO doctor_weekly_schedule
-                (doctor_id, weekday, is_off, start_time, end_time, start_time_2, end_time_2)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                is_off = VALUES(is_off),
-                start_time = VALUES(start_time), end_time = VALUES(end_time),
-                start_time_2 = VALUES(start_time_2), end_time_2 = VALUES(end_time_2)
-        ');
-        foreach ($weekdays as $wd => $label) {
-            $r = $rows[$wd] ?? [];
-            $isOff  = !empty($r['off']) ? 1 : 0;
-            $start  = $tParse($r['start'] ?? '');
-            $end    = $tParse($r['end'] ?? '');
-            $start2 = $tParse($r['start2'] ?? '');
-            $end2   = $tParse($r['end2'] ?? '');
-            // A session-2 window with an empty session 1 slides up to be THE window.
-            if ($start === null && $end === null && ($start2 !== null || $end2 !== null)) {
-                [$start, $end] = [$start2, $end2];
-                $start2 = $end2 = null;
+    $start  = $tParse($_POST['start'] ?? '');
+    $end    = $tParse($_POST['end'] ?? '');
+    $start2 = $tParse($_POST['start2'] ?? '');
+    $end2   = $tParse($_POST['end2'] ?? '');
+    // A session-2 window with an empty session 1 slides up to be THE window.
+    if ($start === null && $end === null && ($start2 !== null || $end2 !== null)) {
+        [$start, $end] = [$start2, $end2];
+        $start2 = $end2 = null;
+    }
+
+    $offDays = array_map('intval', (array) ($_POST['off'] ?? []));
+    $offDays = array_values(array_intersect($offDays, array_keys($weekdays)));
+
+    if ($start === null || $end === null) {
+        $saveError = 'Please set your time in and time out.';
+    } elseif (count($offDays) === 7) {
+        $saveError = 'All seven days are marked off — untick at least one working day.';
+    } else {
+        $pdo->beginTransaction();
+        try {
+            $up = $pdo->prepare('
+                INSERT INTO doctor_weekly_schedule
+                    (doctor_id, weekday, is_off, start_time, end_time, start_time_2, end_time_2)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    is_off = VALUES(is_off),
+                    start_time = VALUES(start_time), end_time = VALUES(end_time),
+                    start_time_2 = VALUES(start_time_2), end_time_2 = VALUES(end_time_2)
+            ');
+            foreach ($weekdays as $wd => $label) {
+                $isOff = in_array($wd, $offDays, true) ? 1 : 0;
+                $up->execute([
+                    $doctorId, $wd, $isOff,
+                    $isOff ? null : $start,  $isOff ? null : $end,
+                    $isOff ? null : $start2, $isOff ? null : $end2,
+                ]);
             }
-            if ($isOff) { $start = $end = $start2 = $end2 = null; } // no windows on an off day
 
-            $up->execute([$doctorId, $wd, $isOff, $start, $end, $start2, $end2]);
+            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+                ->execute([$_SESSION['user_id'], 'doctor_schedule_updated', "Weekly schedule updated for doctor #$doctorId"]);
+
+            $pdo->commit();
+            $saved = true;
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            $saveError = 'Could not save the schedule — please try again.';
         }
-
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'doctor_schedule_updated', "Weekly schedule updated for doctor #$doctorId"]);
-
-        $pdo->commit();
-        $saved = true;
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        $saveError = 'Could not save the schedule — please try again.';
     }
 }
 
@@ -108,55 +118,67 @@ $wq->execute([(int) $user['id']]);
 $dsWaitingCount = (int) $wq->fetchColumn();
 
 $fmt = static fn ($t) => $t ? substr($t, 0, 5) : '';
-$todayWd = (int) date('N');
+
+// The form shows ONE set of hours + off-day ticks; derive both from the stored
+// rows (the first working day's window IS the hours — save writes them uniform).
+$curStart = $curEnd = $curStart2 = $curEnd2 = '';
+$curOff = [];
+foreach ($weekdays as $wd => $label) {
+    $r = $week[$wd] ?? null;
+    if ($r && $r['is_off']) {
+        $curOff[] = $wd;
+    } elseif ($r && $curStart === '' && $r['start_time']) {
+        $curStart  = $fmt($r['start_time']);
+        $curEnd    = $fmt($r['end_time']);
+        $curStart2 = $fmt($r['start_time_2']);
+        $curEnd2   = $fmt($r['end_time_2']);
+    }
+}
+$hasSess2 = $curStart2 !== '' || $curEnd2 !== '';
+$hasSaved = !empty($week);
 
 $pageTitle = 'My Schedule';
 $headExtra = <<<CSS
 <style>
-.content { max-width: 860px; }
-.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.content { max-width: 640px; }
+.page-head { margin-bottom: 16px; }
 .page-head h1 { font-size: 21px; font-weight: 700; }
 .page-head .sub { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
 
-.wk-row { display: grid; grid-template-columns: 120px 90px 1fr; gap: 14px; align-items: start; padding: 13px 0; border-top: 1px solid var(--border); }
-.wk-row:first-of-type { border-top: none; }
-.wk-day { font-size: 13.5px; font-weight: 600; padding-top: 8px; }
-.wk-day .today-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--primary); background: var(--primary-light); border-radius: 6px; padding: 1px 7px; margin-left: 6px; }
+.blk-label { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.blk { margin-bottom: 20px; }
+.blk:last-of-type { margin-bottom: 0; }
 
-/* Off toggle — a small switch per row */
-.off-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; padding-top: 8px; user-select: none; }
-.off-toggle input { position: absolute; opacity: 0; pointer-events: none; }
-.off-toggle .track { width: 36px; height: 20px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s ease; flex-shrink: 0; }
-.off-toggle .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: left .15s ease; }
-.off-toggle input:checked + .track { background: #B91C1C; }
-.off-toggle input:checked + .track::after { left: 18px; }
-.off-toggle input:focus-visible + .track { outline: 2px solid var(--primary); outline-offset: 2px; }
-.off-toggle .lab { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.wk-row.is-off .off-toggle .lab { color: #B91C1C; }
-
-.time-stack { display: flex; flex-direction: column; gap: 8px; }
-.time-pair { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.time-pair .sess { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); width: 44px; flex-shrink: 0; }
-.time-pair input[type=time] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); color: var(--text); width: 108px; }
+.time-pair { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.time-pair input[type=time] { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; background: var(--bg); color: var(--text); width: 130px; }
 .time-pair input[type=time]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
 .time-pair .dash { color: var(--text-muted); }
-.add-sess { background: none; border: none; padding: 0; font: 600 12px Inter, system-ui, sans-serif; color: var(--primary); cursor: pointer; text-align: left; width: fit-content; }
+.sess2-wrap[hidden], .add-sess[hidden] { display: none !important; }
+.sess2-wrap { margin-top: 10px; }
+.add-sess { background: none; border: none; padding: 0; margin-top: 10px; font: 600 12.5px Inter, system-ui, sans-serif; color: var(--primary); cursor: pointer; }
 .add-sess:hover { text-decoration: underline; }
-.rm-sess { background: none; border: none; padding: 0 2px; font-size: 15px; line-height: 1; color: var(--text-muted); cursor: pointer; }
+.rm-sess { background: none; border: none; padding: 0 4px; font-size: 16px; line-height: 1; color: var(--text-muted); cursor: pointer; }
 .rm-sess:hover { color: #B91C1C; }
-.wk-row.is-off .time-stack { opacity: .35; pointer-events: none; }
-.wk-row.is-off .time-stack .off-note { opacity: 1; }
-.off-note { font-size: 12.5px; color: var(--text-muted); padding-top: 8px; }
 
-.sheet-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
-.sheet-foot .hint { font-size: 12.5px; color: var(--text-muted); max-width: 52ch; }
-.copy-link { background: none; border: none; padding: 0; font: 600 12.5px Inter, system-ui, sans-serif; color: var(--primary); cursor: pointer; }
-.copy-link:hover { text-decoration: underline; }
+/* Off-day picker — one chip per weekday, tap to mark off (red) */
+.day-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.day-chip { position: relative; cursor: pointer; user-select: none; }
+.day-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.day-chip span { display: flex; align-items: center; justify-content: center; min-width: 52px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); background: var(--card); transition: all .12s ease; }
+.day-chip input:checked + span { background: #FEF2F2; border-color: #FECACA; color: #B91C1C; text-decoration: line-through; }
+.day-chip input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+.chips-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 
-@media (max-width: 640px) {
-    .wk-row { grid-template-columns: 1fr; gap: 8px; padding: 14px 0; }
-    .wk-day, .off-toggle { padding-top: 0; }
-}
+/* Live summary of what will be saved */
+.wk-preview { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 14px; }
+.wk-line { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 4px 0; }
+.wk-line .d { color: var(--text-secondary); font-weight: 600; min-width: 90px; }
+.wk-line .t { color: var(--text); }
+.wk-line.off .t { color: #B91C1C; font-weight: 600; }
+.wk-line.today .d::after { content: " · today"; font-size: 10.5px; color: var(--primary); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+
+.sheet-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+.sheet-foot .hint { font-size: 12px; color: var(--text-muted); max-width: 42ch; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -176,60 +198,50 @@ require __DIR__ . '/partials/head.php';
             <?php if ($saveError): ?><div class="alert error"><?= htmlspecialchars($saveError) ?></div><?php endif; ?>
 
             <div class="page-head">
-                <div>
-                    <h1>My Schedule</h1>
-                    <div class="sub">Your fixed weekly hours — set time in / time out for each day, add a second session if you sit twice, or switch a day off.</div>
-                </div>
+                <h1>My Schedule</h1>
+                <div class="sub">One-time setup — enter your daily hours once, tick your off days, and it applies to the whole week, all year.</div>
             </div>
 
             <form method="POST" action="my_schedule.php<?= $baseRole === 'ADMIN' && $doctorId !== (int) $user['id'] ? '?doctor_id=' . $doctorId : '' ?>">
                 <input type="hidden" name="action" value="save_schedule">
                 <div class="card">
-                    <?php foreach ($weekdays as $wd => $label):
-                        $r = $week[$wd] ?? null;
-                        $isOff = $r ? (bool) $r['is_off'] : false;
-                        $s1 = $fmt($r['start_time'] ?? null);
-                        $e1 = $fmt($r['end_time'] ?? null);
-                        $s2 = $fmt($r['start_time_2'] ?? null);
-                        $e2 = $fmt($r['end_time_2'] ?? null);
-                        $hasSess2 = $s2 !== '' || $e2 !== '';
-                    ?>
-                    <div class="wk-row<?= $isOff ? ' is-off' : '' ?>" data-wk-row>
-                        <div class="wk-day"><?= $label ?><?php if ($wd === $todayWd): ?><span class="today-tag">Today</span><?php endif; ?></div>
 
-                        <label class="off-toggle">
-                            <input type="checkbox" name="w[<?= $wd ?>][off]" value="1" <?= $isOff ? 'checked' : '' ?> onchange="wkOffChanged(this)">
-                            <span class="track"></span>
-                            <span class="lab"><?= $isOff ? 'Off' : 'Off?' ?></span>
-                        </label>
-
-                        <div class="time-stack">
-                            <div class="time-pair">
-                                <span class="sess">In / Out</span>
-                                <input type="time" name="w[<?= $wd ?>][start]" value="<?= htmlspecialchars($s1) ?>">
-                                <span class="dash">&ndash;</span>
-                                <input type="time" name="w[<?= $wd ?>][end]" value="<?= htmlspecialchars($e1) ?>">
-                            </div>
-                            <div class="time-pair sess2" <?= $hasSess2 ? '' : 'hidden' ?>>
-                                <span class="sess">Sess 2</span>
-                                <input type="time" name="w[<?= $wd ?>][start2]" value="<?= htmlspecialchars($s2) ?>">
-                                <span class="dash">&ndash;</span>
-                                <input type="time" name="w[<?= $wd ?>][end2]" value="<?= htmlspecialchars($e2) ?>">
-                                <button type="button" class="rm-sess" title="Remove second session" onclick="wkRemoveSess2(this)">&times;</button>
-                            </div>
-                            <button type="button" class="add-sess" <?= $hasSess2 ? 'hidden' : '' ?> onclick="wkAddSess2(this)">+ Add second session</button>
+                    <div class="blk">
+                        <div class="blk-label">My daily hours</div>
+                        <div class="time-pair">
+                            <input type="time" name="start" value="<?= htmlspecialchars($curStart) ?>" required>
+                            <span class="dash">&ndash;</span>
+                            <input type="time" name="end" value="<?= htmlspecialchars($curEnd) ?>" required>
                         </div>
+                        <div class="sess2-wrap" id="sess2Wrap" <?= $hasSess2 ? '' : 'hidden' ?>>
+                            <div class="time-pair">
+                                <input type="time" name="start2" value="<?= htmlspecialchars($curStart2) ?>">
+                                <span class="dash">&ndash;</span>
+                                <input type="time" name="end2" value="<?= htmlspecialchars($curEnd2) ?>">
+                                <button type="button" class="rm-sess" title="Remove second session" onclick="wkRemoveSess2()">&times;</button>
+                            </div>
+                        </div>
+                        <button type="button" class="add-sess" id="addSessBtn" <?= $hasSess2 ? 'hidden' : '' ?> onclick="wkAddSess2()">+ Add a second session (evening sitting)</button>
                     </div>
-                    <?php endforeach; ?>
+
+                    <div class="blk">
+                        <div class="blk-label">My off days</div>
+                        <div class="day-chips">
+                            <?php foreach ($weekdays as $wd => $label): ?>
+                            <label class="day-chip">
+                                <input type="checkbox" name="off[]" value="<?= $wd ?>" <?= in_array($wd, $curOff, true) ? 'checked' : '' ?> onchange="wkPreview()">
+                                <span><?= substr($label, 0, 3) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="chips-hint">Tap a day to mark it off — every other day gets the hours above.</div>
+                    </div>
+
+                    <div class="wk-preview" id="wkPreview"></div>
 
                     <div class="sheet-foot">
-                        <div class="hint">
-                            This is your standing pattern for the whole year. Reception's daily
-                            timings sheet can still override a single day (delay or off) without
-                            changing this template.
-                            <br><button type="button" class="copy-link" onclick="wkCopyMonday()">Copy Monday's times to all working days</button>
-                        </div>
-                        <button type="submit" class="btn">Save schedule</button>
+                        <div class="hint">Reception's daily timings sheet can still override a single day (delay or one-off leave) without changing this.</div>
+                        <button type="submit" class="btn"><?= $hasSaved ? 'Update schedule' : 'Save schedule' ?></button>
                     </div>
                 </div>
             </form>
@@ -239,44 +251,54 @@ require __DIR__ . '/partials/head.php';
 </div>
 
 <script>
-// Toggling a day off greys + disables its time inputs (server also nulls the
-// windows for off rows; this is just immediate feedback).
-function wkOffChanged(cb) {
-    var row = cb.closest('[data-wk-row]');
-    if (row) {
-        row.classList.toggle('is-off', cb.checked);
-        var lab = cb.closest('.off-toggle').querySelector('.lab');
-        if (lab) { lab.textContent = cb.checked ? 'Off' : 'Off?'; }
-    }
+var WK_DAYS = <?= json_encode(array_values($weekdays)) ?>;
+var WK_TODAY = <?= (int) date('N') ?>; // 1=Mon … 7=Sun
+
+function wkAddSess2() {
+    document.getElementById('sess2Wrap').hidden = false;
+    document.getElementById('addSessBtn').hidden = true;
+    wkPreview();
 }
-function wkAddSess2(btn) {
-    var stack = btn.closest('.time-stack');
-    stack.querySelector('.sess2').hidden = false;
-    btn.hidden = true;
+function wkRemoveSess2() {
+    var wrap = document.getElementById('sess2Wrap');
+    wrap.hidden = true;
+    wrap.querySelectorAll('input[type=time]').forEach(function (i) { i.value = ''; });
+    document.getElementById('addSessBtn').hidden = false;
+    wkPreview();
 }
-function wkRemoveSess2(btn) {
-    var pair = btn.closest('.sess2');
-    pair.hidden = true;
-    pair.querySelectorAll('input[type=time]').forEach(function (i) { i.value = ''; });
-    var stack = pair.closest('.time-stack');
-    stack.querySelector('.add-sess').hidden = false;
+
+// 24h "14:30" -> "2:30 PM" for the preview lines.
+function wkFmt(v) {
+    if (!v) { return ''; }
+    var p = v.split(':'), h = parseInt(p[0], 10);
+    var ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + p[1] + ' ' + ap;
 }
-// Convenience: stamp Monday's windows onto every non-off day below it.
-function wkCopyMonday() {
-    var rows = document.querySelectorAll('[data-wk-row]');
-    if (!rows.length) { return; }
-    var src = rows[0];
-    var get = function (row, part) { return row.querySelector('input[name$="[' + part + ']"]'); };
-    var vals = { start: get(src, 'start').value, end: get(src, 'end').value,
-                 start2: get(src, 'start2').value, end2: get(src, 'end2').value };
-    rows.forEach(function (row, i) {
-        if (i === 0 || row.classList.contains('is-off')) { return; }
-        ['start', 'end', 'start2', 'end2'].forEach(function (p) { get(row, p).value = vals[p]; });
-        var has2 = vals.start2 !== '' || vals.end2 !== '';
-        row.querySelector('.sess2').hidden = !has2;
-        row.querySelector('.add-sess').hidden = has2;
+
+// Live preview: exactly what each weekday will be saved as.
+function wkPreview() {
+    var s = document.querySelector('input[name=start]').value;
+    var e = document.querySelector('input[name=end]').value;
+    var s2 = document.querySelector('input[name=start2]').value;
+    var e2 = document.querySelector('input[name=end2]').value;
+    var win = (s && e) ? wkFmt(s) + ' – ' + wkFmt(e) : '—';
+    if (s2 && e2) { win += ' &amp; ' + wkFmt(s2) + ' – ' + wkFmt(e2); }
+
+    var offs = {};
+    document.querySelectorAll('input[name="off[]"]:checked').forEach(function (c) { offs[c.value] = true; });
+
+    var html = '';
+    WK_DAYS.forEach(function (d, i) {
+        var wd = i + 1, off = !!offs[wd];
+        html += '<div class="wk-line' + (off ? ' off' : '') + (wd === WK_TODAY ? ' today' : '') + '">'
+              + '<span class="d">' + d + '</span>'
+              + '<span class="t">' + (off ? 'Off' : win) + '</span></div>';
     });
+    document.getElementById('wkPreview').innerHTML = html;
 }
+document.querySelectorAll('input[type=time]').forEach(function (i) { i.addEventListener('input', wkPreview); });
+wkPreview();
 </script>
 </body>
 </html>
