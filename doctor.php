@@ -98,6 +98,80 @@ $doneCount = count(array_filter($visits, fn($v) => $v['consult_status'] === 'DON
 $current = $inConsult[0] ?? null;         // the one being seen right now (0 or 1)
 $next    = $waiting[0] ?? null;           // next to call in
 
+// ---------------- This-month analytics snapshot ----------------
+// Small always-on summary under the queue; the full picture (charts, tables,
+// history) lives in doctor_analytics.php. All figures are BILLED revenue from
+// paid bills under this doctor — not earnings (commission engine is Phase 3A).
+require_once __DIR__ . '/config/billing.php';
+$moStart = date('Y-m-01');
+$moEnd = date('Y-m-t');
+
+// Paid consultations split into full vs revisit, plus the per-tier mix.
+$moC = $pdo->prepare("
+    SELECT SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN b.grand_total ELSE 0 END) AS full_amt,
+           SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN b.grand_total ELSE 0 END) AS revisit_amt,
+           SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
+           SUM(CASE WHEN v.consultation_fee_type = 'FREE_FOLLOWUP' THEN 1 ELSE 0 END) AS free_n,
+           SUM(CASE WHEN v.consultation_fee_type = 'HALF_FOLLOWUP' THEN 1 ELSE 0 END) AS half_n,
+           SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
+           COUNT(*) AS n
+    FROM visits v
+    JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+    WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
+");
+$moC->execute([$doctorId, $moStart, $moEnd]);
+$mo = $moC->fetch() ?: [];
+$moConsultN = (int) ($mo['n'] ?? 0);
+$moRevisitN = (int) (($mo['free_n'] ?? 0) + ($mo['half_n'] ?? 0) + ($mo['tq_n'] ?? 0));
+$moRevisitRate = $moConsultN > 0 ? $moRevisitN / $moConsultN * 100 : 0.0;
+
+// Paid admission bills where this doctor admitted (falls back to the visit's doctor).
+$moA = $pdo->prepare("
+    SELECT COALESCE(SUM(ab.grand_total), 0) AS amt, COUNT(*) AS n
+    FROM admission_bills ab
+    JOIN admissions a ON a.id = ab.admission_id
+    JOIN visits v ON v.id = a.visit_id
+    WHERE ab.status = 'paid'
+      AND COALESCE(a.admitting_doctor_id, v.doctor_id) = ?
+      AND DATE(COALESCE(ab.paid_at, ab.created_at)) BETWEEN ? AND ?
+");
+$moA->execute([$doctorId, $moStart, $moEnd]);
+$moAdm = $moA->fetch() ?: ['amt' => 0, 'n' => 0];
+$moTotal = (float) ($mo['full_amt'] ?? 0) + (float) ($mo['revisit_amt'] ?? 0) + (float) $moAdm['amt'];
+
+// Currently-active admissions under this doctor (cards, with running charge).
+$actQ = $pdo->prepare("
+    SELECT a.id, a.admission_type, a.admitted_at,
+           p.name AS patient_name, p.mrn,
+           nu.name AS nurse_name,
+           ar.rate_amount, ar.rate_basis,
+           (SELECT h.status_at_handover FROM admission_handovers h
+            WHERE h.admission_id = a.id ORDER BY h.handover_time DESC, h.id DESC LIMIT 1) AS last_status,
+           (SELECT COALESCE(SUM(s.calculated_charge), 0) FROM admission_services s
+            WHERE s.admission_id = a.id AND s.is_billable = 1) AS services_total
+    FROM admissions a
+    JOIN visits v ON v.id = a.visit_id
+    JOIN patients p ON p.id = v.patient_id
+    LEFT JOIN users nu ON nu.id = a.assigned_nurse_id
+    LEFT JOIN admission_rates ar ON ar.admission_type = a.admission_type
+    WHERE COALESCE(a.admitting_doctor_id, v.doctor_id) = ?
+      AND a.status IN ('PENDING_ASSIGNMENT','ACTIVE','DISCHARGE_IN_PROGRESS')
+    ORDER BY a.admitted_at DESC
+");
+$actQ->execute([$doctorId]);
+$activeAdms = $actQ->fetchAll();
+foreach ($activeAdms as &$aa) {
+    $mins = max(0, (int) floor((time() - strtotime($aa['admitted_at'])) / 60));
+    $aa['elapsed_min'] = $mins;
+    if (($aa['rate_basis'] ?? 'HOURLY') === 'DAILY') {
+        $aa['stay_charge'] = (float) $aa['rate_amount'] * max(1, (int) ceil($mins / 1440));
+    } else {
+        $aa['stay_charge'] = (float) $aa['rate_amount'] * admission_billed_hours($mins);
+    }
+    $aa['running_total'] = $aa['stay_charge'] + (float) $aa['services_total'];
+}
+unset($aa);
+
 function doc_age(array $v): ?int {
     if (!empty($v['dob'])) {
         return (new DateTime($v['dob']))->diff(new DateTime())->y;
@@ -133,29 +207,13 @@ $headExtra = <<<CSS
 <style>
 /* Doctor Console keeps its OWN clinical sidebar (different nav taxonomy from the
    shared admin/reception sidebar), so it does NOT use partials/sidebar.php.
+   The sidebar itself (markup + CSS + drawer JS) now lives in
+   partials/doctor_sidebar.php, shared with doctor_analytics.php.
    app.css provides the design tokens, reset, body/a/button, .app/.main/.content,
    .card, .btn* aliases and the base .status-pill — those are dropped here.
-   What remains below is doctor-specific: the clinical sidebar, the top header
-   bar, and this page's bespoke components (hero, KPIs, queue, now-serving). */
+   What remains below is doctor-specific: the top header bar and this page's
+   bespoke components (hero, KPIs, queue, now-serving). */
 .tnum { font-variant-numeric: tabular-nums; }
-
-/* Sidebar */
-.sidebar { background: var(--card); border-right: 1px solid var(--border); padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; font-weight: 700; font-size: 18px; }
-.sidebar-brand .logo-mark { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
-.nav-group { margin-bottom: 18px; }
-.nav-group-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--text-muted); padding: 0 12px 8px; text-transform: uppercase; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; color: var(--text-secondary); font-weight: 500; font-size: 13.5px; transition: background .15s ease; }
-.nav-item:hover { background: #EEF4F4; }
-.nav-item.active { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; position: relative; }
-.nav-item.active::before { content: ""; position: absolute; left: -16px; top: 8px; bottom: 8px; width: 3px; background: var(--primary); border-radius: 0 3px 3px 0; }
-.nav-item.disabled { opacity: .45; cursor: not-allowed; }
-.nav-item .count { margin-left: auto; font-size: 11.5px; font-weight: 700; background: var(--primary); color: #fff; border-radius: 20px; padding: 1px 8px; }
-.nav-icon { width: 28px; height: 28px; border-radius: 8px; background: #F1F5F9; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text-secondary); }
-.nav-icon svg { width: 15px; height: 15px; }
-.nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
-.sidebar-foot { margin-top: 8px; padding: 12px; border-radius: 14px; background: var(--primary-light); font-size: 12px; color: var(--text-secondary); }
-.sidebar-foot b { color: var(--text); }
 
 /* Header */
 .header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.82); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
@@ -190,6 +248,8 @@ $headExtra = <<<CSS
 
 /* KPIs */
 .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.kpi-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 .kpi-card { background: var(--card); border-radius: var(--radius-card); padding: 20px 22px; box-shadow: var(--shadow-sm); border: 1px solid var(--border); transition: transform .25s ease, box-shadow .25s ease; }
 .kpi-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
 .kpi-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
@@ -249,65 +309,43 @@ $headExtra = <<<CSS
 .flash { background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 14px; padding: 12px 18px; font-size: 13.5px; color: #047857; }
 .build-notice { background: #F1F5F9; border: 1px dashed var(--border); border-radius: 14px; padding: 12px 18px; font-size: 12.5px; color: var(--text-secondary); }
 
-@media (max-width: 1200px) { .grid-2 { grid-template-columns: 1fr; } .row-2 { grid-template-columns: 1fr; } }
-/* This console keeps its OWN clinical sidebar, so it also carries its own mobile
-   drawer — mirroring partials/sidebar.php's mechanism (body.nav-open + overlay)
-   so a doctor can reach the nav on a phone, which previously wasn't possible. */
-.doc-mobile-bar { display: none; }
-.doc-mobile-bar .hamburger { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; }
-.doc-mobile-bar .hamburger svg { width: 20px; height: 20px; }
-.doc-mobile-bar .m-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
-.doc-mobile-bar .m-brand .logo-mark { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; }
-.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 40; }
-@media (max-width: 900px) {
-    .app { grid-template-columns: 1fr; }
-    .content { padding: 20px 18px 48px; }
-    .doc-mobile-bar { display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 30; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
-    .sidebar { position: fixed; top: 0; left: 0; z-index: 50; width: min(84vw, 300px); height: 100vh; transform: translateX(-100%); transition: transform .22s ease; box-shadow: var(--shadow-lg); }
-    body.nav-open .sidebar { transform: translateX(0); }
-    body.nav-open .sidebar-overlay { display: block; }
-    .sidebar .nav-item.active::before { left: -8px; }
-}
+/* This-month analytics strip (compact versions of the doctor_analytics.php blocks) */
+.rev-row { display: grid; grid-template-columns: 130px 1fr 84px; gap: 12px; align-items: center; font-size: 13px; padding: 6px 0; }
+.rev-row .amt { text-align: right; font-weight: 600; }
+.bar-track { height: 9px; border-radius: 6px; background: var(--bg); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 6px; }
+.rev-total { display: flex; justify-content: space-between; border-top: 1px solid var(--border); margin-top: 10px; padding-top: 12px; font-weight: 700; font-size: 13.5px; }
+.rv-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.rv-row:first-of-type { border-top: none; }
+.rv-note { font-size: 11.5px; color: var(--text-muted); }
+.badge-count { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 2px 11px; font-weight: 700; font-size: 13px; }
+.adm { border-left: 3px solid var(--primary); border-radius: 14px; background: var(--card); border-top: 1px solid var(--border); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 14px 16px; }
+.adm.stable { border-left-color: var(--green); }
+.adm.critical { border-left-color: var(--red); }
+.adm-name { font-size: 13.5px; font-weight: 700; }
+.adm-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.adm-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; font-size: 12px; color: var(--text-muted); }
+.adm-foot b { color: var(--text-secondary); font-weight: 600; }
+.status-pill.green { background: #ECFDF5; color: #047857; }
+.status-pill.amber { background: #FFFBEB; color: #92400E; }
+.status-pill.red   { background: #FEE2E2; color: #B91C1C; }
+.status-pill.teal  { background: var(--primary-light); color: var(--primary-dark); }
+.card-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
+
+@media (max-width: 1200px) { .grid-2 { grid-template-columns: 1fr; } .grid-4 { grid-template-columns: repeat(2, 1fr); } .row-2 { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .grid-4 { grid-template-columns: 1fr; } }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
 ?>
 <div class="app">
 
-    <div class="doc-mobile-bar">
-        <button type="button" class="hamburger" aria-label="Open navigation" aria-expanded="false" onclick="himsToggleNav()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
-        </button>
-        <a class="m-brand" href="doctor.php"><span class="logo-mark">H</span> HIMS</a>
-    </div>
-    <div class="sidebar-overlay" onclick="himsCloseNav()"></div>
-
-    <aside class="sidebar" id="himsSidebar">
-        <div class="sidebar-brand"><div class="logo-mark">H</div> HIMS</div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Clinical</div>
-            <a class="nav-item active" href="doctor.php"><span class="nav-icon"><?= icon('grid') ?></span> My Console</a>
-            <a class="nav-item" href="doctor.php"><span class="nav-icon"><?= icon('users') ?></span> My Queue <?php if (count($waiting)): ?><span class="count"><?= count($waiting) ?></span><?php endif; ?></a>
-            <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('stetho') ?></span> Consultations</a>
-            <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('file') ?></span> Prescriptions</a>
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Records</div>
-            <a class="nav-item" href="patients.php"><span class="nav-icon"><?= icon('search') ?></span> Find Patient</a>
-            <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('calendar') ?></span> My Schedule</a>
-        </div>
-
-        <div class="nav-group">
-            <div class="nav-group-label">Analytics</div>
-            <a class="nav-item disabled" href="#"><span class="nav-icon"><?= icon('chart') ?></span> My Reports</a>
-        </div>
-
-        <div class="sidebar-foot">
-            Signed in as <b><?= htmlspecialchars($user['name']) ?></b><br>Doctor
-        </div>
-    </aside>
+    <?php
+    $dsActive = 'console';
+    $dsUserName = $user['name'];
+    $dsWaitingCount = count($waiting);
+    require __DIR__ . '/partials/doctor_sidebar.php';
+    ?>
 
     <div class="main">
         <header class="header">
@@ -372,7 +410,7 @@ require __DIR__ . '/partials/head.php';
             </section>
 
             <!-- KPIs -->
-            <div class="grid-2">
+            <div class="grid-4">
                 <div class="kpi-card">
                     <div class="kpi-top"><div class="kpi-icon"><?= icon('users', 20) ?></div></div>
                     <div class="kpi-value tnum"><?= count($waiting) ?></div>
@@ -383,6 +421,18 @@ require __DIR__ . '/partials/head.php';
                     <div class="kpi-value tnum"><?= $doneCount ?></div>
                     <div class="kpi-label">Seen today</div>
                 </div>
+                <a class="kpi-card" href="doctor_analytics.php?view=revisits" style="display:block;">
+                    <div class="kpi-top"><div class="kpi-icon"><?= icon('chart', 20) ?></div></div>
+                    <div class="kpi-value tnum"><?= number_format($moRevisitRate, 1) ?>%</div>
+                    <div class="kpi-label">Revisit rate — <?= date('M') ?></div>
+                    <div class="kpi-sub tnum"><?= $moRevisitN ?> of <?= $moConsultN ?> paid consultations</div>
+                </a>
+                <a class="kpi-card" href="doctor_analytics.php?view=revenue" style="display:block;">
+                    <div class="kpi-top"><div class="kpi-icon"><?= icon('file', 20) ?></div></div>
+                    <div class="kpi-value tnum"><?= number_format($moTotal) ?> <span style="font-size:14px;font-weight:600;color:var(--text-muted)">PKR</span></div>
+                    <div class="kpi-label">Revenue billed — <?= date('M') ?></div>
+                    <div class="kpi-sub">Consultations + admissions (billed, not earnings)</div>
+                </a>
             </div>
 
             <!-- Main row -->
@@ -490,24 +540,112 @@ require __DIR__ . '/partials/head.php';
                 </div>
             </div>
 
+            <!-- This-month analytics strip: revenue snapshot + revisit mix.
+                 Compact summaries only; the full charts/tables live in doctor_analytics.php. -->
+            <?php
+            $moFull = (float) ($mo['full_amt'] ?? 0);
+            $moRev = (float) ($mo['revisit_amt'] ?? 0);
+            $moAdmAmt = (float) $moAdm['amt'];
+            $moMax = max(1.0, $moFull, $moRev, $moAdmAmt);
+            ?>
+            <div class="row-2">
+                <div class="card">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-title">Revenue breakdown — <?= date('F') ?></div>
+                            <div class="section-sub">Paid bills under your name</div>
+                        </div>
+                        <a class="card-link" href="doctor_analytics.php?view=revenue">Full chart &rarr;</a>
+                    </div>
+                    <div style="margin-top:12px">
+                        <div class="rev-row">
+                            <span>Full consultations</span>
+                            <div class="bar-track"><div class="bar-fill" style="width:<?= round($moFull / $moMax * 100) ?>%;background:var(--primary)"></div></div>
+                            <span class="amt tnum"><?= number_format($moFull) ?></span>
+                        </div>
+                        <div class="rev-row">
+                            <span>Revisits</span>
+                            <div class="bar-track"><div class="bar-fill" style="width:<?= round($moRev / $moMax * 100) ?>%;background:#0891B2"></div></div>
+                            <span class="amt tnum"><?= number_format($moRev) ?></span>
+                        </div>
+                        <div class="rev-row">
+                            <span>ER admissions</span>
+                            <div class="bar-track"><div class="bar-fill" style="width:<?= round($moAdmAmt / $moMax * 100) ?>%;background:#D97706"></div></div>
+                            <span class="amt tnum"><?= number_format($moAdmAmt) ?></span>
+                        </div>
+                        <div class="rev-total"><span>Total billed</span><span class="tnum"><?= number_format($moTotal) ?> PKR</span></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-title">Revisit mix — <?= date('F') ?></div>
+                            <div class="section-sub">Follow-up tiers on your paid consultations</div>
+                        </div>
+                        <a class="card-link" href="doctor_analytics.php?view=revisits">Breakdown &rarr;</a>
+                    </div>
+                    <div style="margin-top:10px">
+                        <div class="rv-row">
+                            <div>Free follow-ups <div class="rv-note">1st within 5 days</div></div>
+                            <span class="badge-count tnum"><?= (int) ($mo['free_n'] ?? 0) ?></span>
+                        </div>
+                        <div class="rv-row">
+                            <div>50% follow-ups <div class="rv-note">2nd+ within 5 days</div></div>
+                            <span class="badge-count tnum"><?= (int) ($mo['half_n'] ?? 0) ?></span>
+                        </div>
+                        <div class="rv-row">
+                            <div>75% follow-ups <div class="rv-note">Day 6–15</div></div>
+                            <span class="badge-count tnum"><?= (int) ($mo['tq_n'] ?? 0) ?></span>
+                        </div>
+                        <div class="rev-total" style="font-size:13px"><span>Revisit rate</span><span class="tnum"><?= number_format($moRevisitRate, 1) ?>% (<?= $moRevisitN ?> / <?= $moConsultN ?>)</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($activeAdms): ?>
+            <div class="card">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">Active ER admissions (<?= count($activeAdms) ?>)</div>
+                        <div class="section-sub">Patients you admitted who are still in the ward</div>
+                    </div>
+                    <a class="card-link" href="doctor_analytics.php?view=admissions">History &rarr;</a>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+                    <?php
+                    $admTypeLabel = ['ROUTINE' => 'ER Routine', 'PRIVATE' => 'ER Private', 'LONG_PRIVATE' => 'Long Private'];
+                    foreach ($activeAdms as $aa):
+                        $st = $aa['last_status'] ?? 'ACTIVE';
+                        $cls = $st === 'STABLE' ? 'stable' : ($st === 'CRITICAL' ? 'critical' : '');
+                        $pill = $st === 'STABLE' ? 'green' : ($st === 'CRITICAL' ? 'red' : 'teal');
+                        $eh = intdiv($aa['elapsed_min'], 60); $em = $aa['elapsed_min'] % 60;
+                    ?>
+                    <div class="adm <?= $cls ?>">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                            <div>
+                                <div class="adm-name"><?= htmlspecialchars($aa['patient_name']) ?> <span class="mrn">MRN <?= htmlspecialchars($aa['mrn']) ?></span></div>
+                                <div class="adm-meta">
+                                    <?= $admTypeLabel[$aa['admission_type']] ?? $aa['admission_type'] ?>
+                                    · admitted <?= date('g:i A', strtotime($aa['admitted_at'])) ?>
+                                    · <b class="tnum"><?= $eh > 0 ? "{$eh}h {$em}m" : "{$em}m" ?></b> elapsed
+                                </div>
+                            </div>
+                            <span class="status-pill <?= $pill ?>"><?= ucfirst(strtolower($st)) ?></span>
+                        </div>
+                        <div class="adm-foot">
+                            <span>Nurse: <b><?= htmlspecialchars($aa['nurse_name'] ?? 'Unassigned') ?></b></span>
+                            <span>Running total: <b class="tnum"><?= number_format($aa['running_total']) ?> PKR</b></span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
         </div>
     </div>
 </div>
-<script>
-// Mobile drawer for the doctor console's own sidebar (same contract as partials/sidebar.php).
-function himsToggleNav() {
-    var open = document.body.classList.toggle('nav-open');
-    var btn = document.querySelector('.doc-mobile-bar .hamburger');
-    if (btn) { btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
-}
-function himsCloseNav() {
-    document.body.classList.remove('nav-open');
-    var btn = document.querySelector('.doc-mobile-bar .hamburger');
-    if (btn) { btn.setAttribute('aria-expanded', 'false'); }
-}
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { himsCloseNav(); } });
-document.querySelectorAll('#himsSidebar .nav-item:not(.disabled)').forEach(function (a) { a.addEventListener('click', himsCloseNav); });
-</script>
 <script src="assets/js/date-picker.js"></script>
 </body>
 </html>
