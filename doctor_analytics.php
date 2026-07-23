@@ -2,22 +2,26 @@
 /**
  * Doctor Analytics — "My Reports" for the doctor console.
  *
- * Four views on ?view= :
+ * Three sections on ?view= :
  *   revenue    — stacked bar chart (Full / Revisits — consultation money only,
  *                ER admission bills are clinic revenue and excluded), month-year
  *                granularity, previous-period comparison, summary cards
- *   patients   — filterable consultation table + CSV export
- *   revisits   — tier breakdown with anchor → revisit chains
- *   admissions — active admission cards + discharged history
+ *   patients   — "Consultations & Revisits": filterable consultation table
+ *                (fee-type column covers Full + every revisit tier) + a revisit
+ *                summary strip (rate + per-tier counts) + CSV export
+ *   procedures — placeholder; procedure billing lands in a later phase
+ *
+ * (The old standalone 'revisits' tab was folded into 'patients'; 'admissions'
+ * was dropped from doctor analytics — that block is kept but unreachable via
+ * the tabs, redirected to revenue, since admission money isn't doctor revenue.)
  *
  * A DOCTOR always sees their own numbers. ADMIN opens the same page with a
- * doctor picker (?doctor_id=). No schema changes — everything reads visits,
- * bills, admissions, admission_bills, admission_handovers.
+ * doctor picker (?doctor_id=). No schema changes — everything reads visits +
+ * bills.
  *
  * Revenue is BILLED consultation revenue (paid bills under this doctor's
  * visits) — not the doctor's earnings (commission engine is Phase 3A), and
- * NOT admission money: ER admission bills are clinic revenue and are excluded
- * from all revenue figures (the Admissions tab stays as operational history).
+ * NOT admission money: ER admission bills are clinic revenue and excluded.
  */
 require_once __DIR__ . '/config/auth.php';
 require_login();
@@ -61,7 +65,13 @@ $docStmt->execute([$doctorId]);
 $doctorName = (string) ($docStmt->fetchColumn() ?: $user['name']);
 
 $view = $_GET['view'] ?? 'revenue';
-if (!in_array($view, ['revenue', 'patients', 'revisits', 'admissions'], true)) {
+// Three sections now: revenue | patients (Consultations & Revisits) | procedures.
+// The old standalone 'revisits' tab folded INTO the patients view (its summary
+// strip lives there now); 'admissions' was dropped from doctor analytics
+// entirely (still on the console cards). Legacy links fall back gracefully.
+if ($view === 'revisits') { $view = 'patients'; }
+if ($view === 'admissions') { $view = 'revenue'; }
+if (!in_array($view, ['revenue', 'patients', 'procedures'], true)) {
     $view = 'revenue';
 }
 
@@ -131,6 +141,22 @@ if ($view === 'patients') {
             return strtolower($label) === $payFilter;
         }));
     }
+
+    // Revisit summary for the SAME date range (the old Revisits tab, folded in).
+    // Counted over the full matched set BEFORE the pay filter narrows the view,
+    // so the rate reflects the range, not the current payment lens. Uses the
+    // unfiltered $patientRows only when no fee-type filter is active; with a
+    // fee-type filter the summary is naturally scoped to what's shown.
+    $rvTierCounts = ['FREE_FOLLOWUP' => 0, 'HALF_FOLLOWUP' => 0, 'THREE_QUARTER_FOLLOWUP' => 0];
+    $rvFullCount = 0;
+    foreach ($patientRows as $r) {
+        $ft = $r['consultation_fee_type'];
+        if ($ft === 'FULL') { $rvFullCount++; }
+        elseif (isset($rvTierCounts[$ft])) { $rvTierCounts[$ft]++; }
+    }
+    $rvCount = array_sum($rvTierCounts);
+    $rvTotal = $rvCount + $rvFullCount;
+    $rvRate = $rvTotal > 0 ? $rvCount / $rvTotal * 100 : 0.0;
 
     if (($_GET['export'] ?? '') === 'csv') {
         header('Content-Type: text/csv; charset=utf-8');
@@ -256,54 +282,8 @@ if ($view === 'revenue') {
 }
 
 // ============================================================================
-// VIEW: revisits — tier breakdown with anchor chains
-// ============================================================================
-if ($view === 'revisits') {
-    $rvMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
-    $rvStart = $rvMonth . '-01';
-    $rvEnd = date('Y-m-t', strtotime($rvStart));
-
-    $rvQ = $pdo->prepare("
-        SELECT v.id, v.visit_date, v.fee, v.consultation_fee_type,
-               p.name AS patient_name, p.mrn,
-               t.label AS type_label, t.fee AS list_fee,
-               av.visit_date AS anchor_date,
-               b.status AS bill_status, b.grand_total
-        FROM visits v
-        JOIN patients p ON p.id = v.patient_id
-        LEFT JOIN doctor_consult_types t ON t.id = v.doctor_consult_type_id
-        LEFT JOIN visits av ON av.id = v.revisit_of_visit_id
-        LEFT JOIN bills b ON b.visit_id = v.id
-        WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
-          AND v.consultation_fee_type <> 'FULL'
-        ORDER BY v.visit_date DESC, v.id DESC
-    ");
-    $rvQ->execute([$doctorId, $rvStart, $rvEnd]);
-    $rvRows = $rvQ->fetchAll();
-
-    $tiers = ['FREE_FOLLOWUP' => [], 'HALF_FOLLOWUP' => [], 'THREE_QUARTER_FOLLOWUP' => []];
-    $tierForegone = ['FREE_FOLLOWUP' => 0.0, 'HALF_FOLLOWUP' => 0.0, 'THREE_QUARTER_FOLLOWUP' => 0.0];
-    foreach ($rvRows as $r) {
-        $ft = $r['consultation_fee_type'];
-        if (!isset($tiers[$ft])) { continue; }
-        $listFee = (float) ($r['list_fee'] ?? 0);
-        $billed = (float) ($r['grand_total'] ?? $r['fee']);
-        $tiers[$ft][] = $r + ['foregone' => max(0, $listFee - $billed)];
-        $tierForegone[$ft] += max(0, $listFee - $billed);
-    }
-    // Revisit rate over ALL of the month's visits (paid or not), so the
-    // numerator (every revisit listed above) and denominator match.
-    $fullQ = $pdo->prepare("
-        SELECT COUNT(*) FROM visits v
-        WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
-    ");
-    $fullQ->execute([$doctorId, $rvStart, $rvEnd]);
-    $rvTotalConsults = (int) $fullQ->fetchColumn();
-    $rvRevisitCount = count($rvRows);
-}
-
-// ============================================================================
-// VIEW: admissions — active cards + discharged history
+// VIEW: admissions — active cards + discharged history (no longer a doctor tab
+// as of 2026-07-23, but kept reachable for admin deep-links / future reuse)
 // ============================================================================
 if ($view === 'admissions') {
     $admMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
@@ -476,6 +456,23 @@ table.rep { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 .doc-picker select { border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; font-size: 13px; font-family: inherit; background: var(--card); color: var(--text); }
 
+/* Revisit summary strip on the Consultations & Revisits view */
+.rv-strip { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px 18px; margin-bottom: 18px; }
+.rv-stat { display: flex; align-items: center; gap: 12px; padding-right: 20px; border-right: 1px solid var(--border); }
+.rv-stat .rv-num { font-size: 24px; font-weight: 700; color: var(--primary-dark); }
+.rv-stat .rv-lab { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
+.rv-stat .rv-sub { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 1px; }
+.rv-tiers { display: flex; gap: 22px; flex-wrap: wrap; }
+.rv-tier { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-secondary); }
+.rv-tier b { font-size: 15px; color: var(--text); }
+@media (max-width: 620px) { .rv-stat { border-right: none; padding-right: 0; } }
+
+/* Procedures placeholder */
+.proc-placeholder { text-align: center; padding: 44px 20px; }
+.proc-icon { width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 16px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; }
+.proc-icon svg { width: 26px; height: 26px; }
+.proc-placeholder .section-sub { max-width: 46ch; margin-left: auto; margin-right: auto; }
+
 @media (max-width: 900px) { .sum-grid { grid-template-columns: 1fr; } }
 </style>
 CSS;
@@ -514,9 +511,8 @@ require __DIR__ . '/partials/head.php';
 
             <div class="view-tabs">
                 <a class="view-tab <?= $view === 'revenue' ? 'active' : '' ?>" href="<?= qs_view('revenue') ?>">Revenue</a>
-                <a class="view-tab <?= $view === 'patients' ? 'active' : '' ?>" href="<?= qs_view('patients') ?>">Consultations</a>
-                <a class="view-tab <?= $view === 'revisits' ? 'active' : '' ?>" href="<?= qs_view('revisits') ?>">Revisits</a>
-                <a class="view-tab <?= $view === 'admissions' ? 'active' : '' ?>" href="<?= qs_view('admissions') ?>">Admissions</a>
+                <a class="view-tab <?= $view === 'patients' ? 'active' : '' ?>" href="<?= qs_view('patients') ?>">Consultations &amp; Revisits</a>
+                <a class="view-tab <?= $view === 'procedures' ? 'active' : '' ?>" href="<?= qs_view('procedures') ?>">Procedures</a>
             </div>
 
 <?php if ($view === 'revenue'): ?>
@@ -671,6 +667,22 @@ require __DIR__ . '/partials/head.php';
                     <a class="btn secondary small" href="<?= qs_view('patients', ['from' => $from, 'to' => $to, 'fee_type' => $feeType, 'pay' => $payFilter, 'export' => 'csv']) ?>">Export CSV</a>
                 </form>
 
+                <!-- Revisit summary strip (the old Revisits tab, folded in). Scoped to the
+                     same range as the table below; when a Fee-type filter is on, it reflects
+                     that narrowed set. -->
+                <div class="rv-strip">
+                    <div class="rv-stat">
+                        <div class="rv-num tnum"><?= number_format($rvRate, 1) ?>%</div>
+                        <div class="rv-lab">Revisit rate<div class="rv-sub tnum"><?= $rvCount ?> of <?= $rvTotal ?> consultations</div></div>
+                    </div>
+                    <div class="rv-tiers">
+                        <div class="rv-tier"><span class="dotk" style="background:var(--green)"></span>Free<b class="tnum"><?= $rvTierCounts['FREE_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:#0891B2"></span>50%<b class="tnum"><?= $rvTierCounts['HALF_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:#D97706"></span>75%<b class="tnum"><?= $rvTierCounts['THREE_QUARTER_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:var(--primary)"></span>Full<b class="tnum"><?= $rvFullCount ?></b></div>
+                    </div>
+                </div>
+
                 <div class="tbl-wrap">
                 <table class="rep">
                     <thead><tr><th>Date</th><th>Patient</th><th>Consult type</th><th>Fee type</th><th class="r">Billed</th><th>Payment</th><th></th></tr></thead>
@@ -701,145 +713,18 @@ require __DIR__ . '/partials/head.php';
                 </div>
             </div>
 
-<?php elseif ($view === 'revisits'): ?>
-            <div class="ctrl-bar">
-                <div class="datepick">
-                    <a class="arrow" aria-label="Previous month" href="<?= qs_view('revisits', ['month' => date('Y-m', strtotime($rvStart . ' -1 month'))]) ?>">&lsaquo;</a>
-                    <span class="cur tnum"><?= date('F Y', strtotime($rvStart)) ?></span>
-                    <a class="arrow" aria-label="Next month" href="<?= qs_view('revisits', ['month' => date('Y-m', strtotime($rvStart . ' +1 month'))]) ?>">&rsaquo;</a>
-                </div>
-                <span class="section-sub" style="margin:0">
-                    Revisit rate: <b class="tnum"><?= $rvTotalConsults > 0 ? number_format($rvRevisitCount / $rvTotalConsults * 100, 1) : '0' ?>%</b>
-                    (<?= $rvRevisitCount ?> of <?= $rvTotalConsults ?> consultations)
-                </span>
-            </div>
-
-            <?php
-            $tierMeta = [
-                'FREE_FOLLOWUP' => ['FREE follow-ups — 1st within 5 days', 'var(--green)', 'green'],
-                'HALF_FOLLOWUP' => ['50% follow-ups — 2nd+ within 5 days', '#0891B2', 'amber'],
-                'THREE_QUARTER_FOLLOWUP' => ['75% follow-ups — day 6–15', '#D97706', 'amber'],
-            ];
-            foreach ($tierMeta as $ft => [$title, $dot, $tone]): $rows = $tiers[$ft]; ?>
-            <div class="tier">
-                <div class="tier-head">
-                    <span><span class="dotk" style="background:<?= $dot ?>;margin-right:8px"></span><?= $title ?></span>
-                    <span class="badge-count tnum"><?= count($rows) ?> visit<?= count($rows) === 1 ? '' : 's' ?> · <?= fmt_amt($tierForegone[$ft]) ?> PKR foregone</span>
-                </div>
-                <div class="tier-body">
-                    <?php if (!$rows): ?>
-                        <div class="empty-state" style="padding:18px 0">None this month.</div>
-                    <?php else: foreach ($rows as $r):
-                        $days = $r['anchor_date'] ? (new DateTime($r['anchor_date']))->diff(new DateTime($r['visit_date']))->days : null;
-                        $billed = $r['grand_total'] !== null ? $r['grand_total'] : $r['fee'];
-                        $listFee = (float) ($r['list_fee'] ?? 0);
-                    ?>
-                    <div class="tl">
-                        <div>
-                            <b><a class="plink" href="patients.php?q=<?= urlencode($r['mrn']) ?>"><?= htmlspecialchars($r['patient_name']) ?></a></b>
-                            <?php if (!empty($r['type_label'])): ?><span class="status-pill grey" style="margin-left:6px"><?= htmlspecialchars($r['type_label']) ?></span><?php endif; ?>
-                            <div class="path">
-                                <?php if ($r['anchor_date']): ?>
-                                Full paid <b class="tnum"><?= date('M j', strtotime($r['anchor_date'])) ?></b>
-                                <span class="arrowc">&rarr;</span> revisit <b class="tnum"><?= date('M j', strtotime($r['visit_date'])) ?></b>
-                                <?= $days !== null ? "($days day" . ($days === 1 ? '' : 's') . ')' : '' ?>
-                                <?php else: ?>
-                                Revisit on <b class="tnum"><?= date('M j', strtotime($r['visit_date'])) ?></b> (anchor visit not linked)
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <span class="status-pill <?= $tone ?> tnum"><?= fmt_amt($billed) ?> of <?= fmt_amt($listFee) ?></span>
-                    </div>
-                    <?php endforeach; endif; ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-
-            <div class="section-sub" style="margin:0">
-                Windows run per patient + consult type; only consult types flagged revisit-eligible get tiers.
-                Category discounts (Family &amp; Friends etc.) stack on top and are included in the billed figure.
-            </div>
-
-<?php else: /* admissions */ ?>
+<?php else: /* procedures */ ?>
             <div class="card">
-                <div class="section-title" style="margin-bottom:12px">Active now (<?= count($activeAdms) ?>)</div>
-                <?php if (!$activeAdms): ?>
-                    <div class="empty-state">No active admissions under your name.</div>
-                <?php else: ?>
-                <div style="display:flex;flex-direction:column;gap:12px">
-                    <?php foreach ($activeAdms as $a):
-                        $st = $a['last_status'] ?? 'ACTIVE';
-                        $cls = $st === 'STABLE' ? 'stable' : ($st === 'CRITICAL' ? 'critical' : '');
-                    ?>
-                    <div class="adm <?= $cls ?>">
-                        <div class="adm-head">
-                            <div>
-                                <div class="adm-name"><?= htmlspecialchars($a['patient_name']) ?> <span class="mrn">MRN <?= htmlspecialchars($a['mrn']) ?></span></div>
-                                <div class="adm-meta">
-                                    <?= $ADM_TYPE_LABEL[$a['admission_type']] ?? $a['admission_type'] ?>
-                                    · admitted <?= date('g:i A', strtotime($a['admitted_at'])) ?>
-                                    · <b class="tnum"><?= elapsed_label($a['elapsed_min']) ?></b> elapsed
-                                    · billed <?= $a['billed_units'] ?> so far
-                                </div>
-                            </div>
-                            <span class="status-pill <?= $ADM_STATUS_PILL[$st] ?? 'teal' ?>"><?= ucfirst(strtolower($st)) ?></span>
-                        </div>
-                        <div class="adm-foot">
-                            <span>Nurse: <b><?= htmlspecialchars($a['nurse_name'] ?? 'Unassigned') ?></b></span>
-                            <span>Services logged: <b class="tnum"><?= (int) $a['services_n'] ?></b> · Running total <b class="tnum"><?= fmt_amt($a['running_total']) ?> PKR</b></span>
-                        </div>
+                <div class="proc-placeholder">
+                    <div class="proc-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
                     </div>
-                    <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-            </div>
-
-            <div class="card">
-                <div class="ctrl-bar" style="margin-bottom:12px">
-                    <div class="section-title">Discharged (<?= count($dischargedAdms) ?>)</div>
-                    <div class="datepick" style="margin-left:auto">
-                        <a class="arrow" aria-label="Previous month" href="<?= qs_view('admissions', ['month' => date('Y-m', strtotime($admStart . ' -1 month'))]) ?>">&lsaquo;</a>
-                        <span class="cur tnum"><?= date('M Y', strtotime($admStart)) ?></span>
-                        <a class="arrow" aria-label="Next month" href="<?= qs_view('admissions', ['month' => date('Y-m', strtotime($admStart . ' +1 month'))]) ?>">&rsaquo;</a>
+                    <div class="section-title" style="font-size:17px">Procedures — coming soon</div>
+                    <div class="section-sub" style="margin:6px 0 0">
+                        One-time procedure billing (e.g. ear piercing, minor OPD procedures) isn't
+                        built yet. When it lands, your performed procedures and their billed amounts
+                        will show here alongside consultations.
                     </div>
-                </div>
-                <div class="tbl-wrap">
-                <table class="rep">
-                    <thead><tr><th>Admitted</th><th>Patient</th><th>Type</th><th>Discharged</th><th class="r">Billed hrs</th><th class="r">Bill</th><th>Payment</th></tr></thead>
-                    <tbody>
-                    <?php if (!$dischargedAdms): ?>
-                        <tr><td colspan="7"><div class="empty-state">No discharges this month.</div></td></tr>
-                    <?php else: foreach ($dischargedAdms as $d):
-                        $mins = max(0, (int) floor((strtotime($d['discharged_at']) - strtotime($d['admitted_at'])) / 60));
-                        $hrs = admission_billed_hours($mins);
-                        $writeOff = (float) ($d['write_off_amount'] ?? 0);
-                    ?>
-                        <tr>
-                            <td class="tnum"><?= date('M j, g:i A', strtotime($d['admitted_at'])) ?></td>
-                            <td><a class="plink" href="patients.php?q=<?= urlencode($d['mrn']) ?>"><?= htmlspecialchars($d['patient_name']) ?></a></td>
-                            <td><?= $ADM_TYPE_LABEL[$d['admission_type']] ?? $d['admission_type'] ?></td>
-                            <td class="tnum"><?= date('M j, g:i A', strtotime($d['discharged_at'])) ?></td>
-                            <td class="r tnum"><?= rtrim(rtrim(number_format($hrs, 2), '0'), '.') ?></td>
-                            <td class="amt tnum"><?= $d['grand_total'] !== null ? fmt_amt($d['grand_total']) : '—' ?></td>
-                            <td>
-                                <?php if ($writeOff > 0): ?>
-                                    <span class="status-pill red">Written off <?= fmt_amt($writeOff) ?></span>
-                                <?php elseif ($d['bill_status'] === 'paid'): ?>
-                                    <span class="status-pill green">Paid</span>
-                                <?php elseif ($d['bill_status'] !== null): ?>
-                                    <span class="status-pill amber"><?= ucfirst($d['bill_status']) ?></span>
-                                <?php else: ?>
-                                    <span class="status-pill grey">No bill</span>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; endif; ?>
-                    </tbody>
-                </table>
-                </div>
-                <div class="section-sub" style="margin-top:12px;margin-bottom:0">
-                    Billed hours use the live rounding: under 45 minutes = 0.5&nbsp;h, then floor to the previous quarter-hour.
-                    "Written off" is the approved unpaid shortfall from discharge — gone forever, and the patient carries a flag.
                 </div>
             </div>
 <?php endif; ?>
