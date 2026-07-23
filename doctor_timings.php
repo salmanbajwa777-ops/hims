@@ -177,13 +177,23 @@ $headExtra = <<<CSS
 .status-seg input:checked + span.s-delay { background: #FFFBEB; color: #92400E; }
 .status-seg input:checked + span.s-off { background: #FEF2F2; color: #B91C1C; }
 
-.time-stack { display: flex; flex-direction: column; gap: 8px; }
+.time-stack { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .time-pair { display: inline-flex; align-items: center; gap: 6px; }
 .time-pair .sess { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); width: 44px; flex-shrink: 0; }
 .time-pair input[type=time] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); color: var(--text); width: 110px; }
 .time-pair input[type=time]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
 .time-pair .dash { color: var(--text-muted); }
 tr.is-off .time-stack, tr.is-off .note-input { opacity: .4; pointer-events: none; }
+
+/* Session 2 is hidden until reception explicitly adds it for a doctor. */
+.sess2-row { display: none; }
+tr.has-sess2 .sess2-row { display: inline-flex; }
+.sess2-add { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; padding: 2px 0; margin-left: 50px; font: inherit; font-size: 12px; font-weight: 600; color: var(--primary); cursor: pointer; }
+.sess2-add:hover { text-decoration: underline; }
+.sess2-add:disabled { display: none; }
+tr.has-sess2 .sess2-add { display: none; }
+.sess2-remove { background: none; border: none; padding: 0 4px; font-size: 15px; line-height: 1; color: var(--text-muted); cursor: pointer; }
+.sess2-remove:hover { color: #B91C1C; }
 
 .note-input { width: 100%; min-width: 160px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); color: var(--text); }
 .note-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
@@ -239,7 +249,8 @@ require __DIR__ . '/partials/sidebar.php';
                                 $start2Val = $d['start_time_2'] ? substr($d['start_time_2'], 0, 5) : '';
                                 $end2Val   = $d['end_time_2'] ? substr($d['end_time_2'], 0, 5) : '';
                             ?>
-                            <tr class="<?= $st === 'OFF' ? 'is-off' : '' ?>" data-doc-row>
+                            <?php $hasSess2 = $start2Val !== '' || $end2Val !== ''; ?>
+                            <tr class="<?= trim(($st === 'OFF' ? 'is-off ' : '') . ($hasSess2 ? 'has-sess2' : '')) ?>" data-doc-row>
                                 <td>
                                     <div class="doc-cell">
                                         <div class="doc-avatar"><?= strtoupper(mb_substr($d['name'], 0, 1)) ?></div>
@@ -271,12 +282,16 @@ require __DIR__ . '/partials/sidebar.php';
                                             <span class="dash">&ndash;</span>
                                             <input type="time" name="t[<?= (int) $d['id'] ?>][end]" value="<?= htmlspecialchars($endVal) ?>"<?= $ro ?>>
                                         </div>
-                                        <div class="time-pair">
+                                        <div class="time-pair sess2-row">
                                             <span class="sess">Sess 2</span>
                                             <input type="time" name="t[<?= (int) $d['id'] ?>][start2]" value="<?= htmlspecialchars($start2Val) ?>"<?= $ro ?>>
                                             <span class="dash">&ndash;</span>
                                             <input type="time" name="t[<?= (int) $d['id'] ?>][end2]" value="<?= htmlspecialchars($end2Val) ?>"<?= $ro ?>>
+                                            <?php if ($canEdit): ?><button type="button" class="sess2-remove" title="Remove session 2" onclick="timRemoveSess2(this)">&times;</button><?php endif; ?>
                                         </div>
+                                        <?php if ($canEdit): ?>
+                                        <button type="button" class="sess2-add" onclick="timAddSess2(this)">+ Add second session</button>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                                 <td>
@@ -290,7 +305,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
 
                     <div class="sheet-foot">
-                        <div class="hint">Timings apply to <strong>today only</strong> and reset each day. Unconfirmed rows prefill from each doctor's own weekly schedule — saving confirms them. Session 2 is optional; mark a doctor <strong>Off today</strong> to grey out their windows.</div>
+                        <div class="hint">Timings apply to <strong>today only</strong> and reset each day. Unconfirmed rows prefill from each doctor's own weekly schedule — saving confirms them. Most doctors need just one window; use <strong>+ Add second session</strong> for a split shift. Mark a doctor <strong>Off today</strong> to grey out their windows.</div>
                         <?php if ($canEdit): ?>
                         <button type="submit" class="btn">Save today's timings</button>
                         <?php endif; ?>
@@ -309,6 +324,20 @@ require __DIR__ . '/partials/sidebar.php';
 function timStatusChanged(radio) {
     var tr = radio.closest('[data-doc-row]');
     if (tr) { tr.classList.toggle('is-off', radio.value === 'OFF'); }
+}
+
+// Reveal the (already-present but hidden) session-2 window for one doctor.
+function timAddSess2(btn) {
+    var tr = btn.closest('[data-doc-row]');
+    if (tr) { tr.classList.add('has-sess2'); }
+}
+
+// Hide session 2 again and clear its values so nothing is saved for it.
+function timRemoveSess2(btn) {
+    var tr = btn.closest('[data-doc-row]');
+    if (!tr) { return; }
+    tr.classList.remove('has-sess2');
+    tr.querySelectorAll('.sess2-row input[type=time]').forEach(function (i) { i.value = ''; });
 }
 </script>
 </body>
