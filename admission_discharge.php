@@ -158,6 +158,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remov
     header('Location: admission_discharge.php?id=' . $admissionId); exit;
 }
 
+// ---- Apply / update the manual discharge discount ----
+// A lump-sum rupee amount OR a percentage of the current total. The % is a
+// convenience: it's converted to a rupee amount here (off the current grand
+// total) and stored as the authoritative amount, so later line edits don't
+// silently re-scale it. This manual discount REPLACES the category discount for
+// the grand total (see recalc_admission_bill_totals).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply_discount' && !$locked && $canFinalize) {
+    $mode = $_POST['discount_mode'] ?? 'amount';
+    // Gross = current lines (net of category) + the category discount we're
+    // about to replace. The discount can never exceed the gross.
+    $subtotalNow = (float) $bill['subtotal'];
+    $categoryDiscount = (float) ($bill['discount_amount'] ?? 0);
+    $gross = round($subtotalNow + $categoryDiscount, 2);
+    // % base is the "current total" the biller sees = grand_total on screen.
+    $currentTotal = (float) $bill['grand_total'];
+
+    $pct = 0.0;
+    if ($mode === 'percent') {
+        $pct = max(0, min(100, (float) ($_POST['discount_percent'] ?? 0)));
+        $amount = round($currentTotal * $pct / 100, 2);
+    } else {
+        $amount = max(0, (float) ($_POST['discount_amount'] ?? 0));
+    }
+    // Clamp: never discount below zero.
+    $amount = min($amount, $gross);
+
+    $pdo->prepare('UPDATE admission_bills SET manual_discount_amount = ?, manual_discount_pct = ?, manual_discount_by_id = ? WHERE id = ?')
+        ->execute([$amount, $pct, $uid, $bill['id']]);
+    recalc_admission_bill_totals($pdo, (int) $bill['id']);
+    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+        ->execute([$uid, 'admission_bill_discount', "Manual discount Rs " . number_format($amount, 2) . ($pct > 0 ? " ({$pct}%)" : '') . " on {$bill['invoice_number']}"]);
+    header('Location: admission_discharge.php?id=' . $admissionId); exit;
+}
+
+// ---- Clear the manual discharge discount ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'clear_discount' && !$locked && $canFinalize) {
+    $pdo->prepare('UPDATE admission_bills SET manual_discount_amount = 0, manual_discount_pct = 0, manual_discount_by_id = NULL WHERE id = ?')
+        ->execute([$bill['id']]);
+    recalc_admission_bill_totals($pdo, (int) $bill['id']);
+    header('Location: admission_discharge.php?id=' . $admissionId); exit;
+}
+
 // ---- Finalize + payment ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finalize' && !$locked && $canFinalize) {
     $method = $_POST['payment_method'] ?? 'cash';
@@ -302,6 +344,20 @@ $headExtra = <<<CSS
 .time-strip > div:last-child { border-right:none; }
 .time-strip .k { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); font-weight:700; }
 .time-strip .v { font-size:14px; font-weight:650; margin-top:2px; }
+/* Manual discount box */
+.disc-box { border:1px dashed var(--border-strong,var(--border)); border-radius:12px; padding:14px 16px; margin-top:14px; background:var(--bg); }
+.disc-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.disc-head .t { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-secondary); }
+.disc-row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+.disc-seg { display:inline-flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:#fff; }
+.disc-seg button { appearance:none; border:none; background:transparent; font:inherit; font-size:12.5px; font-weight:600; color:var(--text-secondary); padding:9px 14px; cursor:pointer; }
+.disc-seg button[aria-pressed="true"] { background:var(--primary); color:#fff; }
+.disc-field { flex:1; min-width:140px; }
+.disc-field label { font-size:11.5px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px; }
+.disc-field .in-wrap { position:relative; }
+.disc-field input { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:10px; font:inherit; font-size:14px; background:#fff; }
+.disc-field input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); }
+.disc-applied { display:flex; justify-content:space-between; align-items:center; gap:10px; background:#ECFDF5; border:1px solid #A7F3D0; color:#047857; border-radius:12px; padding:11px 14px; margin-top:14px; font-size:13px; font-weight:600; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -381,11 +437,22 @@ require __DIR__ . '/partials/sidebar.php';
                 </table>
                 </div>
 
+                <?php
+                $catDiscount = (float) ($bill['discount_amount'] ?? 0);
+                $manualDiscount = (float) ($bill['manual_discount_amount'] ?? 0);
+                $manualPct = (float) ($bill['manual_discount_pct'] ?? 0);
+                // Gross = what the lines would total before ANY discount.
+                $gross = round((float) $bill['subtotal'] + $catDiscount, 2);
+                ?>
                 <div class="totbox">
-                    <?php $dcAmt = (float) ($bill['discount_amount'] ?? 0); if ($dcAmt > 0): ?>
+                    <?php if ($manualDiscount > 0): ?>
+                    <!-- Manual discount REPLACES the category discount in the total. -->
+                    <div class="r"><span>Subtotal</span><span class="mono">Rs <?= number_format($gross) ?></span></div>
+                    <div class="r" style="color:var(--green-text);"><span>Discount<?= $manualPct > 0 ? ' (' . rtrim(rtrim(number_format($manualPct, 2), '0'), '.') . '%)' : '' ?></span><span class="mono">− Rs <?= number_format($manualDiscount) ?></span></div>
+                    <?php elseif ($catDiscount > 0): ?>
                     <!-- Generic wording by design — the category name never shows to reception/patient here. -->
-                    <div class="r"><span>Before discount</span><span class="mono">Rs <?= number_format($total + $dcAmt) ?></span></div>
-                    <div class="r" style="color:var(--green-text);"><span>Discount (services)</span><span class="mono">− Rs <?= number_format($dcAmt) ?></span></div>
+                    <div class="r"><span>Before discount</span><span class="mono">Rs <?= number_format($total + $catDiscount) ?></span></div>
+                    <div class="r" style="color:var(--green-text);"><span>Discount (services)</span><span class="mono">− Rs <?= number_format($catDiscount) ?></span></div>
                     <?php endif; ?>
                     <div class="r grand"><span>Total</span><span class="mono">Rs <?= number_format($total) ?></span></div>
                     <?php if ($bill['status'] !== 'draft'): ?>
@@ -396,6 +463,40 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
 
                 <?php if (!$locked && $canFinalize && !$pendingWriteoff): ?>
+
+                <!-- Manual discount: lump-sum amount OR % of the current total, applied
+                     BEFORE payment. Replaces the auto category discount in the total. -->
+                <?php if ($manualDiscount > 0): ?>
+                <div class="disc-applied">
+                    <span>Discount applied: Rs <?= number_format($manualDiscount) ?><?= $manualPct > 0 ? ' (' . rtrim(rtrim(number_format($manualPct, 2), '0'), '.') . '% of total)' : '' ?></span>
+                    <form method="POST" action="admission_discharge.php?id=<?= $admissionId ?>">
+                        <input type="hidden" name="action" value="clear_discount">
+                        <button type="submit" class="link-btn" style="color:var(--red-text);">Remove discount</button>
+                    </form>
+                </div>
+                <?php else: ?>
+                <div class="disc-box">
+                    <div class="disc-head"><span class="t">Add discount</span></div>
+                    <form method="POST" action="admission_discharge.php?id=<?= $admissionId ?>" class="disc-row" id="discForm">
+                        <input type="hidden" name="action" value="apply_discount">
+                        <input type="hidden" name="discount_mode" id="discMode" value="amount">
+                        <div class="disc-seg" role="group" aria-label="Discount type">
+                            <button type="button" data-mode="amount" aria-pressed="true" onclick="discSetMode('amount')">Amount (Rs)</button>
+                            <button type="button" data-mode="percent" aria-pressed="false" onclick="discSetMode('percent')">Percent (%)</button>
+                        </div>
+                        <div class="disc-field" id="discAmountField">
+                            <label>Lump-sum discount (Rs)</label>
+                            <div class="in-wrap"><input type="number" step="0.01" min="0" max="<?= number_format($gross, 2, '.', '') ?>" name="discount_amount" placeholder="0"></div>
+                        </div>
+                        <div class="disc-field" id="discPercentField" style="display:none;">
+                            <label>Discount (% of Rs <?= number_format($total) ?>)</label>
+                            <div class="in-wrap"><input type="number" step="0.01" min="0" max="100" name="discount_percent" placeholder="0"></div>
+                        </div>
+                        <button type="submit" class="btn secondary" style="white-space:nowrap;">Apply discount</button>
+                    </form>
+                </div>
+                <?php endif; ?>
+
                 <form method="POST" action="admission_discharge.php?id=<?= $admissionId ?>">
                     <input type="hidden" name="action" value="finalize">
                     <div class="pay-grid">
@@ -444,6 +545,23 @@ require __DIR__ . '/partials/sidebar.php';
     </div>
 </div>
 <script src="assets/js/date-picker.js"></script>
+<script>
+// Discount type toggle — switch the visible field and the hidden mode flag.
+function discSetMode(mode) {
+    var m = document.getElementById('discMode');
+    if (m) m.value = mode;
+    var amt = document.getElementById('discAmountField');
+    var pct = document.getElementById('discPercentField');
+    if (amt) amt.style.display = mode === 'amount' ? '' : 'none';
+    if (pct) pct.style.display = mode === 'percent' ? '' : 'none';
+    document.querySelectorAll('.disc-seg button[data-mode]').forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute('data-mode') === mode ? 'true' : 'false');
+    });
+    // Clear the now-hidden field so a stale value isn't submitted.
+    var hide = mode === 'amount' ? pct : amt;
+    if (hide) { var i = hide.querySelector('input'); if (i) i.value = ''; }
+}
+</script>
 <?php if (isset($_GET['paid']) || isset($_GET['wroteoff'])): ?>
 <script>
 // Payment just landed: open the invoice PDF automatically, mirroring how

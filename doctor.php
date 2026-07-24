@@ -352,6 +352,9 @@ a.kpi-cell:hover { background: var(--primary-light); }
 .card-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 
 @media (max-width: 1200px) { .row-2 { grid-template-columns: 1fr; } }
+/* Mobile header + queue rows — fire on a real narrow screen (<=720px) AND when
+   the user has forced Mobile view from the sidebar (html[data-view="mobile"]),
+   so forced-mobile-on-a-monitor gets the same compact console. */
 @media (max-width: 720px) {
     .header { height: auto; padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
     .search-box { order: 3; margin: 0; max-width: none; flex-basis: 100%; }
@@ -360,6 +363,15 @@ a.kpi-cell:hover { background: var(--primary-light); }
     .q-item .q-right { grid-column: 2; justify-content: flex-start; margin-top: 4px; }
     .q-item .wait-time { min-width: 0; text-align: left; order: 3; margin-left: auto; }
 }
+html[data-view="mobile"] .row-2 { grid-template-columns: 1fr; }
+html[data-view="mobile"] .header { height: auto; padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
+html[data-view="mobile"] .search-box { order: 3; margin: 0; max-width: none; flex-basis: 100%; }
+html[data-view="mobile"] .header-date { display: none; }
+html[data-view="mobile"] .q-item { grid-template-columns: 34px 1fr; }
+html[data-view="mobile"] .q-item .q-right { grid-column: 2; justify-content: flex-start; margin-top: 4px; }
+html[data-view="mobile"] .q-item .wait-time { min-width: 0; text-align: left; order: 3; margin-left: auto; }
+/* Forced DESKTOP on a phone: keep the two-column console (don't collapse). */
+html[data-view="desktop"] .row-2 { grid-template-columns: 1.6fr 1fr; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

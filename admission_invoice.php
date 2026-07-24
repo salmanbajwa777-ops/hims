@@ -176,10 +176,19 @@ $paymentModeNote = $bill['status'] !== 'draft'
         </table>
 
         <table class="totals">
-            <?php $dcAmt = (float) ($bill['discount_amount'] ?? 0); if ($dcAmt > 0): ?>
-            <?php /* Generic "Discount" only — the category name never prints (confirmed). */ ?>
-            <tr><td class="k">Before discount</td><td class="v">Rs <?= number_format($total + $dcAmt, 0) ?></td></tr>
-            <tr><td class="k">Discount</td><td class="v">&minus; Rs <?= number_format($dcAmt, 0) ?></td></tr>
+            <?php
+            $catDiscount = (float) ($bill['discount_amount'] ?? 0);
+            $manualDiscount = (float) ($bill['manual_discount_amount'] ?? 0);
+            // Gross = grand total undoing whichever discount is in force.
+            /* Generic "Discount" only — the category name never prints (confirmed). */
+            if ($manualDiscount > 0): // manual REPLACES category
+                $gross = round($total + $manualDiscount, 0);
+            ?>
+            <tr><td class="k">Subtotal</td><td class="v">Rs <?= number_format($gross, 0) ?></td></tr>
+            <tr><td class="k">Discount</td><td class="v">&minus; Rs <?= number_format($manualDiscount, 0) ?></td></tr>
+            <?php elseif ($catDiscount > 0): ?>
+            <tr><td class="k">Before discount</td><td class="v">Rs <?= number_format($total + $catDiscount, 0) ?></td></tr>
+            <tr><td class="k">Discount</td><td class="v">&minus; Rs <?= number_format($catDiscount, 0) ?></td></tr>
             <?php endif; ?>
             <tr class="grand"><td class="k">Total</td><td class="v">Rs <?= number_format($total, 0) ?></td></tr>
             <?php if ($bill['status'] !== 'draft'): ?>

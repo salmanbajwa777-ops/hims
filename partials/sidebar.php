@@ -259,6 +259,7 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive) 
             <div class="logo-mark">H</div> HIMS
         </a>
         <?php $sbRenderNav(); ?>
+        <?php require __DIR__ . '/view_toggle.php'; ?>
     </aside>
 
     <div class="main">

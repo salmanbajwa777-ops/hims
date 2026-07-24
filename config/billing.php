@@ -169,13 +169,33 @@ function admission_billed_hours(int $minutes): float {
 // Recompute an admission bill's subtotal/grand_total from its line items.
 // No tax (same policy as consultation invoices).
 function recalc_admission_bill_totals(PDO $pdo, int $admissionBillId): void {
+    // subtotal = sum of line amounts. Lines are stored NET of the automatic
+    // category discount, so subtotal is already the category-discounted total.
     $stmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS subtotal FROM admission_bill_items WHERE admission_bill_id = ?');
     $stmt->execute([$admissionBillId]);
     $subtotal = (float) $stmt->fetch()['subtotal'];
 
+    // A manual discharge discount REPLACES the category discount for the grand
+    // total: restore the gross (subtotal + the category discount already baked
+    // into the lines) and subtract the manual amount instead. With no manual
+    // discount, grand_total = subtotal (category discount stays applied) — the
+    // original behaviour, untouched.
+    $b = $pdo->prepare('SELECT discount_amount, manual_discount_amount FROM admission_bills WHERE id = ?');
+    $b->execute([$admissionBillId]);
+    $row = $b->fetch() ?: ['discount_amount' => 0, 'manual_discount_amount' => 0];
+    $categoryDiscount = (float) ($row['discount_amount'] ?? 0);
+    $manual = (float) ($row['manual_discount_amount'] ?? 0);
+
+    if ($manual > 0) {
+        $gross = round($subtotal + $categoryDiscount, 2);      // undo the category discount
+        $grand = max(0, round($gross - $manual, 2));
+    } else {
+        $grand = $subtotal;
+    }
+
     $pdo->prepare('
         UPDATE admission_bills SET subtotal = ?, grand_total = ? WHERE id = ?
-    ')->execute([$subtotal, $subtotal, $admissionBillId]);
+    ')->execute([$subtotal, $grand, $admissionBillId]);
 }
 
 // The billed charge for one logged service, from its charge type.

@@ -110,6 +110,8 @@ function ds_icon(string $name): string {
     <div class="sidebar-foot">
         Signed in as <b><?= htmlspecialchars($dsUserName) ?></b><br>Doctor
     </div>
+
+    <?php require __DIR__ . '/view_toggle.php'; ?>
 </aside>
 
 <script>

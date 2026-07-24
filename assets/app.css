@@ -192,6 +192,96 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 }
 
 /* ============================================================================
+   View-mode override — the manual Auto / Desktop / Mobile switch
+   ----------------------------------------------------------------------------
+   <html data-view> is stamped before paint by partials/head.php from the user's
+   saved preference; the segmented control lives in partials/view_toggle.php.
+
+     data-view="auto"    (default)  screen size decides — the media queries above
+                                    and the drawer CSS in the sidebar partials do
+                                    all the work; nothing here fires.
+     data-view="mobile"             force the compact touch layout at ANY width.
+     data-view="desktop"            force the full wide layout at ANY width, even
+                                    on a phone (the toggle JS also swaps the
+                                    viewport meta so the phone renders at desktop
+                                    width and the user can pan/zoom).
+
+   The sidebar partials (partials/sidebar.php, partials/doctor_sidebar.php) own
+   the drawer look inside @media(max-width:900px); the two blocks below re-apply
+   / suppress that same drawer contract by data-view, using the exact same global
+   classes so both sidebars are covered from one place.
+   ============================================================================ */
+
+/* ---- FORCE MOBILE at any width ---- */
+html[data-view="mobile"] .app { grid-template-columns: 1fr; }
+html[data-view="mobile"] .content { padding: 18px 14px 56px; }
+html[data-view="mobile"] .field-grid { grid-template-columns: 1fr; }
+/* show the mobile top bar + turn the sidebar into an off-canvas drawer */
+html[data-view="mobile"] .mobile-bar,
+html[data-view="mobile"] .doc-mobile-bar {
+    display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 30;
+    padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border);
+}
+html[data-view="mobile"] .sidebar {
+    position: fixed; top: 0; left: 0; z-index: 50; width: min(84vw, 320px); height: 100vh;
+    transform: translateX(-100%); transition: transform .22s ease; box-shadow: var(--shadow-lg);
+}
+html[data-view="mobile"] body.nav-open .sidebar { transform: translateX(0); }
+html[data-view="mobile"] body.nav-open .sidebar-overlay { display: block; }
+html[data-view="mobile"] .sidebar .nav-item.active::before { left: -8px; }
+
+/* ---- FORCE DESKTOP at any width ---- (wins even below 900px) */
+html[data-view="desktop"] .app { grid-template-columns: var(--sidebar-w) 1fr; }
+html[data-view="desktop"] .content { padding: 28px 32px 60px; }
+html[data-view="desktop"] .mobile-bar,
+html[data-view="desktop"] .doc-mobile-bar { display: none !important; }
+html[data-view="desktop"] .sidebar {
+    position: sticky; top: 0; left: auto; width: auto; height: 100vh;
+    transform: none; box-shadow: none;
+}
+html[data-view="desktop"] .sidebar-overlay { display: none !important; }
+
+/* ============================================================================
+   A57-first mobile fit — applies in forced-mobile AND on real narrow screens.
+   The Samsung A57 reports ~360-412 CSS px wide (device-width viewport). These
+   rules keep the shared shell comfortable there and scale up fluidly to any
+   phone. Page-specific mobile tuning still lives in each page's own <style>;
+   this only covers the primitives every page shares (cards, tables, buttons,
+   fields, headings) so a page that added NO mobile CSS still reads well.
+   ============================================================================ */
+@media (max-width: 560px) {
+    :root { --radius-card: 16px; }
+    .card { padding: 16px; border-radius: var(--radius-card); }
+    .section-title { font-size: 16px; }
+    /* Buttons and inputs get real touch targets (>=44px tall). */
+    .btn, .btn-primary, .btn-ghost, .btn-secondary,
+    input, select, textarea { min-height: 44px; }
+    .btn, .btn-primary, .btn-ghost, .btn-secondary { padding-top: 11px; padding-bottom: 11px; }
+    /* Wide tables scroll horizontally inside their own box instead of forcing the
+       whole page to scroll sideways. Wrap a table in .table-scroll to opt in;
+       bare tables also get it as a safety net. */
+    .table-scroll, .card > table, .content > table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* Stacked action rows: buttons go full-width so they're easy to tap. */
+    .actions-stack { display: flex; flex-direction: column; gap: 10px; }
+    .actions-stack > .btn,
+    .actions-stack > .btn-primary,
+    .actions-stack > .btn-ghost { width: 100%; justify-content: center; }
+}
+/* Same primitives when mobile is FORCED on a wide screen (no media query then). */
+html[data-view="mobile"] .card { padding: 16px; }
+html[data-view="mobile"] .btn,
+html[data-view="mobile"] .btn-primary,
+html[data-view="mobile"] .btn-ghost,
+html[data-view="mobile"] input,
+html[data-view="mobile"] select,
+html[data-view="mobile"] textarea { min-height: 44px; }
+html[data-view="mobile"] .table-scroll,
+html[data-view="mobile"] .card > table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Constrain forced-mobile content to a phone-ish column on huge screens so it
+   actually LOOKS like the phone view instead of a stretched single column. */
+html[data-view="mobile"] .main { max-width: 480px; margin: 0 auto; width: 100%; }
+
+/* ============================================================================
    dd/mm/yyyy date picker (assets/js/date-picker.js)
    The visible text proxy inherits each field's own classes/inline styles, so it
    already matches its surroundings — only the floating calendar is styled here.
