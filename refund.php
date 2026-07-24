@@ -150,7 +150,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
         }
         // Log the real cause server-side; show the user a clean message.
         error_log('[refund] ' . $e->getMessage());
-        $error = 'Could not issue the refund. Please try again.';
+        // TEMP DIAGNOSTIC #3: still failing with clean message — surface exact
+        // error + which line/file. REVERT once resolved.
+        $error = 'REFUND ERROR: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine();
     }
 }
 
