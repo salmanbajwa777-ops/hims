@@ -53,6 +53,53 @@ $byDoctor = $pdo->query("
     ORDER BY billed DESC
 ")->fetchAll();
 
+// Per-cashier accountability: each user is responsible for the money THEY
+// collected and the expenses THEY posted, not the day as a whole. Union the
+// cash/online they took (consult + admission, keyed off paid_by_id — the
+// collector) against the counter expenses they paid out, so the summary shows
+// who owes what cash at closing. Tolerant of the per-user migration not being
+// applied yet (paid_by_id / expenses missing → empty section).
+$byCashier = [];
+try {
+    $byCashier = $pdo->query("
+        SELECT u.name AS cashier,
+               COALESCE(SUM(m.cash), 0)         AS cash_in,
+               COALESCE(SUM(m.online), 0)       AS online_in,
+               COALESCE(SUM(m.pay_cnt), 0)      AS pay_cnt,
+               COALESCE(SUM(m.expense), 0)      AS expense_out,
+               COALESCE(SUM(m.exp_cnt), 0)      AS exp_cnt
+        FROM (
+            SELECT paid_by_id AS uid,
+                   SUM(CASE WHEN payment_method = 'cash' THEN paid_amount ELSE 0 END) AS cash,
+                   SUM(CASE WHEN payment_method <> 'cash' THEN paid_amount ELSE 0 END) AS online,
+                   COUNT(*) AS pay_cnt, 0 AS expense, 0 AS exp_cnt
+            FROM bills
+            WHERE status = 'paid' AND voided_at IS NULL
+              AND DATE(paid_at) = CURDATE() AND paid_by_id IS NOT NULL
+            GROUP BY paid_by_id
+            UNION ALL
+            SELECT paid_by_id AS uid,
+                   SUM(CASE WHEN payment_method = 'cash' THEN paid_amount ELSE 0 END),
+                   SUM(CASE WHEN payment_method <> 'cash' THEN paid_amount ELSE 0 END),
+                   COUNT(*), 0, 0
+            FROM admission_bills
+            WHERE status = 'paid' AND voided_at IS NULL
+              AND DATE(paid_at) = CURDATE() AND paid_by_id IS NOT NULL
+            GROUP BY paid_by_id
+            UNION ALL
+            SELECT posted_by_id AS uid, 0, 0, 0, SUM(amount), COUNT(*)
+            FROM expenses
+            WHERE expense_date = CURDATE() AND voided_at IS NULL
+              AND approval_status <> 'REJECTED'
+            GROUP BY posted_by_id
+        ) m
+        JOIN users u ON u.id = m.uid
+        GROUP BY m.uid, u.name
+        HAVING pay_cnt > 0 OR exp_cnt > 0
+        ORDER BY cash_in DESC
+    ")->fetchAll();
+} catch (Throwable $e) { /* per-user columns not migrated yet — skip section */ }
+
 // ---- Refunds today ----
 $ref = $pdo->query("
     SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
@@ -154,6 +201,37 @@ if ($byDoctor) {
             . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . htmlspecialchars($d['doctor']) . '</td>'
             . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . (int) $d['visits'] . '</td>'
             . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;font-weight:bold;">' . $fmt($d['billed']) . '</td>'
+            . '</tr>';
+    }
+    $body .= '</table>';
+}
+
+// Per-cashier cash accountability — who is responsible for what at closing.
+// Expected cash in hand = their cash collected − their counter expenses (their
+// own cash refunds would net here too, but refunds aren't attributed per user
+// in this rollup; the shift-closing page is the authoritative per-user tally).
+if ($byCashier) {
+    $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">Cash accountability by cashier</h3>'
+        . '<p style="margin:0 0 8px;font-size:12px;color:#6b7a79;">Each user is responsible for the money they collected and the expenses they paid out — not the day as a whole.</p>'
+        . '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">'
+        . '<tr>'
+        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Cashier</td>'
+        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Cash in</td>'
+        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Online in</td>'
+        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Expenses</td>'
+        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Expected cash</td>'
+        . '</tr>';
+    foreach ($byCashier as $c) {
+        $expected = (float) $c['cash_in'] - (float) $c['expense_out'];
+        $body .= '<tr>'
+            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . htmlspecialchars($c['cashier'])
+            . ' <span style="color:#6b7a79;font-size:11px;">(' . (int) $c['pay_cnt'] . ' pay'
+            . ((int) $c['exp_cnt'] > 0 ? ', ' . (int) $c['exp_cnt'] . ' exp' : '') . ')</span></td>'
+            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . $fmt($c['cash_in']) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . $fmt($c['online_in']) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;color:' . ((float) $c['expense_out'] > 0 ? '#b3261e' : '#41504f') . ';">'
+            . ((float) $c['expense_out'] > 0 ? '− ' . $fmt($c['expense_out']) : $fmt(0)) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;font-weight:bold;">' . $fmt($expected) . '</td>'
             . '</tr>';
     }
     $body .= '</table>';
