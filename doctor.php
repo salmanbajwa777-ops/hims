@@ -98,11 +98,13 @@ $queueStmt = $pdo->prepare("
     SELECT v.id AS visit_id, v.token_no, v.consult_status, v.started_at, v.created_at,
            p.name AS patient_name, p.gender, p.dob, p.mrn,
            t.label AS type_label, v.consultation_fee_type,
-           a.id AS admission_id
+           a.id AS admission_id,
+           b.id AS bill_id, b.status AS bill_status, b.paid_amount
     FROM visits v
     JOIN patients p ON p.id = v.patient_id
     LEFT JOIN doctor_consult_types t ON t.id = v.doctor_consult_type_id
     LEFT JOIN admissions a ON a.visit_id = v.id
+    LEFT JOIN bills b ON b.visit_id = v.id
     WHERE v.doctor_id = ? AND v.visit_date = CURDATE()
     ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_no
 ");
@@ -110,6 +112,10 @@ $queueStmt->execute([$doctorId]);
 
 // Admit-modal data for the doctor console (doctors can admit from their queue).
 $canDoctorAdmit = has_permission('ADMISSION_ADMIT_PATIENT');
+// Doctors hold RECEPTION_ISSUE_REFUNDS but had no entry point (the receptionist
+// queue 403s them). Surface Invoice/Refund on their own DONE rows. refund.php still
+// enforces that the approver is this visit's doctor, so scope is safe.
+$canDoctorRefund = has_permission('RECEPTION_ISSUE_REFUNDS');
 $admTypes = $admDoctors = [];
 $admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
 if ($canDoctorAdmit) {
@@ -492,6 +498,10 @@ require __DIR__ . '/partials/head.php';
                                     <button class="btn-ghost" type="button"
                                         onclick="openAdmit(<?= (int) $v['visit_id'] ?>, <?= htmlspecialchars(json_encode($v['patient_name']), ENT_QUOTES) ?>, <?= (int) $doctorId ?>, '', false)">Admit</button>
                                 <?php endif; ?>
+                            <?php endif; ?>
+                            <?php if ($canDoctorRefund && !empty($v['bill_id']) && $v['bill_status'] === 'paid'
+                                      && refunded_total($pdo, (int) $v['bill_id']) < (float) $v['paid_amount']): ?>
+                                <a class="btn-ghost" href="refund.php?bill_id=<?= (int) $v['bill_id'] ?>">Refund</a>
                             <?php endif; ?>
                         </div>
                     </div>
