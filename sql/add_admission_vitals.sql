@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS admission_vitals (
     id INT AUTO_INCREMENT PRIMARY KEY,
     admission_id INT NOT NULL,
     recorded_at   DATETIME NOT NULL,            -- clinical time the reading was taken
-    temp_c        DECIMAL(4,1) NULL,            -- e.g. 37.2
+    temp_f        DECIMAL(4,1) NULL,            -- Fahrenheit, e.g. 98.6
     pulse_bpm     INT NULL,
     resp_rate     INT NULL,
     systolic_bp   INT NULL,

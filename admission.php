@@ -123,12 +123,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_v
     try {
         $pdo->prepare('
             INSERT INTO admission_vitals
-                (admission_id, recorded_at, temp_c, pulse_bpm, resp_rate, systolic_bp, diastolic_bp,
+                (admission_id, recorded_at, temp_f, pulse_bpm, resp_rate, systolic_bp, diastolic_bp,
                  spo2_pct, blood_glucose, weight_kg, height_cm, ofc_cm, pain_score, notes, recorded_by_id, recorded_by_role)
             VALUES (?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ')->execute([
             $admissionId,
-            $num('temp_c', 'float'), $num('pulse_bpm'), $num('resp_rate'),
+            $num('temp_f', 'float'), $num('pulse_bpm'), $num('resp_rate'),
             $num('systolic_bp'), $num('diastolic_bp'), $num('spo2_pct'),
             $num('blood_glucose', 'float'), $num('weight_kg', 'float'),
             $num('height_cm', 'float'), $num('ofc_cm', 'float'), $num('pain_score'),
@@ -215,6 +215,17 @@ if ($canViewVitals) {
         $vitals = [];   // table not migrated yet
     }
 }
+
+// Half-hourly cadence: nurses record vitals every 30 min during an active stay.
+// Compute minutes since the newest reading so the card can nudge when it's due.
+// Non-blocking — purely informational. Null until the first reading exists.
+$vitalsIntervalMin = 30;
+$minsSinceVitals   = null;
+if (!empty($vitals) && !empty($vitals[0]['recorded_at'])) {
+    $minsSinceVitals = (int) floor((time() - strtotime($vitals[0]['recorded_at'])) / 60);
+}
+$vitalsOverdue = $isOpen && ($minsSinceVitals === null || $minsSinceVitals >= $vitalsIntervalMin);
+
 $servicesTotal = 0.0;
 foreach ($services as $s) { if ($s['is_billable']) { $servicesTotal += (float) $s['calculated_charge']; } }
 
@@ -276,6 +287,9 @@ $headExtra = <<<CSS
 .ho-item { border-top: 1px solid var(--border); padding: 10px 0; font-size: 12.5px; }
 .ho-item:first-child { border-top: none; }
 .vit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
+.vit-cadence { margin: 8px 0 2px; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--border); }
+.vit-cadence.ok  { color: #0E5456; background: rgba(26,127,126,.08); border-color: rgba(26,127,126,.35); }
+.vit-cadence.due { color: #9a3412; background: rgba(234,88,12,.10); border-color: rgba(234,88,12,.40); }
 .vit-grid label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .vit-grid input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
 .vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
@@ -472,13 +486,24 @@ require __DIR__ . '/partials/sidebar.php';
             <?php if ($canRecordVitals || $canViewVitals): ?>
             <div class="card" style="margin-top:20px;">
                 <div class="section-title">Vitals</div>
-                <div class="section-sub">Clinical observations during the stay — not billed.</div>
+                <div class="section-sub">Clinical observations during the stay — recorded every 30 min, not billed.</div>
+                <?php if ($isOpen): ?>
+                <div class="vit-cadence <?= $vitalsOverdue ? 'due' : 'ok' ?>">
+                    <?php if ($minsSinceVitals === null): ?>
+                        No vitals recorded yet — first set is due.
+                    <?php elseif ($vitalsOverdue): ?>
+                        Last recorded <?= $minsSinceVitals ?> min ago — <strong>next set is due</strong> (every 30 min).
+                    <?php else: ?>
+                        Last recorded <?= $minsSinceVitals ?> min ago — next due in <?= max(0, $vitalsIntervalMin - $minsSinceVitals) ?> min.
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
 
                 <?php if ($canRecordVitals): ?>
                 <form method="POST" action="admission.php?id=<?= $admissionId ?>" style="margin:14px 0 4px;">
                     <input type="hidden" name="action" value="add_vitals">
                     <div class="vit-grid">
-                        <div><label>Temp (&deg;C)</label><input type="number" step="0.1" name="temp_c" placeholder="37.0"></div>
+                        <div><label>Temp (&deg;F)</label><input type="number" step="0.1" name="temp_f" placeholder="98.6"></div>
                         <div><label>Pulse (bpm)</label><input type="number" name="pulse_bpm" placeholder="—"></div>
                         <div><label>Resp (/min)</label><input type="number" name="resp_rate" placeholder="—"></div>
                         <div><label>SpO&#8322; (%)</label><input type="number" name="spo2_pct" placeholder="—"></div>
@@ -499,7 +524,7 @@ require __DIR__ . '/partials/sidebar.php';
 
                 <div style="overflow-x:auto;margin-top:12px;">
                 <table class="vitals-log">
-                    <thead><tr><th>Time</th><th>Temp</th><th>Pulse</th><th>Resp</th><th>SpO&#8322;</th><th>BP</th><th>Glu</th><th>Pain</th><th>By</th></tr></thead>
+                    <thead><tr><th>Time</th><th>Temp &deg;F</th><th>Pulse</th><th>Resp</th><th>SpO&#8322;</th><th>BP</th><th>Glu</th><th>Pain</th><th>By</th></tr></thead>
                     <tbody>
                         <?php if (!$vitals): ?>
                         <tr><td colspan="9" class="muted" style="padding:18px 10px;">No vitals recorded yet.</td></tr>
@@ -507,7 +532,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php foreach ($vitals as $vt): ?>
                         <tr>
                             <td class="mono"><?= date('d/m H:i', strtotime($vt['recorded_at'])) ?></td>
-                            <td><?= $vt['temp_c'] !== null ? htmlspecialchars($vt['temp_c']) : '—' ?></td>
+                            <td><?= $vt['temp_f'] !== null ? htmlspecialchars($vt['temp_f']) : '—' ?></td>
                             <td><?= $vt['pulse_bpm'] !== null ? (int) $vt['pulse_bpm'] : '—' ?></td>
                             <td><?= $vt['resp_rate'] !== null ? (int) $vt['resp_rate'] : '—' ?></td>
                             <td><?= $vt['spo2_pct'] !== null ? (int) $vt['spo2_pct'] . '%' : '—' ?></td>
