@@ -99,7 +99,7 @@ $queueStmt = $pdo->prepare("
     SELECT v.id AS visit_id, v.token_no, v.consult_status, v.started_at, v.created_at,
            p.name AS patient_name, p.gender, p.dob, p.mrn,
            t.label AS type_label, v.consultation_fee_type,
-           a.id AS admission_id,
+           a.id AS admission_id, a.admission_type, a.status AS admission_status,
            b.id AS bill_id, b.status AS bill_status, b.paid_amount
     FROM visits v
     JOIN patients p ON p.id = v.patient_id
@@ -308,6 +308,8 @@ a.kpi-cell:hover { background: var(--primary-light); }
 .q-tag.q-tag-free { background: #DCFCE7; color: #166534; }
 /* Discounted revisit (50%/75%): neutral amber so it's distinct from full-fee. */
 .q-tag.q-tag-revisit { background: #FEF3C7; color: #92400E; }
+/* Admitted stay: distinct blue so an admission never reads like a plain consult. */
+.q-tag.q-tag-admit { background: #DBEAFE; color: #1E40AF; }
 .q-meta { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
 .q-right { display: flex; align-items: center; gap: 12px; }
 .status-pill { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
@@ -448,7 +450,12 @@ require __DIR__ . '/partials/head.php';
                         <div>
                             <div class="q-name"><?= htmlspecialchars($v['patient_name']) ?>
                                 <?php if ($st === 'IN_CONSULT'): ?><span class="pulse"></span><span class="status-pill in-consult">Now serving</span><?php endif; ?>
-                                <?php if (!empty($v['type_label'])): ?><span class="q-tag"><?= htmlspecialchars($v['type_label']) ?></span><?php endif; ?>
+                                <?php if (!empty($v['admission_id'])): ?>
+                                    <?php // Admitted visits show the admission type, not the consult label — the row is a stay, not a plain consultation. ?>
+                                    <span class="q-tag q-tag-admit">Admitted · <?= htmlspecialchars($admTypeLabels[$v['admission_type']] ?? $v['admission_type']) ?></span>
+                                <?php elseif (!empty($v['type_label'])): ?>
+                                    <span class="q-tag"><?= htmlspecialchars($v['type_label']) ?></span>
+                                <?php endif; ?>
                                 <?php
                                 // Fee-type badge: the doctor sees at a glance that a visit is a
                                 // free follow-up (no fee, a consumed free turn) or a discounted
