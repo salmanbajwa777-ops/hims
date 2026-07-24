@@ -22,7 +22,6 @@
 $qhActive   = $qhActive ?? '';
 $qhBrand    = $qhBrand ?? true;
 $qhBaseRole = $_SESSION['base_role'] ?? '';
-$qhIsNurse  = $qhBaseRole === 'NURSE';
 
 // Doctors never get the front-desk quick row (Today / Bookings / Add New
 // Patient are reception work) — shared pages like patients.php include this
@@ -86,31 +85,34 @@ function qh_icon(string $name): string {
  * The action set, in the order each role wants it. 'tone' selects the tint
  * class; 'count' is the badge, null for buttons that have nothing to count.
  */
-if ($qhIsNurse) {
-    $qhButtons = [
-        ['slug' => 'admissions', 'label' => 'Admissions', 'icon' => 'bed',      'href' => 'admissions.php',  'tone' => 'violet', 'count' => $qhCounts['admissions']],
-        ['slug' => 'today',      'label' => 'Today',      'icon' => 'clock',    'href' => 'receptionist.php','tone' => 'amber',  'count' => $qhCounts['today']],
-        ['slug' => 'patients',   'label' => 'Patients',   'icon' => 'users',    'href' => 'patients.php',    'tone' => 'teal',   'count' => null],
-        ['slug' => 'vitals',     'label' => 'Vitals Due', 'icon' => 'activity', 'href' => '#',               'tone' => 'rose',   'count' => null, 'disabled' => true],
-    ];
-} else {
-    $qhButtons = [
-        ['slug' => 'patients',   'label' => 'Patients',        'icon' => 'users',    'href' => 'patients.php',     'tone' => 'teal',    'count' => null],
-        ['slug' => 'today',      'label' => 'Today',           'icon' => 'clock',    'href' => 'receptionist.php', 'tone' => 'amber',   'count' => $qhCounts['today']],
-        ['slug' => 'admissions', 'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php',   'tone' => 'violet',  'count' => $qhCounts['admissions']],
-        ['slug' => 'bookings',   'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php',     'tone' => 'blue',    'count' => null],
-        ['slug' => 'register',   'label' => 'Add New Patient', 'icon' => 'plus',     'href' => 'patients.php?register=1', 'tone' => 'primary', 'count' => null],
-    ];
-    // Counter cash going out is front-desk work too — but only for users who
-    // hold the posting permission (function guard in case a caller included
-    // this partial without config/permissions.php loaded).
-    if (function_exists('has_permission') && has_permission('FINANCIAL_POST_EXPENSES')) {
-        $qhButtons[] = ['slug' => 'expenses', 'label' => 'Expenses', 'icon' => 'wallet', 'href' => 'expenses.php', 'tone' => 'rose', 'count' => null];
-    }
-    // End-of-day cash tally & handover (shift_closing.php).
-    if (function_exists('has_permission') && has_permission('RECEPTION_CLOSE_DAY')) {
-        $qhButtons[] = ['slug' => 'shift_closing', 'label' => 'Day Closing', 'icon' => 'wallet', 'href' => 'shift_closing.php', 'tone' => 'amber', 'count' => null];
-    }
+// Permission-driven quick row: every button appears only if the user holds the
+// permission its destination needs — no nurse-vs-reception role split. A STAFF
+// member who does ward work sees Admissions; one who registers patients sees
+// Today / Add Patient; someone who does both sees both. Admin holds every key.
+// (has_permission guarded in case a caller included this without permissions.php.)
+$qhCan = fn(string $k) => function_exists('has_permission') && has_permission($k);
+$qhButtons = [];
+// "Today" queue — the shared work list; shown to anyone who works the desk or ward.
+if ($qhCan('RECEPTION_REGISTER_PATIENTS') || $qhCan('NURSING_RECORD_ADMISSIONS')) {
+    $qhButtons[] = ['slug' => 'today', 'label' => 'Today', 'icon' => 'clock', 'href' => 'receptionist.php', 'tone' => 'amber', 'count' => $qhCounts['today']];
+}
+if ($qhCan('NURSING_RECORD_ADMISSIONS')) {
+    $qhButtons[] = ['slug' => 'admissions', 'label' => 'Admissions', 'icon' => 'bed', 'href' => 'admissions.php', 'tone' => 'violet', 'count' => $qhCounts['admissions']];
+}
+if ($qhCan('RECEPTION_REGISTER_PATIENTS')) {
+    $qhButtons[] = ['slug' => 'patients', 'label' => 'Patients', 'icon' => 'users', 'href' => 'patients.php', 'tone' => 'teal', 'count' => null];
+}
+if ($qhCan('RECEPTION_MANAGE_BOOKINGS')) {
+    $qhButtons[] = ['slug' => 'bookings', 'label' => 'Bookings', 'icon' => 'calendar', 'href' => 'bookings.php', 'tone' => 'blue', 'count' => null];
+}
+if ($qhCan('RECEPTION_REGISTER_PATIENTS')) {
+    $qhButtons[] = ['slug' => 'register', 'label' => 'Add New Patient', 'icon' => 'plus', 'href' => 'patients.php?register=1', 'tone' => 'primary', 'count' => null];
+}
+if ($qhCan('FINANCIAL_POST_EXPENSES')) {
+    $qhButtons[] = ['slug' => 'expenses', 'label' => 'Expenses', 'icon' => 'wallet', 'href' => 'expenses.php', 'tone' => 'rose', 'count' => null];
+}
+if ($qhCan('RECEPTION_CLOSE_DAY')) {
+    $qhButtons[] = ['slug' => 'shift_closing', 'label' => 'Day Closing', 'icon' => 'wallet', 'href' => 'shift_closing.php', 'tone' => 'amber', 'count' => null];
 }
 ?>
 <style>
@@ -215,7 +217,7 @@ if ($qhIsNurse) {
 <header class="qheader">
     <div class="qh-row1">
         <?php if ($qhBrand): ?>
-        <a class="qh-brand" href="<?= $qhIsNurse ? 'admissions.php' : 'receptionist.php' ?>">
+        <a class="qh-brand" href="<?= (function_exists('has_permission') && has_permission('RECEPTION_REGISTER_PATIENTS')) ? 'receptionist.php' : 'admissions.php' ?>">
             <span class="logo-mark">H</span><span>HIMS</span>
         </a>
         <span class="qh-divider"></span>

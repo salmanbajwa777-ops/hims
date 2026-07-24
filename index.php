@@ -1,16 +1,30 @@
 <?php
 require_once __DIR__ . '/config/auth.php';
 
+/**
+ * Where a user lands after login. Only DOCTOR and ADMIN are role-driven now;
+ * STAFF is one role covering every desk/ward worker, so their home is chosen by
+ * what they can actually DO (permissions), not by a sub-role that no longer
+ * exists. Reception work-queue if they register patients; the ward list if they
+ * do admissions; dashboard otherwise. Requires session permissions to be loaded
+ * (they are — refresh_session_permissions runs right before this is called on
+ * login, and auth.php has restored them for an already-logged-in visitor).
+ */
 function landing_page_for_role(string $baseRole): string {
-    switch ($baseRole) {
-        case 'RECEPTIONIST': return '/receptionist.php';
-        case 'DOCTOR':       return '/doctor.php';
-        case 'NURSE':        return '/admissions.php'; // the ward list is the nurse's home
-        default:             return '/dashboard.php';
+    if ($baseRole === 'DOCTOR') { return '/doctor.php'; }
+    if ($baseRole === 'ADMIN')  { return '/dashboard.php'; }
+    // STAFF (and any legacy value) — permission-driven.
+    if (function_exists('has_permission')) {
+        if (has_permission('RECEPTION_REGISTER_PATIENTS')) { return '/receptionist.php'; }
+        if (has_permission('NURSING_RECORD_ADMISSIONS'))   { return '/admissions.php'; }
     }
+    return '/dashboard.php';
 }
 
 if (is_logged_in()) {
+    // has_permission() reads $_SESSION['permissions'], already populated at login;
+    // load the helper so landing_page_for_role() can call it for STAFF routing.
+    require_once __DIR__ . '/config/permissions.php';
     header('Location: ' . landing_page_for_role($_SESSION['base_role'] ?? ''));
     exit;
 }

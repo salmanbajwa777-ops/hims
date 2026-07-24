@@ -3,7 +3,9 @@ require_once __DIR__ . '/config/guard_admin.php';
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/notify.php';
 
-$roles = ['ADMIN', 'DOCTOR', 'MANAGER', 'ACCOUNTANT', 'NURSE', 'RECEPTIONIST'];
+// Three base roles: pick the identity, then grant capabilities on the
+// Permissions tab / per-person overrides. STAFF covers every desk/ward worker.
+$roles = ['STAFF', 'DOCTOR', 'ADMIN'];
 // Doctor specialty categories. Only DENTAL prints the tooth logo on invoices;
 // every other value falls through to the general logo (see *_print_partial.php).
 // Keys must match the users.specialty ENUM (add_doctor_specialty_categories.sql).
@@ -597,6 +599,8 @@ function roleBadgeColor(string $role): array {
     return match ($role) {
         'ADMIN' => ['#EDE9FE', '#6D28D9'],
         'DOCTOR' => ['#E0F2F1', '#0E5456'],
+        'STAFF' => ['#F1F5F9', '#334155'],
+        // Legacy values kept so historical/unmigrated rows still render a badge.
         'MANAGER' => ['#FEF3C7', '#92400E'],
         'ACCOUNTANT' => ['#ECFDF5', '#047857'],
         'NURSE' => ['#FCE7F3', '#9D174D'],

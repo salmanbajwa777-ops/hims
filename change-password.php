@@ -2,16 +2,25 @@
 require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/permissions.php';
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
 
-$landingPage = match ($_SESSION['base_role'] ?? '') {
-    'RECEPTIONIST' => 'receptionist.php',
-    'DOCTOR'       => 'doctor.php',
-    default        => 'dashboard.php',
-};
+// "Back to work" link. DOCTOR is role-driven; STAFF is chosen by capability
+// (reception queue vs ward) now that the sub-roles are gone. Mirrors
+// index.php's landing_page_for_role().
+$sbRole = $_SESSION['base_role'] ?? '';
+if ($sbRole === 'DOCTOR') {
+    $landingPage = 'doctor.php';
+} elseif ($sbRole !== 'ADMIN' && has_permission('RECEPTION_REGISTER_PATIENTS')) {
+    $landingPage = 'receptionist.php';
+} elseif ($sbRole !== 'ADMIN' && has_permission('NURSING_RECORD_ADMISSIONS')) {
+    $landingPage = 'admissions.php';
+} else {
+    $landingPage = 'dashboard.php';
+}
 
 $error = '';
 $success = '';

@@ -3,7 +3,9 @@ require_once __DIR__ . '/config/guard_admin.php';
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 
-$roles = ['ADMIN', 'DOCTOR', 'MANAGER', 'ACCOUNTANT', 'NURSE', 'RECEPTIONIST'];
+// Three base roles now: ADMIN (holds everything), DOCTOR (clinical), STAFF
+// (every desk/ward worker — capabilities come entirely from permissions).
+$roles = ['ADMIN', 'DOCTOR', 'STAFF'];
 // Category order + labels drive the grouped layout on this screen. Keys are
 // re-categorized by sql/rbac_overhaul_3_categories.sql into these five buckets.
 $categoryLabels = [

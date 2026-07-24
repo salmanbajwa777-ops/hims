@@ -285,7 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
                     ->execute([$short, $bill['id']]);
             }
             $pdo->prepare('INSERT INTO admission_writeoffs (admission_id, admission_bill_id, patient_id, amount_written_off, approved_by_id, approved_by_role, reason, shift_tally_date) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE())')
-                ->execute([$admissionId, $bill['id'], (int) $adm['patient_id'], $short, $uid, ($baseRole === 'MANAGER' ? 'MANAGER' : 'ADMIN'), $reason]);
+                ->execute([$admissionId, $bill['id'], (int) $adm['patient_id'], $short, $uid, (in_array($baseRole, ['ADMIN','STAFF'], true) ? $baseRole : 'STAFF'), $reason]);
             // Patient rollup for the alert badge.
             $pdo->prepare('UPDATE patients SET unpaid_flag = 1, unpaid_total = unpaid_total + ?, unpaid_count = unpaid_count + 1 WHERE id = ?')
                 ->execute([$short, (int) $adm['patient_id']]);

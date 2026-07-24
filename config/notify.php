@@ -287,7 +287,7 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
 }
 
 /**
- * Expense posted → every ADMIN + MANAGER with an email on file, plus the admin
+ * Expense posted → everyone who can approve expenses (FINANCIAL_APPROVE_EXPENSES), plus the admin
  * alert address. Carries a single-use 60-minute magic link that lands straight
  * on the approval page and lets the recipient Approve/Reject with one click, no
  * login. The raw token is generated here and its SHA-256 hash stored; the token
@@ -333,13 +333,25 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
         // An admin's own posting is auto-approved — no one to email.
         if ($r['approval_status'] !== 'PENDING') { return; }
 
-        // Recipients: admin alert address + every ADMIN/MANAGER's email on file.
-        // (users has no active/status column, so there is nothing to filter on.)
+        // Recipients: admin alert address + everyone who can APPROVE expenses.
+        // Role-agnostic now that MANAGER is folded into STAFF — the audience is
+        // defined by the FINANCIAL_APPROVE_EXPENSES permission (effective =
+        // role grant minus user revoke, plus user grant), matching load_permissions().
         $to = [admin_alert_email()];
         $mgr = $pdo->query("
-            SELECT email FROM users
-            WHERE base_role IN ('ADMIN','MANAGER')
-              AND email IS NOT NULL AND email <> ''
+            SELECT u.email FROM users u
+            WHERE u.is_active = 1 AND u.email IS NOT NULL AND u.email <> ''
+              AND (
+                    (   EXISTS (SELECT 1 FROM role_permissions rp
+                                JOIN permissions p ON p.id = rp.permission_id
+                                WHERE rp.base_role = u.base_role AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES')
+                     AND NOT EXISTS (SELECT 1 FROM user_permission_overrides o
+                                     JOIN permissions p ON p.id = o.permission_id
+                                     WHERE o.user_id = u.id AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES' AND o.granted = 0))
+                 OR EXISTS (SELECT 1 FROM user_permission_overrides o
+                            JOIN permissions p ON p.id = o.permission_id
+                            WHERE o.user_id = u.id AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES' AND o.granted = 1)
+              )
         ");
         foreach ($mgr->fetchAll() as $m) { $to[] = $m['email']; }
         $to = array_values(array_unique(array_filter($to)));

@@ -54,6 +54,10 @@ $flash = '';
 $err = '';
 $isOpen = $adm['status'] !== 'DISCHARGED';
 $canLog = $isOpen && has_permission('NURSING_LOG_CHARGEABLE_EVENTS');
+// Bedside nursing (shift handover of a stay) is now permission-gated, not
+// role-gated: any STAFF member holding the ward-attendance permission is a nurse
+// for this purpose. Replaces the old `$baseRole === 'NURSE'` checks.
+$canAttendWard = has_permission('NURSING_ATTEND_SHORT_STAY');
 
 // Doctors who reach this stay page (e.g. via their console's "Manage stay" link)
 // must NOT see billing: charges, running estimate, or the final-bill trigger.
@@ -83,7 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
             $note = trim($_POST['clinical_note'] ?? '');
             $note = $note === '' ? null : mb_substr($note, 0, 200);
             $charge = admission_service_charge($s['charge_type'], (float) $s['base_charge'], $qty, $dur);
-            $loggedRole = $baseRole === 'NURSE' ? 'NURSE' : ($baseRole === 'ADMIN' ? 'ADMIN' : ($baseRole === 'MANAGER' ? 'MANAGER' : 'RECEPTIONIST'));
+            // Stamp the actor's role for the audit trail. base_role is now one of
+            // ADMIN/DOCTOR/STAFF (all valid in the widened logged_by_role enum),
+            // so no mapping is needed; fall back to STAFF for any legacy value.
+            $loggedRole = in_array($baseRole, ['ADMIN','DOCTOR','STAFF'], true) ? $baseRole : 'STAFF';
             try {
                 $pdo->prepare('
                     INSERT INTO admission_services
@@ -137,7 +144,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_v
         return $type === 'float' ? (float) $v : (int) $v;
     };
     $vitalNotes = trim($_POST['vital_notes'] ?? '') ?: null;
-    $role = in_array($baseRole, ['NURSE','DOCTOR','ADMIN','MANAGER','RECEPTIONIST'], true) ? $baseRole : 'NURSE';
+    // 3-role world: base_role is ADMIN/DOCTOR/STAFF, all valid in recorded_by_role.
+    $role = in_array($baseRole, ['ADMIN','DOCTOR','STAFF'], true) ? $baseRole : 'STAFF';
     try {
         $pdo->prepare('
             INSERT INTO admission_vitals
@@ -173,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assig
 }
 
 // ---------------- Handover ----------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'handover' && $isOpen && $baseRole === 'NURSE') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'handover' && $isOpen && $canAttendWard) {
     $toNurse = (int) ($_POST['to_nurse_id'] ?? 0);
     $notes = trim($_POST['notes'] ?? '');
     $statusAt = in_array($_POST['status_at'] ?? '', ['ACTIVE','STABLE','CRITICAL'], true) ? $_POST['status_at'] : 'ACTIVE';
@@ -248,7 +256,27 @@ $servicesTotal = 0.0;
 foreach ($services as $s) { if ($s['is_billable']) { $servicesTotal += (float) $s['calculated_charge']; } }
 
 $erServices = $pdo->query("SELECT id, service_type, service_name, charge_type, base_charge FROM er_services_master WHERE status = 'ACTIVE' ORDER BY service_type, service_name")->fetchAll();
-$nurses = $pdo->query("SELECT id, name FROM users WHERE base_role = 'NURSE' ORDER BY name")->fetchAll();
+// "Nurses" available to attend a stay = anyone who holds the ward-attendance
+// permission (role default OR per-user grant), not a base_role. Effective
+// permission = a role grant not cancelled by a user revoke, plus any per-user
+// grant — computed here in SQL to mirror load_permissions().
+$nurses = $pdo->query("
+    SELECT u.id, u.name
+    FROM users u
+    WHERE u.is_active = 1
+      AND (
+            (   EXISTS (SELECT 1 FROM role_permissions rp
+                        JOIN permissions p ON p.id = rp.permission_id
+                        WHERE rp.base_role = u.base_role AND p.`key` = 'NURSING_ATTEND_SHORT_STAY')
+             AND NOT EXISTS (SELECT 1 FROM user_permission_overrides o
+                             JOIN permissions p ON p.id = o.permission_id
+                             WHERE o.user_id = u.id AND p.`key` = 'NURSING_ATTEND_SHORT_STAY' AND o.granted = 0))
+         OR EXISTS (SELECT 1 FROM user_permission_overrides o
+                    JOIN permissions p ON p.id = o.permission_id
+                    WHERE o.user_id = u.id AND p.`key` = 'NURSING_ATTEND_SHORT_STAY' AND o.granted = 1)
+      )
+    ORDER BY u.name
+")->fetchAll();
 $handovers = $pdo->prepare('SELECT h.*, f.name AS from_name, t.name AS to_name FROM admission_handovers h JOIN users f ON f.id = h.from_nurse_id JOIN users t ON t.id = h.to_nurse_id WHERE h.admission_id = ? ORDER BY h.handover_time DESC');
 $handovers->execute([$admissionId]);
 $handovers = $handovers->fetchAll();
@@ -468,7 +496,7 @@ require __DIR__ . '/partials/sidebar.php';
                         </form>
                         <?php endif; ?>
 
-                        <?php if ($isOpen && $baseRole === 'NURSE' && (int) $adm['assigned_nurse_id'] === $uid): ?>
+                        <?php if ($isOpen && $canAttendWard && (int) $adm['assigned_nurse_id'] === $uid): ?>
                         <details>
                             <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);">Hand over to another nurse</summary>
                             <form method="POST" action="admission.php?id=<?= $admissionId ?>" style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">

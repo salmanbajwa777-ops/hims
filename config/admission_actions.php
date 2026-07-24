@@ -52,7 +52,9 @@ function handle_admit_patient(PDO $pdo): array {
     $baseRole = $_SESSION['base_role'] ?? '';
     $uid = (int) $_SESSION['user_id'];
     // admitted_by_role is a fixed enum — map anything unexpected to a safe default.
-    $admitRole = in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST','DOCTOR','NURSE'], true) ? $baseRole : 'RECEPTIONIST';
+    // 3-role world: base_role is ADMIN/DOCTOR/STAFF, all valid in the widened
+    // admitted_by_role audit enum. Fall back to STAFF for any legacy value.
+    $admitRole = in_array($baseRole, ['ADMIN','DOCTOR','STAFF'], true) ? $baseRole : 'STAFF';
 
     $pdo->beginTransaction();
     try {

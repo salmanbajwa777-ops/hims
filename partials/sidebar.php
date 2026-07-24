@@ -59,12 +59,19 @@ if ($sbBaseRole === 'DOCTOR') {
     return; // caller closes .main and .app exactly as with the shared nav
 }
 
-// The "home" destination differs by role: admins land on the full dashboard,
-// reception on their own console, nurses on the ward list. Keeps one nav
-// definition working for all of them.
-$sbHome = $sbBaseRole === 'RECEPTIONIST' ? 'receptionist.php'
-        : ($sbBaseRole === 'DOCTOR' ? 'doctor.php'
-        : ($sbBaseRole === 'NURSE' ? 'admissions.php' : 'dashboard.php'));
+// "Home" destination. DOCTOR + ADMIN are role-driven; STAFF is chosen by
+// capability now that the reception/nurse sub-roles are gone — the reception
+// work-queue if they register patients, else the ward list if they do
+// admissions, else the dashboard. Mirrors index.php's landing_page_for_role().
+if ($sbBaseRole === 'DOCTOR') {
+    $sbHome = 'doctor.php';
+} elseif ($sbBaseRole !== 'ADMIN' && has_permission('RECEPTION_REGISTER_PATIENTS')) {
+    $sbHome = 'receptionist.php';
+} elseif ($sbBaseRole !== 'ADMIN' && has_permission('NURSING_RECORD_ADMISSIONS')) {
+    $sbHome = 'admissions.php';
+} else {
+    $sbHome = 'dashboard.php';
+}
 
 if (!function_exists('sb_icon')) {
     function sb_icon(string $name): string {
@@ -107,28 +114,28 @@ $sbGroups = [
         ],
     ],
     [
-        'label' => 'Nursing',
-        'roles' => ['NURSE'],
+        // One work group for all STAFF. Every item is gated on the SAME permission
+        // its page requires, so a person sees exactly what they can open — no role
+        // lists, no nurse-vs-reception split. Admin holds every key, so admin sees
+        // all of them. Items with no 'perm' (like the disabled In-Door stub) show
+        // to anyone who reaches the group; the group itself only appears if at
+        // least one of its items is visible to this user.
+        'label' => 'Workspace',
         'items' => [
-            ['slug' => 'admissions', 'label' => 'Ward / Admissions', 'icon' => 'bed', 'href' => 'admissions.php'],
-        ],
-    ],
-    [
-        'label' => 'Reception',
-        // Everyone except nurses (their ward work lives in the Nursing group;
-        // registration/checkout is not theirs to see).
-        'roles' => ['ADMIN', 'MANAGER', 'RECEPTIONIST', 'DOCTOR', 'ACCOUNTANT'],
-        'items' => [
-            ['slug' => 'patients',    'label' => 'Patients',        'icon' => 'users',    'href' => 'patients.php'],
-            ['slug' => 'doctor_timings', 'label' => 'Doctor Timings', 'icon' => 'clock',  'href' => 'doctor_timings.php'],
-            ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php'],
-            ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php'],
-            ['slug' => 'indoor',      'label' => 'In-Door Admission','icon'=> 'bed',      'href' => '#', 'disabled' => true],
-            ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php'],
+            ['slug' => 'patients',    'label' => 'Patients',        'icon' => 'users',    'href' => 'patients.php',
+             'perm' => 'RECEPTION_REGISTER_PATIENTS'],
+            ['slug' => 'doctor_timings', 'label' => 'Doctor Timings', 'icon' => 'clock',  'href' => 'doctor_timings.php',
+             'perm' => 'RECEPTION_EDIT_DOCTOR_TIMINGS'],
+            ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php',
+             'perm' => 'RECEPTION_GENERATE_INVOICES'],
+            ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php',
+             'perm' => 'NURSING_RECORD_ADMISSIONS'],
+            ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php',
+             'perm' => 'RECEPTION_MANAGE_BOOKINGS'],
             ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',   'href' => 'expenses.php',
-             'roles' => ['ADMIN', 'MANAGER', 'RECEPTIONIST', 'ACCOUNTANT']],
+             'perm' => 'FINANCIAL_POST_EXPENSES'],
             ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'wallet',   'href' => 'shift_closing.php',
-             'roles' => ['ADMIN', 'RECEPTIONIST']],
+             'perm' => 'RECEPTION_CLOSE_DAY'],
         ],
     ],
     [
@@ -165,13 +172,33 @@ $sbGroups = [
 
 /** Render the nav groups once; reused verbatim by the desktop rail and the
  *  mobile drawer so the two can never drift. */
-$sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive) {
+// Is a single item visible to this user? Role OR permission grants it.
+// 'perm' gates on an ACTUAL permission, not a role — so a per-user grant (like a
+// nurse given RECEPTION_CLOSE_DAY) surfaces the link even though the role
+// wouldn't. Admin holds every key, so perm checks pass for admins automatically.
+$sbItemVisible = function (array $it) use ($sbBaseRole) {
+    if (!empty($it['roles']) && !in_array($sbBaseRole, $it['roles'], true)) { return false; }
+    if (!empty($it['perm']) && !has_permission($it['perm'])) { return false; }
+    return true;
+};
+
+$sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, $sbItemVisible) {
     foreach ($sbGroups as $g) {
         if (!empty($g['admin']) && !$sbIsAdmin) { continue; }
-        if (!empty($g['roles']) && !in_array($sbBaseRole, $g['roles'], true)) { continue; }
+        // A group's role gate is the DEFAULT audience, not an absolute lock: a
+        // user outside those roles may still enter the group if they hold a
+        // perm-granted item inside it (e.g. a nurse with Day Closing sees the
+        // Reception group, but ONLY the Day Closing link — the role-only items
+        // like Patients/Checkout stay hidden by the per-item check below).
+        $groupRoleOk = empty($g['roles']) || in_array($sbBaseRole, $g['roles'], true);
+        $visibleItems = array_filter($g['items'], $sbItemVisible);
+        if (!$groupRoleOk) {
+            // Keep only perm-granted items for an out-of-role visitor; if none, skip.
+            $visibleItems = array_filter($visibleItems, fn($it) => !empty($it['perm']));
+        }
+        if (!$visibleItems) { continue; }
         echo '<div class="nav-group"><div class="nav-group-label">' . htmlspecialchars($g['label']) . '</div>';
-        foreach ($g['items'] as $it) {
-            if (!empty($it['roles']) && !in_array($sbBaseRole, $it['roles'], true)) { continue; }
+        foreach ($visibleItems as $it) {
             $cls = 'nav-item';
             if (!empty($it['disabled']))     { $cls .= ' disabled'; }
             if ($navActive === $it['slug'])  { $cls .= ' active'; }

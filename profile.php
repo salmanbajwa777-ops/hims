@@ -90,8 +90,10 @@ $stmt->execute([$uid]);
 $user = $stmt->fetch();
 
 $roleLabels = [
-    'ADMIN' => 'Administrator', 'MANAGER' => 'Manager', 'DOCTOR' => 'Doctor',
-    'ACCOUNTANT' => 'Accountant', 'NURSE' => 'Nurse', 'RECEPTIONIST' => 'Receptionist',
+    'ADMIN' => 'Administrator', 'DOCTOR' => 'Doctor', 'STAFF' => 'Staff',
+    // Legacy labels for any not-yet-migrated row.
+    'MANAGER' => 'Manager', 'ACCOUNTANT' => 'Accountant',
+    'NURSE' => 'Nurse', 'RECEPTIONIST' => 'Receptionist',
 ];
 $specialtyLabels = [
     'GENERAL' => 'General', 'PEDIATRICIAN' => 'Pediatrician', 'ENT' => 'ENT Consultant',
