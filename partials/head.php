@@ -29,5 +29,43 @@ $headExtra = $headExtra ?? '';
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/app.css">
     <?= $headExtra ?>
+    <script>
+    /* Auto-dismiss success flash messages after 2s, everywhere in the app.
+       Targets every success-flash dialect in use across the app:
+       `.alert.success`, `.alert-ok`, `.alert-success`, `.flash` (doctor
+       console) and `.appr-flash.ok` (expense approval). Fades out then
+       collapses the box so the page reflows and nothing is left hanging.
+       Error alerts, persistent build notices and CTA-bearing messages are
+       deliberately left alone. */
+    (function () {
+        var SELECTOR = '.alert.success, .alert-ok, .alert-success, .flash, .appr-flash.ok';
+        function dismiss(el) {
+            el.style.maxHeight = el.offsetHeight + 'px';
+            el.style.overflow = 'hidden';
+            el.style.transition = 'opacity .4s ease, margin .4s ease, padding .4s ease, max-height .4s ease';
+            /* next frame: fade + collapse so surrounding content reflows */
+            requestAnimationFrame(function () {
+                el.style.opacity = '0';
+                el.style.maxHeight = '0';
+                el.style.marginTop = '0';
+                el.style.marginBottom = '0';
+                el.style.paddingTop = '0';
+                el.style.paddingBottom = '0';
+            });
+            setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 500);
+        }
+        function arm() {
+            var els = document.querySelectorAll(SELECTOR);
+            for (var i = 0; i < els.length; i++) {
+                (function (el) { setTimeout(function () { dismiss(el); }, 2000); })(els[i]);
+            }
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', arm);
+        } else {
+            arm();
+        }
+    })();
+    </script>
 </head>
 <body>
