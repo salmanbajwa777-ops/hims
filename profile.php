@@ -21,7 +21,8 @@ $success = '';
 
 // ---- Save details (name / email / phone) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_details') {
-    $name = trim($_POST['name'] ?? '');
+    // Names are stored in ALL CAPS so they read uniformly everywhere they appear.
+    $name = mb_strtoupper(trim($_POST['name'] ?? ''), 'UTF-8');
     $email = trim($_POST['email'] ?? '');
     // Canonical local format ("03001234567") so login-by-phone always matches
     // what people naturally type. +92 / spaces / dashes are folded away.
@@ -169,7 +170,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <input type="hidden" name="action" value="save_details">
                         <div class="pf-field">
                             <label for="pf_name">Full name</label>
-                            <input type="text" id="pf_name" name="name" value="<?= htmlspecialchars($user['name']) ?>" required>
+                            <input type="text" id="pf_name" name="name" class="uc" value="<?= htmlspecialchars($user['name']) ?>" required>
                         </div>
                         <div class="pf-field">
                             <label for="pf_email">Email</label>

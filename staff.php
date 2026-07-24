@@ -27,7 +27,8 @@ if (!is_dir($uploadDir)) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_staff') {
-    $name = trim($_POST['name'] ?? '');
+    // Names are stored in ALL CAPS so they read uniformly everywhere they appear.
+    $name = mb_strtoupper(trim($_POST['name'] ?? ''), 'UTF-8');
     $email = trim($_POST['email'] ?? '');
     // Canonical "0300…" storage so login-by-phone matches what people type.
     $phone = normalize_staff_phone(trim($_POST['phone'] ?? ''));
@@ -180,7 +181,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_staff') {
     $editId = (int) ($_POST['user_id'] ?? 0);
-    $name = trim($_POST['name'] ?? '');
+    // Names are stored in ALL CAPS so they read uniformly everywhere they appear.
+    $name = mb_strtoupper(trim($_POST['name'] ?? ''), 'UTF-8');
     $email = trim($_POST['email'] ?? '');
     // Canonical "0300…" storage so login-by-phone matches what people type.
     $phone = normalize_staff_phone(trim($_POST['phone'] ?? ''));
@@ -816,7 +818,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="field-grid">
                         <div class="field full">
                             <label for="name">Full Name</label>
-                            <input type="text" id="name" name="name" required autofocus>
+                            <input type="text" id="name" name="name" class="uc" required autofocus>
                         </div>
                         <div class="field">
                             <label for="email">Email</label>

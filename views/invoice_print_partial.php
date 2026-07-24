@@ -129,7 +129,9 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
         .ids td.v { font-weight: bold; }
 
         /* ---------- Fee line + vitals ---------- */
-        .fee-table, .vitals-table, .pay-mode-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+        .fee-table, .vitals-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+        /* Payment mode as a light footnote riding beside the patient name. */
+        .pay-note { font-weight: normal; font-size: 8px; color: #555; white-space: nowrap; }
         /* Butted straight against the header box: -1px so the two share a single rule
            rather than showing a gap or a doubled border. */
         .fee-table { margin-top: -1px; }
@@ -140,11 +142,6 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
         .fee-table th, .vitals-table th { background: #F4F4F4; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: center; }
-        /* Payment mode strip: same seam-sharing -1px, same grey label column as .meta. */
-        .pay-mode-table { margin-top: -1px; }
-        .pay-mode-table td { border: 1px solid #C8C8C8; padding: 4px 6px; }
-        .pay-mode-table td.k { background: #F4F4F4; font-weight: bold; }
-        .pay-mode-table td.v { font-weight: bold; }
         .vitals-table { margin-top: -1px; }
         /* Write-in row: tall enough to take a handwritten figure, at least the height
            of the label row above it. */
@@ -191,7 +188,7 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
                     <tr><td class="k">MR #</td><td class="v"><?= htmlspecialchars($bill['mrn']) ?></td></tr>
                     <tr><td class="k">Invoice #</td><td class="v"><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>
                     <tr><td class="k">Token</td><td class="v"><?= (int) $bill['token_no'] ?></td></tr>
-                    <tr><td class="k">Doctor</td><td class="v"><?= htmlspecialchars($bill['doctor_name']) ?></td></tr>
+                    <tr><td class="k">Doctor</td><td class="v"><?= htmlspecialchars(mb_strtoupper($bill['doctor_name'], 'UTF-8')) ?></td></tr>
                 </table>
             </div>
 
@@ -202,7 +199,7 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
                     <b>Phone:</b> <?= $clinicPhone ?>
                 </div>
                 <table class="meta">
-                    <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?></td></tr>
+                    <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?> <span class="pay-note">(Paid: <?= htmlspecialchars($paymentModeDisplay) ?>)</span></td></tr>
                     <tr><td class="k">S/D/W Of:</td><td class="v"><?= htmlspecialchars($fatherNameUpper) ?></td></tr>
                     <tr><td class="k">DOB:</td><td><?= $patientDobDisplay ?></td></tr>
                     <tr><td class="k">Phone:</td><td><?= htmlspecialchars($bill['phone']) ?></td></tr>
@@ -232,20 +229,8 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
             </tbody>
         </table>
 
-        <!-- Payment mode: captured + settled at registration, printed before the slip
-             leaves the desk. Shares the fee-table column grid so the seam lines up. -->
-        <table class="pay-mode-table">
-            <colgroup>
-                <col style="width:40%"><col style="width:60%">
-            </colgroup>
-            <tr>
-                <td class="k">Payment Mode</td>
-                <td class="v"><?= htmlspecialchars($paymentModeDisplay) ?></td>
-            </tr>
-        </table>
-
-        <!-- Butted directly against the fee table: border-top is suppressed so the two
-             read as one block rather than two tables with a seam. -->
+        <!-- Payment mode now prints as a small note beside the patient name in the
+             header (see .pay-note), so the fee table butts straight onto the vitals block. -->
         <table class="vitals-table">
             <colgroup>
                 <col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%">
@@ -258,7 +243,7 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
 
         <div class="foot">
             <span>This is a computer generated receipt printed on <?= $printTimestamp ?></span>
-            <span>Front Desk: <?= htmlspecialchars($printedBy) ?></span>
+            <span>Front Desk: <?= htmlspecialchars(mb_strtoupper($printedBy, 'UTF-8')) ?></span>
         </div>
 
     </div>

@@ -769,7 +769,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" placeholder="Or type the doctor's name" style="margin-top:8px;">
+                    <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" class="uc" placeholder="Or type the doctor's name" style="margin-top:8px;">
                 </div>
             </div>
 

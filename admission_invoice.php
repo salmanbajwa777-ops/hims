@@ -56,6 +56,11 @@ $total = (float) $bill['grand_total'];
 $paid = (float) ($bill['paid_amount'] ?? 0);
 $writeoff = (float) $bill['write_off_amount'];
 $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
+// Payment mode prints as a footnote beside the patient name (matching the consultation
+// slip). Draft bills aren't settled yet, so no mode is shown for them.
+$paymentModeNote = $bill['status'] !== 'draft'
+    ? ($methodLabels[$bill['payment_method']] ?? '—')
+    : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -86,6 +91,8 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Tr
         .meta td { border: 1px solid #C8C8C8; padding: 3px 5px; vertical-align: top; }
         .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
         .meta td.v { font-weight: bold; }
+        /* Payment mode as a light footnote riding beside the patient name. */
+        .pay-note { font-weight: normal; font-size: 8px; color: #555; white-space: nowrap; }
         .clinic-contact { margin-top: 0; margin-bottom: 4px; }
         .ids { width: 100%; border-collapse: collapse; font-size: 9px; }
         .ids td { border: 1px solid #C8C8C8; padding: 3px 5px; }
@@ -134,14 +141,14 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Tr
                     <tr><td class="k">Invoice #</td><td class="v"><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>
                     <tr><td class="k">Admitted</td><td class="v"><?= date('d/m/Y H:i', strtotime($bill['admitted_at'])) ?></td></tr>
                     <tr><td class="k">Discharged</td><td class="v"><?= $bill['discharged_at'] ? date('d/m/Y H:i', strtotime($bill['discharged_at'])) : '—' ?></td></tr>
-                    <tr><td class="k">Doctor</td><td class="v"><?= htmlspecialchars($bill['doctor_name'] ?: '—') ?></td></tr>
+                    <tr><td class="k">Doctor</td><td class="v"><?= htmlspecialchars($bill['doctor_name'] ? mb_strtoupper($bill['doctor_name'], 'UTF-8') : '—') ?></td></tr>
                 </table>
             </div>
             <div class="head-right">
                 <div class="tagline"><?= $clinicTagline ?></div>
                 <div class="addr clinic-contact"><b>Email:</b> <?= $clinicEmail ?><br><b>Phone:</b> <?= $clinicPhone ?></div>
                 <table class="meta">
-                    <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?></td></tr>
+                    <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?><?php if ($paymentModeNote !== ''): ?> <span class="pay-note">(Paid: <?= htmlspecialchars($paymentModeNote) ?>)</span><?php endif; ?></td></tr>
                     <tr><td class="k">S/D/W Of:</td><td class="v"><?= htmlspecialchars($fatherNameUpper) ?></td></tr>
                     <tr><td class="k">DOB:</td><td><?= $dobDisplay ?></td></tr>
                     <tr><td class="k">Phone:</td><td><?= htmlspecialchars($bill['phone']) ?></td></tr>
@@ -176,7 +183,7 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Tr
             <?php endif; ?>
             <tr class="grand"><td class="k">Total</td><td class="v">Rs <?= number_format($total, 0) ?></td></tr>
             <?php if ($bill['status'] !== 'draft'): ?>
-            <tr><td class="k">Paid (<?= htmlspecialchars($methodLabels[$bill['payment_method']] ?? '—') ?>)</td><td class="v">Rs <?= number_format($paid, 0) ?></td></tr>
+            <tr><td class="k">Paid</td><td class="v">Rs <?= number_format($paid, 0) ?></td></tr>
             <?php if ($writeoff > 0): ?><tr><td class="k">Written off</td><td class="v">Rs <?= number_format($writeoff, 0) ?></td></tr><?php endif; ?>
             <?php endif; ?>
         </table>

@@ -258,8 +258,10 @@ $successVisit = null;
 $pendingBookings = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register_patient') {
-    $name = trim($_POST['name'] ?? '');
-    $fatherName = trim($_POST['father_name'] ?? '');
+    // Names are stored in ALL CAPS so every consumer (lists, invoices, slips)
+    // shows them uniformly. mb_strtoupper (not strtoupper) keeps non-ASCII intact.
+    $name = mb_strtoupper(trim($_POST['name'] ?? ''), 'UTF-8');
+    $fatherName = mb_strtoupper(trim($_POST['father_name'] ?? ''), 'UTF-8');
     // Phone: combine country code + local number into E.164 (e.g. +923001234567).
     // Strip non-digits and any leading zero(s) from the local part before prefixing the code.
     $phoneCc = preg_replace('/[^\d+]/', '', $_POST['phone_cc'] ?? '+92');
@@ -1212,11 +1214,11 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
                 <div class="field-grid">
                     <div class="f full">
-                        <input type="text" id="name" name="name" placeholder=" " required autofocus>
+                        <input type="text" id="name" name="name" class="uc" placeholder=" " required autofocus>
                         <span class="flabel" data-for="name">Full Name <span class="req">*</span></span>
                     </div>
                     <div class="f">
-                        <input type="text" id="father_name" name="father_name" placeholder=" ">
+                        <input type="text" id="father_name" name="father_name" class="uc" placeholder=" ">
                         <span class="flabel" data-for="father_name">Father / Guardian Name <span class="opt">(optional)</span></span>
                     </div>
                     <div class="f">

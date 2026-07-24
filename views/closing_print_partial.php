@@ -21,6 +21,10 @@ $varianceLabel = abs($varianceVal) < 0.01 ? 'Balanced'
     : number_format(abs($varianceVal), 2) . ($varianceVal < 0 ? ' SHORT' : ' OVER');
 // Per-user model: this slip is one receptionist's shift, not the whole day.
 $isEdited = ($closing['status'] ?? '') === 'EDITED' || (int) ($closing['edit_count'] ?? 0) > 0;
+
+// Staff names print in ALL CAPS regardless of stored casing.
+$cashierNameUpper = mb_strtoupper($closing['cashier_name'] ?? '', 'UTF-8');
+$adminNameUpper = mb_strtoupper($closing['admin_name'] ?? '', 'UTF-8');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -102,8 +106,8 @@ $isEdited = ($closing['status'] ?? '') === 'EDITED' || (int) ($closing['edit_cou
                 <td class="k">Closed at</td><td><?= date('H:i', strtotime($closing['created_at'])) ?></td>
             </tr>
             <tr>
-                <td class="k">Cashier</td><td><?= htmlspecialchars($closing['cashier_name']) ?></td>
-                <td class="k">Handing to</td><td><?= htmlspecialchars($closing['admin_name']) ?></td>
+                <td class="k">Cashier</td><td><?= htmlspecialchars($cashierNameUpper) ?></td>
+                <td class="k">Handing to</td><td><?= htmlspecialchars($adminNameUpper) ?></td>
             </tr>
         </table>
 
@@ -156,12 +160,12 @@ $isEdited = ($closing['status'] ?? '') === 'EDITED' || (int) ($closing['edit_cou
             <div class="sig">
                 <div class="line"></div>
                 <div class="role">HANDED OVER BY</div>
-                <div class="nm"><?= htmlspecialchars($closing['cashier_name']) ?> (Reception)</div>
+                <div class="nm"><?= htmlspecialchars($cashierNameUpper) ?> (Reception)</div>
             </div>
             <div class="sig">
                 <div class="line"></div>
                 <div class="role">RECEIVED BY</div>
-                <div class="nm"><?= htmlspecialchars($closing['admin_name']) ?> (Admin)</div>
+                <div class="nm"><?= htmlspecialchars($adminNameUpper) ?> (Admin)</div>
             </div>
         </div>
 

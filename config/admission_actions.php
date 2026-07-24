@@ -11,8 +11,9 @@
  *      made nullable — that would ripple through ~6 JOINs). The shell is a real visit
  *      row with no consultation bill; it just anchors the admission.
  *
- * Gated on ADMISSION_ADMIT_PATIENT (doctor + reception + admin + manager). Requires an
- * open PDO, an authenticated session, and config/notify.php already loaded by the caller.
+ * Gated on ADMISSION_ADMIT_PATIENT OR the legacy RECEPTION_ADMIT_PATIENTS (doctor +
+ * reception + admin + manager) — matching the OR-check the three UI entry points use.
+ * Requires an open PDO, an authenticated session, and config/notify.php loaded by the caller.
  *
  * Returns ['ok' => bool, 'error' => string, 'admission_id' => int|null]. The caller
  * decides how to redirect / surface the result.
@@ -26,7 +27,13 @@ require_once __DIR__ . '/sheets.php';
 function handle_admit_patient(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
 
-    if (!has_permission('ADMISSION_ADMIT_PATIENT')) {
+    // Accept EITHER admit key: the new ADMISSION_ADMIT_PATIENT (doctor + reception)
+    // and the legacy RECEPTION_ADMIT_PATIENTS it replaced. The three UI entry
+    // points (patients.php, receptionist.php, doctor.php) already show the Admit
+    // button on this same OR-condition, so the handler must match — otherwise a
+    // pre-overhaul receptionist who only has the old grant sees the button but is
+    // rejected here ("you don't have permission to admit").
+    if (!has_permission('ADMISSION_ADMIT_PATIENT') && !has_permission('RECEPTION_ADMIT_PATIENTS')) {
         $out['error'] = 'You do not have permission to admit patients.';
         return $out;
     }
@@ -35,7 +42,7 @@ function handle_admit_patient(PDO $pdo): array {
     $patientId = (int) ($_POST['patient_id'] ?? 0);   // used only when there's no visit
     $admType   = $_POST['admission_type'] ?? '';
     $docId     = (int) ($_POST['admitting_doctor_id'] ?? 0) ?: null;
-    $docManual = trim($_POST['admitting_doctor_manual'] ?? '') ?: null;
+    $docManual = mb_strtoupper(trim($_POST['admitting_doctor_manual'] ?? ''), 'UTF-8') ?: null;
 
     // Type must be a currently-enabled admission type.
     $rateOk = $pdo->prepare('SELECT 1 FROM admission_rates WHERE admission_type = ? AND is_enabled = 1');

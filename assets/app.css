@@ -148,6 +148,12 @@ button { font-family: inherit; }
 }
 .field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 
+/* Uppercase-as-typed for person-name inputs. Names are also stored uppercased on
+   save, so this is purely so the field reflects what will be recorded. The
+   placeholder is left at its natural case (it is helper text, not a value). */
+input.uc { text-transform: uppercase; }
+input.uc::placeholder { text-transform: none; }
+
 /* ---------- Tables ---------- */
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }

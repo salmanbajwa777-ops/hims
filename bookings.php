@@ -95,7 +95,8 @@ $success = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create_booking') {
     $phone = booking_normalize_phone($_POST['phone_cc'] ?? '+92', $_POST['phone'] ?? '');
     $patientId = (int) ($_POST['patient_id'] ?? 0) ?: null;
-    $personName = trim($_POST['person_name'] ?? '');
+    // Stored in ALL CAPS to match how names appear everywhere else.
+    $personName = mb_strtoupper(trim($_POST['person_name'] ?? ''), 'UTF-8');
     $doctorId = (int) ($_POST['doctor_id'] ?? 0);
     $consultTypeId = (int) ($_POST['doctor_consult_type_id'] ?? 0);
     $bookingDate = trim($_POST['booking_date'] ?? '');
@@ -385,7 +386,7 @@ require __DIR__ . '/partials/sidebar.php';
 
                 <div>
                     <label>Booking for <span style="color:var(--red);">*</span></label>
-                    <input type="text" name="person_name" id="bkPerson" placeholder="Name as the caller says it" required>
+                    <input type="text" name="person_name" id="bkPerson" class="uc" placeholder="Name as the caller says it" required>
                     <span class="hint" id="bkPersonHint">Picking a patient above fills and links this automatically.</span>
                 </div>
 
