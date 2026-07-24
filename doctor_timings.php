@@ -19,8 +19,11 @@ require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
 
 // Anyone logged in may VIEW the day's timings (doctors and admins care too);
-// editing is reception work, gated on the same permission as the console.
-$canEdit = has_permission('RECEPTION_REGISTER_PATIENTS');
+// editing is its own capability now (RECEPTION_EDIT_DOCTOR_TIMINGS), split out of
+// RECEPTION_REGISTER_PATIENTS so a scheduler can edit timings without full
+// registration rights. Current registration holders were back-granted this key
+// (sql/rbac_overhaul_2_grants.sql).
+$canEdit = has_permission('RECEPTION_EDIT_DOCTOR_TIMINGS');
 
 $today = date('Y-m-d');
 $saved = false;

@@ -20,6 +20,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     if (!in_array($role, $roles, true)) {
         $error = 'Invalid role.';
     } else {
+        // ADMIN is the "all" role by definition. Now that the code gates no longer
+        // carry an `|| in_array($role,['ADMIN',...])` fallback, ADMIN's access lives
+        // entirely in role_permissions — so this screen must never be able to save
+        // ADMIN with a key unchecked, or an admin could accidentally lock admins out.
+        // Force the full catalog for ADMIN regardless of which boxes were posted.
+        if ($role === 'ADMIN') {
+            $checkedIds = array_map(
+                fn($r) => (int) $r['id'],
+                $pdo->query('SELECT id FROM permissions')->fetchAll()
+            );
+        }
+
         $pdo->beginTransaction();
 
         $del = $pdo->prepare('DELETE FROM role_permissions WHERE base_role = ?');

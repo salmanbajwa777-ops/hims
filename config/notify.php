@@ -286,6 +286,133 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
     } catch (Throwable $e) { /* never break the page for a notification */ }
 }
 
+/**
+ * Expense posted → every ADMIN + MANAGER with an email on file, plus the admin
+ * alert address. Carries a single-use 60-minute magic link that lands straight
+ * on the approval page and lets the recipient Approve/Reject with one click, no
+ * login. The raw token is generated here and its SHA-256 hash stored; the token
+ * row must be created in the SAME transaction as the expense so a committed
+ * expense always has a matching (un-forgeable) link.
+ *
+ * Returns the raw token so the caller could log it if needed; callers normally
+ * ignore it. Call AFTER $pdo->commit() like every other notify_* function.
+ */
+function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date,
+                   e.approval_status, ec.name AS category_name, u.name AS posted_by_name,
+                   t.expires_at
+            FROM expenses e
+            JOIN expense_categories ec ON ec.id = e.category_id
+            JOIN users u ON u.id = e.posted_by_id
+            LEFT JOIN expense_approval_tokens t ON t.expense_id = e.id
+            WHERE e.id = ?
+            ORDER BY t.id DESC
+            LIMIT 1
+        ');
+        $stmt->execute([$expenseId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        // An admin's own posting is auto-approved — no one to email.
+        if ($r['approval_status'] !== 'PENDING') { return; }
+
+        // Recipients: admin alert address + every ADMIN/MANAGER's email on file.
+        // (users has no active/status column, so there is nothing to filter on.)
+        $to = [admin_alert_email()];
+        $mgr = $pdo->query("
+            SELECT email FROM users
+            WHERE base_role IN ('ADMIN','MANAGER')
+              AND email IS NOT NULL AND email <> ''
+        ");
+        foreach ($mgr->fetchAll() as $m) { $to[] = $m['email']; }
+        $to = array_values(array_unique(array_filter($to)));
+        if (!$to) { return; }
+
+        $base = (mail_config() ?? [])['base_url'] ?? 'https://hims.babymedics.com';
+        $link = $base . '/approve_expense.php?token=' . urlencode($rawToken);
+        $expiresTxt = $r['expires_at']
+            ? date('h:i A', strtotime($r['expires_at'])) . ' today (60 minutes)'
+            : '60 minutes';
+
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+              . htmlspecialchars($r['posted_by_name']) . ' has posted a counter expense that needs your approval. '
+              . 'Cash has already left the drawer against this voucher.</p>'
+            . mail_kv([
+                'Voucher'   => $r['expense_number'],
+                'Category'  => $r['category_name'],
+                'Amount'    => 'Rs ' . number_format((float) $r['amount'], 2),
+                'For'       => $r['description'],
+                'Paid to'   => $r['paid_to'] ?: '—',
+                'Posted by' => $r['posted_by_name'],
+                'Date'      => date('d/m/Y', strtotime($r['expense_date'])),
+            ])
+            . '<p style="font-size:14px;color:#41504f;margin:0 0 18px;">Tap below to approve or reject. '
+            . 'This one-click link works without signing in and expires at <strong>' . htmlspecialchars($expiresTxt)
+            . '</strong>. After it expires you can still act from the Expenses page in the app.</p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 6px;"><tr><td style="background:#0E5456;border-radius:8px;">'
+            . '<a href="' . htmlspecialchars($link) . '" style="display:inline-block;padding:11px 26px;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;">Review this expense</a>'
+            . '</td></tr></table>';
+        send_mail($pdo, $to,
+            'Expense approval — ' . $r['expense_number'] . ' — Rs ' . number_format((float) $r['amount'], 0)
+            . ' (' . $r['posted_by_name'] . ')',
+            mail_template('Expense Awaiting Approval', $body,
+                'This link authorizes approval of one expense for 60 minutes — keep it private.'),
+            'expense-approval:' . $r['expense_number']);
+    } catch (Throwable $e) { /* never break the page for a notification */ }
+}
+
+/** Expense approved or rejected → the person who posted it (if they have an
+ *  email) + the admin alert address, so the poster knows the cash is cleared or
+ *  needs returning, and the record is centrally visible. */
+function notify_expense_decided(PDO $pdo, int $expenseId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT e.expense_number, e.amount, e.description, e.approval_status,
+                   e.rejection_reason, ec.name AS category_name,
+                   pu.name AS posted_by_name, pu.email AS posted_by_email,
+                   au.name AS approver_name
+            FROM expenses e
+            JOIN expense_categories ec ON ec.id = e.category_id
+            JOIN users pu ON pu.id = e.posted_by_id
+            LEFT JOIN users au ON au.id = e.approved_by_id
+            WHERE e.id = ?
+        ');
+        $stmt->execute([$expenseId]);
+        $r = $stmt->fetch();
+        if (!$r || $r['approval_status'] === 'PENDING') { return; }
+
+        $approved = $r['approval_status'] === 'APPROVED';
+        $to = array_values(array_filter(array_unique([
+            admin_alert_email(),
+            ($r['posted_by_email'] && filter_var($r['posted_by_email'], FILTER_VALIDATE_EMAIL)) ? $r['posted_by_email'] : null,
+        ])));
+        if (!$to) { return; }
+
+        $kv = [
+            'Voucher'   => $r['expense_number'],
+            'Category'  => $r['category_name'],
+            'Amount'    => 'Rs ' . number_format((float) $r['amount'], 2),
+            'For'       => $r['description'],
+            'Decision'  => $approved ? 'APPROVED' : 'REJECTED',
+            'By'        => $r['approver_name'] ?? '—',
+        ];
+        if (!$approved && $r['rejection_reason']) {
+            $kv['Reason'] = $r['rejection_reason'];
+        }
+        $lead = $approved
+            ? 'Your counter expense has been <strong style="color:#0E5456;">approved</strong>.'
+            : 'Your counter expense has been <strong style="color:#b3261e;">rejected</strong> — the cash should be returned to the drawer; this voucher drops out of the shift tally.';
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">' . $lead . '</p>' . mail_kv($kv);
+        send_mail($pdo, $to,
+            'Expense ' . ($approved ? 'approved' : 'REJECTED') . ' — ' . $r['expense_number']
+            . ' (Rs ' . number_format((float) $r['amount'], 0) . ')',
+            mail_template('Expense ' . ($approved ? 'Approved' : 'Rejected'), $body),
+            'expense-decided:' . $r['expense_number']);
+    } catch (Throwable $e) { /* best-effort */ }
+}
+
 /** Day closed by reception → admin alert + the admin named on the handover. */
 function notify_day_closed(PDO $pdo, int $closingId): void {
     try {

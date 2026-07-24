@@ -519,7 +519,7 @@ require __DIR__ . '/partials/sidebar.php';
                                         <a class="qa warn" href="admission_discharge.php?id=<?= (int) $row['admission_id'] ?>">Bill discharge</a>
                                     <?php elseif ($isAdmitted && $row['admission_id']): ?>
                                         <a class="qa" href="admission.php?id=<?= (int) $row['admission_id'] ?>">Manage stay</a>
-                                    <?php elseif (has_permission('ADMISSION_ADMIT_PATIENT') || has_permission('RECEPTION_ADMIT_PATIENTS')): ?>
+                                    <?php elseif (has_permission('ADMISSION_ADMIT_PATIENT')): ?>
                                         <button type="button" class="qa"
                                             onclick="openAdmit(<?= (int) $row['visit_id'] ?>, <?= htmlspecialchars(json_encode($row['patient_name']), ENT_QUOTES) ?>, <?= (int) $row['doctor_id'] ?>, <?= htmlspecialchars(json_encode($row['doctor_name']), ENT_QUOTES) ?>)">Admit</button>
                                     <?php endif; ?>

@@ -22,11 +22,16 @@ require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';   // require_day_open() — expenses feed the cash tally
+require_once __DIR__ . '/config/notify.php';     // notify_expense_posted() — approval email
+require_once __DIR__ . '/config/expense_approval.php'; // decide_expense() — shared approve/reject
 refresh_session_permissions($pdo);
 require_permission('FINANCIAL_POST_EXPENSES');
 
 $isAdmin = ($_SESSION['base_role'] ?? '') === 'ADMIN';
 $userId  = (int) $_SESSION['user_id'];
+// Approvers (admin + manager) can Approve/Reject a pending row inline from here,
+// as well as via the emailed 60-minute magic link.
+$canApprove = has_permission('FINANCIAL_APPROVE_EXPENSES');
 
 $error = '';
 $success = '';
@@ -80,10 +85,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                 // Per-category cap: this category's spend today, all users.
                 $catLimit = (float) $category['shift_limit'];
                 if ($catLimit > 0) {
-                    $spent = $pdo->prepare('
+                    $spent = $pdo->prepare("
                         SELECT COALESCE(SUM(amount), 0) FROM expenses
-                        WHERE category_id = ? AND expense_date = CURDATE() AND voided_at IS NULL
-                    ');
+                        WHERE category_id = ? AND expense_date = CURDATE()
+                          AND voided_at IS NULL AND approval_status <> 'REJECTED'
+                    ");
                     $spent->execute([$categoryId]);
                     $catSpent = (float) $spent->fetchColumn();
                     if ($catSpent + $amount > $catLimit) {
@@ -100,10 +106,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                 $totStmt->execute();
                 $shiftLimitTotal = (float) ($totStmt->fetchColumn() ?: 0);
                 if ($shiftLimitTotal > 0) {
-                    $mine = $pdo->prepare('
+                    $mine = $pdo->prepare("
                         SELECT COALESCE(SUM(amount), 0) FROM expenses
-                        WHERE posted_by_id = ? AND expense_date = CURDATE() AND voided_at IS NULL
-                    ');
+                        WHERE posted_by_id = ? AND expense_date = CURDATE()
+                          AND voided_at IS NULL AND approval_status <> 'REJECTED'
+                    ");
                     $mine->execute([$userId]);
                     $mySpent = (float) $mine->fetchColumn();
                     if ($mySpent + $amount > $shiftLimitTotal) {
@@ -116,19 +123,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                 }
             }
 
+            // Admins own the limits AND are approvers — their own postings are
+            // auto-approved (nobody to email). Everyone else starts PENDING and
+            // gets a 60-minute magic link out to the admins + managers.
+            $status = $isAdmin ? 'APPROVED' : 'PENDING';
             $expenseNumber = generate_expense_number($pdo);
             $pdo->prepare('
-                INSERT INTO expenses (expense_number, category_id, amount, description, paid_to, expense_date, posted_by_id)
-                VALUES (?, ?, ?, ?, ?, CURDATE(), ?)
-            ')->execute([$expenseNumber, $categoryId, $amount, $description, $paidTo !== '' ? $paidTo : null, $userId]);
+                INSERT INTO expenses
+                    (expense_number, category_id, amount, description, paid_to, expense_date,
+                     posted_by_id, approval_status, approved_by_id, approved_at)
+                VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+            ')->execute([
+                $expenseNumber, $categoryId, $amount, $description,
+                $paidTo !== '' ? $paidTo : null, $userId, $status,
+                $isAdmin ? $userId : null,
+            ]);
+            $expenseId = (int) $pdo->lastInsertId();
+
+            // Mint the single-use magic-link token in the SAME transaction, so a
+            // committed PENDING expense always has a matching link. Store only the
+            // hash; the raw token travels in the email.
+            $rawToken = '';
+            if (!$isAdmin) {
+                $rawToken = bin2hex(random_bytes(32));
+                $pdo->prepare('
+                    INSERT INTO expense_approval_tokens (expense_id, token_hash, expires_at)
+                    VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 60 MINUTE))
+                ')->execute([$expenseId, hash('sha256', $rawToken)]);
+            }
 
             $auditNote = sprintf('Posted expense %s: Rs %s under "%s" — %s',
                 $expenseNumber, number_format($amount, 2), $category['name'], $description);
-            if ($isAdmin) { $auditNote .= ' (admin: limits bypassed)'; }
+            if ($isAdmin) { $auditNote .= ' (admin: limits bypassed, auto-approved)'; }
             $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
                 ->execute([$userId, 'expense_posted', $auditNote]);
 
             $pdo->commit();
+
+            // Fire the approval email AFTER commit — best-effort, never blocks.
+            if (!$isAdmin && $rawToken !== '') {
+                notify_expense_posted($pdo, $expenseId, $rawToken);
+            }
+
             // PRG so a refresh can't double-post the same expense.
             header('Location: expenses.php?posted=' . urlencode($expenseNumber));
             exit;
@@ -179,8 +215,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
     }
 }
 
+// ---- Approve / reject a pending expense (in-app; approvers only) ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && in_array($_POST['action'] ?? '', ['approve_expense', 'reject_expense'], true)) {
+    if (!$canApprove) {
+        http_response_code(403);
+        exit('You do not have permission to approve expenses.');
+    }
+    $id       = (int) ($_POST['expense_id'] ?? 0);
+    $approve  = ($_POST['action'] === 'approve_expense');
+    $reason   = trim($_POST['reject_reason'] ?? '');
+    $result   = decide_expense($pdo, $id, $approve, $userId, $reason);
+    if ($result['ok']) {
+        notify_expense_decided($pdo, $id);   // best-effort, after commit
+        $success = $result['message'];
+    } else {
+        $error = $result['message'];
+    }
+}
+
 if (isset($_GET['posted'])) {
-    $success = 'Expense ' . htmlspecialchars($_GET['posted']) . ' posted — take the cash from the counter and keep the receipt.';
+    $success = 'Expense ' . htmlspecialchars($_GET['posted']) . ' posted — take the cash from the counter and keep the receipt.'
+        . ($isAdmin ? '' : ' It is now awaiting a manager\'s approval; you will see the status update here.');
 }
 
 // ---- Data for the page ----
@@ -191,10 +247,11 @@ $totStmt = $pdo->prepare("SELECT setting_value FROM clinic_settings WHERE settin
 $totStmt->execute();
 $shiftLimitTotal = (float) ($totStmt->fetchColumn() ?: 0);
 
-$mineStmt = $pdo->prepare('
+$mineStmt = $pdo->prepare("
     SELECT COALESCE(SUM(amount), 0) FROM expenses
-    WHERE posted_by_id = ? AND expense_date = CURDATE() AND voided_at IS NULL
-');
+    WHERE posted_by_id = ? AND expense_date = CURDATE()
+      AND voided_at IS NULL AND approval_status <> 'REJECTED'
+");
 $mineStmt->execute([$userId]);
 $mySpentToday = (float) $mineStmt->fetchColumn();
 
@@ -212,11 +269,13 @@ $params = [$filterFrom, $filterTo];
 if ($filterCat > 0) { $where[] = 'e.category_id = ?'; $params[] = $filterCat; }
 
 $listStmt = $pdo->prepare('
-    SELECT e.*, ec.name AS category_name, u.name AS posted_by_name, v.name AS voided_by_name
+    SELECT e.*, ec.name AS category_name, u.name AS posted_by_name,
+           v.name AS voided_by_name, a.name AS approved_by_name
     FROM expenses e
     JOIN expense_categories ec ON ec.id = e.category_id
     JOIN users u ON u.id = e.posted_by_id
     LEFT JOIN users v ON v.id = e.voided_by_id
+    LEFT JOIN users a ON a.id = e.approved_by_id
     WHERE ' . implode(' AND ', $where) . '
     ORDER BY e.created_at DESC, e.id DESC
     LIMIT 300
@@ -224,9 +283,13 @@ $listStmt = $pdo->prepare('
 $listStmt->execute($params);
 $rows = $listStmt->fetchAll();
 
+// A rejected expense returned its cash to the drawer, so — like a voided one —
+// it drops out of every total. Pending still counts (the cash is already out).
 $rangeTotal = 0.0;
 foreach ($rows as $r) {
-    if ($r['voided_at'] === null) { $rangeTotal += (float) $r['amount']; }
+    if ($r['voided_at'] === null && $r['approval_status'] !== 'REJECTED') {
+        $rangeTotal += (float) $r['amount'];
+    }
 }
 
 // Admin extra: per-user totals over the filtered range (limit oversight at a glance).
@@ -236,6 +299,7 @@ if ($isAdmin) {
         SELECT u.name, COALESCE(SUM(e.amount), 0) AS total, COUNT(*) AS cnt
         FROM expenses e JOIN users u ON u.id = e.posted_by_id
         WHERE e.expense_date BETWEEN ? AND ? AND e.voided_at IS NULL
+          AND e.approval_status <> "REJECTED"
         GROUP BY e.posted_by_id, u.name ORDER BY total DESC
     ');
     $utStmt->execute([$filterFrom, $filterTo]);
@@ -276,6 +340,10 @@ $headExtra = <<<CSS
 .exp-amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .exp-no { font-size: 12px; font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
 .void-chip { font-size: 11px; font-weight: 700; color: var(--red-text); background: rgba(225,29,72,.09); border: 1px solid rgba(225,29,72,.24); border-radius: 20px; padding: 2px 8px; }
+.st-chip { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 9px; white-space: nowrap; display: inline-block; }
+.st-pending  { color: #92590B; background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.34); }
+.st-approved { color: #0E5456; background: rgba(26,127,126,.11); border: 1px solid rgba(26,127,126,.28); }
+.st-rejected { color: var(--red-text, #b3261e); background: rgba(225,29,72,.09); border: 1px solid rgba(225,29,72,.24); }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .link-btn.warn { color: var(--red-text); }
 .total-strip { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -405,12 +473,14 @@ if (!$isAdmin) {
                                 <th>Paid to</th>
                                 <th>Posted by</th>
                                 <th style="text-align:right;">Amount</th>
-                                <?php if ($isAdmin): ?><th style="width:110px;"></th><?php endif; ?>
+                                <th>Status</th>
+                                <?php if ($isAdmin || $canApprove): ?><th style="width:110px;">Action</th><?php endif; ?>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (!$rows): ?>
-                            <tr><td colspan="<?= $isAdmin ? 8 : 6 ?>" class="muted" style="padding:20px 10px;">No expenses<?= $isAdmin ? ' in this range' : ' posted this shift yet' ?>.</td></tr>
+                            <?php $emptyCols = ($isAdmin ? 8 : 7) + (($isAdmin || $canApprove) ? 1 : 0); ?>
+                            <tr><td colspan="<?= $emptyCols ?>" class="muted" style="padding:20px 10px;">No expenses<?= $isAdmin ? ' in this range' : ' posted this shift yet' ?>.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($rows as $r): ?>
                             <?php $voided = $r['voided_at'] !== null; ?>
@@ -425,9 +495,37 @@ if (!$isAdmin) {
                                 <td><?= htmlspecialchars($r['paid_to'] ?? '—') ?></td>
                                 <td><?= htmlspecialchars($r['posted_by_name']) ?></td>
                                 <td style="text-align:right;"><span class="exp-amt">Rs <?= number_format((float) $r['amount'], 2) ?></span></td>
-                                <?php if ($isAdmin): ?>
                                 <td>
-                                    <?php if (!$voided): ?>
+                                    <?php
+                                        $st = $r['approval_status'] ?? 'PENDING';
+                                        if ($st === 'APPROVED') {
+                                            $stTitle = $r['approved_by_name'] ? 'By ' . $r['approved_by_name'] . ($r['approved_at'] ? ' · ' . date('d/m h:i A', strtotime($r['approved_at'])) : '') : '';
+                                            echo '<span class="st-chip st-approved" title="' . htmlspecialchars($stTitle) . '">Approved</span>';
+                                        } elseif ($st === 'REJECTED') {
+                                            $stTitle = ($r['approved_by_name'] ? 'By ' . $r['approved_by_name'] . ': ' : '') . ($r['rejection_reason'] ?? '');
+                                            echo '<span class="st-chip st-rejected" title="' . htmlspecialchars($stTitle) . '">Rejected</span>';
+                                        } else {
+                                            echo '<span class="st-chip st-pending">Awaiting approval</span>';
+                                        }
+                                    ?>
+                                </td>
+                                <?php if ($isAdmin || $canApprove): ?>
+                                <td style="white-space:nowrap;">
+                                    <?php if (!$voided && $canApprove && $st === 'PENDING'): ?>
+                                    <form method="POST" action="expenses.php" style="margin:0 0 4px;">
+                                        <input type="hidden" name="action" value="approve_expense">
+                                        <input type="hidden" name="expense_id" value="<?= (int) $r['id'] ?>">
+                                        <button type="submit" class="link-btn">Approve</button>
+                                    </form>
+                                    <form method="POST" action="expenses.php" style="margin:0 0 4px;"
+                                          onsubmit="var r=prompt('Reason for rejecting <?= htmlspecialchars($r['expense_number']) ?> (cash to be returned):');if(!r){return false;}this.reject_reason.value=r;return true;">
+                                        <input type="hidden" name="action" value="reject_expense">
+                                        <input type="hidden" name="expense_id" value="<?= (int) $r['id'] ?>">
+                                        <input type="hidden" name="reject_reason" value="">
+                                        <button type="submit" class="link-btn warn">Reject</button>
+                                    </form>
+                                    <?php endif; ?>
+                                    <?php if (!$voided && $isAdmin): ?>
                                     <form method="POST" action="expenses.php" style="margin:0;"
                                           onsubmit="var r=prompt('Reason for voiding <?= htmlspecialchars($r['expense_number']) ?>:');if(!r){return false;}this.void_reason.value=r;return true;">
                                         <input type="hidden" name="action" value="void_expense">

@@ -35,9 +35,13 @@ if (!$user) {
     exit;
 }
 
-if (!has_permission('RECEPTION_REGISTER_PATIENTS') && ($_SESSION['base_role'] ?? '') !== 'ADMIN') {
+// Bookings is its own capability now (RECEPTION_MANAGE_BOOKINGS), split out of
+// RECEPTION_REGISTER_PATIENTS so a booking clerk can be scoped to phone bookings
+// only. ADMIN holds every key via role_permissions; current registration holders
+// were back-granted this key (sql/rbac_overhaul_2_grants.sql).
+if (!has_permission('RECEPTION_MANAGE_BOOKINGS')) {
     http_response_code(403);
-    exit('Forbidden — reception access only.');
+    exit('Forbidden — bookings access only.');
 }
 
 /** Combine country code + local number into E.164, same rule as patients.php. */

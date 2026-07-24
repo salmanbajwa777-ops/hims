@@ -33,8 +33,12 @@ $stmt->execute([$admissionId]);
 $adm = $stmt->fetch();
 if (!$adm) { http_response_code(404); exit('Admission not found.'); }
 
-$canFinalize = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
-$canApproveWriteoff = has_permission('ADMISSION_APPROVE_WRITEOFF') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+// Admission settlement is its own capability now (ADMISSION_FINALIZE_BILL), split
+// from the OPD till (RECEPTION_PROCESS_PAYMENTS) so a ward biller can settle
+// discharges without touching front-desk payments. ADMIN/MANAGER hold both keys
+// via role_permissions (see sql/rbac_overhaul_2_grants.sql), so no role hardcode.
+$canFinalize = has_permission('ADMISSION_FINALIZE_BILL');
+$canApproveWriteoff = has_permission('ADMISSION_APPROVE_WRITEOFF');
 if (!$canFinalize && !$canApproveWriteoff) { http_response_code(403); exit('Forbidden.'); }
 
 $err = '';

@@ -18,9 +18,10 @@ $baseRole = $_SESSION['base_role'] ?? '';
 $uid = (int) $_SESSION['user_id'];
 
 // Access: reception, nursing, admin, manager. (Doctors don't manage the ward here.)
+// ADMIN/MANAGER/NURSE now hold NURSING_RECORD_ADMISSIONS via role_permissions
+// (sql/rbac_overhaul_2_grants.sql), so the gate is pure permission checks.
 $canView = has_permission('RECEPTION_REGISTER_PATIENTS')
-        || has_permission('NURSING_RECORD_ADMISSIONS')
-        || in_array($baseRole, ['ADMIN', 'MANAGER', 'NURSE'], true);
+        || has_permission('NURSING_RECORD_ADMISSIONS');
 if (!$canView) {
     http_response_code(403);
     exit('Forbidden.');
@@ -52,7 +53,7 @@ if (!$adm) { http_response_code(404); exit('Admission not found.'); }
 $flash = '';
 $err = '';
 $isOpen = $adm['status'] !== 'DISCHARGED';
-$canLog = $isOpen && (has_permission('NURSING_LOG_CHARGEABLE_EVENTS') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST','NURSE'], true));
+$canLog = $isOpen && has_permission('NURSING_LOG_CHARGEABLE_EVENTS');
 
 // ---------------- Add a service ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_service' && $canLog) {
@@ -101,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remov
 // Clinical, non-chargeable. Gated on NURSING_RECORD_VITALS (nurse + doctor). Every
 // field is optional — the nurse saves whatever she measured. Wrapped in try/catch so
 // the page still works if add_admission_vitals.sql hasn't been applied yet.
-$canRecordVitals = $isOpen && (has_permission('NURSING_RECORD_VITALS') || in_array($baseRole, ['ADMIN','MANAGER'], true));
+$canRecordVitals = $isOpen && has_permission('NURSING_RECORD_VITALS');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_vitals' && $canRecordVitals) {
     // Nullable numeric helper: '' -> null, else typed value.
     $num = function (string $k, string $type = 'int') {
@@ -166,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hando
 // (reception/admin/manager) is taken straight to the billing screen, which
 // covers the one-person-covering-both-desks case without any UI switching.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submit_discharge' && $isOpen) {
-    $canDischarge = has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST'], true);
+    $canDischarge = has_permission('NURSING_DISCHARGE_PATIENT');
     if ($canDischarge) {
         $pdo->prepare('UPDATE admissions SET status = \'DISCHARGE_IN_PROGRESS\', discharged_at = COALESCE(discharged_at, NOW()) WHERE id = ?')
             ->execute([$admissionId]);
@@ -174,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
             ->execute([$uid, 'admission_discharge_submitted', "Discharge submitted for admission #$admissionId"]);
 
-        $canBill = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+        $canBill = has_permission('ADMISSION_FINALIZE_BILL');
         if ($canBill) {
             header('Location: admission_discharge.php?id=' . $admissionId);
         } else {
@@ -192,7 +193,7 @@ $services = $services->fetchAll();
 // Vitals timeline (newest first). Tolerate the table not existing yet so a mid-deploy
 // gap degrades to "no vitals" rather than fataling the whole stay page.
 $vitals = [];
-$canViewVitals = has_permission('CLINICAL_VIEW_VITALS_HISTORY') || has_permission('NURSING_RECORD_VITALS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+$canViewVitals = has_permission('CLINICAL_VIEW_VITALS_HISTORY') || has_permission('NURSING_RECORD_VITALS');
 if ($canViewVitals) {
     try {
         $vStmt = $pdo->prepare('
@@ -425,8 +426,8 @@ require __DIR__ . '/partials/sidebar.php';
                         // Who can do what from here: nurses SUBMIT the discharge
                         // (their part ends), billing-capable users go straight
                         // through to the bill.
-                        $canSubmitDischarge = has_permission('NURSING_DISCHARGE_PATIENT') || in_array($baseRole, ['ADMIN','MANAGER','RECEPTIONIST'], true);
-                        $canBillHere = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+                        $canSubmitDischarge = has_permission('NURSING_DISCHARGE_PATIENT');
+                        $canBillHere = has_permission('ADMISSION_FINALIZE_BILL');
                         ?>
                         <?php if ($isOpen && $canSubmitDischarge): ?>
                         <?php if ($canBillHere): ?>

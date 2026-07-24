@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit
 }
 
 // Admit-modal data (only needed for reception; harmless if the modal isn't shown).
-$canAdmitHere = !$isDoctorReadonly && (has_permission('ADMISSION_ADMIT_PATIENT') || has_permission('RECEPTION_ADMIT_PATIENTS'));
+$canAdmitHere = !$isDoctorReadonly && has_permission('ADMISSION_ADMIT_PATIENT');
 $admTypes = $admDoctors = [];
 $admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
 if ($canAdmitHere) {
@@ -1138,7 +1138,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <td>
                                 <div class="row-acts">
                                     <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>, <?= (int) ($p['last_doctor_id'] ?? 0) ?>)">New invoice</button>
-                                    <?php if (has_permission('ADMISSION_ADMIT_PATIENT') || has_permission('RECEPTION_ADMIT_PATIENTS')): ?>
+                                    <?php if (has_permission('ADMISSION_ADMIT_PATIENT')): ?>
                                     <!-- Admit from the all-patients list: the shared handler reuses today's
                                          visit or creates a shell (byPatient=true). -->
                                     <button type="button" class="qa" onclick="openAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, 0, '', true)">Admit</button>

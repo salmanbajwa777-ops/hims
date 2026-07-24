@@ -11,8 +11,8 @@
  *      made nullable — that would ripple through ~6 JOINs). The shell is a real visit
  *      row with no consultation bill; it just anchors the admission.
  *
- * Gated on ADMISSION_ADMIT_PATIENT OR the legacy RECEPTION_ADMIT_PATIENTS (doctor +
- * reception + admin + manager) — matching the OR-check the three UI entry points use.
+ * Gated on ADMISSION_ADMIT_PATIENT (doctor + reception + admin + manager) — matching
+ * the check the three UI entry points (patients / receptionist / doctor) use.
  * Requires an open PDO, an authenticated session, and config/notify.php loaded by the caller.
  *
  * Returns ['ok' => bool, 'error' => string, 'admission_id' => int|null]. The caller
@@ -27,13 +27,10 @@ require_once __DIR__ . '/sheets.php';
 function handle_admit_patient(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
 
-    // Accept EITHER admit key: the new ADMISSION_ADMIT_PATIENT (doctor + reception)
-    // and the legacy RECEPTION_ADMIT_PATIENTS it replaced. The three UI entry
-    // points (patients.php, receptionist.php, doctor.php) already show the Admit
-    // button on this same OR-condition, so the handler must match — otherwise a
-    // pre-overhaul receptionist who only has the old grant sees the button but is
-    // rejected here ("you don't have permission to admit").
-    if (!has_permission('ADMISSION_ADMIT_PATIENT') && !has_permission('RECEPTION_ADMIT_PATIENTS')) {
+    // Single admit key now. The legacy RECEPTION_ADMIT_PATIENTS was unified into
+    // ADMISSION_ADMIT_PATIENT and back-granted to every prior holder in
+    // sql/rbac_overhaul_2_grants.sql, so the OR on the old key is gone.
+    if (!has_permission('ADMISSION_ADMIT_PATIENT')) {
         $out['error'] = 'You do not have permission to admit patients.';
         return $out;
     }

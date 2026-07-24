@@ -22,9 +22,11 @@ if (!$user) {
     exit;
 }
 
-// Ward work: reception staff and nurses both need this, as do admins.
+// Ward work: reception staff and nurses both need this, as do admins/managers.
+// NURSE/ADMIN/MANAGER hold NURSING_RECORD_ADMISSIONS via role_permissions
+// (sql/rbac_overhaul_2_grants.sql); reception holds RECEPTION_REGISTER_PATIENTS.
 $baseRole = $_SESSION['base_role'] ?? '';
-if ($baseRole !== 'NURSE' && $baseRole !== 'ADMIN' && !has_permission('RECEPTION_REGISTER_PATIENTS')) {
+if (!has_permission('RECEPTION_REGISTER_PATIENTS') && !has_permission('NURSING_RECORD_ADMISSIONS')) {
     http_response_code(403);
     exit('Forbidden — ward access only.');
 }
@@ -88,7 +90,7 @@ require __DIR__ . '/partials/sidebar.php';
     <?php
     // Surface nurse-submitted discharges to whoever can bill them.
     $awaitingBilling = array_filter($rows, fn($r) => $r['status'] === 'DISCHARGE_IN_PROGRESS');
-    $canBillBanner = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+    $canBillBanner = has_permission('ADMISSION_FINALIZE_BILL');
     if ($awaitingBilling && $canBillBanner): ?>
     <div class="alert" style="background:var(--amber-bg);color:var(--amber-text);font-weight:600;">
         <?= count($awaitingBilling) ?> discharge<?= count($awaitingBilling) > 1 ? 's' : '' ?> awaiting billing —
@@ -128,7 +130,7 @@ require __DIR__ . '/partials/sidebar.php';
                 // Billing-capable users get a direct "Bill now" action on stays
                 // a nurse has submitted for discharge — that hand-off is the
                 // whole point of the DISCHARGE_IN_PROGRESS state.
-                $canBillList = has_permission('RECEPTION_PROCESS_PAYMENTS') || in_array($baseRole, ['ADMIN','MANAGER'], true);
+                $canBillList = has_permission('ADMISSION_FINALIZE_BILL');
                 foreach ($rows as $r):
                     [$cls, $lbl] = $stApill[$r['status']] ?? ['done', $r['status']]; ?>
                     <tr>
