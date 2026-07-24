@@ -50,6 +50,26 @@ function recalc_bill_totals(PDO $pdo, int $billId): void {
 function generate_refund_number(PDO $pdo): string {
     $year = (int) date('Y');
 
+    // Self-heal against sequence drift: if the counter ever falls behind the
+    // refunds already on record (a re-import or reset can leave last_sequence at 0
+    // while RF-YYYY-#### rows exist), seed it from the real max FIRST. Without this,
+    // the upsert below would re-issue an existing number and the UNIQUE key on
+    // refund_number rejects every attempt (seen live 2026-07-24). Idempotent.
+    $maxStmt = $pdo->prepare("
+        SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(refund_number, '-', -1) AS UNSIGNED)), 0)
+        FROM refunds
+        WHERE refund_number LIKE ?
+    ");
+    $maxStmt->execute(['RF-' . $year . '-%']);
+    $existingMax = (int) $maxStmt->fetchColumn();
+
+    $pdo->prepare('
+        INSERT INTO refund_sequences (sequence_year, last_sequence)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE last_sequence = GREATEST(last_sequence, ?)
+    ')->execute([$year, $existingMax, $existingMax]);
+
+    // Now advance atomically and take the new value.
     $pdo->prepare('
         INSERT INTO refund_sequences (sequence_year, last_sequence)
         VALUES (?, 1)
