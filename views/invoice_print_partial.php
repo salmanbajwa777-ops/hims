@@ -76,12 +76,13 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
         /* Bottom padding is ~1mm so the tables sit hard against the box edge and the
            fee table below butts straight onto it. */
         .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1mm; display: flex; gap: 5mm; align-items: stretch; }
-        /* Both halves are flex columns whose table is pushed to the bottom by an auto
-           top margin. Since the two tables have the same four rows, bottom-aligning
-           them also top-aligns them — the rows line up without either side depending
-           on a hand-tuned offset that would drift whenever the text above changes. */
+        /* Both halves are flex columns. The left content stack (logo + address) is
+           taller than the right (tagline + contact), so bottom-aligning the two
+           tables with margin-top:auto left a bigger gap above the right table than
+           the left. Instead both tables take the SAME fixed top gap, so the space
+           above the ID table matches the space above the patient table on the nose. */
         .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
-        .head-left > .ids, .head-right > .meta { margin-top: auto; }
+        .head-left > .ids, .head-right > .meta { margin-top: 8px; }
 
         /* Wordmark and web address are a tight pair whose combined height matches the
            logo, so the three read as one lockup rather than a loose stack. */
@@ -122,7 +123,7 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
         .clinic-contact { margin-top: 0; margin-bottom: 4px; }
 
         /* Identifiers sit under the clinic block, opposite the patient details.
-           Vertical placement comes from the flex rule above, not a fixed margin. */
+           Its top gap is set by the fixed margin-top rule above (matched to .meta). */
         .ids { width: 100%; border-collapse: collapse; font-size: 9px; }
         .ids td { border: 1px solid #C8C8C8; padding: 3px 5px; }
         .ids td.k { background: #F4F4F4; font-weight: bold; width: 42%; }
