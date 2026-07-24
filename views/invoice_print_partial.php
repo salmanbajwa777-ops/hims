@@ -73,16 +73,19 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
 
         /* ---------- Header box ---------- */
-        /* Bottom padding is ~1mm so the tables sit hard against the box edge and the
+        /* Bottom padding is ~1.4mm so the tables sit hard against the box edge and the
            fee table below butts straight onto it. */
-        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1mm; display: flex; gap: 5mm; align-items: stretch; }
-        /* Both halves are flex columns. The left content stack (logo + address) is
-           taller than the right (tagline + contact), so bottom-aligning the two
-           tables with margin-top:auto left a bigger gap above the right table than
-           the left. Instead both tables take the SAME fixed top gap, so the space
-           above the ID table matches the space above the patient table on the nose. */
+        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
+        /* Both halves are two-band flex columns so the two sides are structurally
+           identical top to bottom:
+             band-1 = brand lockup (left) / tagline (right)
+             band-2 = street address (left) / email + phone (right)
+           The bands are the SAME fixed heights on both sides, so the gap above each
+           table is identical, and both tables then bottom-pin (margin-top:auto) to
+           the box — making the ID and patient tables line up row-for-row. */
         .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
-        .head-left > .ids, .head-right > .meta { margin-top: 8px; }
+        .band-1 { height: 30px; display: flex; align-items: center; }
+        .band-2 { height: 27px; display: flex; flex-direction: column; justify-content: center; margin-bottom: 3px; }
 
         /* Wordmark and web address are a tight pair whose combined height matches the
            logo, so the three read as one lockup rather than a loose stack. */
@@ -103,31 +106,27 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
             font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold;
             letter-spacing: 1.7px; color: #4A4A4A; line-height: 1; margin-top: 2px;
         }
-        .addr { font-size: 9px; line-height: 1.35; margin-top: 5px; margin-bottom: 4px; }
+        /* Address sits inside band-2, which owns its vertical spacing; no own margins. */
+        .addr { font-size: 9px; line-height: 1.35; }
 
-        /* Sized and spaced so the Email/Phone pair below lands level with the two
-           address lines opposite — the tagline's height is what buys that alignment. */
+        /* Tagline sits inside band-1, vertically centred against the logo opposite. */
         .tagline {
             font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold;
-            line-height: 1.15; margin-bottom: 9px; white-space: nowrap;
+            line-height: 1.15; white-space: nowrap;
         }
-        .meta { width: 100%; border-collapse: collapse; font-size: 9px; }
-        .meta td { border: 1px solid #C8C8C8; padding: 3px 5px; vertical-align: top; }
-        /* Lighter grey than before, with the label text bolded so it still reads
-           strongly against the paler ground. */
-        .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
-        .meta td.v { font-weight: bold; }
 
-        /* Clinic contact sits above the patient table, mirroring the street address
-           opposite so both columns carry two lines before their tables begin. */
-        .clinic-contact { margin-top: 0; margin-bottom: 4px; }
-
-        /* Identifiers sit under the clinic block, opposite the patient details.
-           Its top gap is set by the fixed margin-top rule above (matched to .meta). */
-        .ids { width: 100%; border-collapse: collapse; font-size: 9px; }
-        .ids td { border: 1px solid #C8C8C8; padding: 3px 5px; }
-        .ids td.k { background: #F4F4F4; font-weight: bold; width: 42%; }
-        .ids td.v { font-weight: bold; }
+        /* ---------- ID / patient tables: IDENTICAL boxes ---------- */
+        /* Same width (each is a 50% half), same 40% key column, same fixed 18px row
+           height and same 4 rows. margin-top:auto bottom-pins both to the header box
+           so every row aligns across the two sides. Values stay on one line (ellipsis
+           on overflow) so a long name or doctor can never make one row taller. */
+        .ids, .meta { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: auto; }
+        .ids td, .meta td {
+            border: 1px solid #C8C8C8; padding: 0 5px; height: 18px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
+        }
+        .ids td.k, .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
+        .ids td.v, .meta td.v { font-weight: bold; }
 
         /* ---------- Fee line + vitals ---------- */
         .fee-table, .vitals-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
@@ -173,18 +172,20 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
 
         <div class="head-box">
             <div class="head-left">
-                <div class="brandline">
-                    <img class="clinic-logo" src="assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
-                    <span class="brandtext">
-                        <span class="clinic-name"><?= $clinicName ?></span>
-                        <span class="website"><?= $clinicWebsite ?></span>
-                    </span>
+                <div class="band-1">
+                    <div class="brandline">
+                        <img class="clinic-logo" src="assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
+                        <span class="brandtext">
+                            <span class="clinic-name"><?= $clinicName ?></span>
+                            <span class="website"><?= $clinicWebsite ?></span>
+                        </span>
+                    </div>
                 </div>
-                <div class="addr">
-                    <b>Polymedics,</b> 2165-F, NPF, PWD Double Road<br>
-                    Islamabad, Pakistan.
+                <div class="band-2 addr">
+                    <div><b>Polymedics,</b> 2165-F, NPF, PWD Double Road</div>
+                    <div>Islamabad, Pakistan.</div>
                 </div>
-                <!-- Pushed down so row 1 lines up with row 1 of the patient table opposite. -->
+                <!-- Bottom-pinned; rows line up with the patient table opposite. -->
                 <table class="ids">
                     <tr><td class="k">MR #</td><td class="v"><?= htmlspecialchars($bill['mrn']) ?></td></tr>
                     <tr><td class="k">Invoice #</td><td class="v"><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>
@@ -194,10 +195,12 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
             </div>
 
             <div class="head-right">
-                <div class="tagline"><?= $clinicTagline ?></div>
-                <div class="addr clinic-contact">
-                    <b>Email:</b> <?= $clinicEmail ?><br>
-                    <b>Phone:</b> <?= $clinicPhone ?>
+                <div class="band-1">
+                    <div class="tagline"><?= $clinicTagline ?></div>
+                </div>
+                <div class="band-2 addr">
+                    <div><b>Email:</b> <?= $clinicEmail ?></div>
+                    <div><b>Phone:</b> <?= $clinicPhone ?></div>
                 </div>
                 <table class="meta">
                     <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?></td></tr>
