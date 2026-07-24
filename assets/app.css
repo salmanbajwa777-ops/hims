@@ -172,6 +172,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .status-pill.active, .status-pill.in-clinic { background: var(--green-bg); color: var(--green-text); }
 .status-pill.pending  { background: var(--amber-bg); color: var(--amber-text); }
 .status-pill.on-leave { background: var(--red-bg);   color: var(--red-text); }
+.status-pill.inactive { background: var(--red-bg);   color: var(--red-text); }
 .role-badge { font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 20px; display: inline-block; }
 
 /* ---------- Misc shared ---------- */

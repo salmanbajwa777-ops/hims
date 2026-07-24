@@ -47,7 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        if ($user && password_verify($password, $user['password'])) {
+        if ($user && password_verify($password, $user['password']) && (int) ($user['is_active'] ?? 1) === 0) {
+            // Account exists and the password is correct, but an admin has
+            // deactivated it. Don't reveal the credentials were valid.
+            $error = 'This account has been deactivated. Please contact an administrator.';
+        } elseif ($user && password_verify($password, $user['password'])) {
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['base_role'] = $user['base_role'];
             $_SESSION['must_change_password'] = (bool) $user['must_change_password'];

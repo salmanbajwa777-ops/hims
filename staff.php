@@ -459,6 +459,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_active') {
+    $targetId = (int) ($_POST['user_id'] ?? 0);
+    $setActive = (int) ($_POST['set_active'] ?? 1) === 1 ? 1 : 0;
+
+    if ($targetId === (int) $_SESSION['user_id']) {
+        $error = "You can't deactivate your own account.";
+    } else {
+        $userStmt = $pdo->prepare('SELECT id, name, base_role FROM users WHERE id = ?');
+        $userStmt->execute([$targetId]);
+        $targetUser = $userStmt->fetch();
+
+        if (!$targetUser) {
+            $error = 'Staff member not found.';
+        } else {
+            $pdo->prepare('UPDATE users SET is_active = ? WHERE id = ?')->execute([$setActive, $targetId]);
+
+            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
+            $log->execute([
+                $_SESSION['user_id'],
+                $setActive ? 'staff_reactivated' : 'staff_deactivated',
+                ($setActive ? 'Reactivated' : 'Deactivated') . " user #$targetId ({$targetUser['name']}, {$targetUser['base_role']})",
+            ]);
+
+            $success = ($setActive ? 'Reactivated ' : 'Deactivated ') . $targetUser['name'] . '.';
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_staff') {
     $deleteId = (int) ($_POST['user_id'] ?? 0);
 
@@ -493,9 +521,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 // Consultation revenue-share columns arrive with sql/add_consult_revenue_share.sql;
 // tolerate the migration not being run yet so the page keeps working pre-migration.
 try {
-    $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, specialty, consult_share_pct, consult_has_tax, consult_tax_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
+    $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, is_active, max_discount_pct, specialty, consult_share_pct, consult_has_tax, consult_tax_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
 } catch (PDOException $e) {
-    $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, max_discount_pct, specialty, 0 AS consult_share_pct, 0 AS consult_has_tax, 0 AS consult_tax_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
+    // Tolerate either migration (is_active / consult revenue share) not being run yet.
+    $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, 1 AS is_active, max_discount_pct, specialty, 0 AS consult_share_pct, 0 AS consult_has_tax, 0 AS consult_tax_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
 }
 $doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
 $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
@@ -727,10 +756,10 @@ require __DIR__ . '/partials/sidebar.php';
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($s['must_change_password']): ?>
-                                    <span class="status-pill pending">Pending first login</span>
-                                <?php else: ?>
+                                <?php if ((int) $s['is_active'] === 1): ?>
                                     <span class="status-pill active">Active</span>
+                                <?php else: ?>
+                                    <span class="status-pill inactive">Inactive</span>
                                 <?php endif; ?>
                             </td>
                             <td>
@@ -771,6 +800,16 @@ require __DIR__ . '/partials/sidebar.php';
                                    data-name="<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>"
                                    data-types="<?= htmlspecialchars(json_encode($consultTypesByDoctor[(int) $s['id']] ?? []), ENT_QUOTES) ?>"
                                    onclick="openConsultTypesPanel(this.dataset); return false;">Consult Types</a>
+                                <?php endif; ?>
+                                <?php if ((int) $s['id'] !== (int) $_SESSION['user_id']): ?>
+                                &nbsp;·&nbsp;
+                                <?php $willDeactivate = (int) $s['is_active'] === 1; ?>
+                                <form method="POST" action="staff.php" style="display:inline;" onsubmit="return confirm('<?= $willDeactivate ? 'Deactivate' : 'Reactivate' ?> <?= htmlspecialchars(addslashes($s['name'])) ?>?<?= $willDeactivate ? ' They will no longer be able to sign in.' : '' ?>');">
+                                    <input type="hidden" name="action" value="toggle_active">
+                                    <input type="hidden" name="user_id" value="<?= (int) $s['id'] ?>">
+                                    <input type="hidden" name="set_active" value="<?= $willDeactivate ? '0' : '1' ?>">
+                                    <button type="submit" class="edit-link" style="background:none;border:none;padding:0;font:inherit;cursor:pointer;color:<?= $willDeactivate ? 'var(--text-secondary)' : 'var(--primary)' ?>;"><?= $willDeactivate ? 'Deactivate' : 'Reactivate' ?></button>
+                                </form>
                                 <?php endif; ?>
                                 &nbsp;·&nbsp;
                                 <form method="POST" action="staff.php" style="display:inline;" onsubmit="return confirm('Permanently delete <?= htmlspecialchars(addslashes($s['name'])) ?>? This removes their documents, permissions and consultation types, and can\'t be undone.');">
