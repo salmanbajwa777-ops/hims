@@ -149,7 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
             $pdo->rollBack();
         }
         error_log('[refund] ' . $e->getMessage());
-        $error = 'Could not issue the refund. Please try again.';
+        // TEMP DIAGNOSTIC (re-enabled): the generic message came back after the
+        // sequence resync — need to see the real error again. REVERT once fixed.
+        $error = 'Could not issue the refund: ' . $e->getMessage();
     }
 }
 
