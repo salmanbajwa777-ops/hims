@@ -81,6 +81,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                 throw new RuntimeException('That category is not available.');
             }
 
+            // Over-limit postings are no longer blocked: the cash may genuinely
+            // have to go out (e.g. a large staff advance from a small counter
+            // limit). Instead we FLAG the posting over-limit and let the existing
+            // approve/reject flow gate it — every non-admin posting already goes
+            // PENDING. Admins bypass limits entirely (nothing to flag).
+            $overLimit = false;
+            $limitBreaches = [];
             if (!$isAdmin) {
                 // Per-category cap: this category's spend today, all users.
                 $catLimit = (float) $category['shift_limit'];
@@ -93,11 +100,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                     $spent->execute([$categoryId]);
                     $catSpent = (float) $spent->fetchColumn();
                     if ($catSpent + $amount > $catLimit) {
-                        $remaining = max(0, $catLimit - $catSpent);
-                        throw new RuntimeException(sprintf(
-                            'This would exceed the "%s" shift limit of Rs %s — Rs %s already spent today, Rs %s remaining. Ask admin if more is needed.',
-                            $category['name'], number_format($catLimit), number_format($catSpent), number_format($remaining)
-                        ));
+                        $overLimit = true;
+                        $limitBreaches[] = sprintf('"%s" limit Rs %s (Rs %s already spent, over by Rs %s)',
+                            $category['name'], number_format($catLimit), number_format($catSpent),
+                            number_format($catSpent + $amount - $catLimit));
                     }
                 }
 
@@ -114,30 +120,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                     $mine->execute([$userId]);
                     $mySpent = (float) $mine->fetchColumn();
                     if ($mySpent + $amount > $shiftLimitTotal) {
-                        $remaining = max(0, $shiftLimitTotal - $mySpent);
-                        throw new RuntimeException(sprintf(
-                            'This would exceed your overall shift limit of Rs %s — you have posted Rs %s today, Rs %s remaining. Ask admin if more is needed.',
-                            number_format($shiftLimitTotal), number_format($mySpent), number_format($remaining)
-                        ));
+                        $overLimit = true;
+                        $limitBreaches[] = sprintf('your Rs %s shift limit (Rs %s already posted, over by Rs %s)',
+                            number_format($shiftLimitTotal), number_format($mySpent),
+                            number_format($mySpent + $amount - $shiftLimitTotal));
                     }
                 }
             }
+            $limitNote = $overLimit ? ('Exceeds ' . implode(' and ', $limitBreaches)) : null;
 
             // Admins own the limits AND are approvers — their own postings are
             // auto-approved (nobody to email). Everyone else starts PENDING and
             // gets a 60-minute magic link out to the admins + managers.
             $status = $isAdmin ? 'APPROVED' : 'PENDING';
             $expenseNumber = generate_expense_number($pdo);
-            $pdo->prepare('
-                INSERT INTO expenses
-                    (expense_number, category_id, amount, description, paid_to, expense_date,
-                     posted_by_id, approval_status, approved_by_id, approved_at)
-                VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
-            ')->execute([
-                $expenseNumber, $categoryId, $amount, $description,
-                $paidTo !== '' ? $paidTo : null, $userId, $status,
-                $isAdmin ? $userId : null,
-            ]);
+            // over_limit/limit_note fall back gracefully if the migration hasn't
+            // run yet (mid-deploy): retry without those columns.
+            try {
+                $pdo->prepare('
+                    INSERT INTO expenses
+                        (expense_number, category_id, amount, description, paid_to, expense_date,
+                         posted_by_id, approval_status, over_limit, limit_note, approved_by_id, approved_at)
+                    VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                ')->execute([
+                    $expenseNumber, $categoryId, $amount, $description,
+                    $paidTo !== '' ? $paidTo : null, $userId, $status,
+                    $overLimit ? 1 : 0, $limitNote,
+                    $isAdmin ? $userId : null,
+                ]);
+            } catch (PDOException $e) {
+                $pdo->prepare('
+                    INSERT INTO expenses
+                        (expense_number, category_id, amount, description, paid_to, expense_date,
+                         posted_by_id, approval_status, approved_by_id, approved_at)
+                    VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                ')->execute([
+                    $expenseNumber, $categoryId, $amount, $description,
+                    $paidTo !== '' ? $paidTo : null, $userId, $status,
+                    $isAdmin ? $userId : null,
+                ]);
+            }
             $expenseId = (int) $pdo->lastInsertId();
 
             // Mint the single-use magic-link token in the SAME transaction, so a
@@ -155,6 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             $auditNote = sprintf('Posted expense %s: Rs %s under "%s" — %s',
                 $expenseNumber, number_format($amount, 2), $category['name'], $description);
             if ($isAdmin) { $auditNote .= ' (admin: limits bypassed, auto-approved)'; }
+            elseif ($overLimit) { $auditNote .= ' [OVER LIMIT — ' . $limitNote . ']'; }
             $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
                 ->execute([$userId, 'expense_posted', $auditNote]);
 
@@ -166,7 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             }
 
             // PRG so a refresh can't double-post the same expense.
-            header('Location: expenses.php?posted=' . urlencode($expenseNumber));
+            header('Location: expenses.php?posted=' . urlencode($expenseNumber) . ($overLimit ? '&over=1' : ''));
             exit;
         } catch (RuntimeException $e) {
             $pdo->rollBack();
@@ -235,12 +258,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 }
 
 if (isset($_GET['posted'])) {
+    $overPosted = isset($_GET['over']);
     $success = 'Expense ' . htmlspecialchars($_GET['posted']) . ' posted — take the cash from the counter and keep the receipt.'
-        . ($isAdmin ? '' : ' It is now awaiting a manager\'s approval; you will see the status update here.');
+        . ($isAdmin ? ''
+            : ($overPosted
+                ? ' <b>This exceeds your shift limit</b>, so it needs admin/manager approval now — please contact them for immediate sign-off. Admins &amp; managers have also been emailed.'
+                : ' It is now awaiting a manager\'s approval; you will see the status update here.'));
 }
 
 // ---- Data for the page ----
 $categories = $pdo->query('SELECT id, name, shift_limit FROM expense_categories WHERE is_active = 1 ORDER BY name')->fetchAll();
+
+// Per-category spend so far today (all users) — feeds the client-side over-limit
+// warning so the receptionist is told before they submit, not just after.
+$catSpentToday = [];
+foreach ($pdo->query("
+    SELECT category_id, COALESCE(SUM(amount),0) AS t FROM expenses
+    WHERE expense_date = CURDATE() AND voided_at IS NULL AND approval_status <> 'REJECTED'
+    GROUP BY category_id
+")->fetchAll() as $cs) {
+    $catSpentToday[(int) $cs['category_id']] = (float) $cs['t'];
+}
 
 // Limits snapshot for the sidebar meter (non-admin).
 $totStmt = $pdo->prepare("SELECT setting_value FROM clinic_settings WHERE setting_key = 'expense_shift_limit_total'");
@@ -344,6 +382,9 @@ $headExtra = <<<CSS
 .st-pending  { color: #92590B; background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.34); }
 .st-approved { color: #0E5456; background: rgba(26,127,126,.11); border: 1px solid rgba(26,127,126,.28); }
 .st-rejected { color: var(--red-text, #b3261e); background: rgba(225,29,72,.09); border: 1px solid rgba(225,29,72,.24); }
+.st-over { color: #9A3412; background: rgba(234,88,12,.12); border: 1px solid rgba(234,88,12,.32); margin-top: 3px; }
+.over-warn { background: rgba(234,88,12,.10); border: 1px solid rgba(234,88,12,.30); color: #9A3412; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin: -4px 0 14px; display: none; }
+.over-warn.show { display: block; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .link-btn.warn { color: var(--red-text); }
 .total-strip { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -405,21 +446,29 @@ if (!$isAdmin) {
                     </div>
                     <?php endif; ?>
 
-                    <form method="POST" action="expenses.php">
+                    <form method="POST" action="expenses.php" id="expForm">
                         <input type="hidden" name="action" value="post_expense">
                         <div class="f-group">
                             <label>Category</label>
-                            <select name="category_id" required>
+                            <select name="category_id" id="expCategory" required
+                                    data-limit-total="<?= htmlspecialchars((string) $shiftLimitTotal) ?>"
+                                    data-mine-today="<?= htmlspecialchars((string) $mySpentToday) ?>">
                                 <option value="">Select a category&hellip;</option>
                                 <?php foreach ($categories as $c): ?>
-                                <option value="<?= (int) $c['id'] ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
+                                <option value="<?= (int) $c['id'] ?>"
+                                        data-cat-limit="<?= htmlspecialchars((string) (float) $c['shift_limit']) ?>"
+                                        data-cat-spent="<?= htmlspecialchars((string) ($catSpentToday[(int) $c['id']] ?? 0)) ?>"
+                                        data-cat-name="<?= htmlspecialchars($c['name']) ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="f-group">
                             <label>Amount (Rs)</label>
-                            <input type="number" name="amount" step="0.01" min="1" placeholder="0" required>
+                            <input type="number" name="amount" id="expAmount" step="0.01" min="1" placeholder="0" required>
                         </div>
+                        <?php if (!$isAdmin): ?>
+                        <div class="over-warn" id="overWarn"></div>
+                        <?php endif; ?>
                         <div class="f-group">
                             <label>What was it for?</label>
                             <textarea name="description" maxlength="255" placeholder="e.g. Printer cartridge for reception" required></textarea>
@@ -507,6 +556,9 @@ if (!$isAdmin) {
                                         } else {
                                             echo '<span class="st-chip st-pending">Awaiting approval</span>';
                                         }
+                                        if (!empty($r['over_limit'])) {
+                                            echo '<br><span class="st-chip st-over" title="' . htmlspecialchars($r['limit_note'] ?? 'Exceeded a shift limit') . '">Over limit</span>';
+                                        }
                                     ?>
                                 </td>
                                 <?php if ($isAdmin || $canApprove): ?>
@@ -547,5 +599,67 @@ if (!$isAdmin) {
     </div>
 </div>
 <script src="assets/js/date-picker.js"></script>
+<?php if (!$isAdmin): ?>
+<script>
+// Over-limit awareness: as the receptionist picks a category + amount, show a
+// live warning if the posting would break the per-category or overall shift
+// limit. On submit, if over-limit, confirm before posting (it still posts, but
+// goes to admin/manager approval). Mirrors the server-side check exactly.
+(function () {
+    var cat = document.getElementById('expCategory');
+    var amt = document.getElementById('expAmount');
+    var warn = document.getElementById('overWarn');
+    var form = document.getElementById('expForm');
+    if (!cat || !amt || !warn || !form) return;
+
+    function money(n) { return 'Rs ' + Math.round(n).toLocaleString('en-US'); }
+
+    // Returns array of breach messages (empty = within limits).
+    function breaches() {
+        var amount = parseFloat(amt.value || '0');
+        var out = [];
+        if (!(amount > 0)) return out;
+        var opt = cat.options[cat.selectedIndex];
+        if (opt && opt.value) {
+            var catLimit = parseFloat(opt.getAttribute('data-cat-limit') || '0');
+            var catSpent = parseFloat(opt.getAttribute('data-cat-spent') || '0');
+            if (catLimit > 0 && catSpent + amount > catLimit) {
+                out.push('the "' + opt.getAttribute('data-cat-name') + '" limit of ' + money(catLimit)
+                    + ' (over by ' + money(catSpent + amount - catLimit) + ')');
+            }
+        }
+        var total = parseFloat(cat.getAttribute('data-limit-total') || '0');
+        var mine = parseFloat(cat.getAttribute('data-mine-today') || '0');
+        if (total > 0 && mine + amount > total) {
+            out.push('your overall shift limit of ' + money(total)
+                + ' (over by ' + money(mine + amount - total) + ')');
+        }
+        return out;
+    }
+
+    function refresh() {
+        var b = breaches();
+        if (b.length) {
+            warn.innerHTML = '⚠️ This exceeds ' + b.join(' and ')
+                + '. You can still post it — it will be sent to admin/manager for approval. Contact them for immediate sign-off.';
+            warn.classList.add('show');
+        } else {
+            warn.classList.remove('show');
+        }
+    }
+
+    cat.addEventListener('change', refresh);
+    amt.addEventListener('input', refresh);
+
+    form.addEventListener('submit', function (e) {
+        var b = breaches();
+        if (b.length && !window.confirm('This expense exceeds ' + b.join(' and ')
+            + '.\n\nIt will be POSTED and sent to admin/manager for approval. Contact them now for immediate sign-off.\n\nPost anyway?')) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+<?php endif; ?>
 </body>
 </html>

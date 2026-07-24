@@ -299,21 +299,36 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
  */
 function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void {
     try {
-        $stmt = $pdo->prepare('
-            SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date,
-                   e.approval_status, ec.name AS category_name, u.name AS posted_by_name,
-                   t.expires_at
-            FROM expenses e
-            JOIN expense_categories ec ON ec.id = e.category_id
-            JOIN users u ON u.id = e.posted_by_id
-            LEFT JOIN expense_approval_tokens t ON t.expense_id = e.id
-            WHERE e.id = ?
-            ORDER BY t.id DESC
-            LIMIT 1
-        ');
-        $stmt->execute([$expenseId]);
-        $r = $stmt->fetch();
+        // over_limit/limit_note may be absent if the migration hasn't run yet;
+        // fall back to a column-free SELECT so the email still sends mid-deploy.
+        try {
+            $stmt = $pdo->prepare('
+                SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date,
+                       e.approval_status, e.over_limit, e.limit_note,
+                       ec.name AS category_name, u.name AS posted_by_name, t.expires_at
+                FROM expenses e
+                JOIN expense_categories ec ON ec.id = e.category_id
+                JOIN users u ON u.id = e.posted_by_id
+                LEFT JOIN expense_approval_tokens t ON t.expense_id = e.id
+                WHERE e.id = ? ORDER BY t.id DESC LIMIT 1
+            ');
+            $stmt->execute([$expenseId]);
+            $r = $stmt->fetch();
+        } catch (PDOException $ex) {
+            $stmt = $pdo->prepare('
+                SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date,
+                       e.approval_status, ec.name AS category_name, u.name AS posted_by_name, t.expires_at
+                FROM expenses e
+                JOIN expense_categories ec ON ec.id = e.category_id
+                JOIN users u ON u.id = e.posted_by_id
+                LEFT JOIN expense_approval_tokens t ON t.expense_id = e.id
+                WHERE e.id = ? ORDER BY t.id DESC LIMIT 1
+            ');
+            $stmt->execute([$expenseId]);
+            $r = $stmt->fetch();
+        }
         if (!$r) { return; }
+        $isOver = !empty($r['over_limit']);
 
         // An admin's own posting is auto-approved — no one to email.
         if ($r['approval_status'] !== 'PENDING') { return; }
@@ -336,7 +351,14 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
             ? date('h:i A', strtotime($r['expires_at'])) . ' today (60 minutes)'
             : '60 minutes';
 
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+        $overBanner = $isOver
+            ? '<p style="font-size:14px;color:#9A3412;background:#FFF4ED;border:1px solid #FBCFB0;border-radius:8px;padding:11px 14px;margin:0 0 14px;font-weight:bold;">'
+              . '⚠️ Over shift limit — needs immediate approval.'
+              . ($r['limit_note'] ? '<br><span style="font-weight:normal;">' . htmlspecialchars($r['limit_note']) . '</span>' : '')
+              . '</p>'
+            : '';
+        $body = $overBanner
+            . '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
               . htmlspecialchars($r['posted_by_name']) . ' has posted a counter expense that needs your approval. '
               . 'Cash has already left the drawer against this voucher.</p>'
             . mail_kv([
@@ -355,9 +377,10 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
             . '<a href="' . htmlspecialchars($link) . '" style="display:inline-block;padding:11px 26px;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;">Review this expense</a>'
             . '</td></tr></table>';
         send_mail($pdo, $to,
-            'Expense approval — ' . $r['expense_number'] . ' — Rs ' . number_format((float) $r['amount'], 0)
+            ($isOver ? '⚠️ OVER-LIMIT expense approval — ' : 'Expense approval — ')
+            . $r['expense_number'] . ' — Rs ' . number_format((float) $r['amount'], 0)
             . ' (' . $r['posted_by_name'] . ')',
-            mail_template('Expense Awaiting Approval', $body,
+            mail_template($isOver ? 'Over-Limit Expense — Approval Needed' : 'Expense Awaiting Approval', $body,
                 'This link authorizes approval of one expense for 60 minutes — keep it private.'),
             'expense-approval:' . $r['expense_number']);
     } catch (Throwable $e) { /* never break the page for a notification */ }
