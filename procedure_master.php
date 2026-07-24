@@ -38,41 +38,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
     }
 }
 
-// ---- Edit an existing procedure (name / rate / consent flag) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_procedure') {
-    $id = (int) ($_POST['procedure_id'] ?? 0);
-    $name = trim($_POST['name'] ?? '');
-    $fee = (float) ($_POST['fee'] ?? 0);
-    $consent = isset($_POST['mandatory_consent']) ? 1 : 0;
-
-    if ($id > 0 && $name !== '' && $fee >= 0) {
+// ---- Save all procedures in one submit (name / rate / consent / active) ----
+// Whole catalogue posts as id-keyed arrays; every row re-saved. The consent and
+// Active checkboxes are folded into the same save.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_procedures') {
+    $names   = $_POST['name'] ?? [];
+    $fees    = $_POST['fee'] ?? [];
+    $consent = $_POST['mandatory_consent'] ?? [];
+    $active  = $_POST['is_active'] ?? [];
+    $upd = $pdo->prepare('UPDATE procedure_master SET name = ?, fee = ?, mandatory_consent = ?, is_active = ? WHERE id = ?');
+    $saved = 0; $bad = false; $dupe = false;
+    foreach ($names as $id => $rawName) {
+        $id = (int) $id;
+        $name = trim($rawName);
+        $fee = (float) ($fees[$id] ?? 0);
+        if ($id <= 0) { continue; }
+        if ($name === '' || $fee < 0) { $bad = true; continue; }
         try {
-            $pdo->prepare('UPDATE procedure_master SET name = ?, fee = ?, mandatory_consent = ? WHERE id = ?')
-                ->execute([$name, $fee, $consent, $id]);
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'procedure_updated', "Updated procedure #$id (\"$name\", Rs $fee" . ($consent ? ', consent required' : '') . ')']);
-            $success = 'Procedure updated.';
+            $upd->execute([$name, $fee, isset($consent[$id]) ? 1 : 0, isset($active[$id]) ? 1 : 0, $id]);
+            $saved++;
         } catch (PDOException $e) {
-            if ($e->getCode() === '23000') {
-                $error = 'A procedure with that name already exists.';
-            } else {
-                throw $e;
-            }
+            if ($e->getCode() === '23000') { $dupe = true; } else { throw $e; }
         }
-    } else {
-        $error = 'A procedure needs a name and a non-negative rate.';
     }
-}
-
-// ---- Toggle active/inactive ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_procedure') {
-    $id = (int) ($_POST['procedure_id'] ?? 0);
-    if ($id > 0) {
-        $pdo->prepare('UPDATE procedure_master SET is_active = IF(is_active = 1, 0, 1) WHERE id = ?')
-            ->execute([$id]);
+    if ($saved > 0) {
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'procedure_toggled', "Toggled active state of procedure #$id"]);
-        $success = 'Procedure status changed.';
+            ->execute([$_SESSION['user_id'], 'procedures_saved', "Bulk-saved $saved procedure(s)"]);
+        $success = "Saved $saved procedure(s)." . ($bad ? ' (Rows missing a name/valid rate were skipped.)' : '') . ($dupe ? ' (Duplicate names were skipped.)' : '');
+    } else {
+        $error = $dupe ? 'A procedure with that name already exists.' : 'A procedure needs a name and a non-negative rate.';
     }
 }
 
@@ -265,6 +259,14 @@ $headExtra = <<<CSS
 .add-assign-btn { background: none; border: 1px dashed var(--border); border-radius: 10px; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 9px 16px; }
 .add-assign-btn:hover { border-color: var(--primary); background: var(--primary-light); }
 .assign-empty { padding: 18px 2px; font-size: 13px; color: var(--text-muted); }
+/* Active toggle — checkbox styled as a small pill switch */
+.active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
+.active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle input:checked + span { background: var(--primary); }
+.active-toggle input:checked + span::after { transform: translateX(18px); }
+.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(26,127,126,.25); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -314,53 +316,47 @@ require __DIR__ . '/partials/sidebar.php';
                 </form>
             </div>
 
-            <!-- Procedure catalogue -->
+            <!-- Procedure catalogue — one form, one Save all changes button. -->
             <div class="card">
                 <div class="section-title">Procedure Catalogue</div>
-                <div class="section-sub">Set the rate for each procedure. Toggle off anything not offered.</div>
+                <div class="section-sub">Set the rate for each procedure, then <b>Save all changes</b> once. Uncheck Active for anything not offered.</div>
+                <form method="POST" action="procedure_master.php" id="saveAll">
+                <input type="hidden" name="action" value="save_procedures">
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
-                        <tr><th>Procedure</th><th style="width:130px;">Rate (Rs)</th><th style="width:150px;">Consent form</th><th style="width:150px;">Update</th><th style="width:90px;">Status</th><th style="width:110px;"></th></tr>
+                        <tr><th>Procedure</th><th style="width:130px;">Rate (Rs)</th><th style="width:150px;">Consent form</th><th style="width:90px;">Active</th></tr>
                     </thead>
                     <tbody>
                         <?php if (!$procedures): ?>
-                        <tr><td colspan="6" class="muted" style="padding:20px 10px;">No procedures yet — add one above.</td></tr>
+                        <tr><td colspan="4" class="muted" style="padding:20px 10px;">No procedures yet — add one above.</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($procedures as $p): ?>
+                        <?php foreach ($procedures as $p): $pid = (int) $p['id']; ?>
                         <tr class="<?= (int) $p['is_active'] === 1 ? '' : 'row-inactive' ?>">
                             <td>
-                                <input type="text" name="name" form="edit-<?= (int) $p['id'] ?>" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($p['name']) ?>">
+                                <input type="text" name="name[<?= $pid ?>]" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($p['name']) ?>">
                             </td>
                             <td>
-                                <input type="number" step="0.01" min="0" name="fee" form="edit-<?= (int) $p['id'] ?>" class="row-inp" style="width:100px;" value="<?= htmlspecialchars((string) $p['fee']) ?>">
+                                <input type="number" step="0.01" min="0" name="fee[<?= $pid ?>]" class="row-inp" style="width:100px;" value="<?= htmlspecialchars((string) $p['fee']) ?>">
                             </td>
                             <td>
                                 <label class="consent-check" style="padding:0;">
-                                    <input type="checkbox" name="mandatory_consent" value="1" form="edit-<?= (int) $p['id'] ?>" <?= (int) $p['mandatory_consent'] === 1 ? 'checked' : '' ?>>
+                                    <input type="checkbox" name="mandatory_consent[<?= $pid ?>]" value="1" <?= (int) $p['mandatory_consent'] === 1 ? 'checked' : '' ?>>
                                     Mandatory
                                 </label>
                             </td>
-                            <td>
-                                <form method="POST" action="procedure_master.php" id="edit-<?= (int) $p['id'] ?>" style="margin:0;">
-                                    <input type="hidden" name="action" value="edit_procedure">
-                                    <input type="hidden" name="procedure_id" value="<?= (int) $p['id'] ?>">
-                                    <button type="submit" class="btn small">Save changes</button>
-                                </form>
-                            </td>
-                            <td><?= (int) $p['is_active'] === 1 ? '<span class="status-pill active">Active</span>' : '<span class="status-pill on-leave">Inactive</span>' ?></td>
-                            <td>
-                                <form method="POST" action="procedure_master.php" style="display:inline;margin:0;">
-                                    <input type="hidden" name="action" value="toggle_procedure">
-                                    <input type="hidden" name="procedure_id" value="<?= (int) $p['id'] ?>">
-                                    <button type="submit" class="link-btn <?= (int) $p['is_active'] === 1 ? 'warn' : '' ?>"><?= (int) $p['is_active'] === 1 ? 'Deactivate' : 'Activate' ?></button>
-                                </form>
-                            </td>
+                            <td><label class="active-toggle"><input type="checkbox" name="is_active[<?= $pid ?>]" value="1" <?= (int) $p['is_active'] === 1 ? 'checked' : '' ?>><span></span></label></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
                 </div>
+                <?php if ($procedures): ?>
+                <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                    <button type="submit" class="btn">Save all changes</button>
+                </div>
+                <?php endif; ?>
+                </form>
             </div>
 
             <!-- Doctor assignments -->

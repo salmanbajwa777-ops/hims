@@ -50,29 +50,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     }
 }
 
-// ---- Edit an existing service (name / type / rate / charge type) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_service') {
-    $id = (int) ($_POST['service_id'] ?? 0);
-    $type = $_POST['service_type'] ?? '';
-    $name = trim($_POST['service_name'] ?? '');
-    $charge = $_POST['charge_type'] ?? 'FLAT';
-    $base = (float) ($_POST['base_charge'] ?? 0);
-    if ($id > 0 && $name !== '' && in_array($type, $serviceTypes, true) && in_array($charge, $chargeTypes, true)) {
-        $pdo->prepare('UPDATE er_services_master SET service_type = ?, service_name = ?, charge_type = ?, base_charge = ? WHERE id = ?')
-            ->execute([$type, $name, $charge, $base, $id]);
-        $success = 'Service updated.';
-    } else {
-        $error = 'A service needs a name, a type, and a charge type.';
+// ---- Save all services in one submit (type / name / charge / rate / active) ----
+// Whole catalogue posts as id-keyed arrays; every row re-saved. The Active
+// checkbox is folded into the same save (unchecked → INACTIVE).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_services') {
+    $names   = $_POST['service_name'] ?? [];
+    $types   = $_POST['service_type'] ?? [];
+    $charges = $_POST['charge_type'] ?? [];
+    $bases   = $_POST['base_charge'] ?? [];
+    $active  = $_POST['is_active'] ?? [];
+    $upd = $pdo->prepare("UPDATE er_services_master SET service_type = ?, service_name = ?, charge_type = ?, base_charge = ?, status = ? WHERE id = ?");
+    $saved = 0; $skipped = false;
+    foreach ($names as $id => $rawName) {
+        $id = (int) $id;
+        $name = trim($rawName);
+        $type = $types[$id] ?? '';
+        $charge = $charges[$id] ?? 'FLAT';
+        if ($id <= 0) { continue; }
+        if ($name === '' || !in_array($type, $serviceTypes, true) || !in_array($charge, $chargeTypes, true)) { $skipped = true; continue; }
+        $upd->execute([$type, $name, $charge, (float) ($bases[$id] ?? 0), isset($active[$id]) ? 'ACTIVE' : 'INACTIVE', $id]);
+        $saved++;
     }
-}
-
-// ---- Toggle active/inactive ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_service') {
-    $id = (int) ($_POST['service_id'] ?? 0);
-    if ($id > 0) {
-        $pdo->prepare("UPDATE er_services_master SET status = IF(status = 'ACTIVE', 'INACTIVE', 'ACTIVE') WHERE id = ?")
-            ->execute([$id]);
-        $success = 'Service status changed.';
+    if ($saved > 0) {
+        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+            ->execute([$_SESSION['user_id'], 'er_services_saved', "Bulk-saved $saved ER service(s)"]);
+        $success = "Saved $saved service(s)." . ($skipped ? ' (Rows missing a name/type/charge were skipped.)' : '');
+    } else {
+        $error = $skipped ? 'A service needs a name, a type, and a charge type.' : 'Nothing to save.';
     }
 }
 
@@ -120,6 +124,14 @@ $headExtra = <<<CSS
 .row-inactive td { opacity: .5; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .link-btn.warn { color: var(--red-text); }
+/* Active toggle — checkbox styled as a small pill switch */
+.active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
+.active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle input:checked + span { background: var(--primary); }
+.active-toggle input:checked + span::after { transform: translateX(18px); }
+.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(26,127,126,.25); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -210,61 +222,55 @@ require __DIR__ . '/partials/sidebar.php';
                 </form>
             </div>
 
-            <!-- Service list -->
+            <!-- Service list — one form, one Save all changes button. -->
             <div class="card">
                 <div class="section-title">Service Catalogue</div>
-                <div class="section-sub">Set the rate for each service. Toggle off anything not offered.</div>
+                <div class="section-sub">Set the rate for each service, then <b>Save all changes</b> once. Uncheck Active for anything not offered.</div>
+                <form method="POST" action="er_services.php" id="saveAll">
+                <input type="hidden" name="action" value="save_services">
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
-                        <tr><th style="width:130px;">Type</th><th>Service</th><th style="width:130px;">Charge</th><th style="width:120px;">Rate (Rs)</th><th style="width:150px;">Update</th><th style="width:90px;">Status</th><th style="width:110px;"></th></tr>
+                        <tr><th style="width:130px;">Type</th><th>Service</th><th style="width:130px;">Charge</th><th style="width:120px;">Rate (Rs)</th><th style="width:90px;">Active</th></tr>
                     </thead>
                     <tbody>
                         <?php if (!$services): ?>
-                        <tr><td colspan="7" class="muted" style="padding:20px 10px;">No services yet — add one above.</td></tr>
+                        <tr><td colspan="5" class="muted" style="padding:20px 10px;">No services yet — add one above.</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($services as $s): ?>
+                        <?php foreach ($services as $s): $sid = (int) $s['id']; ?>
                         <tr class="<?= $s['status'] === 'INACTIVE' ? 'row-inactive' : '' ?>">
                             <td>
-                                <select name="service_type" form="edit-<?= (int) $s['id'] ?>" class="row-inp">
+                                <select name="service_type[<?= $sid ?>]" class="row-inp">
                                     <?php foreach ($serviceTypes as $t): ?>
                                     <option value="<?= $t ?>" <?= $s['service_type'] === $t ? 'selected' : '' ?>><?= htmlspecialchars($typeLabels[$t]) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </td>
                             <td>
-                                <input type="text" name="service_name" form="edit-<?= (int) $s['id'] ?>" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($s['service_name']) ?>">
+                                <input type="text" name="service_name[<?= $sid ?>]" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($s['service_name']) ?>">
                             </td>
                             <td>
-                                <select name="charge_type" form="edit-<?= (int) $s['id'] ?>" class="row-inp">
+                                <select name="charge_type[<?= $sid ?>]" class="row-inp">
                                     <?php foreach ($chargeTypes as $c): ?>
                                     <option value="<?= $c ?>" <?= $s['charge_type'] === $c ? 'selected' : '' ?>><?= htmlspecialchars($chargeLabels[$c]) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </td>
                             <td>
-                                <input type="number" step="0.01" min="0" name="base_charge" form="edit-<?= (int) $s['id'] ?>" class="row-inp" style="width:100px;" value="<?= htmlspecialchars((string) $s['base_charge']) ?>">
+                                <input type="number" step="0.01" min="0" name="base_charge[<?= $sid ?>]" class="row-inp" style="width:100px;" value="<?= htmlspecialchars((string) $s['base_charge']) ?>">
                             </td>
-                            <td>
-                                <form method="POST" action="er_services.php" id="edit-<?= (int) $s['id'] ?>" style="margin:0;">
-                                    <input type="hidden" name="action" value="edit_service">
-                                    <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
-                                    <button type="submit" class="btn small">Save changes</button>
-                                </form>
-                            </td>
-                            <td><?= $s['status'] === 'ACTIVE' ? '<span class="status-pill active">Active</span>' : '<span class="status-pill on-leave">Inactive</span>' ?></td>
-                            <td>
-                                <form method="POST" action="er_services.php" style="display:inline;margin:0;">
-                                    <input type="hidden" name="action" value="toggle_service">
-                                    <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
-                                    <button type="submit" class="link-btn <?= $s['status'] === 'ACTIVE' ? 'warn' : '' ?>"><?= $s['status'] === 'ACTIVE' ? 'Deactivate' : 'Activate' ?></button>
-                                </form>
-                            </td>
+                            <td><label class="active-toggle"><input type="checkbox" name="is_active[<?= $sid ?>]" value="1" <?= $s['status'] === 'ACTIVE' ? 'checked' : '' ?>><span></span></label></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
                 </div>
+                <?php if ($services): ?>
+                <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                    <button type="submit" class="btn">Save all changes</button>
+                </div>
+                <?php endif; ?>
+                </form>
             </div>
         </div>
     </div>

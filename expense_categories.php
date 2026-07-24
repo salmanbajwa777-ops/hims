@@ -41,36 +41,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
     }
 }
 
-// ---- Edit a category (name + shift limit) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_category') {
-    $id = (int) ($_POST['category_id'] ?? 0);
-    $name = trim($_POST['name'] ?? '');
-    if ($id > 0 && $name !== '') {
+// ---- Save all categories in one submit (name + shift limit + active) ----
+// Whole table posts as id-keyed arrays; every row re-saved. The Active checkbox
+// is folded into the same save (history is always kept; inactive just hides the
+// category from the posting form). Delete stays a separate per-row action below.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_categories') {
+    $names  = $_POST['name'] ?? [];
+    $limits = $_POST['shift_limit'] ?? [];
+    $active = $_POST['is_active'] ?? [];
+    $upd = $pdo->prepare('UPDATE expense_categories SET name = ?, shift_limit = ?, is_active = ? WHERE id = ?');
+    $saved = 0; $blank = false; $dupe = false;
+    foreach ($names as $id => $rawName) {
+        $id = (int) $id;
+        $name = trim($rawName);
+        if ($id <= 0) { continue; }
+        if ($name === '') { $blank = true; continue; }
         try {
-            $pdo->prepare('UPDATE expense_categories SET name = ?, shift_limit = ? WHERE id = ?')
-                ->execute([$name, ec_amt($_POST['shift_limit'] ?? 0), $id]);
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'expense_category_updated', "Updated expense category #$id (\"$name\")"]);
-            $success = 'Category updated. The new limit applies from the next posting.';
+            $upd->execute([$name, ec_amt($limits[$id] ?? 0), isset($active[$id]) ? 1 : 0, $id]);
+            $saved++;
         } catch (PDOException $e) {
-            $error = ($e->errorInfo[1] ?? 0) === 1062
-                ? 'Another category already has that name.'
-                : 'Could not update the category.';
+            if (($e->errorInfo[1] ?? 0) === 1062) { $dupe = true; } else { throw $e; }
         }
-    } else {
-        $error = 'A category needs a name.';
     }
-}
-
-// ---- Toggle active/inactive (history is kept; an inactive category simply
-//      disappears from the posting form until re-activated) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_category') {
-    $id = (int) ($_POST['category_id'] ?? 0);
-    if ($id > 0) {
-        $pdo->prepare('UPDATE expense_categories SET is_active = IF(is_active = 1, 0, 1) WHERE id = ?')->execute([$id]);
+    if ($saved > 0) {
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'expense_category_toggled', "Toggled expense category #$id active/inactive"]);
-        $success = 'Category status changed.';
+            ->execute([$_SESSION['user_id'], 'expense_categories_saved', "Bulk-saved $saved expense categor" . ($saved === 1 ? 'y' : 'ies')]);
+        $success = "Saved $saved categor" . ($saved === 1 ? 'y' : 'ies') . '. New limits apply from the next posting.'
+            . ($blank ? ' (Blank-named rows skipped.)' : '') . ($dupe ? ' (Some names clashed and were skipped.)' : '');
+    } else {
+        $error = $dupe ? 'A name clashed with another category.' : 'A category needs a name.';
     }
 }
 
@@ -145,6 +144,14 @@ $headExtra = <<<CSS
 .limit-row input { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); width: 180px; text-align: right; }
 .limit-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
 .muted-inline { font-size: 12px; color: var(--text-muted); align-self: center; padding-bottom: 10px; }
+/* Active toggle — checkbox styled as a small pill switch */
+.active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
+.active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle input:checked + span { background: var(--primary); }
+.active-toggle input:checked + span::after { transform: translateX(18px); }
+.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(26,127,126,.25); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -216,10 +223,15 @@ require __DIR__ . '/partials/sidebar.php';
                 </form>
             </div>
 
-            <!-- Category list -->
+            <!-- Category list — one form, one Save all changes button. Delete
+                 stays a separate per-row action (its <form>s live after the table
+                 and are triggered from the row via form="del-<id>", since forms
+                 can't nest inside the bulk save form). -->
             <div class="card">
                 <div class="section-title">Categories</div>
-                <div class="section-sub">Deactivating hides a category from the posting form without touching its history. Delete is only offered while a category has no expenses.</div>
+                <div class="section-sub">Edit names/limits, toggle Active, then <b>Save all changes</b> once. Inactive hides a category from the posting form without touching its history. Delete is only offered while a category has no expenses.</div>
+                <form method="POST" action="expense_categories.php" id="saveAll">
+                <input type="hidden" name="action" value="save_categories">
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
@@ -228,16 +240,15 @@ require __DIR__ . '/partials/sidebar.php';
                             <th style="width:140px;">Shift limit (Rs)</th>
                             <th style="width:130px;">Spent today</th>
                             <th style="width:110px;">Expenses</th>
-                            <th style="width:150px;">Update</th>
-                            <th style="width:90px;">Status</th>
-                            <th style="width:160px;"></th>
+                            <th style="width:90px;">Active</th>
+                            <th style="width:90px;"></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (!$categories): ?>
-                        <tr><td colspan="7" class="muted" style="padding:20px 10px;">No categories yet — add one above.</td></tr>
+                        <tr><td colspan="6" class="muted" style="padding:20px 10px;">No categories yet — add one above.</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($categories as $c): ?>
+                        <?php foreach ($categories as $c): $cid = (int) $c['id']; ?>
                         <?php
                             $limit = (float) $c['shift_limit'];
                             $today = (float) $c['today_total'];
@@ -245,32 +256,15 @@ require __DIR__ . '/partials/sidebar.php';
                         ?>
                         <tr class="<?= $c['is_active'] ? '' : 'row-inactive' ?>">
                             <td>
-                                <input type="text" name="name" form="edit-<?= (int) $c['id'] ?>" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($c['name']) ?>">
+                                <input type="text" name="name[<?= $cid ?>]" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($c['name']) ?>">
                             </td>
-                            <td><input type="number" step="1" min="0" name="shift_limit" form="edit-<?= (int) $c['id'] ?>" class="row-inp amt-inp" value="<?= htmlspecialchars(rtrim(rtrim(number_format($limit, 2, '.', ''), '0'), '.')) ?>"></td>
+                            <td><input type="number" step="1" min="0" name="shift_limit[<?= $cid ?>]" class="row-inp amt-inp" value="<?= htmlspecialchars(rtrim(rtrim(number_format($limit, 2, '.', ''), '0'), '.')) ?>"></td>
                             <td><span class="count-chip <?= $nearCap ? 'hot' : '' ?>">Rs <?= number_format($today) ?><?= $limit > 0 ? ' / ' . number_format($limit) : '' ?></span></td>
                             <td><span class="count-chip"><?= (int) $c['expense_count'] ?> posted</span></td>
+                            <td><label class="active-toggle"><input type="checkbox" name="is_active[<?= $cid ?>]" value="1" <?= $c['is_active'] ? 'checked' : '' ?>><span></span></label></td>
                             <td>
-                                <form method="POST" action="expense_categories.php" id="edit-<?= (int) $c['id'] ?>" style="margin:0;">
-                                    <input type="hidden" name="action" value="edit_category">
-                                    <input type="hidden" name="category_id" value="<?= (int) $c['id'] ?>">
-                                    <button type="submit" class="btn small">Save changes</button>
-                                </form>
-                            </td>
-                            <td><?= $c['is_active'] ? '<span class="status-pill active">Active</span>' : '<span class="status-pill on-leave">Inactive</span>' ?></td>
-                            <td>
-                                <form method="POST" action="expense_categories.php" style="display:inline;margin:0;">
-                                    <input type="hidden" name="action" value="toggle_category">
-                                    <input type="hidden" name="category_id" value="<?= (int) $c['id'] ?>">
-                                    <button type="submit" class="link-btn <?= $c['is_active'] ? 'warn' : '' ?>"><?= $c['is_active'] ? 'Deactivate' : 'Activate' ?></button>
-                                </form>
                                 <?php if ((int) $c['expense_count'] === 0): ?>
-                                <form method="POST" action="expense_categories.php" style="display:inline;margin:0 0 0 10px;"
-                                      onsubmit="return confirm('Delete this category? It has no expenses recorded.');">
-                                    <input type="hidden" name="action" value="delete_category">
-                                    <input type="hidden" name="category_id" value="<?= (int) $c['id'] ?>">
-                                    <button type="submit" class="link-btn warn">Delete</button>
-                                </form>
+                                <button type="submit" form="del-<?= $cid ?>" class="link-btn warn">Delete</button>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -278,6 +272,22 @@ require __DIR__ . '/partials/sidebar.php';
                     </tbody>
                 </table>
                 </div>
+                <?php if ($categories): ?>
+                <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                    <button type="submit" class="btn">Save all changes</button>
+                </div>
+                <?php endif; ?>
+                </form>
+
+                <!-- Per-row delete forms (outside the bulk form; referenced by the
+                     row's Delete button via form="del-<id>"). -->
+                <?php foreach ($categories as $c): if ((int) $c['expense_count'] !== 0) continue; ?>
+                <form method="POST" action="expense_categories.php" id="del-<?= (int) $c['id'] ?>" style="display:none;"
+                      onsubmit="return confirm('Delete this category? It has no expenses recorded.');">
+                    <input type="hidden" name="action" value="delete_category">
+                    <input type="hidden" name="category_id" value="<?= (int) $c['id'] ?>">
+                </form>
+                <?php endforeach; ?>
             </div>
         </div>
     </div>

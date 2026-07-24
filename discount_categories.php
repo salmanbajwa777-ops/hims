@@ -45,35 +45,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
     }
 }
 
-// ---- Edit a category (name + the three rates) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_category') {
-    $id = (int) ($_POST['category_id'] ?? 0);
-    $name = trim($_POST['name'] ?? '');
-    if ($id > 0 && $name !== '') {
-        $pdo->prepare('UPDATE discount_categories SET name = ?, consultation_pct = ?, er_services_pct = ?, room_stay_pct = ?, procedures_pct = ? WHERE id = ?')
-            ->execute([
-                $name, dc_pct($_POST['consultation_pct'] ?? 0),
-                dc_pct($_POST['er_services_pct'] ?? 0), dc_pct($_POST['room_stay_pct'] ?? 0),
-                dc_pct($_POST['procedures_pct'] ?? 0), $id,
-            ]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'discount_category_updated', "Updated discount category #$id (\"$name\")"]);
-        $success = 'Category updated. New rates apply to future invoices only.';
-    } else {
-        $error = 'A category needs a name.';
+// ---- Save all categories in one submit (name + four rates + active state) ----
+// The whole table posts together as id-keyed arrays; every row is re-saved with
+// its current values. Active/inactive is a per-row checkbox folded into the same
+// save (no separate toggle button). Inactive category = discount paused, the
+// patient assignment is kept.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_categories') {
+    $names  = $_POST['name'] ?? [];
+    $active = $_POST['is_active'] ?? [];   // only checked rows appear here
+    $upd = $pdo->prepare('UPDATE discount_categories SET name = ?, consultation_pct = ?, er_services_pct = ?, room_stay_pct = ?, procedures_pct = ?, is_active = ? WHERE id = ?');
+    $saved = 0; $blank = false;
+    foreach ($names as $id => $rawName) {
+        $id = (int) $id;
+        $name = trim($rawName);
+        if ($id <= 0) { continue; }
+        if ($name === '') { $blank = true; continue; }   // skip blank-named rows, flag it
+        $upd->execute([
+            $name,
+            dc_pct($_POST['consultation_pct'][$id] ?? 0),
+            dc_pct($_POST['er_services_pct'][$id] ?? 0),
+            dc_pct($_POST['room_stay_pct'][$id] ?? 0),
+            dc_pct($_POST['procedures_pct'][$id] ?? 0),
+            isset($active[$id]) ? 1 : 0,
+            $id,
+        ]);
+        $saved++;
     }
-}
-
-// ---- Toggle active/inactive (assigned patients keep the link; an inactive
-//      category simply stops discounting until re-activated) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_category') {
-    $id = (int) ($_POST['category_id'] ?? 0);
-    if ($id > 0) {
-        $pdo->prepare('UPDATE discount_categories SET is_active = IF(is_active = 1, 0, 1) WHERE id = ?')->execute([$id]);
+    if ($saved > 0) {
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'discount_category_toggled', "Toggled discount category #$id active/inactive"]);
-        $success = 'Category status changed.';
+            ->execute([$_SESSION['user_id'], 'discount_categories_saved', "Bulk-saved $saved discount categor" . ($saved === 1 ? 'y' : 'ies')]);
     }
+    $success = "Saved $saved categor" . ($saved === 1 ? 'y' : 'ies') . '. New rates apply to future invoices only.'
+        . ($blank ? ' (Rows with a blank name were skipped.)' : '');
+    if ($saved === 0 && $blank) { $success = ''; $error = 'A category needs a name.'; }
 }
 
 $categories = $pdo->query('
@@ -103,6 +107,14 @@ $headExtra = <<<CSS
 .pct-inp { width: 82px; text-align: right; }
 .count-chip { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
 .note-box { font-size: 12.5px; color: var(--text-secondary); background: var(--primary-light); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; line-height: 1.6; }
+/* Active toggle — checkbox styled as a small pill switch */
+.active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
+.active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle input:checked + span { background: var(--primary); }
+.active-toggle input:checked + span::after { transform: translateX(18px); }
+.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(26,127,126,.25); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -168,10 +180,14 @@ require __DIR__ . '/partials/sidebar.php';
                 </form>
             </div>
 
-            <!-- Category list -->
+            <!-- Category list — one form, one Save all changes button. Every row
+                 posts as id-keyed arrays; the Active checkbox is folded into the
+                 same save (unchecking pauses the discount without unassigning). -->
             <div class="card">
                 <div class="section-title">Categories</div>
-                <div class="section-sub">Set each rate per billing area. Deactivating pauses the discount without unassigning patients.</div>
+                <div class="section-sub">Set each rate per billing area, then <b>Save all changes</b> once. Unchecking Active pauses a category's discount without unassigning its patients.</div>
+                <form method="POST" action="discount_categories.php" id="saveAll">
+                <input type="hidden" name="action" value="save_categories">
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
@@ -182,45 +198,35 @@ require __DIR__ . '/partials/sidebar.php';
                             <th style="width:120px;">Room Stay</th>
                             <th style="width:120px;">Procedures</th>
                             <th style="width:110px;">Patients</th>
-                            <th style="width:150px;">Update</th>
-                            <th style="width:90px;">Status</th>
-                            <th style="width:110px;"></th>
+                            <th style="width:90px;">Active</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (!$categories): ?>
-                        <tr><td colspan="9" class="muted" style="padding:20px 10px;">No categories yet — add one above.</td></tr>
+                        <tr><td colspan="7" class="muted" style="padding:20px 10px;">No categories yet — add one above.</td></tr>
                         <?php endif; ?>
-                        <?php foreach ($categories as $c): ?>
+                        <?php foreach ($categories as $c): $cid = (int) $c['id']; ?>
                         <tr class="<?= $c['is_active'] ? '' : 'row-inactive' ?>">
                             <td>
-                                <input type="text" name="name" form="edit-<?= (int) $c['id'] ?>" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($c['name']) ?>">
+                                <input type="text" name="name[<?= $cid ?>]" class="row-inp" style="font-weight:600;width:100%;" value="<?= htmlspecialchars($c['name']) ?>">
                             </td>
-                            <td><input type="number" step="0.5" min="0" max="100" name="consultation_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['consultation_pct']) ?>"></td>
-                            <td><input type="number" step="0.5" min="0" max="100" name="er_services_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['er_services_pct']) ?>"></td>
-                            <td><input type="number" step="0.5" min="0" max="100" name="room_stay_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) ($c['room_stay_pct'] ?? 0)) ?>"></td>
-                            <td><input type="number" step="0.5" min="0" max="100" name="procedures_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['procedures_pct']) ?>"></td>
+                            <td><input type="number" step="0.5" min="0" max="100" name="consultation_pct[<?= $cid ?>]" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['consultation_pct']) ?>"></td>
+                            <td><input type="number" step="0.5" min="0" max="100" name="er_services_pct[<?= $cid ?>]" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['er_services_pct']) ?>"></td>
+                            <td><input type="number" step="0.5" min="0" max="100" name="room_stay_pct[<?= $cid ?>]" class="row-inp pct-inp" value="<?= htmlspecialchars((string) ($c['room_stay_pct'] ?? 0)) ?>"></td>
+                            <td><input type="number" step="0.5" min="0" max="100" name="procedures_pct[<?= $cid ?>]" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['procedures_pct']) ?>"></td>
                             <td><span class="count-chip"><?= (int) $c['patient_count'] ?> assigned</span></td>
-                            <td>
-                                <form method="POST" action="discount_categories.php" id="edit-<?= (int) $c['id'] ?>" style="margin:0;">
-                                    <input type="hidden" name="action" value="edit_category">
-                                    <input type="hidden" name="category_id" value="<?= (int) $c['id'] ?>">
-                                    <button type="submit" class="btn small">Save changes</button>
-                                </form>
-                            </td>
-                            <td><?= $c['is_active'] ? '<span class="status-pill active">Active</span>' : '<span class="status-pill on-leave">Inactive</span>' ?></td>
-                            <td>
-                                <form method="POST" action="discount_categories.php" style="display:inline;margin:0;">
-                                    <input type="hidden" name="action" value="toggle_category">
-                                    <input type="hidden" name="category_id" value="<?= (int) $c['id'] ?>">
-                                    <button type="submit" class="link-btn <?= $c['is_active'] ? 'warn' : '' ?>"><?= $c['is_active'] ? 'Deactivate' : 'Activate' ?></button>
-                                </form>
-                            </td>
+                            <td><label class="active-toggle"><input type="checkbox" name="is_active[<?= $cid ?>]" value="1" <?= $c['is_active'] ? 'checked' : '' ?>><span></span></label></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
                 </div>
+                <?php if ($categories): ?>
+                <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                    <button type="submit" class="btn">Save all changes</button>
+                </div>
+                <?php endif; ?>
+                </form>
             </div>
         </div>
     </div>
