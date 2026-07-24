@@ -4,6 +4,17 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/notify.php';
 
 $roles = ['ADMIN', 'DOCTOR', 'MANAGER', 'ACCOUNTANT', 'NURSE', 'RECEPTIONIST'];
+// Doctor specialty categories. Only DENTAL prints the tooth logo on invoices;
+// every other value falls through to the general logo (see *_print_partial.php).
+// Keys must match the users.specialty ENUM (add_doctor_specialty_categories.sql).
+const SPECIALTY_OPTIONS = ['GENERAL', 'PEDIATRICIAN', 'ENT', 'DENTAL', 'PEDIATRIC_SURGEON'];
+$specialtyLabels = [
+    'GENERAL' => 'General',
+    'PEDIATRICIAN' => 'Pediatrician',
+    'ENT' => 'ENT Consultant',
+    'DENTAL' => 'Dental Surgeon',
+    'PEDIATRIC_SURGEON' => 'Pediatric Surgeon',
+];
 $docTypes = [
     'CNIC' => 'CNIC',
     'EDUCATIONAL_DEGREE' => 'Educational Degree',
@@ -37,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     // Either way the user must change it on first sign-in.
     $password = trim($_POST['temp_password'] ?? '') !== '' ? trim($_POST['temp_password']) : DEFAULT_STAFF_PASSWORD;
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
-    $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
+    $specialty = in_array($_POST['specialty'] ?? '', SPECIALTY_OPTIONS, true) ? $_POST['specialty'] : 'GENERAL';
     // Consultation revenue share (doctors only; zeroed for other roles).
     // Rule: tax comes off the FULL fee first, then the share % splits the net —
     // see sql/add_consult_revenue_share.sql. Non-taxable doctors split the full fee.
@@ -189,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $role = $_POST['base_role'] ?? '';
     $resetPassword = ($_POST['reset_password'] ?? '') === '1';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
-    $specialty = ($_POST['specialty'] ?? '') === 'DENTAL' ? 'DENTAL' : 'GENERAL';
+    $specialty = in_array($_POST['specialty'] ?? '', SPECIALTY_OPTIONS, true) ? $_POST['specialty'] : 'GENERAL';
     // Consultation revenue share — same rules as add_staff (tax off the full fee
     // first, then the share split; zeroed for non-doctor roles).
     $consultSharePct = trim($_POST['consult_share_pct'] ?? '') !== '' ? (float) $_POST['consult_share_pct'] : 0;
@@ -905,8 +916,9 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="field" id="specialtyField" style="display:none;">
                             <label for="specialty">Specialty <span class="opt">(controls the invoice icon printed for their visits)</span></label>
                             <select id="specialty" name="specialty">
-                                <option value="GENERAL">General</option>
-                                <option value="DENTAL">Dental</option>
+                                <?php foreach ($specialtyLabels as $specValue => $specLabel): ?>
+                                    <option value="<?= $specValue ?>"><?= htmlspecialchars($specLabel) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="field" id="consultShareField" style="display:none;">

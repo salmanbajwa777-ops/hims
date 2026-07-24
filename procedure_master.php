@@ -375,7 +375,10 @@ require __DIR__ . '/partials/sidebar.php';
                             <option value="">— Select a doctor —</option>
                             <?php foreach ($doctors as $d): ?>
                             <option value="<?= (int) $d['id'] ?>">
-                                <?= htmlspecialchars($d['name']) ?><?= $d['specialty'] === 'DENTAL' ? ' — Dental' : '' ?>
+                                <?php
+                                    $specLabels = ['PEDIATRICIAN' => 'Pediatrician', 'ENT' => 'ENT Consultant', 'DENTAL' => 'Dental Surgeon', 'PEDIATRIC_SURGEON' => 'Pediatric Surgeon'];
+                                ?>
+                                <?= htmlspecialchars($d['name']) ?><?= isset($specLabels[$d['specialty']]) ? ' — ' . $specLabels[$d['specialty']] : '' ?>
                                 (<?= count($assignmentsByDoctor[(int) $d['id']] ?? []) ?> assigned)
                             </option>
                             <?php endforeach; ?>

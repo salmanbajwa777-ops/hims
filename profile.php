@@ -93,6 +93,10 @@ $roleLabels = [
     'ADMIN' => 'Administrator', 'MANAGER' => 'Manager', 'DOCTOR' => 'Doctor',
     'ACCOUNTANT' => 'Accountant', 'NURSE' => 'Nurse', 'RECEPTIONIST' => 'Receptionist',
 ];
+$specialtyLabels = [
+    'GENERAL' => 'General', 'PEDIATRICIAN' => 'Pediatrician', 'ENT' => 'ENT Consultant',
+    'DENTAL' => 'Dental Surgeon', 'PEDIATRIC_SURGEON' => 'Pediatric Surgeon',
+];
 
 $pageTitle = 'My Profile';
 $headExtra = <<<CSS
@@ -230,7 +234,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="row"><span class="k">Role</span><span class="v"><?= htmlspecialchars($roleLabels[$user['base_role']] ?? $user['base_role']) ?></span></div>
                         <div class="row"><span class="k">Discount cap</span><span class="v"><?= rtrim(rtrim(number_format((float) ($user['max_discount_pct'] ?? 0), 2), '0'), '.') ?>%</span></div>
                         <?php if ($user['base_role'] === 'DOCTOR'): ?>
-                        <div class="row"><span class="k">Specialty</span><span class="v"><?= htmlspecialchars(ucfirst(strtolower($user['specialty'] ?? 'GENERAL'))) ?></span></div>
+                        <div class="row"><span class="k">Specialty</span><span class="v"><?= htmlspecialchars($specialtyLabels[$user['specialty'] ?? 'GENERAL'] ?? ucfirst(strtolower($user['specialty'] ?? 'GENERAL'))) ?></span></div>
                         <?php endif; ?>
                         <div class="row"><span class="k">Member since</span><span class="v"><?= $user['created_at'] ? date('d/m/Y', strtotime($user['created_at'])) : '—' ?></span></div>
                     </div>
