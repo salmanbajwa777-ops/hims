@@ -3,9 +3,10 @@
  * Doctor Analytics — "My Reports" for the doctor console.
  *
  * Three sections on ?view= :
- *   revenue    — stacked bar chart (Full / Revisits — consultation money only,
- *                ER admission bills are clinic revenue and excluded), month-year
- *                granularity, previous-period comparison, summary cards
+ *   revenue    — stacked bar chart of the DOCTOR'S EARNED share (Full / Revisits;
+ *                (paid − tax) × share%, consultation money only — ER admission
+ *                bills are clinic revenue and excluded), month-year granularity,
+ *                previous-period comparison, summary cards
  *   patients   — "Consultations & Revisits": filterable consultation table
  *                (fee-type column covers Full + every revisit tier) + a revisit
  *                summary strip (rate + per-tier counts) + CSV export
@@ -19,9 +20,11 @@
  * doctor picker (?doctor_id=). No schema changes — everything reads visits +
  * bills.
  *
- * Revenue is BILLED consultation revenue (paid bills under this doctor's
- * visits) — not the doctor's earnings (commission engine is Phase 3A), and
- * NOT admission money: ER admission bills are clinic revenue and excluded.
+ * The Revenue view shows the doctor's EARNED share of paid consultations
+ * (using consult_share_pct / consult_tax_pct on the users row), NOT gross
+ * billed and NOT admission money (ER admission bills are clinic revenue). The
+ * Consultations table still lists each invoice's billed total — it's a
+ * transaction ledger for reconciliation, distinct from the earnings headline.
  */
 require_once __DIR__ . '/config/auth.php';
 require_login();
@@ -221,26 +224,51 @@ if ($view === 'revenue') {
     if (!isset($firstYear)) { $firstYear = null; }
 
     // One period's stacked series: [bucket => [full, revisit]].
+    // Amounts are the DOCTOR'S EARNED share — (paid − tax) × share% — not gross
+    // billed (the clinic keeps the rest). Same formula as dashboard.php.
     // Consultations count when their bill is PAID, attributed to visit_date.
     // ER admission bills are deliberately EXCLUDED (2026-07-23): admission money
     // is clinic revenue, not the doctor's — it does not belong on this chart.
-    $seriesFor = function (string $start, string $end) use ($pdo, $doctorId, $bucketExpr): array {
+    $earnedExpr = "(CASE WHEN dr.consult_has_tax = 1
+                        THEN (b2.paid_amount - b2.paid_amount * dr.consult_tax_pct / 100) * dr.consult_share_pct / 100
+                        ELSE b2.paid_amount * dr.consult_share_pct / 100 END)";
+    $seriesFor = function (string $start, string $end) use ($pdo, $doctorId, $bucketExpr, $earnedExpr): array {
         $buckets = [];
 
         $cSql = "
             SELECT " . sprintf($bucketExpr, 'v.visit_date') . " AS b,
-                   SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN b2.grand_total ELSE 0 END) AS full_amt,
-                   SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN b2.grand_total ELSE 0 END) AS revisit_amt,
+                   SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN $earnedExpr ELSE 0 END) AS full_amt,
+                   SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN $earnedExpr ELSE 0 END) AS revisit_amt,
                    SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
                    SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN 1 ELSE 0 END) AS revisit_n
             FROM visits v
             JOIN bills b2 ON b2.visit_id = v.id AND b2.status = 'paid'
+            JOIN users dr ON dr.id = v.doctor_id
             WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
             GROUP BY b
         ";
-        $c = $pdo->prepare($cSql);
-        $c->execute([$doctorId, $start, $end]);
-        foreach ($c->fetchAll() as $r) {
+        try {
+            $c = $pdo->prepare($cSql);
+            $c->execute([$doctorId, $start, $end]);
+            $rows = $c->fetchAll();
+        } catch (PDOException $e) {
+            // consult_share columns not migrated yet — earnings read zero, but the
+            // counts still matter, so re-run the same buckets without the amounts.
+            $cSql0 = "
+                SELECT " . sprintf($bucketExpr, 'v.visit_date') . " AS b,
+                       0 AS full_amt, 0 AS revisit_amt,
+                       SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
+                       SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN 1 ELSE 0 END) AS revisit_n
+                FROM visits v
+                JOIN bills b2 ON b2.visit_id = v.id AND b2.status = 'paid'
+                WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
+                GROUP BY b
+            ";
+            $c = $pdo->prepare($cSql0);
+            $c->execute([$doctorId, $start, $end]);
+            $rows = $c->fetchAll();
+        }
+        foreach ($rows as $r) {
             $buckets[(int) $r['b']]['full'] = (float) $r['full_amt'];
             $buckets[(int) $r['b']]['revisit'] = (float) $r['revisit_amt'];
             $buckets[(int) $r['b']]['full_n'] = (int) $r['full_n'];
@@ -628,14 +656,14 @@ require __DIR__ . '/partials/head.php';
                     </div>
                 </div>
                 <div class="rev-total">
-                    <span>Total revenue billed — <?= htmlspecialchars($periodLabel) ?></span>
+                    <span>Total earnings — <?= htmlspecialchars($periodLabel) ?></span>
                     <span class="tnum"><?= fmt_amt($totAll) ?> PKR<?php if ($compare && $prevAll > 0):
                         $delta = ($totAll - $prevAll) / $prevAll * 100; ?>
                         &nbsp;(<?= htmlspecialchars($prevLabel) ?>: <?= fmt_amt($prevAll) ?> · <?= $delta >= 0 ? '+' : '' ?><?= number_format($delta, 1) ?>%)
                     <?php endif; ?></span>
                 </div>
                 <div class="section-sub" style="margin-top:12px;margin-bottom:0">
-                    Billed revenue under your name (paid bills), not take-home earnings — the commission engine lands in a later phase.
+                    Your earned share of paid consultations — (fee paid, less any withheld tax) × your revenue-share %. The clinic keeps the remainder; ER admission bills are clinic revenue and aren't counted here.
                 </div>
             </div>
 

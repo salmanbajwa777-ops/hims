@@ -127,51 +127,77 @@ $next    = $waiting[0] ?? null;           // next to call in
 
 // ---------------- This-month analytics snapshot ----------------
 // Small always-on summary under the queue; the full picture (charts, tables,
-// history) lives in doctor_analytics.php. All figures are BILLED revenue from
-// paid bills under this doctor — not earnings (commission engine is Phase 3A).
+// history) lives in doctor_analytics.php. Figures are the DOCTOR'S EARNED share
+// of paid consultations — (paid − tax) × share% — NOT the gross billed amount
+// (the clinic keeps the rest). Same formula as dashboard.php's doctor share.
 require_once __DIR__ . '/config/billing.php';
 $moStart = date('Y-m-01');
 $moEnd = date('Y-m-t');
 
-// Paid consultations split into full vs revisit, plus the per-tier mix.
-$moC = $pdo->prepare("
-    SELECT SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN b.grand_total ELSE 0 END) AS full_amt,
-           SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN b.grand_total ELSE 0 END) AS revisit_amt,
-           SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
-           SUM(CASE WHEN v.consultation_fee_type = 'FREE_FOLLOWUP' THEN 1 ELSE 0 END) AS free_n,
-           SUM(CASE WHEN v.consultation_fee_type = 'HALF_FOLLOWUP' THEN 1 ELSE 0 END) AS half_n,
-           SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
-           COUNT(*) AS n
-    FROM visits v
-    JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
-    WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
-");
-$moC->execute([$doctorId, $moStart, $moEnd]);
+// Per-doctor earned amount from one paid bill. Falls back to gross × 0 = 0 if
+// the revenue-share columns aren't populated (share defaults to 0), which is the
+// safe under-report — never shows more than the doctor is owed.
+$earnedExpr = "(CASE WHEN dr.consult_has_tax = 1
+                    THEN (b.paid_amount - b.paid_amount * dr.consult_tax_pct / 100) * dr.consult_share_pct / 100
+                    ELSE b.paid_amount * dr.consult_share_pct / 100 END)";
+
+// Paid consultations split into full vs revisit (earned share), plus per-tier mix.
+// Wrapped so a pre-migration DB (no consult_share columns) degrades to zeros
+// rather than fataling the whole console.
+try {
+    $moC = $pdo->prepare("
+        SELECT SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN $earnedExpr ELSE 0 END) AS full_amt,
+               SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN $earnedExpr ELSE 0 END) AS revisit_amt,
+               SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'FREE_FOLLOWUP' THEN 1 ELSE 0 END) AS free_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'HALF_FOLLOWUP' THEN 1 ELSE 0 END) AS half_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
+               COUNT(*) AS n
+        FROM visits v
+        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+        JOIN users dr ON dr.id = v.doctor_id
+        WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
+    ");
+    $moC->execute([$doctorId, $moStart, $moEnd]);
+} catch (PDOException $e) {
+    // consult_share columns missing — earnings read zero, counts still work.
+    $moC = $pdo->prepare("
+        SELECT 0 AS full_amt, 0 AS revisit_amt,
+               SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'FREE_FOLLOWUP' THEN 1 ELSE 0 END) AS free_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'HALF_FOLLOWUP' THEN 1 ELSE 0 END) AS half_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
+               COUNT(*) AS n
+        FROM visits v
+        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+        WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
+    ");
+    $moC->execute([$doctorId, $moStart, $moEnd]);
+}
 $mo = $moC->fetch() ?: [];
 $moConsultN = (int) ($mo['n'] ?? 0);
 $moRevisitN = (int) (($mo['free_n'] ?? 0) + ($mo['half_n'] ?? 0) + ($mo['tq_n'] ?? 0));
 $moRevisitRate = $moConsultN > 0 ? $moRevisitN / $moConsultN * 100 : 0.0;
 
-// ER admission money is deliberately EXCLUDED from the doctor's revenue figures
+// ER admission money is deliberately EXCLUDED from the doctor's earnings figures
 // (2026-07-23): it's clinic revenue, not the doctor's. The active-admissions
-// cards below stay — they're operational (who's in the ward), not revenue.
+// cards below stay — they're operational (who's in the ward), not money.
+// $moTotal is now the doctor's EARNED share this month, not gross billed.
 $moTotal = (float) ($mo['full_amt'] ?? 0) + (float) ($mo['revisit_amt'] ?? 0);
 
-// Currently-active admissions under this doctor (cards, with running charge).
+// Currently-active admissions under this doctor (operational cards only — the
+// doctor sees who's in the ward, NOT the billing. Charges/running totals are
+// deliberately not fetched here; billing belongs to reception.)
 $actQ = $pdo->prepare("
     SELECT a.id, a.admission_type, a.admitted_at,
            p.name AS patient_name, p.mrn,
            nu.name AS nurse_name,
-           ar.rate_amount, ar.rate_basis,
            (SELECT h.status_at_handover FROM admission_handovers h
-            WHERE h.admission_id = a.id ORDER BY h.handover_time DESC, h.id DESC LIMIT 1) AS last_status,
-           (SELECT COALESCE(SUM(s.calculated_charge), 0) FROM admission_services s
-            WHERE s.admission_id = a.id AND s.is_billable = 1) AS services_total
+            WHERE h.admission_id = a.id ORDER BY h.handover_time DESC, h.id DESC LIMIT 1) AS last_status
     FROM admissions a
     JOIN visits v ON v.id = a.visit_id
     JOIN patients p ON p.id = v.patient_id
     LEFT JOIN users nu ON nu.id = a.assigned_nurse_id
-    LEFT JOIN admission_rates ar ON ar.admission_type = a.admission_type
     WHERE COALESCE(a.admitting_doctor_id, v.doctor_id) = ?
       AND a.status IN ('PENDING_ASSIGNMENT','ACTIVE','DISCHARGE_IN_PROGRESS')
     ORDER BY a.admitted_at DESC
@@ -179,14 +205,7 @@ $actQ = $pdo->prepare("
 $actQ->execute([$doctorId]);
 $activeAdms = $actQ->fetchAll();
 foreach ($activeAdms as &$aa) {
-    $mins = max(0, (int) floor((time() - strtotime($aa['admitted_at'])) / 60));
-    $aa['elapsed_min'] = $mins;
-    if (($aa['rate_basis'] ?? 'HOURLY') === 'DAILY') {
-        $aa['stay_charge'] = (float) $aa['rate_amount'] * max(1, (int) ceil($mins / 1440));
-    } else {
-        $aa['stay_charge'] = (float) $aa['rate_amount'] * admission_billed_hours($mins);
-    }
-    $aa['running_total'] = $aa['stay_charge'] + (float) $aa['services_total'];
+    $aa['elapsed_min'] = max(0, (int) floor((time() - strtotime($aa['admitted_at'])) / 60));
 }
 unset($aa);
 
@@ -490,13 +509,13 @@ require __DIR__ . '/partials/head.php';
                         </a>
                         <a class="kpi-cell" href="doctor_analytics.php?view=revenue">
                             <div class="kpi-value tnum"><?= number_format($moTotal) ?> <small>PKR</small></div>
-                            <div class="kpi-label">Billed — <?= date('M') ?></div>
-                            <div class="kpi-sub">Paid consultations</div>
+                            <div class="kpi-label">Earned — <?= date('M') ?></div>
+                            <div class="kpi-sub">Your share of paid consults</div>
                         </a>
                     </div>
 
                     <div class="card">
-                        <div class="rail-title"><span>Revenue — <?= date('F') ?></span><a class="card-link" href="doctor_analytics.php?view=revenue">Full chart &rarr;</a></div>
+                        <div class="rail-title"><span>Earnings — <?= date('F') ?></span><a class="card-link" href="doctor_analytics.php?view=revenue">Full chart &rarr;</a></div>
                         <div class="rev-row">
                             <span>Full consults</span>
                             <div class="bar-track"><div class="bar-fill" style="width:<?= round($moFull / $moMax * 100) ?>%;background:var(--primary)"></div></div>
@@ -507,7 +526,8 @@ require __DIR__ . '/partials/head.php';
                             <div class="bar-track"><div class="bar-fill" style="width:<?= round($moRev / $moMax * 100) ?>%;background:#0891B2"></div></div>
                             <span class="amt tnum"><?= number_format($moRev) ?></span>
                         </div>
-                        <div class="rev-total"><span>Total billed</span><span class="tnum"><?= number_format($moTotal) ?> PKR</span></div>
+                        <div class="rev-total"><span>Your earnings</span><span class="tnum"><?= number_format($moTotal) ?> PKR</span></div>
+                        <div class="rv-note" style="margin-top:8px;font-size:11px;color:var(--text-muted)">Your share of paid consultation fees — the clinic keeps the rest.</div>
                     </div>
 
                     <div class="card">
@@ -564,7 +584,6 @@ require __DIR__ . '/partials/head.php';
                         </div>
                         <div class="adm-foot">
                             <span>Nurse: <b><?= htmlspecialchars($aa['nurse_name'] ?? 'Unassigned') ?></b></span>
-                            <span>Running total: <b class="tnum"><?= number_format($aa['running_total']) ?> PKR</b></span>
                         </div>
                     </div>
                     <?php endforeach; ?>

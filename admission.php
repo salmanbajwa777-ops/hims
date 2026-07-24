@@ -55,6 +55,14 @@ $err = '';
 $isOpen = $adm['status'] !== 'DISCHARGED';
 $canLog = $isOpen && has_permission('NURSING_LOG_CHARGEABLE_EVENTS');
 
+// Doctors who reach this stay page (e.g. via their console's "Manage stay" link)
+// must NOT see billing: charges, running estimate, or the final-bill trigger.
+// Billing is reception's job. A doctor sees the clinical/operational picture only
+// (services logged as a care record, vitals, handover, stay time). This is a pure
+// UI suppression keyed on the viewer's base_role — the money still exists in the
+// data; it's just not surfaced to the doctor.
+$hideMoney = ($baseRole === 'DOCTOR');
+
 // ---------------- Add a service ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_service' && $canLog) {
     $erId = (int) ($_POST['er_service_id'] ?? 0) ?: null;
@@ -339,17 +347,17 @@ require __DIR__ . '/partials/sidebar.php';
 
                     <div style="overflow-x:auto;">
                     <table>
-                        <thead><tr><th>Time</th><th>Service</th><th>Qty/Dur</th><th>Charge</th><th>By</th><?php if ($canLog): ?><th></th><?php endif; ?></tr></thead>
+                        <thead><tr><th>Time</th><th>Service</th><th>Qty/Dur</th><?php if (!$hideMoney): ?><th>Charge</th><?php endif; ?><th>By</th><?php if ($canLog): ?><th></th><?php endif; ?></tr></thead>
                         <tbody>
                             <?php if (!$services): ?>
-                            <tr><td colspan="6" class="muted" style="padding:18px 10px;">No services logged yet.</td></tr>
+                            <tr><td colspan="<?= $hideMoney ? 5 : 6 ?>" class="muted" style="padding:18px 10px;">No services logged yet.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($services as $s): ?>
                             <tr>
                                 <td class="mono"><?= date('H:i', strtotime($s['logged_at'])) ?></td>
                                 <td style="font-weight:600;"><?= htmlspecialchars($s['service_name']) ?></td>
                                 <td><?= $s['charge_type'] === 'HOURLY' ? ((int) $s['duration_minutes']) . ' min' : ('×' . (int) $s['quantity']) ?></td>
-                                <td class="mono">Rs <?= number_format((float) $s['calculated_charge']) ?></td>
+                                <?php if (!$hideMoney): ?><td class="mono">Rs <?= number_format((float) $s['calculated_charge']) ?></td><?php endif; ?>
                                 <td class="muted"><?= htmlspecialchars($s['logged_by_role']) ?></td>
                                 <?php if ($canLog): ?>
                                 <td>
@@ -380,6 +388,7 @@ require __DIR__ . '/partials/sidebar.php';
 
                 <!-- Estimate + actions -->
                 <div class="card">
+                    <?php if (!$hideMoney): ?>
                     <div class="section-title">Running estimate</div>
                     <div class="section-sub">Final bill is raised at discharge.</div>
                     <div class="est">
@@ -388,6 +397,10 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="est-row total"><span>Estimated total</span><span class="mono">Rs <?= number_format($runningTotal) ?></span></div>
                         <div class="est-note">Under 45 min bills a flat half-hour; beyond that, rounded down to the previous quarter-hour.</div>
                     </div>
+                    <?php else: ?>
+                    <div class="section-title">Stay status</div>
+                    <div class="section-sub">Billing is handled by reception at discharge.</div>
+                    <?php endif; ?>
 
                     <div class="side-actions" style="margin-top:18px;">
                         <?php if ($isOpen && !$adm['assigned_nurse_id']): ?>
