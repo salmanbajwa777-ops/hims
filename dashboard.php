@@ -73,13 +73,13 @@ $todayOutstanding = 0.0;
 try {
     $c = $pdo->prepare("
         SELECT COALESCE(SUM(paid_amount), 0)
-        FROM bills WHERE status = 'paid' AND paid_at >= ? AND paid_at < ?
+        FROM bills WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?
     ");
     $c->execute([$winStart, $winEnd]);
     $todayCollections = (float) $c->fetchColumn();
     // Refunds taken back today reduce net cash collected.
     try {
-        $rf = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM refunds WHERE created_at >= ? AND created_at < ?");
+        $rf = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM refunds WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?");
         $rf->execute([$winStart, $winEnd]);
         $todayCollections -= (float) $rf->fetchColumn();
     } catch (Throwable $e) { /* refunds table missing */ }
@@ -102,11 +102,11 @@ try {
     for ($i = 6; $i >= 0; $i--) {
         $d = date('Y-m-d', strtotime($bizToday . " -$i day"));
         [$ws, $we] = business_day_window($pdo, $d);
-        $q = $pdo->prepare("SELECT COALESCE(SUM(paid_amount),0) FROM bills WHERE status='paid' AND paid_at >= ? AND paid_at < ?");
+        $q = $pdo->prepare("SELECT COALESCE(SUM(paid_amount),0) FROM bills WHERE status='paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?");
         $q->execute([$ws, $we]);
         $val = (float) $q->fetchColumn();
         try {
-            $rq = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM refunds WHERE created_at >= ? AND created_at < ?");
+            $rq = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM refunds WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?");
             $rq->execute([$ws, $we]);
             $val -= (float) $rq->fetchColumn();
         } catch (Throwable $e) { /* no refunds table */ }
@@ -131,7 +131,7 @@ try {
                MAX(t.status) AS timing_status
         FROM users dr
         JOIN visits v ON v.doctor_id = dr.id AND v.visit_date = ?
-        LEFT JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+        LEFT JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
         LEFT JOIN doctor_day_timings t ON t.doctor_id = dr.id AND t.timing_date = ?
         WHERE dr.base_role = 'DOCTOR'
         GROUP BY dr.id, dr.name
@@ -153,7 +153,7 @@ try {
         FROM bills b
         JOIN visits v ON v.id = b.visit_id
         JOIN users dr ON dr.id = v.doctor_id
-        WHERE b.status = 'paid' AND b.paid_at >= ? AND b.paid_at < ?
+        WHERE b.status = 'paid' AND b.voided_at IS NULL AND b.paid_at >= ? AND b.paid_at < ?
     ");
     $ds->execute([$winStart, $winEnd]);
     $todayDoctorShare = (float) $ds->fetchColumn();
@@ -186,7 +186,7 @@ try {
     // Paid bills
     foreach ($pdo->query("
         SELECT b.paid_at AS ts, CONCAT('Payment received — Rs ', FORMAT(b.paid_amount, 0)) AS text, 'primary' AS kind
-        FROM bills b WHERE b.status = 'paid' AND b.paid_at IS NOT NULL
+        FROM bills b WHERE b.status = 'paid' AND b.voided_at IS NULL AND b.paid_at IS NOT NULL
         ORDER BY b.paid_at DESC LIMIT 5
     ")->fetchAll() as $row) { $timeline[] = $row; }
 } catch (Throwable $e) {}

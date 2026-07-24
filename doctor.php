@@ -161,7 +161,7 @@ try {
                SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
                COUNT(*) AS n
         FROM visits v
-        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
         JOIN users dr ON dr.id = v.doctor_id
         WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
     ");
@@ -176,7 +176,7 @@ try {
                SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
                COUNT(*) AS n
         FROM visits v
-        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
         WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
     ");
     $moC->execute([$doctorId, $moStart, $moEnd]);

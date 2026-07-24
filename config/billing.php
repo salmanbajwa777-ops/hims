@@ -82,9 +82,9 @@ function generate_refund_number(PDO $pdo): string {
     return 'RF-' . $year . '-' . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
 }
 
-// How much of a bill has already been refunded.
+// How much of a bill has already been refunded (voided refunds don't count).
 function refunded_total(PDO $pdo, int $billId): float {
-    $stmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS t FROM refunds WHERE bill_id = ?');
+    $stmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS t FROM refunds WHERE bill_id = ? AND voided_at IS NULL');
     $stmt->execute([$billId]);
     return (float) $stmt->fetch()['t'];
 }
@@ -455,7 +455,7 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         SELECT (payment_method = 'cash') AS is_cash,
                COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
         FROM bills
-        WHERE status = 'paid' AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+        WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
         GROUP BY is_cash
     ");
     $stmt->execute([$winStart, $winEnd, $userId]);
@@ -469,7 +469,7 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         SELECT (payment_method = 'cash') AS is_cash,
                COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
         FROM admission_bills
-        WHERE status = 'paid' AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+        WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
         GROUP BY is_cash
     ");
     $stmt->execute([$winStart, $winEnd, $userId]);
@@ -482,7 +482,7 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     $stmt = $pdo->prepare("
         SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
         FROM refunds
-        WHERE refund_mode = 'cash' AND created_at >= ? AND created_at < ? AND generated_by_id = ?
+        WHERE refund_mode = 'cash' AND voided_at IS NULL AND created_at >= ? AND created_at < ? AND generated_by_id = ?
     ");
     $stmt->execute([$winStart, $winEnd, $userId]);
     $r = $stmt->fetch();
@@ -552,4 +552,166 @@ function require_day_open(PDO $pdo, ?string $date = null, ?int $userId = null): 
              . 'To correct the count, edit the closing itself on the Day Closing page.';
     }
     return null;
+}
+
+// ============================================================================
+// Admin VOID for billable actions (soft-void, mirrors the expenses void).
+// A voided row keeps its number for audit but drops out of every money
+// calculation. Each void:
+//   * refuses if the payment's shift is already closed (signed tally) — the
+//     void would change that day's counted cash;
+//   * stamps voided_at / voided_by_id / void_reason;
+//   * writes an audit_logs entry;
+//   * reverses any side effects on other tables (write-off patient rollup).
+//
+// Returns [ok(bool), message(string)]. Callers gate on FINANCIAL_VOID_BILL.
+// Requires the add_void_actions.sql migration; tolerates it being unrun by
+// reporting a clean error rather than throwing.
+// ============================================================================
+
+// Void a consultation bill (`bills`). The whole visit's money reverses because
+// every cash/revenue read filters status='paid' or the new voided_at IS NULL.
+function void_bill(PDO $pdo, int $billId, int $userId, string $reason): array {
+    $reason = trim($reason);
+    if ($reason === '') {
+        return [false, 'A void needs a reason.'];
+    }
+    $stmt = $pdo->prepare('SELECT b.id, b.invoice_number, b.status, b.paid_at, b.paid_by_id, b.created_by_id, b.voided_at
+                           FROM bills b WHERE b.id = ?');
+    $stmt->execute([$billId]);
+    $bill = $stmt->fetch();
+    if (!$bill) {
+        return [false, 'Invoice not found.'];
+    }
+    if (!array_key_exists('voided_at', $bill)) {
+        return [false, 'Void is not available yet — run the add_void_actions.sql migration first.'];
+    }
+    if ($bill['voided_at'] !== null) {
+        return [false, 'This invoice is already voided.'];
+    }
+    // Any refund already raised against this bill must be voided first, else the
+    // net-collected math (paid − refunded) would go inconsistent.
+    $rf = $pdo->prepare('SELECT COUNT(*) FROM refunds WHERE bill_id = ? AND voided_at IS NULL');
+    $rf->execute([$billId]);
+    if ((int) $rf->fetchColumn() > 0) {
+        return [false, 'Void the refund(s) on this invoice first, then void the invoice.'];
+    }
+    // Shift lock: attribute to the collector's shift on the paid date.
+    if ($bill['status'] === 'paid' && $bill['paid_at']) {
+        $lockDate = date('Y-m-d', strtotime($bill['paid_at']));
+        $lockUser = (int) ($bill['paid_by_id'] ?: $bill['created_by_id']);
+        $dayLock = require_day_open($pdo, $lockDate, $lockUser);
+        if ($dayLock) {
+            return [false, $dayLock . ' Voiding this invoice would change that day\'s signed tally.'];
+        }
+    }
+    $upd = $pdo->prepare('UPDATE bills SET voided_at = NOW(), voided_by_id = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL');
+    $upd->execute([$userId, $reason, $billId]);
+    if ($upd->rowCount() !== 1) {
+        return [false, 'Could not void the invoice (already voided?).'];
+    }
+    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+        ->execute([$userId, 'bill_voided', "Voided invoice {$bill['invoice_number']} (bill #$billId) — $reason"]);
+    return [true, "Invoice {$bill['invoice_number']} voided. The number is kept for the record."];
+}
+
+// Void a refund (`refunds`). Reverses the refund so the invoice's refundable
+// balance is restored and cash-refund tallies exclude it.
+function void_refund(PDO $pdo, int $refundId, int $userId, string $reason): array {
+    $reason = trim($reason);
+    if ($reason === '') {
+        return [false, 'A void needs a reason.'];
+    }
+    $stmt = $pdo->prepare('SELECT id, refund_number, refund_mode, created_at, generated_by_id, voided_at
+                           FROM refunds WHERE id = ?');
+    $stmt->execute([$refundId]);
+    $r = $stmt->fetch();
+    if (!$r) {
+        return [false, 'Refund not found.'];
+    }
+    if (!array_key_exists('voided_at', $r)) {
+        return [false, 'Void is not available yet — run the add_void_actions.sql migration first.'];
+    }
+    if ($r['voided_at'] !== null) {
+        return [false, 'This refund is already voided.'];
+    }
+    // A cash refund left the drawer on the generator's shift — refuse if closed.
+    if ($r['refund_mode'] === 'cash' && $r['created_at']) {
+        $lockDate = date('Y-m-d', strtotime($r['created_at']));
+        $dayLock = require_day_open($pdo, $lockDate, (int) $r['generated_by_id']);
+        if ($dayLock) {
+            return [false, $dayLock . ' Voiding this refund would change that day\'s signed tally.'];
+        }
+    }
+    $upd = $pdo->prepare('UPDATE refunds SET voided_at = NOW(), voided_by_id = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL');
+    $upd->execute([$userId, $reason, $refundId]);
+    if ($upd->rowCount() !== 1) {
+        return [false, 'Could not void the refund (already voided?).'];
+    }
+    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+        ->execute([$userId, 'refund_voided', "Voided refund {$r['refund_number']} (#$refundId) — $reason"]);
+    return [true, "Refund {$r['refund_number']} voided. The number is kept for the record."];
+}
+
+// Void an admission bill (`admission_bills`). Reverses the admission invoice and,
+// if it carried an approved write-off, backs the patient unpaid rollup out too.
+function void_admission_bill(PDO $pdo, int $admBillId, int $userId, string $reason): array {
+    $reason = trim($reason);
+    if ($reason === '') {
+        return [false, 'A void needs a reason.'];
+    }
+    $stmt = $pdo->prepare('SELECT ab.id, ab.invoice_number, ab.status, ab.paid_at, ab.paid_by_id,
+                                  ab.finalized_by_id, ab.write_off_amount, ab.admission_id, ab.voided_at,
+                                  a.patient_id
+                           FROM admission_bills ab
+                           JOIN admissions a ON a.id = ab.admission_id
+                           WHERE ab.id = ?');
+    $stmt->execute([$admBillId]);
+    $ab = $stmt->fetch();
+    if (!$ab) {
+        return [false, 'Admission bill not found.'];
+    }
+    if (!array_key_exists('voided_at', $ab)) {
+        return [false, 'Void is not available yet — run the add_void_actions.sql migration first.'];
+    }
+    if ($ab['voided_at'] !== null) {
+        return [false, 'This admission bill is already voided.'];
+    }
+    if ($ab['status'] === 'paid' && $ab['paid_at']) {
+        $lockDate = date('Y-m-d', strtotime($ab['paid_at']));
+        $lockUser = (int) ($ab['paid_by_id'] ?: $ab['finalized_by_id']);
+        $dayLock = require_day_open($pdo, $lockDate, $lockUser);
+        if ($dayLock) {
+            return [false, $dayLock . ' Voiding this admission bill would change that day\'s signed tally.'];
+        }
+    }
+    $pdo->beginTransaction();
+    try {
+        $upd = $pdo->prepare('UPDATE admission_bills SET voided_at = NOW(), voided_by_id = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL');
+        $upd->execute([$userId, $reason, $admBillId]);
+        if ($upd->rowCount() !== 1) {
+            $pdo->rollBack();
+            return [false, 'Could not void the admission bill (already voided?).'];
+        }
+        // Reverse the patient unpaid rollup for any write-off this bill drove.
+        $woAmt = (float) ($ab['write_off_amount'] ?? 0);
+        if ($woAmt > 0) {
+            $pdo->prepare('UPDATE patients
+                              SET unpaid_total = GREATEST(0, unpaid_total - ?),
+                                  unpaid_count = GREATEST(0, unpaid_count - 1)
+                              WHERE id = ?')
+                ->execute([$woAmt, (int) $ab['patient_id']]);
+            // Clear the flag if nothing unpaid remains.
+            $pdo->prepare('UPDATE patients SET unpaid_flag = 0 WHERE id = ? AND unpaid_total <= 0')
+                ->execute([(int) $ab['patient_id']]);
+        }
+        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+            ->execute([$userId, 'admission_bill_voided', "Voided admission bill {$ab['invoice_number']} (#$admBillId) — $reason"]);
+        $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('[void_admission_bill] ' . $e->getMessage());
+        return [false, 'Could not void the admission bill. Please try again.'];
+    }
+    return [true, "Admission bill {$ab['invoice_number']} voided. The number is kept for the record."];
 }

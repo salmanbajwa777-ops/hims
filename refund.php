@@ -9,6 +9,7 @@ refresh_session_permissions($pdo);
 require_permission('RECEPTION_ISSUE_REFUNDS');
 
 $error = '';
+$success = '';
 
 // Full context for one bill: patient, visit, doctor, and what has been refunded so far.
 function load_refund_context(PDO $pdo, int $billId): ?array {
@@ -149,11 +150,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
             $pdo->rollBack();
         }
         // Log the real cause server-side; show the user a clean message.
+        // Log the real cause server-side; show the user a clean message.
         error_log('[refund] ' . $e->getMessage());
-        // TEMP DIAGNOSTIC #3: still failing with clean message — surface exact
-        // error + which line/file. REVERT once resolved.
-        $error = 'REFUND ERROR: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine();
+        $error = 'Could not issue the refund. Please try again.';
     }
+}
+
+// ---------------- Void a refund (admin-assignable permission) ----------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_refund') {
+    if (!has_permission('FINANCIAL_VOID_BILL')) {
+        http_response_code(403);
+        exit('You do not have permission to void a refund.');
+    }
+    $rid = (int) ($_POST['refund_id'] ?? 0);
+    [$ok, $msg] = void_refund($pdo, $rid, (int) $_SESSION['user_id'], $_POST['void_reason'] ?? '');
+    if ($ok) { $success = $msg; } else { $error = $msg; }
 }
 
 // ---------------- Page data ----------------
@@ -175,7 +186,7 @@ $meStmt->execute([$_SESSION['user_id']]);
 $currentUserName = $meStmt->fetch()['name'] ?? 'Signed-in user';
 
 $historyStmt = $pdo->prepare('
-    SELECT r.refund_number, r.amount, r.reason, r.created_at, u.name AS generated_by_name
+    SELECT r.id, r.refund_number, r.amount, r.reason, r.created_at, r.voided_at, u.name AS generated_by_name
     FROM refunds r JOIN users u ON u.id = r.generated_by_id
     WHERE r.bill_id = ? ORDER BY r.id
 ');
@@ -341,16 +352,31 @@ td { padding: 9px 10px; border-top: 1px solid var(--border); font-size: 13px; }
     <?php if ($history): ?>
     <div class="card">
         <div class="section-title">Earlier refunds on this invoice</div>
+        <?php $canVoid = has_permission('FINANCIAL_VOID_BILL'); ?>
         <table>
-            <thead><tr><th>Voucher</th><th>Amount</th><th>Reason</th><th>By</th><th>When</th></tr></thead>
+            <thead><tr><th>Voucher</th><th>Amount</th><th>Reason</th><th>By</th><th>When</th><?php if ($canVoid): ?><th></th><?php endif; ?></tr></thead>
             <tbody>
-            <?php foreach ($history as $h): ?>
-                <tr>
-                    <td class="mono"><?= htmlspecialchars($h['refund_number']) ?></td>
+            <?php foreach ($history as $h): $isVoid = !empty($h['voided_at']); ?>
+                <tr<?= $isVoid ? ' style="opacity:.55; text-decoration:line-through;"' : '' ?>>
+                    <td class="mono"><?= htmlspecialchars($h['refund_number']) ?>
+                        <?php if ($isVoid): ?><span style="text-decoration:none; display:inline-block; margin-left:6px; font-size:10px; font-weight:700; color:#991B1B; background:#FEE2E2; padding:1px 6px; border-radius:5px;">VOID</span><?php endif; ?>
+                    </td>
                     <td class="mono">Rs <?= number_format((float) $h['amount'], 2) ?></td>
                     <td><?= htmlspecialchars($h['reason']) ?></td>
                     <td><?= htmlspecialchars($h['generated_by_name']) ?></td>
                     <td><?= date('d/m/Y H:i', strtotime($h['created_at'])) ?></td>
+                    <?php if ($canVoid): ?>
+                    <td style="text-decoration:none;">
+                        <?php if (!$isVoid): ?>
+                        <form method="POST" action="refund.php?bill_id=<?= (int) $billId ?>" onsubmit="var r=prompt('Void refund <?= htmlspecialchars($h['refund_number'], ENT_QUOTES) ?>? This restores the invoice\'s refundable balance and removes it from all totals.\n\nReason for voiding:'); if(!r){return false;} this.void_reason.value=r; return true;" style="display:inline;">
+                            <input type="hidden" name="action" value="void_refund">
+                            <input type="hidden" name="refund_id" value="<?= (int) $h['id'] ?>">
+                            <input type="hidden" name="void_reason" value="">
+                            <button type="submit" class="btn-ghost" style="color:#991B1B; font-size:12px;">Void</button>
+                        </form>
+                        <?php endif; ?>
+                    </td>
+                    <?php endif; ?>
                 </tr>
             <?php endforeach; ?>
             </tbody>

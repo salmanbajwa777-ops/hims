@@ -37,7 +37,7 @@ $reg = $pdo->query("
            COALESCE(SUM(b.grand_total), 0) AS billed,
            COALESCE(SUM(CASE WHEN b.status = 'paid' THEN b.paid_amount ELSE 0 END), 0) AS collected
     FROM bills b
-    WHERE DATE(b.created_at) = CURDATE()
+    WHERE DATE(b.created_at) = CURDATE() AND b.voided_at IS NULL
 ")->fetch();
 
 $newPatients = (int) $pdo->query("SELECT COUNT(*) FROM patients WHERE DATE(created_at) = CURDATE()")->fetchColumn();
@@ -48,7 +48,7 @@ $byDoctor = $pdo->query("
     FROM bills b
     JOIN visits v ON v.id = b.visit_id
     JOIN users du ON du.id = v.doctor_id
-    WHERE DATE(b.created_at) = CURDATE()
+    WHERE DATE(b.created_at) = CURDATE() AND b.voided_at IS NULL
     GROUP BY du.id, du.name
     ORDER BY billed DESC
 ")->fetchAll();
@@ -56,7 +56,7 @@ $byDoctor = $pdo->query("
 // ---- Refunds today ----
 $ref = $pdo->query("
     SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
-    FROM refunds WHERE DATE(created_at) = CURDATE()
+    FROM refunds WHERE DATE(created_at) = CURDATE() AND voided_at IS NULL
 ")->fetch();
 
 // ---- Admissions today ----
@@ -65,7 +65,7 @@ $discharged = (int) $pdo->query("SELECT COUNT(*) FROM admissions WHERE DATE(disc
 $stillIn = (int) $pdo->query("SELECT COUNT(*) FROM admissions WHERE status <> 'DISCHARGED'")->fetchColumn();
 $admBilling = $pdo->query("
     SELECT COALESCE(SUM(paid_amount), 0) AS collected, COALESCE(SUM(write_off_amount), 0) AS written_off
-    FROM admission_bills WHERE DATE(paid_at) = CURDATE()
+    FROM admission_bills WHERE DATE(paid_at) = CURDATE() AND voided_at IS NULL
 ")->fetch();
 
 // ---- Counter expenses today (voided excluded) ----

@@ -119,6 +119,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
     }
 }
 
+// ---------------- Void a consultation invoice (admin-assignable permission) ----------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_bill') {
+    if (!has_permission('FINANCIAL_VOID_BILL')) {
+        http_response_code(403);
+        exit('You do not have permission to void an invoice.');
+    }
+    $billId = (int) ($_POST['bill_id'] ?? 0);
+    [$ok, $msg] = void_bill($pdo, $billId, (int) $_SESSION['user_id'], $_POST['void_reason'] ?? '');
+    if ($ok) { $success = $msg; } else { $error = $msg; }
+    header('Location: checkout.php?bill_id=' . $billId . ($ok ? '&voided=1' : ''));
+    exit;
+}
+
 // ---------------- Record payment ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'record_payment') {
     require_permission('RECEPTION_PROCESS_PAYMENTS');
@@ -207,6 +220,7 @@ if (isset($_GET['print']) && isset($_GET['bill_id'])) {
 $activeBill = null;
 $activeBillVisit = null;
 $activeBillItems = [];
+if (isset($_GET['voided'])) { $success = 'Invoice voided. The number is kept for the record and it is excluded from all totals.'; }
 
 if (isset($_GET['bill_id'])) {
     $billId = (int) $_GET['bill_id'];
@@ -404,8 +418,18 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endif; ?>
                     <?php else: ?>
                         <a class="btn secondary" href="checkout.php?print=1&bill_id=<?= (int) $activeBill['id'] ?>" target="_blank">Print Invoice</a>
-                        <?php if (has_permission('RECEPTION_ISSUE_REFUNDS')): ?>
+                        <?php if (empty($activeBill['voided_at']) && has_permission('RECEPTION_ISSUE_REFUNDS')): ?>
                             <a class="btn secondary" href="refund.php?bill_id=<?= (int) $activeBill['id'] ?>" style="color:var(--red-text);">Refund</a>
+                        <?php endif; ?>
+                        <?php if (array_key_exists('voided_at', $activeBill) && !empty($activeBill['voided_at'])): ?>
+                            <span style="align-self:center; font-size:12px; font-weight:700; color:#991B1B; background:#FEE2E2; padding:5px 10px; border-radius:6px;">VOIDED</span>
+                        <?php elseif (has_permission('FINANCIAL_VOID_BILL')): ?>
+                            <form method="POST" action="checkout.php" onsubmit="var r=prompt('Void invoice <?= htmlspecialchars($activeBill['invoice_number'], ENT_QUOTES) ?>? It stays on record but is removed from every total. Void any refund on it first.\n\nReason for voiding:'); if(!r){return false;} this.void_reason.value=r; return true;">
+                                <input type="hidden" name="action" value="void_bill">
+                                <input type="hidden" name="bill_id" value="<?= (int) $activeBill['id'] ?>">
+                                <input type="hidden" name="void_reason" value="">
+                                <button type="submit" class="btn secondary" style="color:#991B1B;">Void Invoice</button>
+                            </form>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>

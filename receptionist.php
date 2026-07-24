@@ -89,10 +89,10 @@ $todayRows = $pdo->query("
     JOIN patients p ON p.id = v.patient_id
     JOIN users dr ON dr.id = v.doctor_id
     JOIN doctor_consult_types dct ON dct.id = v.doctor_consult_type_id
-    LEFT JOIN bills b ON b.visit_id = v.id
+    LEFT JOIN bills b ON b.visit_id = v.id AND b.voided_at IS NULL
     LEFT JOIN admissions adm ON adm.visit_id = v.id
     LEFT JOIN (
-        SELECT bill_id, SUM(amount) AS refunded FROM refunds GROUP BY bill_id
+        SELECT bill_id, SUM(amount) AS refunded FROM refunds WHERE voided_at IS NULL GROUP BY bill_id
     ) r ON r.bill_id = b.id
     WHERE v.visit_date = CURDATE()
     ORDER BY v.created_at DESC

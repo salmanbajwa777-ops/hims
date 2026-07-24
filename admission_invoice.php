@@ -11,9 +11,21 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+require_once __DIR__ . '/config/billing.php';
 refresh_session_permissions($pdo);
 
 $admissionId = (int) ($_GET['id'] ?? 0);
+$voidMsg = ''; $voidErr = '';
+
+// ---------------- Void this admission bill (admin-assignable permission) ----------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_admission_bill') {
+    if (!has_permission('FINANCIAL_VOID_BILL')) {
+        http_response_code(403);
+        exit('You do not have permission to void an admission bill.');
+    }
+    [$ok, $msg] = void_admission_bill($pdo, (int) ($_POST['adm_bill_id'] ?? 0), (int) $_SESSION['user_id'], $_POST['void_reason'] ?? '');
+    if ($ok) { $voidMsg = $msg; } else { $voidErr = $msg; }
+}
 
 $stmt = $pdo->prepare("
     SELECT ab.*, a.admission_type, a.admitted_at, a.discharged_at,
@@ -121,10 +133,34 @@ $paymentModeNote = $bill['status'] !== 'draft'
             .sheet { min-height: 210mm; padding: 6mm 6mm 4mm; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             @page { size: A5; margin: 0; }
+            .no-print { display: none !important; }
         }
+        .admin-bar { max-width: 148mm; margin: 10px auto 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+        .admin-bar.ok { background: #DCFCE7; color: #166534; }
+        .admin-bar.err { background: #FEE2E2; color: #991B1B; }
+        .admin-bar.tools { background: #F1F5F9; color: #334155; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .void-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #991B1B; background: #FEE2E2; padding: 2px 8px; border-radius: 6px; }
+        .btn-void { background: #991B1B; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
     </style>
 </head>
 <body>
+    <?php if ($voidMsg): ?><div class="admin-bar ok no-print"><?= htmlspecialchars($voidMsg) ?></div><?php endif; ?>
+    <?php if ($voidErr): ?><div class="admin-bar err no-print"><?= htmlspecialchars($voidErr) ?></div><?php endif; ?>
+    <?php if (has_permission('FINANCIAL_VOID_BILL')): ?>
+        <div class="admin-bar tools no-print">
+            <?php if (!empty($bill['voided_at'])): ?>
+                <span><span class="void-badge">VOID</span> This admission bill was voided and is excluded from all totals.</span>
+            <?php else: ?>
+                <span>Admin: void this admission bill (e.g. a duplicate). It stays on record but drops out of every calculation.</span>
+                <form method="POST" action="admission_invoice.php?id=<?= (int) $admissionId ?>" onsubmit="var r=prompt('Void admission bill <?= htmlspecialchars($bill['invoice_number'], ENT_QUOTES) ?>? It will be removed from all totals (a write-off, if any, is reversed too).\n\nReason for voiding:'); if(!r){return false;} this.void_reason.value=r; return true;">
+                    <input type="hidden" name="action" value="void_admission_bill">
+                    <input type="hidden" name="adm_bill_id" value="<?= (int) $bill['id'] ?>">
+                    <input type="hidden" name="void_reason" value="">
+                    <button type="submit" class="btn-void">Void this admission bill</button>
+                </form>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
     <div class="sheet">
         <div class="head-box">
             <div class="head-left">

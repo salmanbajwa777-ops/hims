@@ -24,7 +24,9 @@ $consult = $pdo->prepare('
            COUNT(*) AS n, COALESCE(SUM(v.category_discount_amount), 0) AS amt
     FROM visits v
     JOIN discount_categories dc ON dc.id = v.discount_category_id
+    LEFT JOIN bills b ON b.visit_id = v.id
     WHERE v.visit_date BETWEEN ? AND ? AND v.category_discount_amount > 0
+      AND b.voided_at IS NULL
     GROUP BY v.discount_category_id, dc.name
 ');
 $consult->execute([$monthStart, $monthEnd]);
@@ -40,6 +42,7 @@ $adm = $pdo->prepare('
     JOIN admission_bills ab ON ab.id = abi.admission_bill_id
     JOIN discount_categories dc ON dc.id = ab.discount_category_id
     WHERE DATE(ab.created_at) BETWEEN ? AND ? AND abi.discount_amount > 0
+      AND ab.voided_at IS NULL
     GROUP BY ab.discount_category_id, dc.name, abi.service_type
 ');
 $adm->execute([$monthStart, $monthEnd]);
@@ -74,6 +77,7 @@ $consultDetail = $pdo->prepare('
     LEFT JOIN bills b ON b.visit_id = v.id
     LEFT JOIN users du ON du.id = v.doctor_id
     WHERE v.visit_date BETWEEN ? AND ? AND v.category_discount_amount > 0
+      AND b.voided_at IS NULL
     ORDER BY v.visit_date, v.id
 ');
 $consultDetail->execute([$monthStart, $monthEnd]);
@@ -92,6 +96,7 @@ $admDetail = $pdo->prepare('
     JOIN visits v ON v.id = a.visit_id
     JOIN patients p ON p.id = v.patient_id
     WHERE DATE(ab.created_at) BETWEEN ? AND ? AND abi.discount_amount > 0
+      AND ab.voided_at IS NULL
     GROUP BY ab.id, d, ab.invoice_number, p.name, p.mrn, dc.name
     ORDER BY d, ab.id
 ');

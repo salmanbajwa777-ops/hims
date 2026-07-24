@@ -124,7 +124,7 @@ if ($view === 'patients') {
         FROM visits v
         JOIN patients p ON p.id = v.patient_id
         LEFT JOIN doctor_consult_types t ON t.id = v.doctor_consult_type_id
-        LEFT JOIN bills b ON b.visit_id = v.id
+        LEFT JOIN bills b ON b.visit_id = v.id AND b.voided_at IS NULL
         WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
     ";
     $params = [$doctorId, $from, $to];
@@ -242,7 +242,7 @@ if ($view === 'revenue') {
                    SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
                    SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN 1 ELSE 0 END) AS revisit_n
             FROM visits v
-            JOIN bills b2 ON b2.visit_id = v.id AND b2.status = 'paid'
+            JOIN bills b2 ON b2.visit_id = v.id AND b2.status = 'paid' AND b2.voided_at IS NULL
             JOIN users dr ON dr.id = v.doctor_id
             WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
             GROUP BY b
@@ -260,7 +260,7 @@ if ($view === 'revenue') {
                        SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
                        SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN 1 ELSE 0 END) AS revisit_n
                 FROM visits v
-                JOIN bills b2 ON b2.visit_id = v.id AND b2.status = 'paid'
+                JOIN bills b2 ON b2.visit_id = v.id AND b2.status = 'paid' AND b2.voided_at IS NULL
                 WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ?
                 GROUP BY b
             ";
@@ -301,7 +301,7 @@ if ($view === 'revenue') {
     $mixQ = $pdo->prepare("
         SELECT v.consultation_fee_type AS ft, COUNT(*) AS n
         FROM visits v
-        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+        JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
         WHERE v.doctor_id = ? AND v.visit_date BETWEEN ? AND ? AND v.consultation_fee_type <> 'FULL'
         GROUP BY v.consultation_fee_type
     ");
@@ -366,7 +366,7 @@ if ($view === 'admissions') {
         FROM admissions a
         JOIN visits v ON v.id = a.visit_id
         JOIN patients p ON p.id = v.patient_id
-        LEFT JOIN admission_bills ab ON ab.admission_id = a.id
+        LEFT JOIN admission_bills ab ON ab.admission_id = a.id AND ab.voided_at IS NULL
         WHERE COALESCE(a.admitting_doctor_id, v.doctor_id) = ?
           AND a.status = 'DISCHARGED'
           AND DATE(a.discharged_at) BETWEEN ? AND ?
