@@ -77,13 +77,20 @@ function ensure_admission_bill(PDO $pdo, array $adm, int $uid): array {
             $desc = 'Stay — ' . $adm['admission_type'] . ' (' . $units . ' hr)';
         }
         $stayAmt = round((float) $rate['rate_amount'] * $units, 2);
-        $pdo->prepare('INSERT INTO admission_bill_items (admission_bill_id, description, quantity, unit_rate, amount, item_kind) VALUES (?, ?, ?, ?, ?, \'STAY\')')
-            ->execute([$billId, $desc, $units, $rate['rate_amount'], $stayAmt]);
+        $totalDiscount = 0.0;
+        // The room stay now carries its own category rate (single rate across all
+        // admission types). Stored net, with the discount snapshotted on the line
+        // so edit/remove resync and month-end reporting stay honest.
+        $stayPct = $cat ? (float) $cat['room_stay_pct'] : 0.0;
+        $stayDiscount = round($stayAmt * $stayPct / 100, 2);
+        $stayNet = round($stayAmt - $stayDiscount, 2);
+        $totalDiscount += $stayDiscount;
+        $pdo->prepare('INSERT INTO admission_bill_items (admission_bill_id, description, quantity, unit_rate, amount, item_kind, discount_pct, discount_amount) VALUES (?, ?, ?, ?, ?, \'STAY\', ?, ?)')
+            ->execute([$billId, $desc, $units, $rate['rate_amount'], $stayNet, $stayPct, $stayDiscount]);
 
         // Service lines (billable only), net of the category discount if any.
         $svc = $pdo->prepare('SELECT * FROM admission_services WHERE admission_id = ? AND is_billable = 1 ORDER BY logged_at');
         $svc->execute([$adm['id']]);
-        $totalDiscount = 0.0;
         foreach ($svc->fetchAll() as $s) {
             $qtyLabel = $s['charge_type'] === 'HOURLY' ? ((int) $s['duration_minutes']) . ' min' : (int) $s['quantity'];
             // Procedures discount at their own rate, plain services at theirs.
@@ -452,7 +459,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <?php elseif ($catDiscount > 0): ?>
                     <!-- Generic wording by design — the category name never shows to reception/patient here. -->
                     <div class="r"><span>Before discount</span><span class="mono">Rs <?= number_format($total + $catDiscount) ?></span></div>
-                    <div class="r" style="color:var(--green-text);"><span>Discount (services)</span><span class="mono">− Rs <?= number_format($catDiscount) ?></span></div>
+                    <div class="r" style="color:var(--green-text);"><span>Discount</span><span class="mono">− Rs <?= number_format($catDiscount) ?></span></div>
                     <?php endif; ?>
                     <div class="r grand"><span>Total</span><span class="mono">Rs <?= number_format($total) ?></span></div>
                     <?php if ($bill['status'] !== 'draft'): ?>

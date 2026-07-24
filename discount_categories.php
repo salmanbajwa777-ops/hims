@@ -27,14 +27,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
         $error = 'The category needs a name.';
     } else {
         $stmt = $pdo->prepare('
-            INSERT INTO discount_categories (name, consultation_pct, er_services_pct, procedures_pct, created_by_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO discount_categories (name, consultation_pct, er_services_pct, room_stay_pct, procedures_pct, created_by_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE consultation_pct = VALUES(consultation_pct),
-                er_services_pct = VALUES(er_services_pct), procedures_pct = VALUES(procedures_pct), is_active = 1
+                er_services_pct = VALUES(er_services_pct), room_stay_pct = VALUES(room_stay_pct),
+                procedures_pct = VALUES(procedures_pct), is_active = 1
         ');
         $stmt->execute([
             $name, dc_pct($_POST['consultation_pct'] ?? 0),
-            dc_pct($_POST['er_services_pct'] ?? 0), dc_pct($_POST['procedures_pct'] ?? 0),
+            dc_pct($_POST['er_services_pct'] ?? 0), dc_pct($_POST['room_stay_pct'] ?? 0),
+            dc_pct($_POST['procedures_pct'] ?? 0),
             $_SESSION['user_id'],
         ]);
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
@@ -48,10 +50,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $id = (int) ($_POST['category_id'] ?? 0);
     $name = trim($_POST['name'] ?? '');
     if ($id > 0 && $name !== '') {
-        $pdo->prepare('UPDATE discount_categories SET name = ?, consultation_pct = ?, er_services_pct = ?, procedures_pct = ? WHERE id = ?')
+        $pdo->prepare('UPDATE discount_categories SET name = ?, consultation_pct = ?, er_services_pct = ?, room_stay_pct = ?, procedures_pct = ? WHERE id = ?')
             ->execute([
                 $name, dc_pct($_POST['consultation_pct'] ?? 0),
-                dc_pct($_POST['er_services_pct'] ?? 0), dc_pct($_POST['procedures_pct'] ?? 0), $id,
+                dc_pct($_POST['er_services_pct'] ?? 0), dc_pct($_POST['room_stay_pct'] ?? 0),
+                dc_pct($_POST['procedures_pct'] ?? 0), $id,
             ]);
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
             ->execute([$_SESSION['user_id'], 'discount_category_updated', "Updated discount category #$id (\"$name\")"]);
@@ -86,7 +89,7 @@ $headExtra = <<<CSS
 .header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
 .logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
 
-.add-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+.add-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
 .add-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .add-row input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
 .add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
@@ -128,8 +131,8 @@ require __DIR__ . '/partials/sidebar.php';
             <div class="note-box">
                 Assign a category to a patient from the <a href="patients.php" style="font-weight:600;">Patients</a> list (admin only).
                 Rates are locked onto each invoice when it's raised — editing them here affects future bills only.
-                Consultation discounts stack on top of follow-up pricing; on admission bills the discount applies to
-                service/procedure lines only, never the room stay. 100% = fully free (a zero-payable invoice is still raised).
+                Consultation discounts stack on top of follow-up pricing; on admission bills each area — room stay,
+                ER services and procedures — discounts at its own rate. 100% = fully free (a zero-payable invoice is still raised).
                 The printed slip shows a generic "Discount" line — category names never appear on paper.
             </div>
 
@@ -153,6 +156,10 @@ require __DIR__ . '/partials/sidebar.php';
                             <input type="number" step="0.5" min="0" max="100" name="er_services_pct" value="0">
                         </div>
                         <div>
+                            <label>Room Stay (%)</label>
+                            <input type="number" step="0.5" min="0" max="100" name="room_stay_pct" value="0">
+                        </div>
+                        <div>
                             <label>Procedures (%)</label>
                             <input type="number" step="0.5" min="0" max="100" name="procedures_pct" value="0">
                         </div>
@@ -172,6 +179,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <th>Category</th>
                             <th style="width:120px;">Consultation</th>
                             <th style="width:120px;">ER Services</th>
+                            <th style="width:120px;">Room Stay</th>
                             <th style="width:120px;">Procedures</th>
                             <th style="width:110px;">Patients</th>
                             <th style="width:150px;">Update</th>
@@ -181,7 +189,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </thead>
                     <tbody>
                         <?php if (!$categories): ?>
-                        <tr><td colspan="8" class="muted" style="padding:20px 10px;">No categories yet — add one above.</td></tr>
+                        <tr><td colspan="9" class="muted" style="padding:20px 10px;">No categories yet — add one above.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($categories as $c): ?>
                         <tr class="<?= $c['is_active'] ? '' : 'row-inactive' ?>">
@@ -190,6 +198,7 @@ require __DIR__ . '/partials/sidebar.php';
                             </td>
                             <td><input type="number" step="0.5" min="0" max="100" name="consultation_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['consultation_pct']) ?>"></td>
                             <td><input type="number" step="0.5" min="0" max="100" name="er_services_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['er_services_pct']) ?>"></td>
+                            <td><input type="number" step="0.5" min="0" max="100" name="room_stay_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) ($c['room_stay_pct'] ?? 0)) ?>"></td>
                             <td><input type="number" step="0.5" min="0" max="100" name="procedures_pct" form="edit-<?= (int) $c['id'] ?>" class="row-inp pct-inp" value="<?= htmlspecialchars((string) $c['procedures_pct']) ?>"></td>
                             <td><span class="count-chip"><?= (int) $c['patient_count'] ?> assigned</span></td>
                             <td>

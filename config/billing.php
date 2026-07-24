@@ -243,7 +243,7 @@ function admission_service_charge(string $chargeType, float $unitCharge, int $qu
 // treated as unassigned (admin can pause a category without touching patients).
 function patient_discount_category(PDO $pdo, int $patientId): ?array {
     $stmt = $pdo->prepare('
-        SELECT dc.id, dc.name, dc.consultation_pct, dc.er_services_pct, dc.procedures_pct
+        SELECT dc.id, dc.name, dc.consultation_pct, dc.er_services_pct, dc.room_stay_pct, dc.procedures_pct
         FROM patients p
         JOIN discount_categories dc ON dc.id = p.discount_category_id AND dc.is_active = 1
         WHERE p.id = ?
