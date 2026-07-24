@@ -130,8 +130,8 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
 
         /* ---------- Fee line + vitals ---------- */
         .fee-table, .vitals-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
-        /* Payment mode as a light footnote riding beside the patient name. */
-        .pay-note { font-weight: normal; font-size: 8px; color: #555; white-space: nowrap; }
+        /* Payment mode as a light note centred in the footnote row. */
+        .pay-note { font-weight: normal; color: #555; white-space: nowrap; text-align: center; }
         /* Butted straight against the header box: -1px so the two share a single rule
            rather than showing a gap or a doubled border. */
         .fee-table { margin-top: -1px; }
@@ -199,7 +199,7 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
                     <b>Phone:</b> <?= $clinicPhone ?>
                 </div>
                 <table class="meta">
-                    <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?> <span class="pay-note">(Paid: <?= htmlspecialchars($paymentModeDisplay) ?>)</span></td></tr>
+                    <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?></td></tr>
                     <tr><td class="k">S/D/W Of:</td><td class="v"><?= htmlspecialchars($fatherNameUpper) ?></td></tr>
                     <tr><td class="k">DOB:</td><td><?= $patientDobDisplay ?></td></tr>
                     <tr><td class="k">Phone:</td><td><?= htmlspecialchars($bill['phone']) ?></td></tr>
@@ -243,6 +243,7 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
 
         <div class="foot">
             <span>This is a computer generated receipt printed on <?= $printTimestamp ?></span>
+            <span class="pay-note">Paid: <?= htmlspecialchars($paymentModeDisplay) ?></span>
             <span>Front Desk: <?= htmlspecialchars(mb_strtoupper($printedBy, 'UTF-8')) ?></span>
         </div>
 
