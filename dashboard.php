@@ -32,6 +32,228 @@ try {
     // Migration not applied yet — show zero rather than fatal.
 }
 
+// ===========================================================================
+//  REAL DASHBOARD DATA
+//  Everything below reads live rows. Each block is wrapped so a not-yet-run
+//  migration degrades to zero/empty instead of a fatal — same guard the
+//  $todayExpenses block above already uses. Financial windows use the app's
+//  business-day cutoff (config/billing.php) so the dashboard agrees with the
+//  shift-closing / handover figures rather than a naive CURDATE().
+// ===========================================================================
+require_once __DIR__ . '/config/billing.php';
+
+$today = date('Y-m-d');          // calendar day, for visit_date (registration date)
+try { $bizToday = business_day($pdo); } catch (Throwable $e) { $bizToday = $today; }
+try { [$winStart, $winEnd] = business_day_window($pdo, $bizToday); }
+catch (Throwable $e) { $winStart = $today . ' 00:00:00'; $winEnd = date('Y-m-d', strtotime($today . ' +1 day')) . ' 00:00:00'; }
+
+// ---- Visit funnel for today (drives Snapshot + Patient Flow) --------------
+$visitStats = ['total' => 0, 'waiting' => 0, 'in_consult' => 0, 'done' => 0];
+try {
+    $vs = $pdo->prepare("
+        SELECT COUNT(*) AS total,
+               SUM(consult_status = 'WAITING')    AS waiting,
+               SUM(consult_status = 'IN_CONSULT') AS in_consult,
+               SUM(consult_status = 'DONE')       AS done
+        FROM visits WHERE visit_date = ?
+    ");
+    $vs->execute([$today]);
+    $r = $vs->fetch() ?: [];
+    $visitStats = [
+        'total'      => (int) ($r['total'] ?? 0),
+        'waiting'    => (int) ($r['waiting'] ?? 0),
+        'in_consult' => (int) ($r['in_consult'] ?? 0),
+        'done'       => (int) ($r['done'] ?? 0),
+    ];
+} catch (Throwable $e) { /* visits table missing — leave zeros */ }
+
+// ---- Today's collections & outstanding (business-day window) --------------
+$todayCollections = 0.0;
+$todayOutstanding = 0.0;
+try {
+    $c = $pdo->prepare("
+        SELECT COALESCE(SUM(paid_amount), 0)
+        FROM bills WHERE status = 'paid' AND paid_at >= ? AND paid_at < ?
+    ");
+    $c->execute([$winStart, $winEnd]);
+    $todayCollections = (float) $c->fetchColumn();
+    // Refunds taken back today reduce net cash collected.
+    try {
+        $rf = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM refunds WHERE created_at >= ? AND created_at < ?");
+        $rf->execute([$winStart, $winEnd]);
+        $todayCollections -= (float) $rf->fetchColumn();
+    } catch (Throwable $e) { /* refunds table missing */ }
+} catch (Throwable $e) { /* bills table missing */ }
+try {
+    // Bills raised for today's visits that aren't fully paid yet.
+    $o = $pdo->prepare("
+        SELECT COALESCE(SUM(b.grand_total - COALESCE(b.paid_amount, 0)), 0)
+        FROM bills b JOIN visits v ON v.id = b.visit_id
+        WHERE v.visit_date = ? AND b.status <> 'paid'
+    ");
+    $o->execute([$today]);
+    $todayOutstanding = (float) $o->fetchColumn();
+} catch (Throwable $e) { /* leave zero */ }
+
+// ---- Weekly revenue: net collections per business day, last 7 days --------
+$weekBars = [];   // [ ['day'=>'Mon', 'val'=>float], ... ]
+$weekTotal = 0.0; $weekPeakDay = ''; $weekPeakVal = 0.0;
+try {
+    for ($i = 6; $i >= 0; $i--) {
+        $d = date('Y-m-d', strtotime($bizToday . " -$i day"));
+        [$ws, $we] = business_day_window($pdo, $d);
+        $q = $pdo->prepare("SELECT COALESCE(SUM(paid_amount),0) FROM bills WHERE status='paid' AND paid_at >= ? AND paid_at < ?");
+        $q->execute([$ws, $we]);
+        $val = (float) $q->fetchColumn();
+        try {
+            $rq = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM refunds WHERE created_at >= ? AND created_at < ?");
+            $rq->execute([$ws, $we]);
+            $val -= (float) $rq->fetchColumn();
+        } catch (Throwable $e) { /* no refunds table */ }
+        $val = max(0, $val);
+        $label = date('D', strtotime($d));
+        $weekBars[] = ['day' => $label, 'val' => $val];
+        $weekTotal += $val;
+        if ($val >= $weekPeakVal) { $weekPeakVal = $val; $weekPeakDay = date('l', strtotime($d)); }
+    }
+} catch (Throwable $e) { $weekBars = []; }
+$weekAvg = $weekBars ? $weekTotal / count($weekBars) : 0.0;
+
+// ---- Doctor performance today (real; no fake ratings) ---------------------
+$doctorPerf = [];
+try {
+    $dp = $pdo->prepare("
+        SELECT dr.id, dr.name,
+               COUNT(v.id) AS patients,
+               COALESCE(SUM(b.paid_amount), 0) AS revenue,
+               AVG(CASE WHEN v.finished_at IS NOT NULL AND v.started_at IS NOT NULL
+                        THEN TIMESTAMPDIFF(MINUTE, v.started_at, v.finished_at) END) AS avg_min,
+               MAX(t.status) AS timing_status
+        FROM users dr
+        JOIN visits v ON v.doctor_id = dr.id AND v.visit_date = ?
+        LEFT JOIN bills b ON b.visit_id = v.id AND b.status = 'paid'
+        LEFT JOIN doctor_day_timings t ON t.doctor_id = dr.id AND t.timing_date = ?
+        WHERE dr.base_role = 'DOCTOR'
+        GROUP BY dr.id, dr.name
+        ORDER BY revenue DESC, patients DESC
+    ");
+    $dp->execute([$today, $today]);
+    $doctorPerf = $dp->fetchAll();
+} catch (Throwable $e) { $doctorPerf = []; }
+
+// ---- Doctor share of today's paid consults (for Financial Summary) --------
+$todayDoctorShare = 0.0;
+try {
+    $ds = $pdo->prepare("
+        SELECT COALESCE(SUM(
+            CASE WHEN dr.consult_has_tax = 1
+                 THEN (b.paid_amount - b.paid_amount * dr.consult_tax_pct / 100) * dr.consult_share_pct / 100
+                 ELSE b.paid_amount * dr.consult_share_pct / 100 END
+        ), 0)
+        FROM bills b
+        JOIN visits v ON v.id = b.visit_id
+        JOIN users dr ON dr.id = v.doctor_id
+        WHERE b.status = 'paid' AND b.paid_at >= ? AND b.paid_at < ?
+    ");
+    $ds->execute([$winStart, $winEnd]);
+    $todayDoctorShare = (float) $ds->fetchColumn();
+} catch (Throwable $e) { /* consult share columns missing — leave zero */ }
+$todayNet = $todayCollections - $todayExpenses - $todayDoctorShare;
+
+// ---- Admissions snapshot (replaces the fake "bed occupancy" rings) --------
+// There is no bed-inventory table, so we show the real census: how many
+// patients are currently admitted, mid-discharge, and admitted today.
+$adm = ['active' => 0, 'discharging' => 0, 'today' => 0, 'has_table' => false];
+try {
+    $a = $pdo->query("
+        SELECT
+            SUM(status = 'ACTIVE')                 AS active,
+            SUM(status = 'DISCHARGE_IN_PROGRESS')  AS discharging,
+            SUM(DATE(admitted_at) = CURDATE())     AS today
+        FROM admissions
+    ")->fetch();
+    $adm = [
+        'active'      => (int) ($a['active'] ?? 0),
+        'discharging' => (int) ($a['discharging'] ?? 0),
+        'today'       => (int) ($a['today'] ?? 0),
+        'has_table'   => true,
+    ];
+} catch (Throwable $e) { /* admissions migration not run */ }
+
+// ---- Recent activity timeline (real events) -------------------------------
+$timeline = [];
+try {
+    // Paid bills
+    foreach ($pdo->query("
+        SELECT b.paid_at AS ts, CONCAT('Payment received — Rs ', FORMAT(b.paid_amount, 0)) AS text, 'primary' AS kind
+        FROM bills b WHERE b.status = 'paid' AND b.paid_at IS NOT NULL
+        ORDER BY b.paid_at DESC LIMIT 5
+    ")->fetchAll() as $row) { $timeline[] = $row; }
+} catch (Throwable $e) {}
+try {
+    foreach ($pdo->query("
+        SELECT v.finished_at AS ts, CONCAT('Consultation completed — ', dr.name) AS text, 'green' AS kind
+        FROM visits v JOIN users dr ON dr.id = v.doctor_id
+        WHERE v.consult_status = 'DONE' AND v.finished_at IS NOT NULL
+        ORDER BY v.finished_at DESC LIMIT 5
+    ")->fetchAll() as $row) { $timeline[] = $row; }
+} catch (Throwable $e) {}
+try {
+    foreach ($pdo->query("
+        SELECT a.admitted_at AS ts, CONCAT('Patient admitted — ', p.name) AS text, 'red' AS kind
+        FROM admissions a JOIN patients p ON p.id = a.patient_id
+        WHERE a.admitted_at IS NOT NULL
+        ORDER BY a.admitted_at DESC LIMIT 5
+    ")->fetchAll() as $row) { $timeline[] = $row; }
+} catch (Throwable $e) {}
+// Newest first, keep the most recent 6.
+usort($timeline, fn ($x, $y) => strcmp($y['ts'] ?? '', $x['ts'] ?? ''));
+$timeline = array_slice($timeline, 0, 6);
+
+// ---- Notifications (real, admin-relevant) ---------------------------------
+$notifs = [];
+try {
+    $pending = (int) $pdo->query("SELECT COUNT(*) FROM user_permission_overrides WHERE granted = 0")->fetchColumn();
+    // (informational — overrides table doesn't model a request queue, but a
+    //  non-zero explicit-deny count is still worth surfacing to an admin.)
+} catch (Throwable $e) { $pending = 0; }
+if (($adm['discharging'] ?? 0) > 0) {
+    $notifs[] = ['icon' => 'bed', 'bg' => '#FFFBEB', 'fg' => '#92400E', 'text' => $adm['discharging'] . ' discharge' . ($adm['discharging'] > 1 ? 's' : '') . ' awaiting payment', 'href' => 'admissions.php', 'action' => 'Open'];
+}
+if ($todayOutstanding > 0) {
+    $notifs[] = ['icon' => 'wallet', 'bg' => '#FEF2F2', 'fg' => '#B91C1C', 'text' => 'Rs ' . number_format($todayOutstanding, 0) . ' outstanding today', 'href' => 'checkout.php', 'action' => 'View'];
+}
+if (($visitStats['waiting'] ?? 0) > 0) {
+    $notifs[] = ['icon' => 'user-group', 'bg' => '#ECFDF5', 'fg' => '#047857', 'text' => $visitStats['waiting'] . ' patient' . ($visitStats['waiting'] > 1 ? 's' : '') . ' waiting in queue', 'href' => 'receptionist.php', 'action' => 'Open'];
+}
+
+// ---- Today's queue by doctor (replaces the fake inventory card) -----------
+$queueByDoctor = [];
+try {
+    $qd = $pdo->prepare("
+        SELECT dr.name,
+               SUM(v.consult_status <> 'DONE') AS pending,
+               COUNT(*) AS total
+        FROM visits v JOIN users dr ON dr.id = v.doctor_id
+        WHERE v.visit_date = ?
+        GROUP BY dr.id, dr.name
+        ORDER BY pending DESC, dr.name
+    ");
+    $qd->execute([$today]);
+    $queueByDoctor = $qd->fetchAll();
+} catch (Throwable $e) { $queueByDoctor = []; }
+
+// ---- Calendar event days: real bookings this month ------------------------
+$eventDays = [];
+try {
+    $bk = $pdo->query("
+        SELECT DISTINCT DAY(booking_date) AS d
+        FROM bookings
+        WHERE YEAR(booking_date) = YEAR(CURDATE()) AND MONTH(booking_date) = MONTH(CURDATE())
+    ")->fetchAll(PDO::FETCH_COLUMN);
+    $eventDays = array_map('intval', $bk);
+} catch (Throwable $e) { $eventDays = []; }
+
 function icon(string $name, int $size = 18): string {
     $paths = [
         'grid' => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -140,32 +362,6 @@ $headExtra = <<<CSS
 .welcome-line h1 { font-size: 26px; font-weight: 700; color: var(--text); margin: 0; }
 .welcome-date { font-size: 13.5px; color: var(--text-muted); }
 
-/* ---------- Quick Actions ---------- */
-.quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.action-tile {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    min-height: 100px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    cursor: pointer;
-    transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
-    text-align: center;
-    padding: 10px;
-}
-.action-tile:hover {
-    transform: scale(1.03);
-    box-shadow: var(--shadow-md);
-    background: linear-gradient(160deg, #fff, var(--primary-light));
-}
-.action-tile .icon { color: var(--primary-dark); }
-.action-tile .icon svg { width: 24px; height: 24px; }
-.action-tile .label { font-size: 12.5px; font-weight: 600; color: var(--text); }
-
 /* ---------- Section shell ---------- */
 .section-title { font-size: 18px; font-weight: 600; margin-bottom: 2px; }
 .section-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
@@ -213,16 +409,16 @@ $headExtra = <<<CSS
 .flow-pct { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 .flow-arrow { display: flex; align-items: center; color: var(--text-muted); font-size: 14px; padding-top: 30px; }
 
-/* ---------- Bed occupancy ---------- */
-.rings { display: flex; justify-content: space-around; gap: 12px; flex-wrap: wrap; }
-.ring-item { text-align: center; }
-.ring {
-    width: 96px; height: 96px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    position: relative; margin: 0 auto 10px;
+/* ---------- Admissions census ---------- */
+.census-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 8px; }
+.census-item {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 22px 10px; border-radius: 14px; background: #F8FAFC; border: 1px solid var(--border);
+    text-align: center; transition: background .15s ease;
 }
-.ring-value { font-size: 18px; font-weight: 700; }
-.ring-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.ring-sub { font-size: 11px; color: var(--text-muted); }
+.census-item:hover { background: var(--primary-light); }
+.census-num { font-size: 30px; font-weight: 700; line-height: 1; }
+.census-label { font-size: 12px; color: var(--text-secondary); }
 
 /* ---------- Doctor table ---------- */
 table { width: 100%; border-collapse: collapse; }
@@ -295,7 +491,7 @@ tabular { font-variant-numeric: tabular-nums; }
 .nag-banner a { font-weight: 700; text-decoration: underline; }
 
 @media (max-width: 1200px) {
-    .quick-actions, .fin-grid { grid-template-columns: repeat(2, 1fr); }
+    .fin-grid { grid-template-columns: repeat(2, 1fr); }
     .row-2 { grid-template-columns: 1fr; }
 }
 </style>
@@ -335,23 +531,6 @@ require __DIR__ . '/partials/sidebar.php';
                 <span class="welcome-date"><?= date('l, d/m/Y') ?></span>
             </div>
 
-            <!-- Quick Actions -->
-            <div>
-                <div class="section-title">Quick Actions</div>
-                <div class="section-sub">Jump straight into the most common tasks</div>
-                <div class="quick-actions">
-                    <a class="action-tile" href="patients.php"><span class="icon"><?= icon('users', 24) ?></span><span class="label">Patients</span></a>
-                    <a class="action-tile" href="staff.php"><span class="icon"><?= icon('plus', 24) ?></span><span class="label">Add Staff</span></a>
-                    <a class="action-tile" href="staff.php"><span class="icon"><?= icon('stethoscope', 24) ?></span><span class="label">Add Doctor</span></a>
-                    <a class="action-tile" href="permissions.php"><span class="icon"><?= icon('lock', 24) ?></span><span class="label">Permissions</span></a>
-                    <div class="action-tile"><span class="icon"><?= icon('bar-chart', 24) ?></span><span class="label">Settlement</span></div>
-                    <div class="action-tile"><span class="icon"><?= icon('box', 24) ?></span><span class="label">Inventory</span></div>
-                    <div class="action-tile"><span class="icon"><?= icon('file-text', 24) ?></span><span class="label">Reports</span></div>
-                    <div class="action-tile"><span class="icon"><?= icon('download', 24) ?></span><span class="label">Export</span></div>
-                    <div class="action-tile"><span class="icon"><?= icon('settings', 24) ?></span><span class="label">Settings</span></div>
-                </div>
-            </div>
-
             <!-- Revenue + Snapshot -->
             <div class="row-2">
                 <div class="card">
@@ -368,22 +547,24 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                     <div class="bars">
                         <?php
-                        $days = ['Mon'=>62,'Tue'=>74,'Wed'=>58,'Thu'=>81,'Fri'=>69,'Sat'=>92,'Sun'=>47];
-                        $max = max($days);
-                        foreach ($days as $day => $val):
-                            $h = round(($val / $max) * 100);
+                        $barMax = 0;
+                        foreach ($weekBars as $b) { $barMax = max($barMax, $b['val']); }
+                        if (!$weekBars): ?>
+                            <div style="width:100%;text-align:center;color:var(--text-muted);font-size:13px;align-self:center;">No revenue data yet.</div>
+                        <?php else:
+                        foreach ($weekBars as $b):
+                            $h = $barMax > 0 ? max(2, round(($b['val'] / $barMax) * 100)) : 2;
                         ?>
                         <div class="bar-col">
-                            <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= $day ?>: <?= $val ?>k"></div>
-                            <div class="bar-day"><?= $day ?></div>
+                            <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= htmlspecialchars($b['day']) ?>: Rs <?= number_format($b['val']) ?>"></div>
+                            <div class="bar-day"><?= htmlspecialchars($b['day']) ?></div>
                         </div>
-                        <?php endforeach; ?>
+                        <?php endforeach; endif; ?>
                     </div>
                     <div class="revenue-summary">
-                        <div class="summary-row"><span class="label">Revenue</span><span class="value">347,000</span></div>
-                        <div class="summary-row"><span class="label">Average</span><span class="value">49,570</span></div>
-                        <div class="summary-row"><span class="label">Peak Day</span><span class="value">Saturday</span></div>
-                        <div class="summary-row"><span class="label">Growth</span><span class="value good">&#9650; +12%</span></div>
+                        <div class="summary-row"><span class="label">7-day Revenue</span><span class="value">Rs <?= number_format($weekTotal) ?></span></div>
+                        <div class="summary-row"><span class="label">Daily Average</span><span class="value">Rs <?= number_format($weekAvg) ?></span></div>
+                        <div class="summary-row"><span class="label">Peak Day</span><span class="value"><?= $weekPeakVal > 0 ? htmlspecialchars($weekPeakDay) : '—' ?></span></div>
                     </div>
                 </div>
 
@@ -391,12 +572,12 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-title">Today's Snapshot</div>
                     <div class="section-sub">Executive summary</div>
                     <div class="snapshot-grid">
-                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--primary);"></span><div><span class="value">85</span><span class="label">Appointments</span></div></div>
-                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--green);"></span><div><span class="value">54</span><span class="label">Completed</span></div></div>
-                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--amber);"></span><div><span class="value">19</span><span class="label">Waiting</span></div></div>
-                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--red);"></span><div><span class="value">4</span><span class="label">Cancelled</span></div></div>
-                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--green);"></span><div><span class="value">82,500</span><span class="label">Collections</span></div></div>
-                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--amber);"></span><div><span class="value">8,500</span><span class="label">Outstanding</span></div></div>
+                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--primary);"></span><div><span class="value"><?= number_format($visitStats['total']) ?></span><span class="label">Registered</span></div></div>
+                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--green);"></span><div><span class="value"><?= number_format($visitStats['done']) ?></span><span class="label">Completed</span></div></div>
+                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--amber);"></span><div><span class="value"><?= number_format($visitStats['waiting']) ?></span><span class="label">Waiting</span></div></div>
+                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--primary);"></span><div><span class="value"><?= number_format($visitStats['in_consult']) ?></span><span class="label">In Consult</span></div></div>
+                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--green);"></span><div><span class="value"><?= number_format($todayCollections) ?></span><span class="label">Collections (Rs)</span></div></div>
+                        <div class="snapshot-item"><span class="snapshot-dot" style="background:var(--amber);"></span><div><span class="value"><?= number_format($todayOutstanding) ?></span><span class="label">Outstanding (Rs)</span></div></div>
                     </div>
                 </div>
             </div>
@@ -408,51 +589,49 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-sub">Today's journey across stages</div>
                     <div class="flow">
                         <?php
+                        $flowTotal = max(1, $visitStats['total']);
                         $stages = [
-                            'Registered' => ['num'=>145,'pct'=>100],
-                            'Waiting' => ['num'=>34,'pct'=>72],
-                            'Consultation' => ['num'=>58,'pct'=>60],
-                            'Pharmacy' => ['num'=>39,'pct'=>45],
-                            'Completed' => ['num'=>102,'pct'=>70],
+                            'Registered'   => $visitStats['total'],
+                            'Waiting'      => $visitStats['waiting'],
+                            'In Consult'   => $visitStats['in_consult'],
+                            'Completed'    => $visitStats['done'],
                         ];
                         $i = 0;
-                        foreach ($stages as $name => $s):
+                        foreach ($stages as $name => $num):
+                            $pct = (int) round(($num / $flowTotal) * 100);
                             if ($i > 0): ?><div class="flow-arrow">&rarr;</div><?php endif;
                         ?>
                         <div class="flow-stage">
-                            <div class="num"><?= $s['num'] ?></div>
+                            <div class="num"><?= number_format($num) ?></div>
                             <div class="name"><?= $name ?></div>
-                            <div class="flow-bar"><div class="flow-bar-fill" style="width:<?= $s['pct'] ?>%;"></div></div>
-                            <div class="flow-pct"><?= $s['pct'] ?>%</div>
+                            <div class="flow-bar"><div class="flow-bar-fill" style="width:<?= $pct ?>%;"></div></div>
+                            <div class="flow-pct"><?= $pct ?>%</div>
                         </div>
                         <?php $i++; endforeach; ?>
                     </div>
                 </div>
 
                 <div class="card">
-                    <div class="section-title">Bed Occupancy</div>
+                    <div class="section-title">Admissions Census</div>
                     <div class="section-sub">Live ward status</div>
-                    <div class="rings">
-                        <?php
-                        $wards = [
-                            ['name'=>'Emergency','pct'=>83,'sub'=>'5/6 Beds','color'=>'#DC2626'],
-                            ['name'=>'ICU','pct'=>72,'sub'=>'8/11 Beds','color'=>'#F59E0B'],
-                            ['name'=>'General','pct'=>58,'sub'=>'26/45 Beds','color'=>'#10B981'],
-                        ];
-                        foreach ($wards as $w):
-                            $deg = round($w['pct'] * 3.6);
-                        ?>
-                        <div class="ring-item">
-                            <div class="ring" style="background: conic-gradient(<?= $w['color'] ?> <?= $deg ?>deg, #F1F5F9 0deg);">
-                                <div style="width:74px;height:74px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;">
-                                    <span class="ring-value"><?= $w['pct'] ?>%</span>
-                                </div>
-                            </div>
-                            <div class="ring-label"><?= $w['name'] ?></div>
-                            <div class="ring-sub"><?= $w['sub'] ?></div>
-                        </div>
-                        <?php endforeach; ?>
+                    <?php if (!$adm['has_table']): ?>
+                        <div style="color:var(--text-muted);font-size:13px;padding:20px 0;">Admissions module not enabled.</div>
+                    <?php else: ?>
+                    <div class="census-grid">
+                        <a class="census-item" href="admissions.php" style="text-decoration:none;color:inherit;">
+                            <span class="census-num" style="color:var(--primary-dark);"><?= number_format($adm['active']) ?></span>
+                            <span class="census-label">Currently Admitted</span>
+                        </a>
+                        <a class="census-item" href="admissions.php" style="text-decoration:none;color:inherit;">
+                            <span class="census-num" style="color:#B45309;"><?= number_format($adm['discharging']) ?></span>
+                            <span class="census-label">Awaiting Discharge</span>
+                        </a>
+                        <a class="census-item" href="admissions.php" style="text-decoration:none;color:inherit;">
+                            <span class="census-num" style="color:#047857;"><?= number_format($adm['today']) ?></span>
+                            <span class="census-label">Admitted Today</span>
+                        </a>
                     </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -463,27 +642,28 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-sub">Today's activity by doctor</div>
                     <table>
                         <thead>
-                            <tr><th>Doctor</th><th>Patients</th><th>Revenue</th><th>Avg. Time</th><th>Rating</th><th>Status</th></tr>
+                            <tr><th>Doctor</th><th>Patients</th><th>Revenue</th><th>Avg. Time</th><th>Status</th></tr>
                         </thead>
                         <tbody>
-                            <?php
-                            $doctors = [
-                                ['name'=>'Dr Fatima Ahmed','patients'=>18,'revenue'=>'42k','time'=>'12m','rating'=>'4.9','status'=>'in-clinic','top'=>true],
-                                ['name'=>'Dr Ahmed Raza','patients'=>15,'revenue'=>'37k','time'=>'14m','rating'=>'4.7','status'=>'in-clinic','top'=>false],
-                                ['name'=>'Dr Ali Hassan','patients'=>11,'revenue'=>'28k','time'=>'16m','rating'=>'4.6','status'=>'on-leave','top'=>false],
-                            ];
-                            foreach ($doctors as $d):
-                                $initials = strtoupper(substr($d['name'], 4, 1));
+                            <?php if (!$doctorPerf): ?>
+                            <tr><td colspan="5" style="color:var(--text-muted);text-align:center;padding:20px 0;">No consultations recorded today.</td></tr>
+                            <?php else:
+                            foreach ($doctorPerf as $idx => $d):
+                                $nm = trim(preg_replace('/^dr\.?\s*/i', '', $d['name']));
+                                $initials = strtoupper(substr($nm, 0, 1));
+                                $onLeave = ($d['timing_status'] ?? '') === 'OFF';
+                                $avgMin = $d['avg_min'] !== null ? round($d['avg_min']) . 'm' : '—';
+                                $rev = (float) $d['revenue'];
+                                $revFmt = $rev >= 1000 ? number_format($rev / 1000, 1) . 'k' : number_format($rev);
                             ?>
-                            <tr class="<?= $d['top'] ? 'top-performer' : '' ?>">
-                                <td><div class="doc-name"><span class="doc-avatar"><?= $initials ?></span><?= $d['name'] ?></div></td>
-                                <td class="tabular"><?= $d['patients'] ?></td>
-                                <td class="tabular"><?= $d['revenue'] ?></td>
-                                <td class="tabular"><?= $d['time'] ?></td>
-                                <td class="tabular"><?= $d['rating'] ?> &#9733;</td>
-                                <td><span class="status-pill <?= $d['status'] ?>"><?= $d['status'] === 'in-clinic' ? 'In Clinic' : 'On Leave' ?></span></td>
+                            <tr class="<?= $idx === 0 && $rev > 0 ? 'top-performer' : '' ?>">
+                                <td><div class="doc-name"><span class="doc-avatar"><?= htmlspecialchars($initials) ?></span><?= htmlspecialchars($d['name']) ?></div></td>
+                                <td class="tabular"><?= (int) $d['patients'] ?></td>
+                                <td class="tabular"><?= $revFmt ?></td>
+                                <td class="tabular"><?= $avgMin ?></td>
+                                <td><span class="status-pill <?= $onLeave ? 'on-leave' : 'in-clinic' ?>"><?= $onLeave ? 'On Leave' : 'In Clinic' ?></span></td>
                             </tr>
-                            <?php endforeach; ?>
+                            <?php endforeach; endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -492,10 +672,11 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-title">Financial Summary</div>
                     <div class="section-sub">Today at a glance</div>
                     <div class="fin-grid">
-                        <div class="fin-card"><div class="label">Collections</div><div class="value">82.5k</div><div class="trend up">&#9650; 6%</div></div>
-                        <a class="fin-card" href="expenses.php" style="text-decoration:none;color:inherit;"><div class="label">Expenses</div><div class="value"><?= $todayExpenses >= 1000 ? number_format($todayExpenses / 1000, 1) . 'k' : number_format($todayExpenses) ?></div><div class="trend">today</div></a>
-                        <div class="fin-card"><div class="label">Doctor Share</div><div class="value">34.8k</div><div class="trend up">&#9650; 4%</div></div>
-                        <div class="fin-card"><div class="label">Net Profit</div><div class="value">26.4k</div><div class="trend up">&#9650; 9%</div></div>
+                        <?php $kfmt = fn ($v) => abs($v) >= 1000 ? number_format($v / 1000, 1) . 'k' : number_format($v); ?>
+                        <div class="fin-card"><div class="label">Collections</div><div class="value"><?= $kfmt($todayCollections) ?></div><div class="trend">today</div></div>
+                        <a class="fin-card" href="expenses.php" style="text-decoration:none;color:inherit;"><div class="label">Expenses</div><div class="value"><?= $kfmt($todayExpenses) ?></div><div class="trend">today</div></a>
+                        <div class="fin-card"><div class="label">Doctor Share</div><div class="value"><?= $kfmt($todayDoctorShare) ?></div><div class="trend">today</div></div>
+                        <div class="fin-card"><div class="label">Net</div><div class="value"><?= $kfmt($todayNet) ?></div><div class="trend <?= $todayNet >= 0 ? 'up' : 'down' ?>"><?= $todayNet >= 0 ? 'positive' : 'negative' ?></div></div>
                     </div>
                 </div>
             </div>
@@ -506,23 +687,21 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-title">Timeline</div>
                     <div class="section-sub">Recent activity</div>
                     <div class="timeline">
-                        <?php
-                        $events = [
-                            ['time'=>'10:40','text'=>'Consultation Completed — Dr Fatima Ahmed','color'=>'var(--green)'],
-                            ['time'=>'10:15','text'=>'Patient Admitted — Emergency Ward','color'=>'var(--red)'],
-                            ['time'=>'09:52','text'=>'Payment Received — PKR 12,000','color'=>'var(--primary)'],
-                            ['time'=>'08:30','text'=>'Monthly Settlement Generated','color'=>'var(--amber)'],
-                        ];
-                        foreach ($events as $e):
+                        <?php if (!$timeline): ?>
+                            <div style="color:var(--text-muted);font-size:13px;padding:12px 0;">No recent activity.</div>
+                        <?php else:
+                        $kindColor = ['green' => 'var(--green)', 'red' => 'var(--red)', 'primary' => 'var(--primary)', 'amber' => 'var(--amber)'];
+                        foreach ($timeline as $e):
+                            $color = $kindColor[$e['kind']] ?? 'var(--primary)';
                         ?>
                         <div class="tl-item">
-                            <div class="tl-dot" style="background:<?= $e['color'] ?>;"></div>
+                            <div class="tl-dot" style="background:<?= $color ?>;"></div>
                             <div>
-                                <div class="tl-time"><?= $e['time'] ?></div>
-                                <div class="tl-text"><?= $e['text'] ?></div>
+                                <div class="tl-time"><?= $e['ts'] ? date('d/m H:i', strtotime($e['ts'])) : '' ?></div>
+                                <div class="tl-text"><?= htmlspecialchars($e['text']) ?></div>
                             </div>
                         </div>
-                        <?php endforeach; ?>
+                        <?php endforeach; endif; ?>
                     </div>
                 </div>
 
@@ -530,23 +709,38 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-title">Notifications</div>
                     <div class="section-sub">Needs your attention</div>
                     <div class="notif-list">
-                        <div class="notif-item"><span class="notif-icon" style="background:#FFFBEB;color:#92400E;"><?= icon('alert-triangle') ?></span><span class="notif-text">2 Permission Requests</span><span class="notif-action">Approve</span></div>
-                        <div class="notif-item"><span class="notif-icon" style="background:#ECFDF5;color:#047857;"><?= icon('wallet') ?></span><span class="notif-text">Settlement Ready</span><span class="notif-action">Open</span></div>
-                        <div class="notif-item"><span class="notif-icon" style="background:#FEF2F2;color:#B91C1C;"><?= icon('bed') ?></span><span class="notif-text">Emergency Beds Almost Full</span><span class="notif-action">View</span></div>
-                        <div class="notif-item"><span class="notif-icon" style="background:#ECFDF5;color:#047857;"><?= icon('check-circle') ?></span><span class="notif-text">Backup Completed</span><span class="notif-action">Dismiss</span></div>
+                        <?php if (!$notifs): ?>
+                            <div class="notif-item"><span class="notif-icon" style="background:#ECFDF5;color:#047857;"><?= icon('check-circle') ?></span><span class="notif-text">All clear — nothing needs your attention.</span></div>
+                        <?php else: foreach ($notifs as $n): ?>
+                            <a class="notif-item" href="<?= htmlspecialchars($n['href']) ?>" style="text-decoration:none;color:inherit;">
+                                <span class="notif-icon" style="background:<?= $n['bg'] ?>;color:<?= $n['fg'] ?>;"><?= icon($n['icon']) ?></span>
+                                <span class="notif-text"><?= htmlspecialchars($n['text']) ?></span>
+                                <span class="notif-action"><?= htmlspecialchars($n['action']) ?></span>
+                            </a>
+                        <?php endforeach; endif; ?>
                     </div>
                 </div>
             </div>
 
-            <!-- Inventory + Calendar -->
+            <!-- Today by Doctor + Calendar -->
             <div class="row-2">
                 <div class="card">
-                    <div class="section-title">Inventory Alerts</div>
-                    <div class="section-sub">Low stock needs reordering</div>
+                    <div class="section-title">Today by Doctor</div>
+                    <div class="section-sub">Patients seen vs. still waiting</div>
                     <div class="inv-list">
-                        <div class="inv-item"><div><div class="inv-name">BCG Vaccine</div><div class="inv-qty">2 vials remaining</div></div><span class="inv-order">Order</span></div>
-                        <div class="inv-item"><div><div class="inv-name">Insulin</div><div class="inv-qty">5 pens remaining</div></div><span class="inv-order">Order</span></div>
-                        <div class="inv-item"><div><div class="inv-name">Examination Gloves</div><div class="inv-qty">1 box remaining</div></div><span class="inv-order">Order</span></div>
+                        <?php if (!$queueByDoctor): ?>
+                            <div style="color:var(--text-muted);font-size:13px;padding:12px 0;">No patients registered today.</div>
+                        <?php else: foreach ($queueByDoctor as $q):
+                            $pending = (int) $q['pending']; $total = (int) $q['total']; $seen = $total - $pending;
+                        ?>
+                            <div class="inv-item" style="background:#F8FAFC;border-left-color:var(--primary);">
+                                <div>
+                                    <div class="inv-name"><?= htmlspecialchars($q['name']) ?></div>
+                                    <div class="inv-qty"><?= $seen ?> seen &middot; <?= $pending ?> waiting</div>
+                                </div>
+                                <span class="inv-order" style="color:var(--text-secondary);"><?= $total ?> total</span>
+                            </div>
+                        <?php endforeach; endif; ?>
                     </div>
                 </div>
 
@@ -558,12 +752,12 @@ require __DIR__ . '/partials/sidebar.php';
                         foreach (['S','M','T','W','T','F','S'] as $d) echo "<div class='cal-dow'>$d</div>";
                         $firstDay = (int) date('N', strtotime(date('Y-m-01'))) % 7;
                         $daysInMonth = (int) date('t');
-                        $today = (int) date('j');
-                        $eventDays = [3, 9, 14, 22, 27];
+                        $todayDom = (int) date('j');
+                        // $eventDays comes from real bookings this month (computed above).
                         for ($i = 0; $i < $firstDay; $i++) echo "<div class='cal-day muted'></div>";
                         for ($d = 1; $d <= $daysInMonth; $d++) {
                             $classes = 'cal-day';
-                            if ($d === $today) $classes .= ' today';
+                            if ($d === $todayDom) $classes .= ' today';
                             if (in_array($d, $eventDays, true)) $classes .= ' has-event';
                             echo "<div class='$classes'>$d</div>";
                         }
