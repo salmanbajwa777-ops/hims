@@ -23,7 +23,11 @@ CREATE TABLE IF NOT EXISTS permissions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     `key` VARCHAR(100) NOT NULL UNIQUE,
     label VARCHAR(150) NOT NULL,
-    category ENUM('clinical','financial','admin') NOT NULL
+    -- VARCHAR, not ENUM: the assign-permissions UI groups by this value, and the
+    -- bucket set grows (nursing/clinical/reception/financial/admin and beyond). An
+    -- ENUM here silently truncated new categories to '' — see
+    -- rbac_overhaul_4_fix_category_enum.sql. Keep it free-form.
+    category VARCHAR(20) NOT NULL DEFAULT 'admin'
 );
 
 CREATE TABLE IF NOT EXISTS role_permissions (
