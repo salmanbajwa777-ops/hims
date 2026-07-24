@@ -50,33 +50,34 @@ function recalc_bill_totals(PDO $pdo, int $billId): void {
 function generate_refund_number(PDO $pdo): string {
     $year = (int) date('Y');
 
-    // Self-heal against sequence drift: if the counter ever falls behind the
-    // refunds already on record (a re-import or reset can leave last_sequence at 0
-    // while RF-YYYY-#### rows exist), seed it from the real max FIRST. Without this,
-    // the upsert below would re-issue an existing number and the UNIQUE key on
-    // refund_number rejects every attempt (seen live 2026-07-24). Idempotent.
-    $maxStmt = $pdo->prepare("
-        SELECT COALESCE(MAX(CAST(SUBSTRING_INDEX(refund_number, '-', -1) AS UNSIGNED)), 0)
-        FROM refunds
-        WHERE refund_number LIKE ?
+    // Deterministic next number: take the greater of (a) the stored counter and
+    // (b) the highest RF-YYYY-#### actually in `refunds`, then +1. Deriving from
+    // the real max makes this immune to sequence drift — a re-import/reset that
+    // leaves refund_sequences behind the rows on record can no longer cause a
+    // duplicate refund_number (the failure seen live 2026-07-24). We do NOT rely
+    // on LAST_INSERT_ID() here: on an ON DUPLICATE KEY *update* its return value
+    // is unreliable across setups, which was re-issuing RF-2026-0001. Callers run
+    // this inside the refund transaction under the bill-row FOR UPDATE lock, so
+    // two concurrent refunds are already serialized on that lock.
+    $stmt = $pdo->prepare("
+        SELECT GREATEST(
+            COALESCE((SELECT last_sequence FROM refund_sequences WHERE sequence_year = :y), 0),
+            COALESCE((SELECT MAX(CAST(SUBSTRING_INDEX(refund_number, '-', -1) AS UNSIGNED))
+                      FROM refunds WHERE refund_number LIKE :pfx), 0)
+        ) + 1
     ");
-    $maxStmt->execute(['RF-' . $year . '-%']);
-    $existingMax = (int) $maxStmt->fetchColumn();
+    $stmt->execute([':y' => $year, ':pfx' => 'RF-' . $year . '-%']);
+    $seq = (int) $stmt->fetchColumn();
+    if ($seq < 1) {
+        $seq = 1;
+    }
 
+    // Persist the new high-water mark so the counter tracks reality.
     $pdo->prepare('
         INSERT INTO refund_sequences (sequence_year, last_sequence)
         VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE last_sequence = GREATEST(last_sequence, ?)
-    ')->execute([$year, $existingMax, $existingMax]);
-
-    // Now advance atomically and take the new value.
-    $pdo->prepare('
-        INSERT INTO refund_sequences (sequence_year, last_sequence)
-        VALUES (?, 1)
-        ON DUPLICATE KEY UPDATE last_sequence = LAST_INSERT_ID(last_sequence) + 1
-    ')->execute([$year]);
-    $lastId = (int) $pdo->lastInsertId();
-    $seq = $lastId > 0 ? $lastId : 1;
+        ON DUPLICATE KEY UPDATE last_sequence = GREATEST(last_sequence, VALUES(last_sequence))
+    ')->execute([$year, $seq]);
 
     return 'RF-' . $year . '-' . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
 }
