@@ -78,17 +78,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
         if (!$s) {
             $err = 'That service is not available.';
         } else {
+            // Optional clinical detail — drug & strength, fluid volume, times, etc.
+            // Descriptive only; never affects the charge. '' -> null.
+            $note = trim($_POST['clinical_note'] ?? '');
+            $note = $note === '' ? null : mb_substr($note, 0, 200);
             $charge = admission_service_charge($s['charge_type'], (float) $s['base_charge'], $qty, $dur);
-            $pdo->prepare('
-                INSERT INTO admission_services
-                    (admission_id, er_service_id, service_type, service_name, charge_type,
-                     quantity, duration_minutes, unit_charge, calculated_charge, logged_by_id, logged_by_role)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ')->execute([
-                $admissionId, $s['id'], $s['service_type'], $s['service_name'], $s['charge_type'],
-                $qty, $dur, $s['base_charge'], $charge, $uid,
-                $baseRole === 'NURSE' ? 'NURSE' : ($baseRole === 'ADMIN' ? 'ADMIN' : ($baseRole === 'MANAGER' ? 'MANAGER' : 'RECEPTIONIST')),
-            ]);
+            $loggedRole = $baseRole === 'NURSE' ? 'NURSE' : ($baseRole === 'ADMIN' ? 'ADMIN' : ($baseRole === 'MANAGER' ? 'MANAGER' : 'RECEPTIONIST'));
+            try {
+                $pdo->prepare('
+                    INSERT INTO admission_services
+                        (admission_id, er_service_id, service_type, service_name, charge_type,
+                         quantity, duration_minutes, unit_charge, calculated_charge, clinical_note, logged_by_id, logged_by_role)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ')->execute([
+                    $admissionId, $s['id'], $s['service_type'], $s['service_name'], $s['charge_type'],
+                    $qty, $dur, $s['base_charge'], $charge, $note, $uid, $loggedRole,
+                ]);
+            } catch (PDOException $e) {
+                // clinical_note column not migrated yet — fall back to the pre-note
+                // insert so logging still works during a mid-deploy gap.
+                $pdo->prepare('
+                    INSERT INTO admission_services
+                        (admission_id, er_service_id, service_type, service_name, charge_type,
+                         quantity, duration_minutes, unit_charge, calculated_charge, logged_by_id, logged_by_role)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ')->execute([
+                    $admissionId, $s['id'], $s['service_type'], $s['service_name'], $s['charge_type'],
+                    $qty, $dur, $s['base_charge'], $charge, $uid, $loggedRole,
+                ]);
+            }
             $flash = 'Service logged.';
         }
     }
@@ -278,6 +296,13 @@ $headExtra = <<<CSS
 .svc-add label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .svc-add select, .svc-add input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
 .svc-add select:focus, .svc-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.svc-detail { margin-top: 10px; }
+.svc-detail label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
+.svc-detail label .opt { font-weight: 500; color: var(--text-muted); font-size: 11px; margin-left: 4px; }
+.svc-detail input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
+.svc-detail input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.svc-note-row td { border-bottom: 1px solid var(--border); padding-top: 0; }
+.svc-note { font-size: 12px; color: var(--text-secondary); padding-left: 10px; }
 .est { display: flex; flex-direction: column; gap: 10px; }
 .est-row { display: flex; justify-content: space-between; font-size: 13.5px; }
 .est-row.total { border-top: 1px solid var(--border); padding-top: 10px; font-weight: 700; font-size: 15px; }
@@ -345,16 +370,20 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="svc-add">
                             <div>
                                 <label>Service</label>
-                                <select name="er_service_id" required>
+                                <select name="er_service_id" id="svcSel" required>
                                     <option value="">Select…</option>
                                     <?php foreach ($erServices as $e): ?>
-                                    <option value="<?= (int) $e['id'] ?>"><?= htmlspecialchars($e['service_name']) ?> (Rs <?= number_format((float) $e['base_charge']) ?><?= $e['charge_type'] === 'HOURLY' ? '/hr' : '' ?>)</option>
+                                    <option value="<?= (int) $e['id'] ?>" data-ct="<?= htmlspecialchars($e['charge_type']) ?>"><?= htmlspecialchars($e['service_name']) ?> (Rs <?= number_format((float) $e['base_charge']) ?><?= $e['charge_type'] === 'HOURLY' ? '/hr' : '' ?>)</option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                             <div><label>Qty</label><input type="number" name="quantity" min="1" value="1"></div>
                             <div><label>Duration (min)</label><input type="number" name="duration_minutes" min="0" placeholder="hourly only"></div>
                             <button type="submit" class="btn">Add</button>
+                        </div>
+                        <div class="svc-detail">
+                            <label>Detail <span class="opt">optional — drug &amp; strength, fluid volume, times</span></label>
+                            <input type="text" name="clinical_note" id="svcNote" maxlength="200" placeholder="e.g. Augmentin 1.2g IV  ·  500 ml NS 14:10&ndash;15:40  ·  4 L/min O&#8322;">
                         </div>
                     </form>
                     <?php endif; ?>
@@ -383,6 +412,14 @@ require __DIR__ . '/partials/sidebar.php';
                                 </td>
                                 <?php endif; ?>
                             </tr>
+                            <?php if (!empty($s['clinical_note'])): ?>
+                            <?php // columns after Time: Service, Qty/Dur, [Charge], By, [remove]
+                                  $noteSpan = 3 + ($hideMoney ? 0 : 1) + ($canLog ? 1 : 0); ?>
+                            <tr class="svc-note-row">
+                                <td></td>
+                                <td colspan="<?= $noteSpan ?>" class="svc-note">&#8627; <?= htmlspecialchars($s['clinical_note']) ?></td>
+                            </tr>
+                            <?php endif; ?>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
@@ -553,6 +590,26 @@ require __DIR__ . '/partials/sidebar.php';
         </div>
     </div>
 </div>
+<script>
+// Steer the optional "Detail" field toward what the chosen service usually
+// records: hourly services (O2, fluids) prompt for volume/rate/times; fixed
+// services (injections, procedures) prompt for drug & strength. Purely a hint —
+// the field stays free text and always optional.
+(function () {
+    var sel  = document.getElementById('svcSel');
+    var note = document.getElementById('svcNote');
+    if (!sel || !note) return;
+    var DEFAULT = note.getAttribute('placeholder');
+    sel.addEventListener('change', function () {
+        var opt = sel.options[sel.selectedIndex];
+        var ct  = opt ? opt.getAttribute('data-ct') : '';
+        if (!sel.value) { note.placeholder = DEFAULT; return; }
+        note.placeholder = ct === 'HOURLY'
+            ? 'e.g. 500 ml NS 14:10–15:40  ·  4 L/min O₂  ·  volume + rate'
+            : 'e.g. Augmentin 1.2g IV  ·  Toradol 30mg IM  ·  drug & strength';
+    });
+})();
+</script>
 <script src="assets/js/date-picker.js"></script>
 </body>
 </html>
