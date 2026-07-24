@@ -510,17 +510,26 @@ foreach ($pdo->query('SELECT id, doctor_id, label, fee, is_default, is_revisit_e
     $consultTypesByDoctor[(int) $ct['doctor_id']][] = $ct;
 }
 
+// Category order + labels drive the grouped layout; keys are re-categorized by
+// sql/rbac_overhaul_3_categories.sql into these five buckets.
 $categoryLabels = [
-    'clinical' => 'Clinical & Nursing',
-    'financial' => 'Financial',
-    'admin' => 'Admin & Reception',
+    'reception' => 'Front Desk & Reception',
+    'nursing'   => 'Nursing & Ward',
+    'clinical'  => 'Clinical',
+    'financial' => 'Money & Billing',
+    'admin'     => 'System Administration',
 ];
 
-$allPermissions = $pdo->query('SELECT id, `key`, label, category FROM permissions ORDER BY category, label')->fetchAll();
+$allPermissions = $pdo->query('SELECT id, `key`, label, category FROM permissions ORDER BY label')->fetchAll();
 $permsByCategory = [];
 foreach ($allPermissions as $p) {
     $permsByCategory[$p['category']][] = $p;
 }
+// Render in the intended heading order, not alphabetically; stray categories last.
+$orderedCategories = array_merge(
+    array_values(array_filter(array_keys($categoryLabels), fn($c) => isset($permsByCategory[$c]))),
+    array_values(array_diff(array_keys($permsByCategory), array_keys($categoryLabels)))
+);
 
 $roleDefaultsByRole = [];
 foreach ($pdo->query('SELECT base_role, permission_id FROM role_permissions')->fetchAll() as $row) {
@@ -962,10 +971,10 @@ require __DIR__ . '/partials/sidebar.php';
 
             <div class="section">
                 <div class="section-body" id="permCategoryList">
-                    <?php foreach ($permsByCategory as $cat => $perms): ?>
+                    <?php foreach ($orderedCategories as $cat): ?>
                     <div class="perm-category" data-category="<?= htmlspecialchars($cat, ENT_QUOTES) ?>">
                         <div class="perm-category-head"><?= htmlspecialchars($categoryLabels[$cat] ?? ucfirst($cat)) ?></div>
-                        <?php foreach ($perms as $p): ?>
+                        <?php foreach ($permsByCategory[$cat] as $p): ?>
                         <div class="perm-row">
                             <input type="checkbox" class="perm-checkbox" id="staffPerm_<?= (int) $p['id'] ?>" name="permission_ids[]" value="<?= (int) $p['id'] ?>">
                             <label for="staffPerm_<?= (int) $p['id'] ?>">

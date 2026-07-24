@@ -21,16 +21,18 @@
 --    so the master catalog is the single source of truth. (If the feature
 --    migration already ran, these are no-ops.)
 -- ---------------------------------------------------------------------------
+-- Categories here already match the five-bucket scheme (rbac_overhaul_3_categories.sql);
+-- run in any order — step 3 also corrects any pre-existing rows.
 INSERT INTO permissions (`key`, label, category)
 SELECT * FROM (
-    SELECT 'ADMISSION_ADMIT_PATIENT'   AS `key`, 'Admit a patient to ER / short-stay (doctor or reception)' AS label, 'clinical'  AS category
+    SELECT 'ADMISSION_ADMIT_PATIENT'   AS `key`, 'Admit a patient to ER / short-stay (doctor or reception)' AS label, 'nursing'  AS category
     UNION ALL SELECT 'ADMISSION_APPROVE_WRITEOFF', 'Approve an admission-bill write-off',                'financial'
     UNION ALL SELECT 'RECEPTION_ISSUE_REFUNDS',    'Issue refunds',                                      'financial'
     UNION ALL SELECT 'RECEPTION_CLOSE_DAY',        'Close the day / cash tally',                         'financial'
     UNION ALL SELECT 'ADMIN_RECEIVE_HANDOVER',     'Receive end-of-day cash handover',                   'financial'
     UNION ALL SELECT 'FINANCIAL_POST_EXPENSES',    'Post petty-cash expenses',                           'financial'
     UNION ALL SELECT 'FINANCIAL_APPROVE_EXPENSES', 'Approve / reject posted expenses',                   'financial'
-    UNION ALL SELECT 'NURSING_RECORD_ADMISSIONS',  'Record short-stay admissions',                       'clinical'
+    UNION ALL SELECT 'NURSING_RECORD_ADMISSIONS',  'Record short-stay admissions',                       'nursing'
 ) AS seed
 WHERE NOT EXISTS (SELECT 1 FROM permissions p WHERE p.`key` = seed.`key`);
 
@@ -43,8 +45,8 @@ WHERE NOT EXISTS (SELECT 1 FROM permissions p WHERE p.`key` = seed.`key`);
 -- ---------------------------------------------------------------------------
 INSERT INTO permissions (`key`, label, category)
 SELECT * FROM (
-    SELECT 'RECEPTION_MANAGE_BOOKINGS'    AS `key`, 'Take / manage phone bookings'                 AS label, 'admin'     AS category
-    UNION ALL SELECT 'RECEPTION_EDIT_DOCTOR_TIMINGS', 'Edit doctor day-timings sheet',             'admin'
+    SELECT 'RECEPTION_MANAGE_BOOKINGS'    AS `key`, 'Take / manage phone bookings'                 AS label, 'reception' AS category
+    UNION ALL SELECT 'RECEPTION_EDIT_DOCTOR_TIMINGS', 'Edit doctor day-timings sheet',             'reception'
     UNION ALL SELECT 'ADMISSION_FINALIZE_BILL',       'Finalize / settle an admission (discharge)', 'financial'
 ) AS seed
 WHERE NOT EXISTS (SELECT 1 FROM permissions p WHERE p.`key` = seed.`key`);

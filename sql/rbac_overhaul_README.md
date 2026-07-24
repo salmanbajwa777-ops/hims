@@ -14,7 +14,8 @@ seeded — so no receptionist, nurse, or doctor is ever locked out mid-deploy.
 |------|--------------|------|
 | `rbac_overhaul_1_catalog.sql` | Re-asserts every real key into the master `permissions` catalog + adds 3 new split keys. **Additive.** | none |
 | `rbac_overhaul_2_grants.sql`  | Grants those keys to the right roles/users, reproducing every hardcoded `in_array` path + admit merge + split-key back-grants. **Additive.** | none |
-| Code edits (below) | Remove the role hardcodes; switch to the finer split keys. | needs both SQL run first |
+| `rbac_overhaul_3_categories.sql` | Re-categorizes every key into 5 role-owned buckets (nursing / clinical / reception / financial / admin) so the assign-permissions screen groups them sensibly. **Display only.** | none |
+| Code edits (below) | Remove the role hardcodes; switch to the finer split keys; render permission groups in the new category order. | needs the SQL run first |
 
 ## Run order (data first, code last)
 

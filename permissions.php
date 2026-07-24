@@ -4,10 +4,14 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 
 $roles = ['ADMIN', 'DOCTOR', 'MANAGER', 'ACCOUNTANT', 'NURSE', 'RECEPTIONIST'];
+// Category order + labels drive the grouped layout on this screen. Keys are
+// re-categorized by sql/rbac_overhaul_3_categories.sql into these five buckets.
 $categoryLabels = [
-    'clinical' => 'Clinical & Nursing',
-    'financial' => 'Financial',
-    'admin' => 'Admin & Reception',
+    'reception' => 'Front Desk & Reception',
+    'nursing'   => 'Nursing & Ward',
+    'clinical'  => 'Clinical',
+    'financial' => 'Money & Billing',
+    'admin'     => 'System Administration',
 ];
 
 $error = '';
@@ -61,11 +65,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     }
 }
 
-$allPermissions = $pdo->query('SELECT id, `key`, label, category FROM permissions ORDER BY category, label')->fetchAll();
+$allPermissions = $pdo->query('SELECT id, `key`, label, category FROM permissions ORDER BY label')->fetchAll();
 $byCategory = [];
 foreach ($allPermissions as $p) {
     $byCategory[$p['category']][] = $p;
 }
+// Render in the intended heading order, not alphabetically. Known categories
+// first (in $categoryLabels order), then any legacy/stray category, appended.
+$orderedCategories = array_merge(
+    array_values(array_filter(array_keys($categoryLabels), fn($c) => isset($byCategory[$c]))),
+    array_values(array_diff(array_keys($byCategory), array_keys($categoryLabels)))
+);
 
 $grantsByRole = [];
 foreach ($pdo->query('SELECT base_role, permission_id FROM role_permissions')->fetchAll() as $row) {
@@ -150,10 +160,10 @@ require __DIR__ . '/partials/sidebar.php';
                     <input type="hidden" name="action" value="save_role_permissions">
                     <input type="hidden" name="base_role" value="<?= htmlspecialchars($activeRole) ?>">
 
-                    <?php foreach ($byCategory as $cat => $perms): ?>
+                    <?php foreach ($orderedCategories as $cat): ?>
                     <div class="perm-category">
                         <div class="perm-category-head"><?= htmlspecialchars($categoryLabels[$cat] ?? ucfirst($cat)) ?></div>
-                        <?php foreach ($perms as $p): ?>
+                        <?php foreach ($byCategory[$cat] as $p): ?>
                         <?php $checked = isset($grantsByRole[$activeRole][(int) $p['id']]); ?>
                         <div class="perm-row">
                             <input type="checkbox" id="perm_<?= (int) $p['id'] ?>" name="permission_ids[]" value="<?= (int) $p['id'] ?>" <?= $checked ? 'checked' : '' ?>>

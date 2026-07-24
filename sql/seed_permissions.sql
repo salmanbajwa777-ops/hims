@@ -5,21 +5,21 @@
 
 INSERT INTO permissions (`key`, label, category)
 SELECT * FROM (SELECT
-    'NURSING_RECORD_VITALS' AS `key`, 'Record vitals (height, weight, BP, temp, HR, O2, RR)' AS label, 'clinical' AS category
-    UNION ALL SELECT 'NURSING_ATTEND_SHORT_STAY', 'Attend short-stay patient (bed management)', 'clinical'
-    UNION ALL SELECT 'NURSING_LOG_CHARGEABLE_EVENTS', 'Log chargeable events (injections, drips, services)', 'clinical'
-    UNION ALL SELECT 'NURSING_DISCHARGE_PATIENT', 'Discharge patient', 'clinical'
-    UNION ALL SELECT 'NURSING_SKIP_ROTATION', 'Skip busy nurse in rotation (override assignment)', 'clinical'
-    UNION ALL SELECT 'NURSING_SELF_ATTEND', 'Self-attend patient instead of allotting nurse', 'clinical'
-    UNION ALL SELECT 'NURSING_PERFORM_PROCEDURES', 'Perform procedures (if trained/authorized)', 'clinical'
-    UNION ALL SELECT 'NURSING_RECORD_ADMISSIONS', 'Record short-stay admissions', 'clinical'
+    'NURSING_RECORD_VITALS' AS `key`, 'Record vitals (height, weight, BP, temp, HR, O2, RR)' AS label, 'nursing' AS category
+    UNION ALL SELECT 'NURSING_ATTEND_SHORT_STAY', 'Attend short-stay patient (bed management)', 'nursing'
+    UNION ALL SELECT 'NURSING_LOG_CHARGEABLE_EVENTS', 'Log chargeable events (injections, drips, services)', 'nursing'
+    UNION ALL SELECT 'NURSING_DISCHARGE_PATIENT', 'Discharge patient', 'nursing'
+    UNION ALL SELECT 'NURSING_SKIP_ROTATION', 'Skip busy nurse in rotation (override assignment)', 'nursing'
+    UNION ALL SELECT 'NURSING_SELF_ATTEND', 'Self-attend patient instead of allotting nurse', 'nursing'
+    UNION ALL SELECT 'NURSING_PERFORM_PROCEDURES', 'Perform procedures (if trained/authorized)', 'nursing'
+    UNION ALL SELECT 'NURSING_RECORD_ADMISSIONS', 'Record short-stay admissions', 'nursing'
 
-    UNION ALL SELECT 'RECEPTION_REGISTER_PATIENTS', 'Register/search patients', 'admin'
-    UNION ALL SELECT 'RECEPTION_GENERATE_OPD_SLIPS', 'Generate OPD slips', 'admin'
-    UNION ALL SELECT 'RECEPTION_CAPTURE_PAYMENT_MODE', 'Capture payment mode (cash/digital)', 'admin'
+    UNION ALL SELECT 'RECEPTION_REGISTER_PATIENTS', 'Register/search patients', 'reception'
+    UNION ALL SELECT 'RECEPTION_GENERATE_OPD_SLIPS', 'Generate OPD slips', 'reception'
+    UNION ALL SELECT 'RECEPTION_CAPTURE_PAYMENT_MODE', 'Capture payment mode (cash/digital)', 'reception'
     UNION ALL SELECT 'RECEPTION_PROCESS_PAYMENTS', 'Process payments (finalize bill)', 'financial'
-    UNION ALL SELECT 'RECEPTION_PRINT_CONSENT', 'Print consent forms', 'admin'
-    UNION ALL SELECT 'RECEPTION_UPLOAD_CONSENT', 'Upload signed consent forms', 'admin'
+    UNION ALL SELECT 'RECEPTION_PRINT_CONSENT', 'Print consent forms', 'reception'
+    UNION ALL SELECT 'RECEPTION_UPLOAD_CONSENT', 'Upload signed consent forms', 'reception'
     UNION ALL SELECT 'RECEPTION_GENERATE_INVOICES', 'Generate invoices', 'financial'
 
     UNION ALL SELECT 'CLINICAL_VIEW_MEDICAL_RECORD', 'View patient medical record', 'clinical'
