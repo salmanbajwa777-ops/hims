@@ -815,7 +815,7 @@ if ($isDoctorReadonly) {
         LEFT JOIN cities c ON c.id = p.city_id
         LEFT JOIN discount_categories dc ON dc.id = p.discount_category_id
         WHERE p.name LIKE ? OR p.phone LIKE ? OR p.father_name LIKE ? OR p.mrn LIKE ?
-        ORDER BY p.name ASC LIMIT 50
+        ORDER BY p.id DESC LIMIT 50
     ');
     $stmt->execute([$like, $like, $like, $like]);
     $patients = $stmt->fetchAll();

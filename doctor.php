@@ -93,7 +93,8 @@ $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good
 
 // ---------------- Today's queue for this doctor ----------------
 // One row per visit today, patient + consult type joined in. Ordered so the active
-// consultation and those still waiting float to the top (by status), then by token.
+// consultation and those still waiting float to the top (by status), then newest
+// registration first within each group (highest token = latest arrival on top).
 $queueStmt = $pdo->prepare("
     SELECT v.id AS visit_id, v.token_no, v.consult_status, v.started_at, v.created_at,
            p.name AS patient_name, p.gender, p.dob, p.mrn,
@@ -106,7 +107,7 @@ $queueStmt = $pdo->prepare("
     LEFT JOIN admissions a ON a.visit_id = v.id
     LEFT JOIN bills b ON b.visit_id = v.id
     WHERE v.doctor_id = ? AND v.visit_date = CURDATE()
-    ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_no
+    ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_no DESC
 ");
 $queueStmt->execute([$doctorId]);
 
