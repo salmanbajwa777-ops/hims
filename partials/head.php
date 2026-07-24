@@ -93,5 +93,70 @@ $headExtra = $headExtra ?? '';
         }
     })();
     </script>
+    <script>
+    /* ---------------------------------------------------------------------
+       Global double-submit guard — kills lag-induced duplicate actions.
+
+       The failure it prevents: a user clicks Admit / Save / Done / Refund,
+       the server lags with no visible feedback, so they click again — and the
+       second click fires a SECOND real action (a duplicate visit, a repeat
+       admit) before the first request returns. See the same-day / idempotency
+       guards on the server for the safety net; this is the first line, and it
+       stops the click from ever leaving the browser twice.
+
+       Two triggers, one rule — the FIRST activation wins, everything after it
+       until navigation is swallowed:
+         1. Any <form> submit -> disable its submit control(s), relabel to a
+            busy state, and block any further submit of that same form.
+         2. Any click on an action control marked data-once (or a plain submit
+            button) -> disable it immediately so a rapid second click is inert.
+
+       Deliberately NOT guarded: normal navigation links, the sidebar, tabs,
+       and anything with data-no-once (opt out where re-clicking is expected,
+       e.g. toggles). GET links that merely open a page are safe to re-click,
+       so only submit buttons and data-once controls are locked.
+       ------------------------------------------------------------------- */
+    (function () {
+        var BUSY = 'is-submitting';
+
+        function lockControl(el) {
+            if (!el || el.disabled) return;
+            // Remember the visible label so we can show a busy state without
+            // losing the original text if JS ever re-enables it.
+            if (el.tagName === 'BUTTON' && !el.getAttribute('data-busy-done')) {
+                var busy = el.getAttribute('data-busy') || 'Working…';
+                el.setAttribute('data-label', el.innerHTML);
+                el.innerHTML = busy;
+                el.setAttribute('data-busy-done', '1');
+            }
+            el.classList.add(BUSY);
+            // Defer the disable one tick so a submit button's value still posts
+            // with the form (a disabled control is omitted from the payload).
+            setTimeout(function () { el.disabled = true; }, 0);
+        }
+
+        // A form may only be submitted once. Guard on a data-flag so a second
+        // programmatic or user submit is cancelled outright.
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || form.tagName !== 'FORM') return;
+            if (form.hasAttribute('data-no-once')) return;
+            if (form.getAttribute('data-submitted')) { e.preventDefault(); return; }
+            form.setAttribute('data-submitted', '1');
+            // Lock every submit control in the form.
+            var subs = form.querySelectorAll('button[type=submit], button:not([type]), input[type=submit]');
+            for (var i = 0; i < subs.length; i++) lockControl(subs[i]);
+        }, true);
+
+        // Non-form action controls opt in with data-once (e.g. an <a> that
+        // triggers a state change via GET, or a JS-driven button).
+        document.addEventListener('click', function (e) {
+            var el = e.target.closest ? e.target.closest('[data-once]') : null;
+            if (!el) return;
+            if (el.classList.contains(BUSY)) { e.preventDefault(); return; }
+            lockControl(el);
+        }, true);
+    })();
+    </script>
 </head>
 <body>

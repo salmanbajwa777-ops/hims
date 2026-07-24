@@ -249,6 +249,34 @@ function pending_booking_guard(PDO $pdo, string $phone, int $patientId = 0): arr
     }
 }
 
+/**
+ * Idempotency guard against lag-induced double registration: returns this
+ * patient's most recent visit with THIS doctor today, or null if none.
+ *
+ * The failure this catches: reception/doctor clicks "New invoice → Save", the
+ * server lags with no feedback, they click again, and a SECOND identical visit
+ * (new token, new bill) is created for a patient who is already in today's
+ * queue — exactly the duplicate rows the desk was seeing. The caller turns a
+ * hit into a "already registered today" message with a "Register anyway"
+ * override for the rare genuine second same-day consult.
+ *
+ * Scoped to same patient + same doctor + same day. A different doctor is a
+ * legitimately separate visit and is never blocked.
+ */
+function same_day_visit(PDO $pdo, int $patientId, int $doctorId): ?array {
+    if ($patientId <= 0 || $doctorId <= 0) { return null; }
+    $stmt = $pdo->prepare("
+        SELECT id, token_no, created_at
+        FROM visits
+        WHERE patient_id = ? AND doctor_id = ? AND visit_date = CURDATE()
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$patientId, $doctorId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
 // ---------------- Register patient + create visit (one transaction) ----------------
 $error = '';
 $success = '';
@@ -529,6 +557,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
     if (!$patient || !$ctRow || !in_array($paymentMode, ['CASH', 'DIGITAL'], true)) {
         $error = 'Pick a patient, doctor, consultation type and payment mode.';
+    } elseif (($_POST['force_revisit'] ?? '') !== '1'
+              && ($dupVisit = same_day_visit($pdo, $patientId, $doctorId)) !== null) {
+        // Idempotency net for lag-induced double-submit: this patient already has
+        // a visit with THIS doctor today. Rather than raise a second token + bill,
+        // surface the existing one. A genuine second same-day consult is rare, and
+        // the receptionist can still force it with the "Register anyway" button
+        // (it re-posts with force_revisit=1).
+        $duplicateVisit = $dupVisit; // consumed by the follow-up form re-render
+        $error = 'Already registered today: ' . $patient['name']
+            . ' (' . $patient['mrn'] . ') has visit #' . (int) $dupVisit['token_no']
+            . ' with this doctor at ' . date('h:i A', strtotime($dupVisit['created_at']))
+            . '. Open that visit, or choose "Register anyway" for a separate consultation.';
     } elseif (pending_booking_guard($pdo, '', $patientId) !== []) {
         // The follow-up panel asks its booking question via the JS popup before
         // submit; a bypassed popup lands here. No form re-render path for the
@@ -1169,7 +1209,26 @@ require __DIR__ . '/partials/sidebar.php';
             <?php if ($showRegister): ?>
             <!-- Register Patient — full page -->
             <div class="reg-page">
-                <?php if ($error): ?>
+                <?php if ($error && isset($duplicateVisit)): ?>
+                    <?php // Duplicate same-day visit — offer "go to it" or a deliberate override. ?>
+                    <div class="alert error" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;">
+                        <span><?= htmlspecialchars($error) ?></span>
+                        <span style="display:inline-flex;gap:8px;flex-shrink:0;">
+                            <a class="qa" href="receptionist.php">Go to today's queue</a>
+                            <form method="POST" action="patients.php" style="display:inline;">
+                                <input type="hidden" name="action" value="register_followup">
+                                <input type="hidden" name="force_revisit" value="1">
+                                <input type="hidden" name="patient_id" value="<?= (int) ($_POST['patient_id'] ?? 0) ?>">
+                                <input type="hidden" name="doctor_id" value="<?= (int) ($_POST['doctor_id'] ?? 0) ?>">
+                                <input type="hidden" name="doctor_consult_type_id" value="<?= (int) ($_POST['doctor_consult_type_id'] ?? 0) ?>">
+                                <input type="hidden" name="payment_mode" value="<?= htmlspecialchars($_POST['payment_mode'] ?? '') ?>">
+                                <input type="hidden" name="override_full" value="<?= htmlspecialchars($_POST['override_full'] ?? '') ?>">
+                                <input type="hidden" name="booking_dismissed" value="1">
+                                <button type="submit" class="qa warn">Register anyway</button>
+                            </form>
+                        </span>
+                    </div>
+                <?php elseif ($error): ?>
                     <div class="alert error"><?= htmlspecialchars($error) ?></div>
                 <?php endif; ?>
 
