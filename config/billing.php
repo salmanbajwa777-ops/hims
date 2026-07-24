@@ -344,13 +344,63 @@ function opening_float(PDO $pdo): float {
     return (float) ($stmt->fetchColumn() ?: 0);
 }
 
+// The hour (0–23, PKT) at which one business day rolls into the next. A late
+// shift that runs past midnight but before this hour still belongs to the day
+// it started, so the receptionist closes ONE shift for the whole night and the
+// evening's takings don't split across two calendar dates. Default 04:00.
+// Admin-configurable via clinic_settings ('day_cutoff_hour'). Cached per request.
+function day_cutoff_hour(PDO $pdo): int {
+    static $hour = null;
+    if ($hour !== null) {
+        return $hour;
+    }
+    try {
+        $stmt = $pdo->prepare("SELECT setting_value FROM clinic_settings WHERE setting_key = 'day_cutoff_hour'");
+        $stmt->execute();
+        $raw = $stmt->fetchColumn();
+    } catch (PDOException $e) {
+        $raw = false;   // clinic_settings missing — fall back to default
+    }
+    $h = ($raw === false || $raw === null || $raw === '') ? 4 : (int) $raw;
+    return $hour = max(0, min(23, $h));
+}
+
+// The current business day (Y-m-d) given the cutoff hour: before the cutoff we
+// are still on the previous calendar day. Pass a specific wall-clock time to
+// resolve which business day a payment/refund belongs to.
+function business_day(PDO $pdo, ?string $atDateTime = null): string {
+    $cutoff = day_cutoff_hour($pdo);
+    $ts = $atDateTime ? strtotime($atDateTime) : time();
+    if ($ts === false) {
+        $ts = time();
+    }
+    if ($cutoff > 0 && (int) date('G', $ts) < $cutoff) {
+        $ts -= 86400;   // still yesterday's business day
+    }
+    return date('Y-m-d', $ts);
+}
+
+// The [start, end) wall-clock window that a business day covers, so tally
+// queries can range over paid_at/created_at datetimes instead of DATE()=.
+// A cutoff of 4 means business day D runs D 04:00:00 → (D+1) 04:00:00.
+function business_day_window(PDO $pdo, string $businessDate): array {
+    $cutoff = day_cutoff_hour($pdo);
+    $start = sprintf('%s %02d:00:00', $businessDate, $cutoff);
+    $end   = date('Y-m-d H:i:s', strtotime($start) + 86400);
+    return [$start, $end];
+}
+
 // One receptionist's system-side tally for one date: the cash/online payments
 // THEY recorded (paid_by_id), the cash refunds THEY generated, the expenses
 // THEY posted, and the expected-cash figure their physical count is checked
 // against. No float — expected = own cash − own cash refunds − own expenses.
-// Keys off when money actually moved: DATE(paid_at) for bills,
-// DATE(created_at) for refunds, expense_date for expenses.
+// Keys off when money actually moved, over the BUSINESS-DAY window (cutoff-hour
+// aware) rather than the calendar date, so a shift running past midnight tallies
+// the whole night as one day. paid_at/created_at are ranged [start, end);
+// expenses key off the expense_date DATE column (posted for a business day).
 function day_cash_tally(PDO $pdo, string $date, int $userId): array {
+    [$winStart, $winEnd] = business_day_window($pdo, $date);
+
     $t = [
         'cash_consult_total' => 0.0, 'cash_consult_count' => 0,
         'cash_admission_total' => 0.0, 'cash_admission_count' => 0,
@@ -364,10 +414,10 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         SELECT (payment_method = 'cash') AS is_cash,
                COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
         FROM bills
-        WHERE status = 'paid' AND DATE(paid_at) = ? AND paid_by_id = ?
+        WHERE status = 'paid' AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
         GROUP BY is_cash
     ");
-    $stmt->execute([$date, $userId]);
+    $stmt->execute([$winStart, $winEnd, $userId]);
     foreach ($stmt->fetchAll() as $r) {
         $k = ((int) $r['is_cash']) ? 'cash_consult' : 'online_consult';
         $t[$k . '_total'] = (float) $r['total'];
@@ -378,10 +428,10 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         SELECT (payment_method = 'cash') AS is_cash,
                COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
         FROM admission_bills
-        WHERE status = 'paid' AND DATE(paid_at) = ? AND paid_by_id = ?
+        WHERE status = 'paid' AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
         GROUP BY is_cash
     ");
-    $stmt->execute([$date, $userId]);
+    $stmt->execute([$winStart, $winEnd, $userId]);
     foreach ($stmt->fetchAll() as $r) {
         $k = ((int) $r['is_cash']) ? 'cash_admission' : 'online_admission';
         $t[$k . '_total'] = (float) $r['total'];
@@ -391,9 +441,9 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     $stmt = $pdo->prepare("
         SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
         FROM refunds
-        WHERE refund_mode = 'cash' AND DATE(created_at) = ? AND generated_by_id = ?
+        WHERE refund_mode = 'cash' AND created_at >= ? AND created_at < ? AND generated_by_id = ?
     ");
-    $stmt->execute([$date, $userId]);
+    $stmt->execute([$winStart, $winEnd, $userId]);
     $r = $stmt->fetch();
     $t['cash_refund_total'] = (float) $r['total'];
     $t['cash_refund_count'] = (int) $r['n'];
@@ -443,7 +493,9 @@ function day_closing(PDO $pdo, string $date, int $userId): ?array {
 // error string to surface, or null when the user's shift is open. Tolerates
 // the migration not being run yet (table missing → treat as open).
 function require_day_open(PDO $pdo, ?string $date = null, ?int $userId = null): ?string {
-    $date = $date ?: date('Y-m-d');
+    // Default to the BUSINESS day (cutoff-aware) so a payment taken at 00:30
+    // maps to the shift that is still open, not a fresh calendar day.
+    $date = $date ?: business_day($pdo);
     $userId = $userId ?: (int) ($_SESSION['user_id'] ?? 0);
     if ($userId <= 0) {
         return null;

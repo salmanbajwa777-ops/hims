@@ -25,7 +25,12 @@ refresh_session_permissions($pdo);
 require_permission('RECEPTION_CLOSE_DAY');
 
 $error = '';
-$today = date('Y-m-d');
+// The shift's BUSINESS day (cutoff-hour aware): before the cutoff hour we are
+// still closing the day that started yesterday, so an overnight shift stays one
+// closing and its evening takings don't fall off the tally after midnight.
+$today = business_day($pdo);
+$cutoffHour = day_cutoff_hour($pdo);
+$isOvernight = $today !== date('Y-m-d');   // now past midnight but before cutoff
 $uid = (int) $_SESSION['user_id'];
 
 // PKR note faces, largest first. face_value 1 is the "Coins" line — its qty is
@@ -388,9 +393,17 @@ require __DIR__ . '/partials/sidebar.php';
 <div class="content">
 
     <div class="page-head">
-        <h1>My Shift Closing — <?= date('D d/m/Y') ?></h1>
+        <h1>My Shift Closing — <?= date('D d/m/Y', strtotime($today)) ?></h1>
         <p><?= htmlspecialchars($myName) ?>'s own takings only: payments you recorded, refunds you issued, expenses you posted. Colleagues close their shifts separately.</p>
     </div>
+
+    <?php if ($isOvernight): ?>
+        <div class="edit-banner" style="margin-bottom:18px;">
+            It's past midnight — you're still closing the <b><?= date('D d/m/Y', strtotime($today)) ?></b> business day
+            (the shift that opened yesterday). All cash you took this evening AND after midnight, up to <?= sprintf('%02d:00', $cutoffHour) ?>,
+            counts on this one closing. The new day begins at <?= sprintf('%02d:00', $cutoffHour) ?>.
+        </div>
+    <?php endif; ?>
 
     <?php if ($error): ?>
         <div class="alert-error"><?= htmlspecialchars($error) ?></div>
