@@ -148,7 +148,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        $error = 'Could not issue the refund. Please try again.';
+        // TEMP DIAGNOSTIC: surface the real reason so we can see why the refund
+        // fails on live (no local DB). REVERT to the generic message once fixed.
+        $error = 'Could not issue the refund: ' . $e->getMessage();
+        error_log('[refund] ' . $e->getMessage());
     }
 }
 
