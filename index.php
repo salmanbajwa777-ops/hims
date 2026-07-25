@@ -94,9 +94,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Login is standalone (no partials/head.php, no assets/app.css), so the
+           Sage & Clay palette is mirrored here. Keep in step with the :root
+           block in assets/app.css if the brand ever moves again. */
         :root {
-            --primary-dark: #0E5456;
-            --primary: #1A7F7E;
+            --primary-dark:   #223A31;
+            --primary:        #2C4A3E;
+            --primary-accent: #3F7A63;
         }
         * { box-sizing: border-box; }
         body {
@@ -171,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             text-align: center;
             margin-top: 16px;
             font-size: 13px;
-            color: #1A7F7E;
+            color: var(--primary-accent);
             text-decoration: none;
         }
         .pw-wrap { position: relative; margin-bottom: 18px; }

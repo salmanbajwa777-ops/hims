@@ -109,8 +109,11 @@ function require_permission(string $key): void {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HIMS — Access denied</title>
 <style>
-  :root { --teal:#0E5456; --teal-2:#1A7F7E; --ink:#0f172a; --muted:#64748b;
-          --bg:#f1f5f9; --card:#fff; --border:#e2e8f0; }
+  /* Standalone 403 (rendered before any layout partial), so the Sage & Clay
+     palette is mirrored here. The --teal/--teal-2 names are kept because the
+     rules below reference them; only the values moved. */
+  :root { --teal:#223A31; --teal-2:#3F7A63; --ink:#16211C; --muted:#616D65;
+          --bg:#E7ECE4; --card:#F8FAF6; --border:#D6DDD0; }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
          padding:24px; font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;

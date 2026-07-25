@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary-dark: #0E5456; --primary: #1A7F7E; }
+        :root { --primary-dark: #223A31; --primary: #2C4A3E; --primary-accent: #3F7A63; }
         * { box-sizing: border-box; }
         body {
             margin: 0;
@@ -91,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         button:hover { opacity: .92; }
         .error { background: #FEF2F2; color: #B91C1C; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
         .success { background: #ECFDF5; color: #047857; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
-        .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: #1A7F7E; }
+        .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: var(--primary-accent); }
         .pw-wrap { position: relative; margin-bottom: 16px; }
         .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
         .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #111827; padding: 4px; width: auto; margin: 0; display: flex; }

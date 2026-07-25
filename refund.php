@@ -225,13 +225,17 @@ $history = $historyStmt->fetchAll();
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+/* Standalone page (its own <head>, no assets/app.css), so the Sage & Clay
+   palette is mirrored here. Refund is the canonical money-leaving action, so
+   --red-* map to clay, which appears nowhere else in the UI. */
 :root {
-    --primary-dark: #0E5456; --primary: #1A7F7E; --primary-light: #E0F2F1;
-    --bg: #F8FAFC; --card: #FFFFFF; --border: #E2E8F0;
-    --text: #000000; --text-muted: #111827;
-    --red-bg: #FEE2E2; --red-text: #B91C1C;
-    --green-bg: #DCFCE7; --green-text: #15803D;
-    --radius: 12px;
+    --primary-dark: #223A31; --primary: #2C4A3E; --primary-light: #E7F0EA;
+    --primary-accent: #3F7A63;
+    --bg: #E7ECE4; --card: #F8FAF6; --border: #D6DDD0;
+    --text: #16211C; --text-muted: #616D65;
+    --red-bg: #F7E9E5; --red-text: #9E4E34;
+    --green-bg: #E6F1E9; --green-text: #2C6E49;
+    --radius: 10px;
 }
 * { box-sizing: border-box; }
 body { font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; margin: 0; }

@@ -341,7 +341,7 @@ $headExtra = <<<CSS
 .ho-item:first-child { border-top: none; }
 .vit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
 .vit-cadence { margin: 8px 0 2px; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--border); }
-.vit-cadence.ok  { color: #0E5456; background: rgba(26,127,126,.08); border-color: rgba(26,127,126,.35); }
+.vit-cadence.ok  { color: var(--primary); background: rgba(26,127,126,.08); border-color: rgba(26,127,126,.35); }
 .vit-cadence.due { color: #9a3412; background: rgba(234,88,12,.10); border-color: rgba(234,88,12,.40); }
 .vit-grid label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .vit-grid input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }

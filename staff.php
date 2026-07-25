@@ -634,19 +634,26 @@ function effectivePermissionIds(string $baseRole, int $userId, array $roleDefaul
     return array_keys($effective);
 }
 
-function roleBadgeColor(string $role): array {
+/**
+ * Role -> .pill tone modifier.
+ *
+ * Was roleBadgeColor(), which returned a [bg, fg] hex pair painted inline onto
+ * a .role-badge — one of the seven separately-maintained badge dialects the
+ * 2026-07-26 design pass collapsed into the single .pill primitive. Returning
+ * a class instead of colours means role badges now inherit the theme like
+ * every other pill, and there is one place to change a tone.
+ */
+function roleBadgeClass(string $role): string {
     return match ($role) {
-        'ADMIN' => ['#EDE9FE', '#6D28D9'],
-        'DOCTOR' => ['#E0F2F1', '#0E5456'],
-        'STAFF' => ['#F1F5F9', '#334155'],
+        'DOCTOR'  => 'pill pill--brand',
+        'ADMIN'   => 'pill pill--ok',
         // MANAGER is a live role again (add_manager_role.sql, 2026-07-25): a STAFF-
         // shaped account pre-granted the oversight bundle.
-        'MANAGER' => ['#FEF3C7', '#92400E'],
+        'MANAGER' => 'pill pill--warn',
         // Legacy values kept so historical/unmigrated rows still render a badge.
-        'ACCOUNTANT' => ['#ECFDF5', '#047857'],
-        'NURSE' => ['#FCE7F3', '#9D174D'],
-        'RECEPTIONIST' => ['#F1F5F9', '#334155'],
-        default => ['#F1F5F9', '#334155'],
+        'ACCOUNTANT' => 'pill pill--ok',
+        'NURSE'      => 'pill pill--brand',
+        default   => 'pill',   // STAFF, RECEPTIONIST, anything unknown
     };
 }
 
@@ -792,7 +799,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <tbody>
                         <?php foreach ($people as $s): ?>
                         <?php
-                        [$bg, $fg] = roleBadgeColor($s['base_role']);
+                        $roleClass = roleBadgeClass($s['base_role']);
                         $count = $docCounts[(int) $s['id']] ?? 0;
                         ?>
                         <tr>
@@ -804,7 +811,7 @@ require __DIR__ . '/partials/sidebar.php';
                             </td>
                             <td class="muted"><?= htmlspecialchars($s['email'] ?: $s['phone'] ?: '—') ?></td>
                             <td>
-                                <span class="role-badge" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= htmlspecialchars($s['base_role']) ?></span>
+                                <span class="<?= $roleClass ?>"><?= htmlspecialchars($s['base_role']) ?></span>
                                 <?php if ($s['base_role'] === 'DOCTOR' && (float) ($s['consult_share_pct'] ?? 0) > 0): ?>
                                 <div class="muted" style="font-size:11.5px; margin-top:4px;">
                                     Share <?= rtrim(rtrim(number_format((float) $s['consult_share_pct'], 2), '0'), '.') ?>%<?php if ((int) ($s['consult_has_tax'] ?? 0) === 1): ?> · tax <?= rtrim(rtrim(number_format((float) $s['consult_tax_pct'], 2), '0'), '.') ?>%<?php else: ?> · no tax<?php endif; ?>

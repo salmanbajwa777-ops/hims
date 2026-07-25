@@ -162,7 +162,7 @@ $headExtra = <<<CSS
 .err-cell { font-size: 11.5px; color: var(--red-text); max-width: 320px; word-break: break-word; line-height: 1.45; }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
 .doc-tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 3px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
-.doc-tag.INVOICE { color: #0E5456; background: rgba(26,127,126,.10); border-color: rgba(26,127,126,.28); }
+.doc-tag.INVOICE { color: var(--primary); background: rgba(26,127,126,.10); border-color: rgba(26,127,126,.28); }
 .doc-tag.ADMISSION { color: #6D28D9; background: rgba(139,92,246,.10); border-color: rgba(139,92,246,.28); }
 .doc-tag.DISCHARGE { color: #92400E; background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.30); }
 .setup-list { margin: 10px 0 0 18px; padding: 0; font-size: 12.5px; line-height: 1.9; color: var(--text-secondary); }

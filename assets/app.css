@@ -6,51 +6,115 @@
    .status-pill, .page-head, layout shell). Pages include this via
    partials/head.php and keep only their genuinely page-specific rules.
 
-   The token set here is the UNION of every var(--…) referenced across the app
-   as of the 2026-07-22 consolidation, so no page loses a token when it drops
-   its own inlined :root copy. Values match the canonical teal theme
-   (dashboard.php was the reference). Brand teal: #0E5456 / #1A7F7E.
+   THEME — "Sage & Clay" (design spec 1D, adopted 2026-07-26). Replaces the
+   teal #0E5456/#1A7F7E theme. Three deliberate changes:
+
+     1. A softened canvas. No pure white anywhere — reception stares at this
+        for a full shift. Page #E7ECE4, cards #F8FAF6.
+     2. A REAL text ramp. The 2026-07-23 "darken everything for non-4K
+        readability" pass left #000/#0A0F1A/#111827 visually identical, so
+        hierarchy collapsed. The three levels below sit ~7 contrast points
+        apart and stay legible on a 1366x768 TN panel.
+     3. Clay #A8553A is reserved for money-leaving actions ONLY (refund,
+        delete, unpaid). It appears nowhere else, so it always means the
+        same thing.
+
+   LEGACY ALIASES: ~180 references to --green-bg/--red-text/--amber/... exist
+   across 30 page-level <style> blocks. Rather than a risky sweep of every
+   page in one commit, those names are kept below and REMAPPED onto the new
+   palette. A page that has not been migrated yet therefore picks up the new
+   theme automatically instead of rendering with orphaned tokens. They are
+   deprecated — new code uses --ok/--warn/--danger/--neutral.
    ============================================================================ */
 
 :root {
-    /* Brand */
-    --primary-dark:  #0E5456;
-    --primary:       #1A7F7E;
-    --primary-light: #E0F2F1;
+    /* ---- Brand ---- */
+    --primary-dark:   #223A31;   /* sidebar / darkest chrome */
+    --primary:        #2C4A3E;   /* solid primary buttons */
+    --primary-accent: #3F7A63;   /* avatars, logo mark, active nav fill */
+    --primary-light:  #E7F0EA;   /* brand tint (pills, active nav on light bg) */
+    --on-primary:     #FFFFFF;
 
-    /* Status hues */
-    --green: #10B981;
-    --amber: #F59E0B;
-    --red:   #DC2626;
+    /* ---- Surfaces: softened for long shifts, no pure white ---- */
+    --bg:            #E7ECE4;   /* page canvas */
+    --card:          #F8FAF6;   /* cards, table, header bar, inputs */
+    --card-alt:      #EFF2EA;   /* table head, search field, zebra */
+    --border:        #D6DDD0;   /* default hairline */
+    --border-strong: #C3CDBF;   /* button outlines, focus ring base */
+    --row-line:      #E4E9DC;   /* table row separators */
 
-    /* Status tint pairs (soft bg + readable text) */
-    --green-bg:  #DCFCE7;  --green-text:  #15803D;
-    --amber-bg:  #FEF3C7;  --amber-text:  #92400E;
-    --red-bg:    #FEE2E2;  --red-text:    #B91C1C;
+    /* ---- Text ramp: three genuinely distinct levels ----
+       Measured (not estimated) contrast, card #F8FAF6 / canvas #E7ECE4:
+         --text            15.8:1 card · 13.8:1 bg
+         --text-secondary   7.2:1 card ·  6.3:1 bg
+         --text-muted       5.2:1 card ·  4.5:1 bg
+       The spec drafted --text-muted as #6E7A72, but that measures 3.73:1 on
+       the CANVAS — below AA — and muted text does appear on the canvas
+       (page-meta under a page title sits on --bg, not on a card). Darkened
+       one step to #616D65 so the token is AA on BOTH grounds and the rule
+       below cannot be violated by placement. The three levels remain
+       visibly distinct, which was the point of the ramp.
 
-    /* Surfaces & text */
-    --bg:             #F8FAFC;
-    --card:           #FFFFFF;
-    /* Darkened 2026-07-23 for non-4K readability: secondary/muted text is now
-       near-black instead of slate grey. Hierarchy is carried by size/weight. */
-    --text:           #000000;
-    --text-secondary: #0A0F1A;
-    --text-muted:     #111827;
-    --border:         #E2E8F0;
-    --border-strong:  #CBD5E1;
+       --text-muted is still permitted only at --fs-micro and >=500 weight,
+       and never for a value the user must read in order to act. */
+    --text:               #16211C;
+    --text-secondary:     #4A574F;
+    --text-muted:         #616D65;
+    --text-on-dark:       #CFDCD4;   /* sidebar links, 8.6:1 on --primary-dark */
+    --text-on-dark-muted: #9DB3A7;   /* 5.5:1 on --primary-dark */
 
-    /* Elevation */
-    --shadow-sm: 0 2px 8px rgba(15,23,42,.05);
-    --shadow-md: 0 10px 25px rgba(15,23,42,.08);
-    --shadow-lg: 0 18px 40px rgba(15,23,42,.12);
+    /* ---- Status ----
+       Each hue is AA (>=4.5:1) against its own tint, so a pill is readable
+       without relying on the word alone:
+         ok 5.3:1 · warn 5.1:1 · danger 4.9:1 · neutral 6.0:1 · brand 8.4:1
+       Clay drafted as #A8553A measured 4.41:1 on its tint — a hair under —
+       so it is one step deeper here. It stays unmistakably clay, and clay
+       still appears NOWHERE except money-leaving actions. */
+    --ok:      #2C6E49;  --ok-bg:      #E6F1E9;
+    --warn:    #8A5A08;  --warn-bg:    #F6EDDA;
+    --danger:  #9E4E34;  --danger-bg:  #F7E9E5;   /* clay — refunds & delete ONLY */
+    --neutral: #4A574F;  --neutral-bg: #E2E7DB;
 
-    /* Radii */
-    --radius-card:  20px;
-    --radius-input: 12px;
-    --radius-btn:   14px;
+    /* ---- Elevation ---- */
+    --shadow-sm: 0 1px 2px rgba(22,33,28,.08);
+    --shadow-md: 0 4px 12px rgba(22,33,28,.10);
+    --shadow-lg: 0 8px 24px rgba(22,33,28,.14);
 
-    /* Layout */
-    --sidebar-w: 280px;
+    /* ---- Radii ---- */
+    --radius-card:  14px;
+    --radius-btn:   10px;
+    --radius-input: 10px;
+    --radius-pill:  20px;
+
+    /* ---- Type scale ----
+       Sizes are UNCHANGED from production; they are merely named so the ~19
+       ad-hoc values collapse onto a fixed ramp. No size outside this list.
+       Only KPI numbers may exceed 18px. */
+    --fs-page:    18px;    /* page title */
+    --fs-card:    16px;    /* card / section title */
+    --fs-kpi:     22px;    /* KPI number */
+    --fs-token:   15px;    /* queue token number */
+    --fs-body:    14px;    /* base */
+    --fs-cell:    13.5px;  /* table cell, input value, nav link */
+    --fs-btn:     13px;    /* primary/secondary button */
+    --fs-btn-sm:  12.5px;
+    --fs-meta:    12.5px;  /* subtitles */
+    --fs-micro:   11.5px;  /* row meta, KPI label */
+    --fs-pill:    11px;    /* pills, badges */
+    --fs-eyebrow: 10.5px;
+
+    /* ---- Layout ---- */
+    --sidebar-w: 200px;
+
+    /* ---- DEPRECATED legacy aliases (see header note) ----
+       Remapped onto the new palette so un-migrated pages inherit the theme.
+       Do not use in new code. */
+    --green:      var(--ok);
+    --amber:      var(--warn);
+    --red:        var(--danger);
+    --green-bg:   var(--ok-bg);      --green-text: var(--ok);
+    --amber-bg:   var(--warn-bg);    --amber-text: var(--warn);
+    --red-bg:     var(--danger-bg);  --red-text:   var(--danger);
 }
 
 /* ---------- Reset ---------- */
@@ -83,8 +147,147 @@ button { font-family: inherit; }
 
 /* ---------- Page heading ---------- */
 .page-head  { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.page-title { font-size: 22px; font-weight: 700; color: var(--text); }
-.page-sub   { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.page-title { font-size: var(--fs-page); font-weight: 700; color: var(--text); margin: 0; }
+.page-sub,
+.page-meta  { font-size: var(--fs-meta); color: var(--text-secondary); margin-top: 2px; }
+
+/* ============================================================================
+   Sidebar — the app's ONE navigation
+   ----------------------------------------------------------------------------
+   Owned here, not in the partials. partials/sidebar.php and
+   partials/doctor_sidebar.php previously each carried their own full copy of
+   these rules, which is how they drifted into two icon dialects in the first
+   place. They now only emit markup.
+
+   Sage & Clay: dark chrome at 200px. One active state (a solid accent fill) —
+   the old 3px left accent bar is gone; it was clipped off-canvas on desktop
+   and needed a special-case offset inside the mobile drawer.
+   ============================================================================ */
+.sidebar {
+    background: var(--primary-dark); border-right: none;
+    padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.sidebar-brand {
+    display: flex; align-items: center; gap: 9px; padding: 0 6px 20px;
+    font-weight: 700; font-size: var(--fs-card); color: var(--on-primary);
+}
+.sidebar-brand .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; flex: none;
+    background: var(--primary-accent);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--on-primary); font-weight: 700; font-size: var(--fs-btn-sm);
+}
+.nav-group { margin-bottom: 14px; }
+.nav-group-label {
+    font-size: var(--fs-eyebrow); font-weight: 600; letter-spacing: .06em;
+    color: var(--text-on-dark-muted); padding: 0 10px 6px; text-transform: uppercase;
+}
+.nav-item {
+    display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+    border-radius: 8px; color: var(--text-on-dark); font-weight: 500;
+    font-size: var(--fs-cell); transition: background .15s ease, color .15s ease;
+}
+.nav-item:hover { background: rgba(255,255,255,.07); color: var(--on-primary); }
+.nav-item.active { background: var(--primary-accent); color: var(--on-primary); font-weight: 600; }
+.nav-item.disabled { opacity: .4; cursor: not-allowed; }
+.nav-item.disabled:hover { background: none; color: var(--text-on-dark); }
+.nav-item .count {
+    margin-left: auto; font-size: var(--fs-pill); font-weight: 700;
+    background: var(--primary-accent); color: var(--on-primary);
+    border-radius: var(--radius-pill); padding: 1px 8px;
+}
+.nav-item.active .count { background: rgba(255,255,255,.22); }
+/* The icon box must never inherit an SVG's intrinsic size — these SVGs carry
+   no width/height attributes, so an unconstrained one renders enormous. */
+.nav-icon {
+    width: 22px; height: 22px; flex: none; background: none; color: inherit;
+    display: flex; align-items: center; justify-content: center;
+}
+.nav-icon svg { width: 16px; height: 16px; flex: none; display: block; }
+.sidebar :focus-visible { outline-color: var(--on-primary); }
+.sidebar-foot {
+    margin-top: 8px; padding: 11px; border-radius: var(--radius-btn);
+    background: rgba(255,255,255,.07); font-size: var(--fs-micro); color: var(--text-on-dark);
+}
+.sidebar-foot b { color: var(--on-primary); }
+
+/* Mobile top app-bar + off-canvas drawer (shared by both sidebar partials). */
+.mobile-bar, .doc-mobile-bar { display: none; }
+.mobile-bar .hamburger, .doc-mobile-bar .hamburger {
+    width: 40px; height: 40px; border-radius: var(--radius-btn); border: 1px solid var(--border);
+    background: var(--card); display: flex; align-items: center; justify-content: center;
+    color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
+}
+.mobile-bar .hamburger svg, .doc-mobile-bar .hamburger svg { width: 20px; height: 20px; }
+.mobile-bar .m-brand, .doc-mobile-bar .m-brand {
+    display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: var(--fs-card);
+}
+.mobile-bar .m-brand .logo-mark, .doc-mobile-bar .m-brand .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; background: var(--primary-accent);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--on-primary); font-weight: 700; font-size: var(--fs-btn-sm);
+}
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(22,33,28,.48); z-index: 40; }
+
+@media (max-width: 900px) {
+    .mobile-bar, .doc-mobile-bar {
+        display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 30;
+        padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border);
+    }
+    .sidebar {
+        position: fixed; top: 0; left: 0; z-index: 50; width: min(80vw, 260px); height: 100vh;
+        transform: translateX(-100%); transition: transform .22s ease; box-shadow: var(--shadow-lg);
+    }
+    body.nav-open .sidebar { transform: translateX(0); }
+    body.nav-open .sidebar-overlay { display: block; }
+    .sidebar .nav-item { padding: 11px 10px; }
+}
+
+/* ---------- Application bar ----------
+   ONE header for every page, replacing both the two-row tinted quick header
+   and dashboard.php's 72px translucent bar. 48px tall: search · date · avatar.
+   The six tinted quick-header buttons are gone — every one of those
+   destinations already exists in the sidebar. */
+.appbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px; background: var(--card);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 20;
+}
+.appbar .search {
+    flex: 1; max-width: 560px; display: flex; align-items: center; gap: 8px;
+    background: var(--card-alt); border: 1px solid var(--border);
+    border-radius: var(--radius-input); padding: 7px 12px;
+    font-size: var(--fs-btn); color: var(--text-muted);
+}
+.appbar .search svg { width: 15px; height: 15px; flex: none; }
+.appbar .search input {
+    flex: 1; border: none; background: none; font-family: inherit;
+    font-size: var(--fs-btn); color: var(--text); min-width: 0;
+}
+.appbar .search input::placeholder { color: var(--text-muted); }
+.appbar .search input:focus { outline: none; }
+.appbar .search:focus-within { border-color: var(--primary-accent); background: var(--card); }
+.appbar-spacer { flex: 1; }
+.appbar-date { font-size: var(--fs-btn); color: var(--text-secondary); white-space: nowrap; }
+.appbar-icon {
+    width: 34px; height: 34px; border-radius: var(--radius-btn);
+    border: 1px solid var(--border); background: var(--card);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-secondary); position: relative; cursor: pointer; flex: none;
+}
+.appbar-icon svg { width: 16px; height: 16px; }
+.appbar-icon .dot {
+    position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--danger); border: 1.5px solid var(--card);
+}
+.appbar-avatar {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
+    background: var(--primary-accent); color: var(--on-primary);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: var(--fs-btn);
+}
+.appbar-logout { font-size: var(--fs-btn); color: var(--text-secondary); font-weight: 500; white-space: nowrap; }
 
 /* ---------- Card / section ---------- */
 .card {
@@ -94,58 +297,79 @@ button { font-family: inherit; }
     box-shadow: var(--shadow-sm);
     padding: 22px 24px;
 }
-.section-title { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
-.section-sub   { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
+.section-title { font-size: var(--fs-card); font-weight: 600; margin-bottom: 2px; }
+.section-sub   { font-size: var(--fs-meta); color: var(--text-secondary); margin-bottom: 16px; }
 
 /* ---------- Buttons ----------
-   One API for the whole app: .btn is the solid teal primary; modifiers layer
-   on. doctor.php's old .btn-primary/.btn-ghost are aliased so nothing breaks
-   during migration. */
+   One API for the whole app: .btn is the SOLID primary (the 135deg teal
+   gradient is gone — flat reads cleaner and survives the softened canvas).
+   doctor.php's old .btn-primary/.btn-ghost are aliased so nothing breaks. */
 .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     padding: 10px 18px; border-radius: var(--radius-btn);
-    border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    color: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer;
-    font-family: inherit; white-space: nowrap; transition: opacity .15s, filter .15s;
+    border: 1px solid var(--primary); background: var(--primary);
+    color: var(--on-primary); font-size: var(--fs-btn); font-weight: 600; cursor: pointer;
+    font-family: inherit; white-space: nowrap; transition: background .15s, border-color .15s;
 }
-.btn:hover { opacity: .92; }
-.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.btn:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
 .btn.secondary,
-.btn-ghost { background: #fff; color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-ghost {
+    background: var(--card); color: var(--text-secondary);
+    border: 1px solid var(--border-strong); font-weight: 500;
+}
 .btn.secondary:hover,
-.btn-ghost:hover { background: var(--bg); opacity: 1; }
-.btn.small  { padding: 7px 13px; font-size: 12.5px; }
-.btn.danger { background: var(--red-bg); color: var(--red-text); }
-.btn.danger:hover { background: #FCA5A5; opacity: 1; }
+.btn-ghost:hover { background: var(--card-alt); }
+.btn.small  { padding: 7px 13px; font-size: var(--fs-btn-sm); }
+/* Destructive: clay, and clay appears nowhere else in the UI. */
+.btn.danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-bg); }
+.btn.danger:hover { background: var(--danger); color: var(--on-primary); border-color: var(--danger); }
+.btn:disabled, .btn[disabled] { opacity: .5; cursor: not-allowed; }
 .btn-primary { /* alias for legacy doctor.php markup */
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 10px 18px; border-radius: var(--radius-btn); border: none;
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    color: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit;
+    padding: 10px 18px; border-radius: var(--radius-btn);
+    border: 1px solid var(--primary); background: var(--primary);
+    color: var(--on-primary); font-size: var(--fs-btn); font-weight: 600;
+    cursor: pointer; font-family: inherit;
 }
-.btn-primary:hover { opacity: .92; }
+.btn-primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
 
 /* ---------- Alerts ---------- */
-.alert { border-radius: 14px; padding: 14px 18px; font-size: 13.5px; }
-.alert.error   { background: var(--red-bg);   color: var(--red-text); }
-.alert.success { background: var(--green-bg); color: var(--green-text); }
+.alert { border-radius: var(--radius-card); padding: 14px 18px; font-size: var(--fs-cell); }
+.alert.error   { background: var(--danger-bg); color: var(--danger); }
+.alert.success { background: var(--ok-bg);     color: var(--ok); }
 
 /* ---------- Forms ----------
-   Focus ring is TEAL app-wide (the old blue rgba(37,99,235)/rgba(59,130,246)
-   leftovers are gone). */
-.field { display: flex; flex-direction: column; gap: 6px; }
+   Labels sit ABOVE the field. The value is what the receptionist verifies at
+   speed, so the value gets the larger size — not the label.
+
+   ONE required signal: optional is marked, required is not. No red asterisk,
+   no Required/Optional chips on group headings. Mark an optional field with
+   class="field field--optional" and the label appends "(optional)" itself. */
+.field { display: flex; flex-direction: column; gap: 4px; }
 .field.full { grid-column: 1 / -1; }
-.field label { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; }
-.field label .opt { font-weight: 500; color: var(--text-muted); }
+.field label {
+    font-size: var(--fs-micro); font-weight: 600; color: var(--text-secondary);
+    display: flex; align-items: center; gap: 5px;
+}
+.field--optional > label::after {
+    content: " (optional)"; font-weight: 400; color: var(--text-muted);
+}
 .field input, .field select, .field textarea {
-    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
-    border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit;
-    background: var(--bg); color: var(--text);
+    width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input); font-size: var(--fs-cell); font-family: inherit;
+    background: var(--card); color: var(--text);
 }
+.field textarea { height: auto; padding: 10px 12px; }
 .field input:focus, .field select:focus, .field textarea:focus {
-    outline: none; border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: var(--card);
+    outline: none; border-color: var(--primary-accent);
+    box-shadow: 0 0 0 3px rgba(63,122,99,.18);
 }
+.field input:disabled, .field select:disabled {
+    background: var(--card-alt); color: var(--text-muted); cursor: not-allowed;
+}
+.field .hint { font-size: var(--fs-micro); color: var(--text-muted); }
+.field .hint.ok   { color: var(--ok);     font-weight: 600; }
+.field .hint.warn { color: var(--danger); font-weight: 600; }
 .field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 
 /* Uppercase-as-typed for person-name inputs. Names are also stored uppercased on
@@ -156,32 +380,232 @@ input.uc::placeholder { text-transform: none; }
 
 /* ---------- Tables ---------- */
 table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
-td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
+th {
+    text-align: left; font-size: var(--fs-pill); text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600;
+}
+td { padding: 12px 10px; border-top: 1px solid var(--row-line); font-size: var(--fs-cell); }
 
 /* ---------- Person / avatar cell ---------- */
 .person { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .person-avatar {
-    width: 32px; height: 32px; border-radius: 50%; background: var(--primary-light);
-    color: var(--primary-dark); display: flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%; background: var(--primary-accent);
+    color: var(--on-primary); display: flex; align-items: center; justify-content: center;
     font-size: 12px; font-weight: 700; flex-shrink: 0;
 }
 
-/* ---------- Pills / badges ---------- */
-.status-pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; display: inline-block; }
-.status-pill.active, .status-pill.in-clinic { background: var(--green-bg); color: var(--green-text); }
-.status-pill.pending  { background: var(--amber-bg); color: var(--amber-text); }
-.status-pill.on-leave { background: var(--red-bg);   color: var(--red-text); }
-.status-pill.inactive { background: var(--red-bg);   color: var(--red-text); }
-.role-badge { font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 20px; display: inline-block; }
+/* ============================================================================
+   Pill primitive — ONE badge component
+   ----------------------------------------------------------------------------
+   Replaces seven near-identical dialects that were separately maintained:
+   .status-pill (app.css), .status-pill (receptionist.php's own hexes),
+   .tim-pill, .bk-pill, .dc-badge, .unpaid-badge, .gender-tag, .role-badge.
+
+   Every pill carries a WORD, never colour alone — "Waiting 34m",
+   "In consult", "Admitted", "Done 13:02", "Unpaid Rs 1,200", "On leave" —
+   so status is never encoded by colour on its own.
+
+   Tone mapping:
+     waiting ................ warn
+     in consult ............. brand
+     admitted / in clinic /
+       paid / available ..... ok
+     done / none / off ...... default (neutral)
+     unpaid / refunded ...... danger
+   ============================================================================ */
+.pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: var(--fs-pill); font-weight: 600; line-height: 1.6;
+    padding: 3px 9px; border-radius: var(--radius-pill); white-space: nowrap;
+    background: var(--neutral-bg); color: var(--neutral);
+}
+.pill--ok     { background: var(--ok-bg);        color: var(--ok); }
+.pill--warn   { background: var(--warn-bg);      color: var(--warn); }
+.pill--brand  { background: var(--primary-light); color: var(--primary); }
+.pill--danger { background: var(--danger-bg);    color: var(--danger); }
+.pill--quiet  { background: transparent; color: var(--text-muted); padding-inline: 0; }
+
+/* ---- Deprecated pill dialects -> mapped onto .pill ----
+   Kept so un-migrated pages keep rendering correctly during the page-by-page
+   rollout. Delete each block once no page references it. */
+.status-pill, .tim-pill, .bk-pill, .role-badge, .dc-badge, .unpaid-badge, .gender-tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: var(--fs-pill); font-weight: 600; line-height: 1.6;
+    padding: 3px 9px; border-radius: var(--radius-pill); white-space: nowrap;
+    background: var(--neutral-bg); color: var(--neutral);
+}
+.status-pill.active, .status-pill.in-clinic, .status-pill.paid,
+.tim-pill.avail, .bk-pill.arrived { background: var(--ok-bg); color: var(--ok); }
+.status-pill.pending, .status-pill.waiting, .status-pill.wait,
+.tim-pill.delay { background: var(--warn-bg); color: var(--warn); }
+.status-pill.in-consult, .status-pill.stay,
+.bk-pill.booked, .dc-badge { background: var(--primary-light); color: var(--primary); }
+.status-pill.on-leave, .status-pill.inactive,
+.tim-pill.off, .unpaid-badge { background: var(--danger-bg); color: var(--danger); }
+.status-pill.done, .tim-pill.unset { background: var(--neutral-bg); color: var(--neutral); }
+
+/* ============================================================================
+   Queue row — receptionist.php's work list
+   ----------------------------------------------------------------------------
+   Replaces the <table class="queue-table"> with a CSS grid, which is what
+   makes the phone variant possible (a table with min-width:900px could only
+   ever scroll sideways).
+
+   ONE primary action per row, chosen by state. Everything else demotes to an
+   outline button or the "···" overflow menu:
+
+     Waiting     Admit (solid)        Invoice   ··· ER · Profile · Refund
+     In consult  Invoice (solid)      Profile   ··· ER · Admit · Refund
+     Done        Invoice (outline)    Profile   ··· ER · Admit · Refund
+     Admitted    Manage stay (solid)  Invoice   ··· Profile · Refund
+     Refunded    Invoice (outline)    Profile   ··· ER
+
+   STATUS IS ENCODED ONCE — the pill. The coloured left stripe is gone, the
+   second admission pill folds into the first ("Admitted · short stay"), and
+   the opacity drop on refunded rows is gone (the clay "refunded 1,200" line
+   under the amount carries that).
+
+   REFUND never sits in the row. It lives in "···", coloured --danger, and
+   keeps its confirm step.
+   ============================================================================ */
+.queue { display: flex; flex-direction: column; }
+.qthead {
+    display: grid;
+    grid-template-columns: 78px 1.5fr 1.4fr 130px 120px 210px;
+    gap: 12px; padding: 0 16px 8px;
+    font-size: var(--fs-pill); font-weight: 600; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--text-muted);
+}
+.qrow {
+    display: grid;
+    grid-template-columns: 78px 1.5fr 1.4fr 130px 120px 210px;
+    gap: 12px; align-items: center;
+    padding: 11px 16px; border-bottom: 1px solid var(--row-line);
+}
+.qrow:last-child { border-bottom: 0; }
+.qrow:hover { background: var(--card-alt); }
+
+.qtoken { font-size: var(--fs-token); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.qtime, .qmeta { font-size: var(--fs-micro); color: var(--text-muted); }
+.qname { font-size: var(--fs-cell); font-weight: 600; color: var(--text); }
+.qdoc  { font-size: var(--fs-cell); color: var(--text-secondary); }
+.qpaid { font-size: var(--fs-cell); color: var(--text); font-variant-numeric: tabular-nums; }
+/* Refunded: the struck amount + clay note IS the signal — no opacity drop. */
+.qpaid .struck { text-decoration: line-through; color: var(--text-muted); }
+.qpaid .refunded { font-size: var(--fs-micro); color: var(--danger); font-weight: 600; }
+
+.qactions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.qbtn {
+    font-size: var(--fs-btn-sm); font-weight: 500; color: var(--text-secondary);
+    background: var(--card); border: 1px solid var(--border-strong);
+    border-radius: 9px; padding: 5px 10px; cursor: pointer;
+    font-family: inherit; white-space: nowrap; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 5px;
+}
+.qbtn--primary {
+    font-weight: 600; color: var(--on-primary);
+    background: var(--primary); border-color: var(--primary); padding: 6px 12px;
+}
+.qbtn--more { padding: 5px 9px; color: var(--text-muted); }
+.qbtn--danger { color: var(--danger); }            /* only inside the ··· menu */
+.qbtn:hover { background: var(--card-alt); }
+.qbtn--primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+.qbtn[disabled] { opacity: .45; cursor: not-allowed; }
+.qbtn[disabled]:hover { background: var(--card); }
+
+/* ---- Overflow menu ---- */
+.qmenu-wrap { position: relative; display: inline-flex; }
+.qmenu {
+    position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+    min-width: 168px; padding: 5px;
+    background: var(--card); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-btn); box-shadow: var(--shadow-md);
+    display: none; flex-direction: column; gap: 1px;
+}
+.qmenu-wrap.open .qmenu { display: flex; }
+.qmenu a, .qmenu button {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 10px; border: none; background: none; border-radius: 7px;
+    font-family: inherit; font-size: var(--fs-btn-sm); font-weight: 500;
+    color: var(--text-secondary); text-align: left; cursor: pointer; text-decoration: none;
+}
+.qmenu a:hover, .qmenu button:hover { background: var(--card-alt); }
+.qmenu .qmenu--danger { color: var(--danger); }
+.qmenu .qmenu--danger:hover { background: var(--danger-bg); }
+.qmenu hr { border: none; border-top: 1px solid var(--row-line); margin: 4px 2px; }
+
+/* ---- Phone variant: card rows, no sideways scroll ---- */
+@media (max-width: 900px) {
+    .qthead { display: none; }
+    .qrow {
+        grid-template-columns: 52px 1fr auto;
+        grid-template-areas:
+            "token patient status"
+            "token doctor  paid"
+            "token actions actions";
+        row-gap: 6px; padding: 12px 14px;
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; margin-bottom: 8px;
+    }
+    .qrow:hover { background: var(--card); }
+    .qrow > .c-token   { grid-area: token; }
+    .qrow > .c-patient { grid-area: patient; }
+    .qrow > .c-doctor  { grid-area: doctor; }
+    .qrow > .c-status  { grid-area: status; justify-self: end; }
+    .qrow > .c-paid    { grid-area: paid; justify-self: end; }
+    .qrow > .qactions  { grid-area: actions; justify-content: flex-start; margin-top: 4px; }
+    .qbtn {
+        min-height: 44px; font-size: var(--fs-cell); padding: 0 14px;
+        display: inline-flex; align-items: center;
+    }
+    /* the old table's 900px floor is what forced sideways scroll — drop it */
+    .queue-table { min-width: 0; overflow: visible; }
+}
+/* Same card layout when mobile is FORCED on a wide screen. */
+html[data-view="mobile"] .qthead { display: none; }
+html[data-view="mobile"] .qrow {
+    grid-template-columns: 52px 1fr auto;
+    grid-template-areas:
+        "token patient status"
+        "token doctor  paid"
+        "token actions actions";
+    row-gap: 6px; padding: 12px 14px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 8px;
+}
+html[data-view="mobile"] .qrow > .c-token   { grid-area: token; }
+html[data-view="mobile"] .qrow > .c-patient { grid-area: patient; }
+html[data-view="mobile"] .qrow > .c-doctor  { grid-area: doctor; }
+html[data-view="mobile"] .qrow > .c-status  { grid-area: status; justify-self: end; }
+html[data-view="mobile"] .qrow > .c-paid    { grid-area: paid; justify-self: end; }
+html[data-view="mobile"] .qrow > .qactions  { grid-area: actions; justify-content: flex-start; margin-top: 4px; }
+html[data-view="mobile"] .qbtn { min-height: 44px; font-size: var(--fs-cell); padding: 0 14px; }
+/* Forced desktop must win back the wide grid even on a narrow screen. */
+html[data-view="desktop"] .qthead { display: grid; }
+html[data-view="desktop"] .qrow {
+    grid-template-columns: 78px 1.5fr 1.4fr 130px 120px 210px;
+    grid-template-areas: none;
+    background: none; border: none; border-bottom: 1px solid var(--row-line);
+    border-radius: 0; margin-bottom: 0; padding: 11px 16px;
+}
+html[data-view="desktop"] .qrow > .qactions { justify-content: flex-end; margin-top: 0; }
 
 /* ---------- Misc shared ---------- */
-.muted { color: var(--text-muted); font-size: 12.5px; }
+.muted { color: var(--text-muted); font-size: var(--fs-meta); }
 .tabular { font-variant-numeric: tabular-nums; }
 
 /* ---------- Empty state ---------- */
-.empty { text-align: center; padding: 48px 20px; color: var(--text-muted); }
-.empty h3 { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.empty, .empty-state { text-align: center; padding: 48px 20px; color: var(--text-muted); font-size: var(--fs-cell); }
+.empty h3 { font-size: var(--fs-card); font-weight: 700; color: var(--text); margin-bottom: 6px; }
+
+/* ---------- Focus ---------- */
+:focus-visible { outline: 2px solid var(--primary-accent); outline-offset: 2px; border-radius: 6px; }
+
+/* Screen-reader-only text (table captions, live-region labels). */
+.sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 /* ---------- Responsive base ---------- */
 @media (max-width: 900px) {
@@ -229,7 +653,7 @@ html[data-view="mobile"] .sidebar {
 }
 html[data-view="mobile"] body.nav-open .sidebar { transform: translateX(0); }
 html[data-view="mobile"] body.nav-open .sidebar-overlay { display: block; }
-html[data-view="mobile"] .sidebar .nav-item.active::before { left: -8px; }
+html[data-view="mobile"] .sidebar .nav-item { padding: 11px 10px; }
 
 /* ---- FORCE DESKTOP at any width ---- (wins even below 900px) */
 html[data-view="desktop"] .app { grid-template-columns: var(--sidebar-w) 1fr; }
@@ -251,9 +675,8 @@ html[data-view="desktop"] .sidebar-overlay { display: none !important; }
    fields, headings) so a page that added NO mobile CSS still reads well.
    ============================================================================ */
 @media (max-width: 560px) {
-    :root { --radius-card: 16px; }
     .card { padding: 16px; border-radius: var(--radius-card); }
-    .section-title { font-size: 16px; }
+    .section-title { font-size: var(--fs-card); }
     /* Buttons and inputs get real touch targets (>=44px tall). */
     .btn, .btn-primary, .btn-ghost, .btn-secondary,
     input, select, textarea { min-height: 44px; }

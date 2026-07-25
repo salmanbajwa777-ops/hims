@@ -235,18 +235,20 @@ $doctorSchedule = $pdo->query("
 $pageTitle = 'Reception Desk';
 $headExtra = <<<CSS
 <style>
-/* ---------- Hero ---------- */
-/* Compact greeting strip — name + date on one line, no oversized band. */
-.hero {
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    border-radius: var(--radius-card); padding: 16px 22px;
-    display: flex; align-items: baseline; justify-content: space-between;
-    flex-wrap: wrap; gap: 6px 16px; color: #fff;
-}
-.hero-greeting { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.hero-greeting .eyebrow { font-size: 13px; opacity: .8; font-weight: 500; }
-.hero-greeting h1 { font-size: 20px; font-weight: 700; margin: 0; }
-.hero-greeting .date { font-size: 13px; opacity: .82; }
+/* ============================================================================
+   receptionist.php — page-specific styles ONLY.
+   ----------------------------------------------------------------------------
+   Sage & Clay cleanup (2026-07-26). Removed from this block:
+     - the gradient .hero (the name is already in the app-bar avatar, the date
+       is already in the app bar)
+     - duplicate .card / .section-title / table / th / td declarations that
+       assets/app.css already owns, with slightly different values
+     - this page's PRIVATE .status-pill dialect (#FFFBEB/#ECFDF5/#EDE7FB —
+       different hexes for the same states as app.css). Everything now uses
+       the single .pill primitive.
+     - the whole .queue-table / .qa / left-severity-stripe system, replaced by
+       the .queue / .qrow / .qbtn grid in app.css.
+   ============================================================================ */
 
 /* ---------- Stat cards ---------- */
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
@@ -254,154 +256,99 @@ $headExtra = <<<CSS
     background: var(--card); border-radius: var(--radius-card); padding: 14px 16px;
     box-shadow: var(--shadow-sm); border: 1px solid var(--border);
     display: flex; align-items: center; gap: 13px; text-decoration: none; color: inherit;
-    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    transition: border-color .15s ease;
 }
-.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-a.kpi-card:hover { border-color: var(--primary); }
+a.kpi-card:hover { border-color: var(--primary-accent); }
 .kpi-icon {
-    width: 40px; height: 40px; border-radius: 11px; flex: none;
+    width: 38px; height: 38px; border-radius: var(--radius-btn); flex: none;
     display: flex; align-items: center; justify-content: center;
-    background: var(--primary-light); color: var(--primary-dark);
+    background: var(--primary-light); color: var(--primary);
 }
-.kpi-icon svg { width: 19px; height: 19px; }
+.kpi-icon svg { width: 18px; height: 18px; }
 .kpi-body { min-width: 0; }
-.kpi-value { font-size: 24px; font-weight: 700; line-height: 1.1; }
-.kpi-label { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
+.kpi-value { font-size: var(--fs-kpi); font-weight: 700; line-height: 1.1; color: var(--text); }
+.kpi-label { font-size: var(--fs-micro); color: var(--text-secondary); margin-top: 2px; }
 
-/* ---------- Section shell ---------- */
-.section-title { font-size: 18px; font-weight: 600; margin-bottom: 2px; }
-.section-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
-.card { background: var(--card); border-radius: var(--radius-card); border: 1px solid var(--border); box-shadow: var(--shadow-sm); padding: 22px 24px; }
-.row-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; align-items: start; }
-
-/* ---------- Queue / list ---------- */
-table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
-td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
-.status-pill { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; display: inline-block; }
-.status-pill.waiting, .status-pill.wait { background: #FFFBEB; color: #92400E; }
-.status-pill.in-consult, .status-pill.active { background: #ECFDF5; color: #047857; }
-.status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
-.status-pill.stay { background: #EDE7FB; color: #6D28D9; }
-
-/* ---------- Today work queue ---------- */
-.queue-scroll { overflow-x: auto; }
-.queue-table { width: 100%; border-collapse: collapse; min-width: 900px; }
-.queue-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-                  color: var(--text-muted); font-weight: 600; padding: 0 10px 10px; }
-.queue-table td { padding: 11px 10px; border-top: 1px solid var(--border); vertical-align: middle; }
-.queue-table .ta-r { text-align: right; }
-.qrow { position: relative; }
-/* Left severity stripe: consultation state at a glance. box-shadow rather than a
-   pseudo-element so it can't be clipped by the horizontal scroll container. */
-.qrow td:first-child { box-shadow: inset 3px 0 0 0 transparent; }
-.qrow.s-wait td:first-child { box-shadow: inset 3px 0 0 0 var(--amber); }
-.qrow.s-active td:first-child { box-shadow: inset 3px 0 0 0 var(--primary); }
-.qrow.s-done td:first-child { box-shadow: inset 3px 0 0 0 #CBD5E1; }
-.qrow.s-stay td:first-child { box-shadow: inset 3px 0 0 0 #6D28D9; }
-.qrow.voided { opacity: .6; }
-.qrow .tok { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; padding-left: 14px; }
-.qrow .tok small { display: block; font-size: 10px; font-weight: 600; letter-spacing: .05em;
-                   color: var(--text-muted); }
-.q-name { font-weight: 600; font-size: 13.5px; }
-.q-doc { font-weight: 600; font-size: 13px; }
-.q-meta { font-size: 11.5px; color: var(--text-muted); }
+/* ---------- Queue row extras (base grid lives in app.css) ---------- */
 .wa-link { display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; vertical-align: middle; }
 .wa-link svg { width: 13px; height: 13px; color: #25D366; flex-shrink: 0; }
 .wa-link:hover { color: #128C7E; text-decoration: underline; }
 .mono { font-variant-numeric: tabular-nums; }
-.struck { text-decoration: line-through; color: var(--text-muted); }
-.q-acts { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.qa { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 8px;
-      padding: 5px 11px; font: 600 12px inherit; font-family: inherit; cursor: pointer; white-space: nowrap; }
-.qa:hover { border-color: var(--primary); color: var(--primary-dark); }
-.qa.warn { color: var(--red); }
-.qa[disabled] { opacity: .45; cursor: not-allowed; }
-.qa[disabled]:hover { border-color: var(--border); color: var(--text); }
-.empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 /* ---------- Doctor schedule ---------- */
 .sched-list { display: flex; flex-direction: column; gap: 4px; }
-.sched-item { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
+.sched-item { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--row-line); }
 .sched-item:last-child { border-bottom: none; }
-.doc-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--primary-light); color: var(--primary-dark); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.doc-avatar {
+    width: 34px; height: 34px; border-radius: 50%; background: var(--primary-accent);
+    color: var(--on-primary); display: flex; align-items: center; justify-content: center;
+    font-size: var(--fs-micro); font-weight: 700; flex-shrink: 0;
+}
 .sched-text { flex: 1; min-width: 0; }
-.sched-name { font-size: 13.5px; font-weight: 600; }
-.sched-time { font-size: 12px; color: var(--text-muted); }
+.sched-name { font-size: var(--fs-cell); font-weight: 600; }
+.sched-time { font-size: var(--fs-micro); color: var(--text-muted); }
 
 /* ---------- Admit dialog ---------- */
-.admit-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
+.admit-overlay { display: none; position: fixed; inset: 0; background: rgba(22,33,28,.48); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
 .admit-overlay.open { display: flex; }
 .admit-modal { background: var(--card); border-radius: var(--radius-card); width: 100%; max-width: 440px; box-shadow: var(--shadow-lg); overflow: hidden; }
 .admit-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 6px; }
-.admit-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
-.admit-name { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.admit-eyebrow { font-size: var(--fs-eyebrow); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
+.admit-name { font-size: var(--fs-page); font-weight: 700; margin-top: 2px; }
 .admit-x { background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-muted); cursor: pointer; }
 .admit-body { padding: 10px 22px 4px; display: flex; flex-direction: column; gap: 18px; }
-.admit-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
+.admit-field label { display: block; font-size: var(--fs-micro); font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
 .type-opts { display: flex; flex-direction: column; gap: 8px; }
-.type-opt { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
-.type-opt:has(input:checked) { border-color: var(--primary); background: var(--primary-light); }
-.type-opt input { accent-color: var(--primary); }
+.type-opt { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); padding: 10px 12px; cursor: pointer; }
+.type-opt:has(input:checked) { border-color: var(--primary-accent); background: var(--primary-light); }
+.type-opt input { accent-color: var(--primary-accent); }
 .type-body { display: flex; justify-content: space-between; flex: 1; align-items: baseline; }
-.type-name { font-weight: 600; font-size: 13.5px; }
-.type-rate { font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.admit-field select, .admit-field input[type=text] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); }
-.admit-field select:focus, .admit-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.type-name { font-weight: 600; font-size: var(--fs-cell); }
+.type-rate { font-size: var(--fs-meta); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.admit-field select, .admit-field input[type=text] { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); font: inherit; font-size: var(--fs-cell); background: var(--card); color: var(--text); }
+.admit-field select:focus, .admit-field input:focus { outline: none; border-color: var(--primary-accent); box-shadow: 0 0 0 3px rgba(63,122,99,.18); }
 .admit-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 22px 22px; }
 
 /* ---------- Doctor-timings shift popup ---------- */
-.tim-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 70; align-items: center; justify-content: center; padding: 20px; }
+.tim-overlay { display: none; position: fixed; inset: 0; background: rgba(22,33,28,.48); z-index: 70; align-items: center; justify-content: center; padding: 20px; }
 .tim-overlay.open { display: flex; }
 .tim-modal { background: var(--card); border-radius: var(--radius-card); width: 100%; max-width: 560px; box-shadow: var(--shadow-lg); overflow: hidden; display: flex; flex-direction: column; max-height: min(84vh, 640px); }
 .tim-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 8px; }
-.tim-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
-.tim-title { font-size: 18px; font-weight: 700; margin-top: 2px; }
-.tim-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+.tim-eyebrow { font-size: var(--fs-eyebrow); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
+.tim-title { font-size: var(--fs-page); font-weight: 700; margin-top: 2px; }
+.tim-sub { font-size: var(--fs-meta); color: var(--text-secondary); margin-top: 3px; }
 .tim-x { background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-muted); cursor: pointer; }
 .tim-body { padding: 8px 22px 4px; overflow-y: auto; }
-.tim-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.tim-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--row-line); }
 .tim-row:last-child { border-bottom: none; }
-.tim-row .doc-avatar { width: 32px; height: 32px; font-size: 11.5px; }
-.tim-row.off { opacity: .55; }
+.tim-row .doc-avatar { width: 32px; height: 32px; font-size: var(--fs-pill); }
 .tim-info { flex: 1; min-width: 0; }
-.tim-doc { font-size: 13.5px; font-weight: 600; }
-.tim-note { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
-.tim-when { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; line-height: 1.5; }
-.tim-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
-.tim-pill.avail { background: #ECFDF5; color: #047857; }
-.tim-pill.delay { background: #FFFBEB; color: #92400E; }
-.tim-pill.off { background: #FEF2F2; color: #B91C1C; }
-.tim-pill.unset { background: #F1F5F9; color: var(--text-secondary); }
+.tim-doc { font-size: var(--fs-cell); font-weight: 600; }
+.tim-note { font-size: var(--fs-micro); color: var(--text-muted); margin-top: 1px; }
+.tim-when { font-size: var(--fs-btn); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; line-height: 1.5; }
 .tim-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px 20px; border-top: 1px solid var(--border); flex-wrap: wrap; }
-.tim-touch { font-size: 12px; color: var(--text-muted); }
+.tim-touch { font-size: var(--fs-micro); color: var(--text-muted); }
 
 /* ---------- Today's-bookings shift popup + panel ---------- */
 /* Same shell as the timings popup; own overlay id so the two can be sequenced. */
-.bkp-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 70; align-items: center; justify-content: center; padding: 20px; }
+.bkp-overlay { display: none; position: fixed; inset: 0; background: rgba(22,33,28,.48); z-index: 70; align-items: center; justify-content: center; padding: 20px; }
 .bkp-overlay.open { display: flex; }
-.bk-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.bk-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--row-line); }
 .bk-row:last-child { border-bottom: none; }
-.bk-row.arrived { opacity: .55; }
 .bk-info { flex: 1; min-width: 0; }
-.bk-who { font-size: 13.5px; font-weight: 600; }
-.bk-what { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
-.bk-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
-.bk-pill.booked { background: var(--primary-light); color: var(--primary-dark); }
-.bk-pill.arrived { background: #EDE7FB; color: #6D28D9; }
+.bk-who { font-size: var(--fs-cell); font-weight: 600; }
+.bk-what { font-size: var(--fs-micro); color: var(--text-muted); margin-top: 1px; }
 
 /* ---------- Password nag ---------- */
 .nag-banner {
-    background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 14px;
+    background: var(--warn-bg); border: 1px solid #E8D9B4; border-radius: var(--radius-card);
     padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    font-size: 13.5px; color: #92400E;
+    font-size: var(--fs-cell); color: var(--warn);
 }
 .nag-banner a { font-weight: 700; text-decoration: underline; }
 
-/* ---------- Build notice ---------- */
 @media (max-width: 1200px) {
     .grid-4 { grid-template-columns: repeat(2, 1fr); }
-    .row-2 { grid-template-columns: 1fr; }
 }
 </style>
 CSS;
@@ -437,14 +384,20 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
             <?php endif; ?>
 
-            <!-- Hero -->
-            <section class="hero">
-                <div class="hero-greeting">
-                    <div class="eyebrow"><?= $greeting ?></div>
-                    <h1><?= htmlspecialchars($user['name']) ?></h1>
-                    <div class="date"><?= date('l') ?>, <?= date('d/m/Y') ?></div>
+            <!-- Page head. Replaces the gradient hero: the name is already in
+                 the app-bar avatar and the date is already in the app bar, so
+                 the band was repeating what the chrome had just said. -->
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">Today</h1>
+                    <div class="page-meta" aria-live="polite">
+                        <?= count($todayRows) ?> registered &middot; <?= $countWaiting ?> waiting<?= $longestWaitMins > 0 ? ' &middot; longest ' . $longestWaitMins . ' min' : '' ?>
+                    </div>
                 </div>
-            </section>
+                <?php if (has_permission('RECEPTION_REGISTER_PATIENTS')): ?>
+                <a class="btn" href="patients.php?register=1">Register patient</a>
+                <?php endif; ?>
+            </div>
 
             <!-- Stat cards -->
             <div class="grid-4">
@@ -462,110 +415,170 @@ require __DIR__ . '/partials/sidebar.php';
 
             <!-- Today's work queue -->
             <div class="card">
-                <div class="section-title">Today</div>
-                <div class="section-sub"><?= count($todayRows) ?> registered &middot; <?= $countWaiting ?> waiting<?= $longestWaitMins > 0 ? ' (longest ' . $longestWaitMins . ' min)' : '' ?></div>
-
                 <?php if (empty($todayRows)): ?>
                     <div class="empty-state">No patients registered today yet.</div>
                 <?php else: ?>
-                <div class="queue-scroll">
-                <table class="queue-table">
-                    <thead>
-                        <tr><th>Token</th><th>Patient</th><th>Doctor / Type</th><th>Status</th><th>Paid</th><th class="ta-r">Actions</th></tr>
-                    </thead>
-                    <tbody>
+                <div class="queue">
+                    <span class="sr-only" id="queueCaption">Patients registered today, newest first.</span>
+                    <div class="qthead" aria-hidden="true">
+                        <div>Token</div><div>Patient</div><div>Doctor / Type</div>
+                        <div>Status</div><div>Paid</div><div style="text-align:right;">Actions</div>
+                    </div>
                     <?php foreach ($todayRows as $row): ?>
                         <?php
                             $isAdmitted = $row['disposition'] === 'SHORT_STAY';
-                            $refunded = (float) $row['refunded'];
+                            $refunded   = (float) $row['refunded'];
                             $paidAmount = (float) $row['paid_amount'];
 
-                            if ($isAdmitted) {
-                                $stripe = 'stay';
-                            } elseif ($row['consult_status'] === 'IN_CONSULT') {
-                                $stripe = 'active';
-                            } elseif ($row['consult_status'] === 'WAITING') {
-                                $stripe = 'wait';
-                            } else {
-                                $stripe = 'done';
-                            }
-
+                            // ---- Status: ONE pill, one tone. -------------------
+                            // The old row carried up to four simultaneous signals
+                            // (left stripe + status pill + a SECOND admission pill
+                            // + an opacity drop when refunded). Admission state now
+                            // folds into the same pill, and the struck amount plus
+                            // the clay "refunded" line carries the refund.
                             if ($row['consult_status'] === 'WAITING') {
-                                $waitedMins = (int) round((time() - strtotime($row['created_at'])) / 60);
+                                $waitedMins  = (int) round((time() - strtotime($row['created_at'])) / 60);
                                 $statusLabel = 'Waiting ' . $waitedMins . 'm';
-                                $statusClass = 'wait';
+                                $statusTone  = 'pill--warn';
                             } elseif ($row['consult_status'] === 'IN_CONSULT') {
                                 $statusLabel = 'In consult';
-                                $statusClass = 'active';
+                                $statusTone  = 'pill--brand';
                             } else {
                                 $statusLabel = $row['finished_at'] ? 'Done ' . date('H:i', strtotime($row['finished_at'])) : 'Done';
-                                $statusClass = 'done';
+                                $statusTone  = '';
+                            }
+                            if ($isAdmitted) {
+                                if ($row['admission_status'] === 'DISCHARGE_IN_PROGRESS') {
+                                    $statusLabel = 'Awaiting billing';
+                                    $statusTone  = 'pill--warn';
+                                } elseif ($row['admission_status'] === 'DISCHARGED') {
+                                    $statusLabel = 'Discharged';
+                                    $statusTone  = '';
+                                } else {
+                                    $statusLabel = 'Admitted · short stay';
+                                    $statusTone  = 'pill--ok';
+                                }
                             }
 
                             $ageDisplay = $row['dob']
                                 ? (new DateTime($row['dob']))->diff(new DateTime())->y . 'y'
                                 : '—';
+
+                            // ---- Action hierarchy: ONE primary per row state ----
+                            // Everything else demotes to the outline button or the
+                            // "···" menu. Refund NEVER sits in the row; it lives in
+                            // the menu, coloured clay, and keeps its confirm step.
+                            $canER     = has_permission('RECEPTION_RAISE_ER_BILL');
+                            $canAdmit  = has_permission('ADMISSION_ADMIT_PATIENT');
+                            $canRefund = $row['bill_id'] && $row['bill_status'] === 'paid'
+                                         && $refunded < $paidAmount
+                                         && has_permission('RECEPTION_ISSUE_REFUNDS');
+
+                            $admitAttrs = 'onclick="openAdmit(' . (int) $row['visit_id'] . ', '
+                                . htmlspecialchars(json_encode($row['patient_name']), ENT_QUOTES) . ', '
+                                . (int) $row['doctor_id'] . ', '
+                                . htmlspecialchars(json_encode($row['doctor_name']), ENT_QUOTES) . ')"';
+                            $invoiceHref = $row['bill_id']
+                                ? 'checkout.php?print=1&amp;bill_id=' . (int) $row['bill_id'] : '';
+                            $profileHref = 'patients.php?q=' . urlencode($row['mrn']);
+
+                            // [label, html-attrs, is-link] for primary + secondary.
+                            $primary = null; $secondary = null; $overflow = [];
+
+                            if ($isAdmitted && $row['admission_id'] && $row['admission_status'] === 'DISCHARGE_IN_PROGRESS') {
+                                $primary = ['Bill discharge', 'href="admission_discharge.php?id=' . (int) $row['admission_id'] . '"', true];
+                                if ($invoiceHref) { $secondary = ['Invoice', 'href="' . $invoiceHref . '" target="_blank" rel="noopener"', true]; }
+                            } elseif ($isAdmitted && $row['admission_id']) {
+                                $primary = ['Manage stay', 'href="admission.php?id=' . (int) $row['admission_id'] . '"', true];
+                                if ($invoiceHref) { $secondary = ['Invoice', 'href="' . $invoiceHref . '" target="_blank" rel="noopener"', true]; }
+                            } elseif ($row['consult_status'] === 'WAITING' && $canAdmit) {
+                                $primary = ['Admit', $admitAttrs, false];
+                                if ($invoiceHref) { $secondary = ['Invoice', 'href="' . $invoiceHref . '" target="_blank" rel="noopener"', true]; }
+                            } elseif ($invoiceHref) {
+                                // In consult -> Invoice is the live action, so it is
+                                // solid. Done/refunded -> nothing is urgent, so the
+                                // same button drops to an outline.
+                                $isLive  = $row['consult_status'] === 'IN_CONSULT';
+                                $primary = ['Invoice', 'href="' . $invoiceHref . '" target="_blank" rel="noopener"', true, !$isLive];
+                                $secondary = ['Profile', 'href="' . $profileHref . '"', true];
+                            } else {
+                                $primary = ['Profile', 'href="' . $profileHref . '"', true, true];
+                            }
+
+                            // Whatever did not become primary/secondary goes in "···".
+                            $used = array_filter([$primary[0] ?? null, $secondary[0] ?? null]);
+                            if ($canER) {
+                                $overflow[] = ['ER service', 'href="er_bill.php?patient_id=' . (int) $row['patient_id'] . '"', true, false];
+                            }
+                            if (!in_array('Admit', $used, true) && !$isAdmitted && $canAdmit) {
+                                $overflow[] = ['Admit', $admitAttrs, false, false];
+                            }
+                            if (!in_array('Profile', $used, true)) {
+                                $overflow[] = ['Profile', 'href="' . $profileHref . '"', true, false];
+                            }
+                            if ($canRefund) {
+                                $overflow[] = ['Refund', 'href="refund.php?bill_id=' . (int) $row['bill_id'] . '"', true, true];
+                            }
                         ?>
-                        <tr class="qrow s-<?= $stripe ?><?= $refunded > 0 && $refunded >= $paidAmount ? ' voided' : '' ?>">
-                            <td class="tok"><?= (int) $row['token_no'] ?><small><?= date('H:i', strtotime($row['created_at'])) ?></small></td>
-                            <td>
-                                <div class="q-name"><?= htmlspecialchars($row['patient_name']) ?></div>
-                                <div class="q-meta"><span class="mono"><?= htmlspecialchars($row['mrn']) ?></span> &middot; <?= $ageDisplay ?> &middot;
+                        <div class="qrow">
+                            <div class="c-token">
+                                <div class="qtoken"><?= (int) $row['token_no'] ?></div>
+                                <div class="qtime"><?= date('H:i', strtotime($row['created_at'])) ?></div>
+                            </div>
+                            <div class="c-patient">
+                                <div class="qname"><?= htmlspecialchars($row['patient_name']) ?></div>
+                                <div class="qmeta"><span class="mono"><?= htmlspecialchars($row['mrn']) ?></span> &middot; <?= $ageDisplay ?> &middot;
                                     <!-- Today's patient → WhatsApp chat pre-filled with the thank-you message (E.164 stripped to digits for wa.me) -->
                                     <a class="wa-link" href="https://wa.me/<?= preg_replace('/\D/', '', $row['phone']) ?>?text=<?= rawurlencode('Thank You for Visiting BabyMedics!') ?>" target="_blank" rel="noopener" title="Send thank-you on WhatsApp">
                                         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.64.07-.3-.15-1.26-.46-2.4-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.6-.91-2.2-.24-.58-.49-.5-.67-.5h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.06 2.87 1.21 3.07.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.08 1.76-.72 2-1.41.25-.7.25-1.29.18-1.42-.08-.12-.28-.2-.57-.34zM12.04 21.5h-.01a9.4 9.4 0 0 1-4.79-1.31l-.34-.2-3.56.93.95-3.47-.22-.36a9.4 9.4 0 0 1-1.44-5.02c0-5.2 4.24-9.43 9.45-9.43a9.4 9.4 0 0 1 6.68 2.77 9.37 9.37 0 0 1 2.76 6.67c0 5.2-4.24 9.43-9.44 9.43zm8.03-17.46A11.3 11.3 0 0 0 12.04.66C5.8.66.72 5.73.72 11.97c0 1.99.52 3.94 1.51 5.66L.63 23.5l6-1.57a11.34 11.34 0 0 0 5.4 1.37h.01c6.24 0 11.32-5.07 11.32-11.31 0-3.02-1.18-5.87-3.29-8.01z"/></svg><?= htmlspecialchars($row['phone']) ?></a>
                                 </div>
-                            </td>
-                            <td>
-                                <div class="q-doc"><?= htmlspecialchars($row['doctor_name']) ?></div>
-                                <div class="q-meta"><?= htmlspecialchars($row['consult_label']) ?></div>
-                            </td>
-                            <td>
-                                <span class="status-pill <?= $statusClass ?>"><?= htmlspecialchars($statusLabel) ?></span>
-                                <?php if ($isAdmitted): ?>
-                                    <?php if ($row['admission_status'] === 'DISCHARGE_IN_PROGRESS'): ?>
-                                        <span class="status-pill wait">Awaiting billing</span>
-                                    <?php elseif ($row['admission_status'] === 'DISCHARGED'): ?>
-                                        <span class="status-pill done">Discharged</span>
-                                    <?php else: ?>
-                                        <span class="status-pill stay">Admitted</span>
-                                    <?php endif; ?>
-                                <?php endif; ?>
-                            </td>
-                            <td class="mono">
+                            </div>
+                            <div class="c-doctor">
+                                <div class="qdoc"><?= htmlspecialchars($row['doctor_name']) ?></div>
+                                <div class="qmeta"><?= htmlspecialchars($row['consult_label']) ?></div>
+                            </div>
+                            <div class="c-status">
+                                <span class="pill <?= $statusTone ?>"><?= htmlspecialchars($statusLabel) ?></span>
+                            </div>
+                            <div class="c-paid qpaid">
                                 <?php if ($refunded > 0): ?>
                                     <span class="struck">Rs <?= number_format($paidAmount, 0) ?></span>
-                                    <div class="q-meta">refunded <?= number_format($refunded, 0) ?></div>
+                                    <div class="refunded">refunded <?= number_format($refunded, 0) ?></div>
                                 <?php else: ?>
                                     Rs <?= number_format($paidAmount, 0) ?>
                                 <?php endif; ?>
-                            </td>
-                            <td class="ta-r">
-                                <div class="q-acts">
-                                    <?php if (has_permission('RECEPTION_RAISE_ER_BILL')): ?>
-                                        <a class="qa" href="er_bill.php?patient_id=<?= (int) $row['patient_id'] ?>" title="Raise a walk-in ER service bill for this patient">ER</a>
-                                    <?php endif; ?>
-                                    <?php if ($isAdmitted && $row['admission_id'] && $row['admission_status'] === 'DISCHARGE_IN_PROGRESS'): ?>
-                                        <a class="qa warn" href="admission_discharge.php?id=<?= (int) $row['admission_id'] ?>">Bill discharge</a>
-                                    <?php elseif ($isAdmitted && $row['admission_id']): ?>
-                                        <a class="qa" href="admission.php?id=<?= (int) $row['admission_id'] ?>">Manage stay</a>
-                                    <?php elseif (has_permission('ADMISSION_ADMIT_PATIENT')): ?>
-                                        <button type="button" class="qa"
-                                            onclick="openAdmit(<?= (int) $row['visit_id'] ?>, <?= htmlspecialchars(json_encode($row['patient_name']), ENT_QUOTES) ?>, <?= (int) $row['doctor_id'] ?>, <?= htmlspecialchars(json_encode($row['doctor_name']), ENT_QUOTES) ?>)">Admit</button>
-                                    <?php endif; ?>
-                                    <?php if ($row['bill_id']): ?>
-                                        <a class="qa" href="checkout.php?print=1&amp;bill_id=<?= (int) $row['bill_id'] ?>" target="_blank" rel="noopener">Invoice</a>
-                                        <?php if ($row['bill_status'] === 'paid' && $refunded < $paidAmount && has_permission('RECEPTION_ISSUE_REFUNDS')): ?>
-                                            <a class="qa warn" href="refund.php?bill_id=<?= (int) $row['bill_id'] ?>">Refund</a>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
-                                    <a class="qa" href="patients.php?q=<?= urlencode($row['mrn']) ?>">Profile</a>
-                                </div>
-                            </td>
-                        </tr>
+                            </div>
+                            <div class="qactions">
+                                <?php if ($primary): ?>
+                                    <?php
+                                    // 4th element = "render as outline" — used when the
+                                    // action exists but nothing about it is urgent.
+                                    $pCls = 'qbtn' . (empty($primary[3]) ? ' qbtn--primary' : '');
+                                    $pTag = $primary[2] ? 'a' : 'button';
+                                    ?>
+                                    <<?= $pTag ?> class="<?= $pCls ?>" <?= $primary[2] ? '' : 'type="button"' ?> <?= $primary[1] ?>><?= htmlspecialchars($primary[0]) ?></<?= $pTag ?>>
+                                <?php endif; ?>
+                                <?php if ($secondary): ?>
+                                    <?php $sTag = $secondary[2] ? 'a' : 'button'; ?>
+                                    <<?= $sTag ?> class="qbtn" <?= $secondary[2] ? '' : 'type="button"' ?> <?= $secondary[1] ?>><?= htmlspecialchars($secondary[0]) ?></<?= $sTag ?>>
+                                <?php endif; ?>
+                                <?php if ($overflow): ?>
+                                <span class="qmenu-wrap">
+                                    <button type="button" class="qbtn qbtn--more" aria-haspopup="menu" aria-expanded="false"
+                                            aria-label="More actions for <?= htmlspecialchars($row['patient_name']) ?>"
+                                            onclick="qToggleMenu(this)">&hellip;</button>
+                                    <span class="qmenu" role="menu">
+                                        <?php foreach ($overflow as $i => $o): ?>
+                                            <?php if (!empty($o[3]) && $i > 0): ?><hr><?php endif; ?>
+                                            <?php $oTag = $o[2] ? 'a' : 'button'; $oCls = !empty($o[3]) ? 'qmenu--danger' : ''; ?>
+                                            <<?= $oTag ?> role="menuitem" class="<?= $oCls ?>" <?= $o[2] ? '' : 'type="button"' ?> <?= $o[1] ?>><?= htmlspecialchars($o[0]) ?></<?= $oTag ?>>
+                                        <?php endforeach; ?>
+                                    </span>
+                                </span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     <?php endforeach; ?>
-                    </tbody>
-                </table>
                 </div>
                 <?php endif; ?>
             </div>
@@ -579,8 +592,8 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                     <?php if (!empty($docTimings)): ?>
                     <div style="display:flex; gap:8px; flex-shrink:0;">
-                        <button type="button" class="qa" onclick="openTimings()">View timings</button>
-                        <a class="qa" href="doctor_timings.php">Edit timings</a>
+                        <button type="button" class="qbtn" onclick="openTimings()">View timings</button>
+                        <a class="qbtn" href="doctor_timings.php">Edit timings</a>
                     </div>
                     <?php endif; ?>
                 </div>
@@ -610,9 +623,9 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                     <div style="display:flex; gap:8px; flex-shrink:0;">
                         <?php if (!empty($openBookings)): ?>
-                        <button type="button" class="qa" onclick="openBookingsPopup()">View expected</button>
+                        <button type="button" class="qbtn" onclick="openBookingsPopup()">View expected</button>
                         <?php endif; ?>
-                        <a class="qa" href="bookings.php">Manage bookings</a>
+                        <a class="qbtn" href="bookings.php">Manage bookings</a>
                     </div>
                 </div>
                 <?php if (empty($todayBookings)): ?>
@@ -632,12 +645,12 @@ require __DIR__ . '/partials/sidebar.php';
                             <?php if ($b['status'] === 'BOOKED'): ?>
                                 <?php // Arrive → register jumps into the pre-filled flow; the SAVE there consumes the booking. ?>
                                 <?php if ($b['patient_id']): ?>
-                                    <a class="qa" href="patients.php?q=<?= urlencode($b['mrn']) ?>">Arrived</a>
+                                    <a class="qbtn" href="patients.php?q=<?= urlencode($b['mrn']) ?>">Arrived</a>
                                 <?php else: ?>
-                                    <a class="qa" href="patients.php?register=1&amp;booking=<?= (int) $b['id'] ?>">Arrived</a>
+                                    <a class="qbtn" href="patients.php?register=1&amp;booking=<?= (int) $b['id'] ?>">Arrived</a>
                                 <?php endif; ?>
                             <?php else: ?>
-                                <span class="bk-pill arrived">Arrived</span>
+                                <span class="pill pill--ok">Arrived</span>
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
@@ -743,7 +756,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                     <?php if ($b['note']): ?><div class="bk-what"><?= htmlspecialchars($b['note']) ?></div><?php endif; ?>
                 </div>
-                <span class="bk-pill booked">Expected</span>
+                <span class="pill pill--brand">Expected</span>
             </div>
             <?php endforeach; ?>
         </div>
@@ -846,6 +859,39 @@ bookingsPopupQueued = false;
 openBookingsPopup();
 <?php endif; ?>
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeAdmit(); closeTimings(); closeBookingsPopup(); } });
+
+/* ---------------------------------------------------------------------
+   Queue row overflow menu ("···").
+   One menu open at a time; click-away and Escape close it, and Escape
+   returns focus to the trigger that opened it.
+   ------------------------------------------------------------------- */
+function qCloseMenus(except) {
+    document.querySelectorAll('.qmenu-wrap.open').forEach(function (w) {
+        if (w === except) { return; }
+        w.classList.remove('open');
+        var t = w.querySelector('[aria-haspopup="menu"]');
+        if (t) { t.setAttribute('aria-expanded', 'false'); }
+    });
+}
+function qToggleMenu(btn) {
+    var wrap = btn.closest('.qmenu-wrap');
+    if (!wrap) { return; }
+    var willOpen = !wrap.classList.contains('open');
+    qCloseMenus(wrap);
+    wrap.classList.toggle('open', willOpen);
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+document.addEventListener('click', function (e) {
+    if (!e.target.closest('.qmenu-wrap')) { qCloseMenus(null); }
+});
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') { return; }
+    var open = document.querySelector('.qmenu-wrap.open');
+    if (!open) { return; }
+    var trigger = open.querySelector('[aria-haspopup="menu"]');
+    qCloseMenus(null);
+    if (trigger) { trigger.focus(); }
+});
 </script>
 <script src="assets/js/date-picker.js"></script>
 </body>

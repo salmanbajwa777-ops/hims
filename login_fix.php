@@ -69,7 +69,7 @@ if (!$done) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HIMS — Login Fix</title>
     <style>
-        :root { --primary-dark: #0E5456; --primary: #1A7F7E; }
+        :root { --primary-dark: #223A31; --primary: #2C4A3E; --primary-accent: #3F7A63; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #F8FAFC; padding: 20px; }
         .card { background: #fff; border-radius: 20px; padding: 36px; width: 100%; max-width: 520px; box-shadow: 0 10px 25px rgba(15,23,42,.08); border: 1px solid #E2E8F0; }
@@ -140,7 +140,7 @@ if (!$done) {
         function tg(id, btn) {
             var i = document.getElementById(id);
             i.type = i.type === 'password' ? 'text' : 'password';
-            btn.style.color = i.type === 'text' ? '#1A7F7E' : '#111827';
+            btn.style.color = i.type === 'text' ? '#3F7A63' : '#111827';
         }
         </script>
         <?php endif; ?>

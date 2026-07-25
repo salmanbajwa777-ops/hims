@@ -113,26 +113,26 @@ require __DIR__ . '/partials/head.php';
 <style>
 .appr-wrap { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; background: var(--bg, #f1f5f4); }
 .appr-card { width: 100%; max-width: 460px; background: #fff; border: 1px solid var(--border, #dde5e4); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,.06); }
-.appr-head { background: var(--primary, #0E5456); color: #fff; padding: 18px 24px; font-size: 16px; font-weight: 700; }
+.appr-head { background: var(--primary, var(--primary)); color: #fff; padding: 18px 24px; font-size: 16px; font-weight: 700; }
 .appr-body { padding: 22px 24px; }
 .appr-kv { width: 100%; border-collapse: collapse; margin: 6px 0 18px; }
 .appr-kv td { padding: 8px 10px; border: 1px solid var(--border, #e5ecec); font-size: 13.5px; }
 .appr-kv td:first-child { background: #f7fafa; color: var(--text-secondary, #41504f); width: 42%; }
 .appr-kv td:last-child { font-weight: 600; color: var(--text, #17211f); }
-.appr-amt { font-size: 22px; font-weight: 800; color: var(--primary, #0E5456); font-variant-numeric: tabular-nums; margin: 0 0 4px; }
+.appr-amt { font-size: 22px; font-weight: 800; color: var(--primary, var(--primary)); font-variant-numeric: tabular-nums; margin: 0 0 4px; }
 .appr-actions { display: flex; gap: 10px; margin-top: 6px; }
 .appr-btn { flex: 1; border: none; border-radius: 10px; padding: 13px; font: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer; }
-.appr-approve { background: var(--primary, #0E5456); color: #fff; }
+.appr-approve { background: var(--primary, var(--primary)); color: #fff; }
 .appr-reject { background: #fff; color: var(--red-text, #b3261e); border: 1px solid rgba(225,29,72,.4); }
 .appr-note { font-size: 12.5px; color: var(--text-muted, #6b7c7b); margin-top: 14px; line-height: 1.5; }
 .appr-flash { border-radius: 10px; padding: 12px 14px; font-size: 13.5px; margin-bottom: 16px; }
-.appr-flash.ok  { background: rgba(26,127,126,.10); border: 1px solid rgba(26,127,126,.3); color: #0E5456; }
+.appr-flash.ok  { background: rgba(26,127,126,.10); border: 1px solid rgba(26,127,126,.3); color: var(--primary); }
 .appr-flash.err { background: rgba(225,29,72,.08); border: 1px solid rgba(225,29,72,.28); color: var(--red-text, #b3261e); }
 .appr-badge { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 20px; padding: 4px 12px; }
 .b-pending  { color: #92590B; background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.34); }
-.b-approved { color: #0E5456; background: rgba(26,127,126,.11); border: 1px solid rgba(26,127,126,.28); }
+.b-approved { color: var(--primary); background: rgba(26,127,126,.11); border: 1px solid rgba(26,127,126,.28); }
 .b-rejected { color: var(--red-text, #b3261e); background: rgba(225,29,72,.09); border: 1px solid rgba(225,29,72,.24); }
-.appr-link { color: var(--primary, #0E5456); font-weight: 600; text-decoration: none; }
+.appr-link { color: var(--primary, var(--primary)); font-weight: 600; text-decoration: none; }
 </style>
 
 <div class="appr-wrap">

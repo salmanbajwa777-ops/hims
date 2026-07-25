@@ -75,13 +75,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
 <style>
 body { font-family: Inter, Arial, sans-serif; background: #f1f5f4; display: flex; justify-content: center; padding: 60px 16px; }
 .card { background: #fff; border: 1px solid #dde5e4; border-radius: 12px; padding: 28px; max-width: 460px; width: 100%; }
-h1 { font-size: 19px; color: #0E5456; margin: 0 0 6px; }
+h1 { font-size: 19px; color: #2C4A3E; margin: 0 0 6px; }
 p { font-size: 14px; color: #41504f; line-height: 1.5; }
 label { display: block; font-size: 13px; font-weight: 600; color: #17211f; margin: 18px 0 6px; }
 input[type=password], input[type=text] { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #c9d6d5; border-radius: 8px; font-size: 14px; }
-button { margin-top: 18px; background: #0E5456; color: #fff; border: 0; border-radius: 8px; padding: 11px 24px; font-size: 14px; font-weight: 600; cursor: pointer; }
+button { margin-top: 18px; background: #2C4A3E; color: #fff; border: 0; border-radius: 8px; padding: 11px 24px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .msg { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 13px; }
-.ok { background: #e8f5f0; color: #0E5456; border: 1px solid #b6ded2; }
+.ok { background: #E6F1E9; color: #2C4A3E; border: 1px solid #C3CDBF; }
 .bad { background: #fdecea; color: #b3261e; border: 1px solid #f5c6c0; }
 </style>
 </head>

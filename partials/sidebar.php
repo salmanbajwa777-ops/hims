@@ -226,63 +226,10 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
     }
 };
 ?>
-<style>
-/* ---------- Sidebar (shared) ---------- */
-.sidebar {
-    background: var(--card); border-right: 1px solid var(--border);
-    padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
-}
-.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; font-weight: 700; font-size: 18px; }
-.sidebar-brand .logo-mark {
-    width: 34px; height: 34px; border-radius: 10px;
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px;
-}
-.nav-group { margin-bottom: 18px; }
-.nav-group-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--text-muted); padding: 0 12px 8px; text-transform: uppercase; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; color: var(--text-secondary); font-weight: 500; font-size: 13.5px; transition: background .15s ease; }
-.nav-item:hover { background: var(--bg); }
-.nav-item.active { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; position: relative; }
-.nav-item.active::before { content: ""; position: absolute; left: -16px; top: 8px; bottom: 8px; width: 3px; background: var(--primary); border-radius: 0 3px 3px 0; }
-.nav-item.disabled { opacity: .45; cursor: not-allowed; }
-.nav-icon { width: 28px; height: 28px; border-radius: 8px; background: #F1F5F9; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text-secondary); }
-.nav-icon svg { width: 15px; height: 15px; }
-.nav-item.active .nav-icon { background: #fff; color: var(--primary-dark); }
-
-/* ---------- Mobile top app-bar (hidden on desktop) ---------- */
-.mobile-bar { display: none; }
-.mobile-bar .hamburger {
-    width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border);
-    background: var(--card); display: flex; align-items: center; justify-content: center;
-    color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
-}
-.mobile-bar .hamburger svg { width: 20px; height: 20px; }
-.mobile-bar .m-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
-.mobile-bar .m-brand .logo-mark {
-    width: 30px; height: 30px; border-radius: 9px;
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px;
-}
-.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 40; }
-
-/* ---------- Responsive: standard 900px breakpoint ---------- */
-@media (max-width: 900px) {
-    .mobile-bar {
-        display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 30;
-        padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border);
-    }
-    /* Off-canvas drawer */
-    .sidebar {
-        position: fixed; top: 0; left: 0; z-index: 50; width: min(84vw, 300px); height: 100vh;
-        transform: translateX(-100%); transition: transform .22s ease; box-shadow: var(--shadow-lg);
-    }
-    body.nav-open .sidebar { transform: translateX(0); }
-    body.nav-open .sidebar-overlay { display: block; }
-    /* The active-item accent bar is clipped off-canvas on desktop; inside the
-       drawer bring it inside the padding so it stays visible. */
-    .sidebar .nav-item.active::before { left: -8px; }
-}
-</style>
+<?php /* Sidebar styling lives in assets/app.css (search "Sidebar - the app's
+   ONE navigation"). Both this partial and doctor_sidebar.php used to carry
+   their own full copy of these rules, which is exactly how the two drifted
+   into different icon dialects. They now emit markup only. */ ?>
 
 <div class="app">
     <div class="mobile-bar">
