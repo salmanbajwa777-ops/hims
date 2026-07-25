@@ -1,8 +1,8 @@
 <?php
 // A5 day-closing slip, included from shift_closing.php's ?print=1 branch (and
 // reprintable from admin_handovers.php). Expects $closing (shift_closings row
-// joined to cashier/admin names) and $denominations (face_value/qty/amount
-// rows, largest first) in scope.
+// joined to cashier/admin names) in scope. $denominations may be passed but is
+// no longer rendered — the note-by-note breakdown was removed from the flow.
 //
 // Two signature lines — handed over by (receptionist) and received by (admin).
 // The signed paper copy is filed for audit; admin ticks "slip filed" in
@@ -137,20 +137,6 @@ $adminNameUpper = mb_strtoupper($closing['admin_name'] ?? '', 'UTF-8');
             <tr><td>Variance</td><td class="text-right"><?= $varianceLabel ?></td></tr>
             <tr class="net"><td><strong>CASH HANDED TO ADMIN (Rs)</strong></td><td class="text-right"><strong><?= number_format((float) $closing['handover_declared'], 2) ?></strong></td></tr>
         </table>
-
-        <?php if ($denominations): ?>
-        <div class="section-title">DENOMINATIONS COUNTED</div>
-        <table class="amounts-table">
-            <tr><th>Note</th><th class="text-right">Qty</th><th class="text-right">Amount (Rs)</th></tr>
-            <?php foreach ($denominations as $d): ?>
-            <tr>
-                <td><?= (int) $d['face_value'] === 1 ? 'Coins' : number_format((int) $d['face_value']) ?></td>
-                <td class="text-right"><?= (int) $d['face_value'] === 1 ? '—' : (int) $d['qty'] ?></td>
-                <td class="text-right"><?= number_format((float) $d['amount'], 2) ?></td>
-            </tr>
-            <?php endforeach; ?>
-        </table>
-        <?php endif; ?>
 
         <?php if ($closing['variance_note']): ?>
         <p class="detail"><strong>Variance note:</strong> <?= htmlspecialchars($closing['variance_note']) ?></p>

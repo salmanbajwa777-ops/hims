@@ -33,24 +33,10 @@ $cutoffHour = day_cutoff_hour($pdo);
 $isOvernight = $today !== date('Y-m-d');   // now past midnight but before cutoff
 $uid = (int) $_SESSION['user_id'];
 
-// PKR note faces, largest first. face_value 1 is the "Coins" line — its qty is
-// entered as a rupee amount, not a piece count.
-$DENOMS = [5000, 1000, 500, 100, 50, 20, 10, 1];
-
-// Rebuild the physical count server-side from posted quantities; the
-// client-side totals are display sugar only.
-function sc_parse_denoms(array $denomFaces): array {
-    $counted = 0.0;
-    $rows = [];
-    foreach ($denomFaces as $face) {
-        $qty = max(0, (int) ($_POST['denom'][$face] ?? 0));
-        $amount = $face === 1 ? (float) $qty : (float) ($face * $qty);
-        if ($qty > 0) {
-            $rows[] = [$face, $qty, $amount];
-        }
-        $counted += $amount;
-    }
-    return [round($counted, 2), $rows];
+// Counted cash is now entered as a single total (the note-by-note breakdown was
+// removed as unnecessary friction). Read the one field, floor at zero.
+function sc_counted_cash(): float {
+    return round(max(0.0, (float) str_replace(',', '', $_POST['counted_cash'] ?? '0')), 2);
 }
 
 // ---------------- Print view (A5 closing slip) ----------------
@@ -72,9 +58,9 @@ if (isset($_GET['print']) && isset($_GET['closing_id'])) {
         die('Closing slip not found.');
     }
 
-    $denomStmt = $pdo->prepare('SELECT face_value, qty, amount FROM shift_closing_denominations WHERE closing_id = ? ORDER BY face_value DESC');
-    $denomStmt->execute([$closingId]);
-    $denominations = $denomStmt->fetchAll();
+    // Denomination breakdown was removed from the closing flow; the print
+    // partial still guards on this, so an empty list simply skips the section.
+    $denominations = [];
 
     $pdo->prepare('UPDATE shift_closings SET printed_at = NOW() WHERE id = ?')->execute([$closingId]);
 
@@ -98,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
         } elseif ($handoverDeclared < 0) {
             $error = 'The handover amount cannot be negative.';
         } else {
-            [$counted, $denomRows] = sc_parse_denoms($DENOMS);
+            $counted = sc_counted_cash();
 
             $tally = day_cash_tally($pdo, $today, $uid);
             $variance = round($counted - $tally['expected_cash'], 2);
@@ -133,14 +119,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                     $handoverDeclared, $handoverToId,
                 ]);
                 $closingId = (int) $pdo->lastInsertId();
-
-                $denomIns = $pdo->prepare('
-                    INSERT INTO shift_closing_denominations (closing_id, face_value, qty, amount)
-                    VALUES (?, ?, ?, ?)
-                ');
-                foreach ($denomRows as [$face, $qty, $amount]) {
-                    $denomIns->execute([$closingId, $face, $qty, $amount]);
-                }
 
                 $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
                 $log->execute([
@@ -193,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         } elseif ($handoverDeclared < 0) {
             $error = 'The handover amount cannot be negative.';
         } else {
-            [$counted, $denomRows] = sc_parse_denoms($DENOMS);
+            $counted = sc_counted_cash();
             $expected = (float) $closing['expected_cash'];   // system side is not re-tallied — the shift's money is locked
             $variance = round($counted - $expected, 2);
 
@@ -217,23 +195,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                     $changes['variance_note'] = [$closing['variance_note'] ?? '', $varianceNote];
                 }
 
-                // Denomination diff, summarised as one loggable line each way.
-                $oldDenoms = [];
-                $dStmt = $pdo->prepare('SELECT face_value, qty FROM shift_closing_denominations WHERE closing_id = ? ORDER BY face_value DESC');
-                $dStmt->execute([(int) $closing['id']]);
-                foreach ($dStmt->fetchAll() as $d) {
-                    $oldDenoms[] = ((int) $d['face_value'] === 1 ? 'Coins Rs' : $d['face_value'] . '×') . $d['qty'];
-                }
-                $newDenoms = [];
-                foreach ($denomRows as [$face, $qty, $amount]) {
-                    $newDenoms[] = ($face === 1 ? 'Coins Rs' : $face . '×') . $qty;
-                }
-                $oldDenomStr = implode(', ', $oldDenoms);
-                $newDenomStr = implode(', ', $newDenoms);
-                if ($oldDenomStr !== $newDenomStr) {
-                    $changes['denominations'] = [$oldDenomStr, $newDenomStr];
-                }
-
                 if (!$changes) {
                     $error = 'Nothing changed — the figures are the same as before.';
                 } else {
@@ -252,16 +213,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                             edited_at = NOW(), edit_count = ?
                         WHERE id = ?
                     ")->execute([$counted, $variance, $varianceNote ?: null, $handoverDeclared, $round, (int) $closing['id']]);
-
-                    // Replace the denomination rows with the new count.
-                    $pdo->prepare('DELETE FROM shift_closing_denominations WHERE closing_id = ?')->execute([(int) $closing['id']]);
-                    $denomIns = $pdo->prepare('
-                        INSERT INTO shift_closing_denominations (closing_id, face_value, qty, amount)
-                        VALUES (?, ?, ?, ?)
-                    ');
-                    foreach ($denomRows as [$face, $qty, $amount]) {
-                        $denomIns->execute([(int) $closing['id'], $face, $qty, $amount]);
-                    }
 
                     $changedList = implode(', ', array_keys($changes));
                     $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
@@ -306,15 +257,6 @@ $admins = $adminsStmt->fetchAll();
 $editMode = $closing && isset($_GET['edit'])
     && in_array($closing['status'], ['PENDING_RECEIPT', 'EDITED'], true);
 
-$savedDenoms = [];
-if ($editMode) {
-    $dStmt = $pdo->prepare('SELECT face_value, qty FROM shift_closing_denominations WHERE closing_id = ?');
-    $dStmt->execute([(int) $closing['id']]);
-    foreach ($dStmt->fetchAll() as $d) {
-        $savedDenoms[(int) $d['face_value']] = (int) $d['qty'];
-    }
-}
-
 // The form serves both modes; in edit mode expected cash comes from the
 // snapshot (the shift's money is locked, so the system side cannot change).
 $formExpected = $editMode ? (float) $closing['expected_cash'] : $tally['expected_cash'];
@@ -354,15 +296,6 @@ require __DIR__ . '/partials/sidebar.php';
 .ttable tr.grand td { font-weight: 700; background: var(--primary-light); }
 .ttable tr.section td { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); background: var(--bg); padding: 5px 10px; }
 .count-chip { display: inline-block; min-width: 24px; text-align: center; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-weight: 600; padding: 0 8px; color: var(--text-secondary); }
-
-.denom-row { display: grid; grid-template-columns: 88px 1fr 110px; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--border); }
-.denom-row:last-of-type { border-bottom: none; }
-.note-face { font-weight: 700; font-size: 13.5px; font-variant-numeric: tabular-nums; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; text-align: center; color: var(--text-secondary); }
-.denom-qty { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); text-align: center; }
-.denom-qty:focus { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
-.denom-amt { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 13.5px; }
-.denom-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px; padding-top: 14px; border-top: 2px solid var(--border-strong); }
-.denom-total .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .variance-strip { display: flex; justify-content: space-between; align-items: center; border-radius: var(--radius-input); padding: 11px 15px; margin-top: 14px; font-weight: 600; font-size: 13.5px; }
 .variance-strip.ok { background: var(--green-bg); color: var(--green-text); }
@@ -538,22 +471,14 @@ require __DIR__ . '/partials/sidebar.php';
 
             <div class="card">
                 <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Physical cash count</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Count your cash by denomination — totals compute themselves. "Coins" takes a rupee amount.</p>
-                <div>
-                    <?php foreach ($DENOMS as $face): ?>
-                    <div class="denom-row">
-                        <span class="note-face"><?= $face === 1 ? 'Coins' : number_format($face) ?></span>
-                        <input class="denom-qty" type="number" min="0" step="1" name="denom[<?= $face ?>]"
-                               value="<?= (int) ($savedDenoms[$face] ?? 0) ?>"
-                               data-face="<?= $face ?>" inputmode="numeric"
-                               aria-label="<?= $face === 1 ? 'Coins total in rupees' : 'Number of ' . $face . ' notes' ?>">
-                        <span class="denom-amt" data-amt="<?= $face ?>">0</span>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <div class="denom-total">
-                    <span style="font-weight:700;">Counted cash</span>
-                    <span class="v">Rs <span id="countedTotal">0</span></span>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Count the cash in the drawer and enter the total you physically have.</p>
+                <div class="cfield">
+                    <label for="counted_cash">Counted cash (Rs)</label>
+                    <input id="counted_cash" name="counted_cash" type="number" min="0" step="1"
+                           inputmode="numeric" required
+                           value="<?= $editMode ? number_format((float) $closing['counted_cash'], 0, '.', '') : '' ?>"
+                           placeholder="0"
+                           style="font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;">
                 </div>
                 <div class="variance-strip ok" id="varianceStrip">
                     <span id="varianceLabel">Variance vs expected (<?= number_format($formExpected, 0) ?>)</span>
@@ -613,27 +538,16 @@ require __DIR__ . '/partials/sidebar.php';
 </div></div><!-- .main + .app -->
 
 <script>
-// Live denomination math. Server recomputes everything from the raw
-// quantities — this is display convenience only.
+// Live variance from the single counted-cash total. Server revalidates.
 (function () {
     var expected = <?= json_encode(round($formExpected, 2)) ?>;
-    var inputs = document.querySelectorAll('.denom-qty');
-    if (!inputs.length) return;
+    var counted = document.getElementById('counted_cash');
+    if (!counted) return;
 
     var fmt = function (n) { return n.toLocaleString('en-PK', {maximumFractionDigits: 0}); };
 
     function recalc() {
-        var total = 0;
-        inputs.forEach(function (inp) {
-            var face = parseInt(inp.dataset.face, 10);
-            var qty = Math.max(0, parseInt(inp.value, 10) || 0);
-            var amt = face === 1 ? qty : face * qty;
-            total += amt;
-            var cell = document.querySelector('[data-amt="' + face + '"]');
-            if (cell) cell.textContent = fmt(amt);
-        });
-
-        document.getElementById('countedTotal').textContent = fmt(total);
+        var total = Math.max(0, parseFloat(counted.value) || 0);
 
         var variance = total - expected;
         var strip = document.getElementById('varianceStrip');
@@ -660,7 +574,7 @@ require __DIR__ . '/partials/sidebar.php';
     var ho = document.getElementById('handover_declared');
     if (ho) ho.addEventListener('input', function () { ho.dataset.touched = '1'; });
 
-    inputs.forEach(function (inp) { inp.addEventListener('input', recalc); });
+    counted.addEventListener('input', recalc);
     recalc();
 })();
 </script>
