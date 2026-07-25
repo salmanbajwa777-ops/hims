@@ -147,8 +147,11 @@ $sbGroups = [
         ],
     ],
     [
-        // Admin-only money group: post/approve spending, close the till, receive
-        // the cash. Reporting on that money lives in Analytics, not here.
+        // Admin-only money group: everything that MOVES or SETTLES money —
+        // post spending, close the till, receive the cash, pay the doctors,
+        // close the books, file the tax. Analytics is for reading numbers; if a
+        // screen writes a financial record or someone acts on it with a
+        // chequebook, it belongs here.
         // Collapsible for the same reason as Settings — see that group's note.
         'label' => 'Finances',
         'admin' => true,
@@ -157,6 +160,16 @@ $sbGroups = [
                 ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',  'href' => 'expenses.php'],
                 ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',   'href' => 'shift_closing.php'],
                 ['slug' => 'handovers',   'label' => 'Cash Handovers',  'icon' => 'wallet',  'href' => 'admin_handovers.php'],
+                // Statement -> payout -> books -> tax: the month-end sequence,
+                // in the order it is actually worked through.
+                ['slug' => 'doctor_share_statement', 'label' => 'Doctor Share Statement', 'icon' => 'stetho', 'href' => 'doctor_share_statement.php',
+                 'perm' => 'FINANCIAL_VIEW_ALL_COMMISSIONS'],
+                ['slug' => 'doctor_payouts', 'label' => 'Doctor Payouts', 'icon' => 'wallet', 'href' => 'doctor_payouts.php',
+                 'perm' => 'FINANCIAL_RUN_PAYOUT'],
+                ['slug' => 'pnl_report', 'label' => 'Profit & Loss', 'icon' => 'chart', 'href' => 'pnl_report.php',
+                 'perm' => 'FINANCIAL_VIEW_DAILY_PL'],
+                ['slug' => 'tax_register', 'label' => 'Tax Register', 'icon' => 'receipt', 'href' => 'tax_register.php',
+                 'perm' => 'FINANCIAL_VIEW_ALL_COMMISSIONS'],
             ]],
         ],
     ],
@@ -186,15 +199,9 @@ $sbGroups = [
         'label' => 'Analytics',
         'admin' => true,
         'items' => [
+            // Read-only views. Anything that SETTLES money — payouts, the
+            // month-end close, the tax register — lives in Finances instead.
             ['slug' => 'analytics', 'label' => 'Analytics', 'icon' => 'chart', 'href' => '#', 'children' => [
-                ['slug' => 'doctor_share_statement', 'label' => 'Doctor Share Statement', 'icon' => 'stetho', 'href' => 'doctor_share_statement.php',
-                 'perm' => 'FINANCIAL_VIEW_ALL_COMMISSIONS'],
-                ['slug' => 'pnl_report', 'label' => 'Profit & Loss', 'icon' => 'chart', 'href' => 'pnl_report.php',
-                 'perm' => 'FINANCIAL_VIEW_DAILY_PL'],
-                ['slug' => 'doctor_payouts', 'label' => 'Doctor Payouts', 'icon' => 'wallet', 'href' => 'doctor_payouts.php',
-                 'perm' => 'FINANCIAL_RUN_PAYOUT'],
-                ['slug' => 'tax_register', 'label' => 'Tax Register', 'icon' => 'receipt', 'href' => 'tax_register.php',
-                 'perm' => 'FINANCIAL_VIEW_ALL_COMMISSIONS'],
                 ['slug' => 'income_report', 'label' => 'Income Report', 'icon' => 'wallet', 'href' => 'income_report.php',
                  'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
                 ['slug' => 'expense_report', 'label' => 'Expense Report', 'icon' => 'chart', 'href' => 'expense_report.php',
