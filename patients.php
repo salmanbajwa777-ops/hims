@@ -29,6 +29,7 @@ if ($isDoctorReadonly && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // shared handler resolves today's visit or creates a shell, so a patient with no
 // visit today can still be admitted. Doctors never reach this (POST blocked above).
 require_once __DIR__ . '/config/admission_actions.php';
+require_once __DIR__ . '/config/ipd_actions.php';
 $admitError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit_patient') {
     $result = handle_admit_patient($pdo);
@@ -38,6 +39,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit
     }
     $admitError = $result['error'];
 }
+// In-Door (IPD) admit — separate module, separate handler.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ipd_admit_patient') {
+    $ipdResult = handle_ipd_admit($pdo);
+    if ($ipdResult['ok']) {
+        header('Location: ipd_admission.php?id=' . (int) $ipdResult['admission_id'] . '&admitted=1');
+        exit;
+    }
+    $admitError = $ipdResult['error'];
+}
 
 // Admit-modal data (only needed for reception; harmless if the modal isn't shown).
 $canAdmitHere = !$isDoctorReadonly && has_permission('ADMISSION_ADMIT_PATIENT');
@@ -46,6 +56,16 @@ $admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRI
 if ($canAdmitHere) {
     $admTypes = $pdo->query('SELECT admission_type, rate_amount, rate_basis FROM admission_rates WHERE is_enabled = 1 ORDER BY FIELD(admission_type,"ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
     $admDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
+}
+
+// In-Door admit-modal data. Doctors admit from their own console too, so this is
+// gated on the IPD permission, not on !$isDoctorReadonly.
+$canIpdAdmitHere = has_permission('IPD_ADMIT_PATIENT');
+$ipdWards = $ipdDoctors = [];
+if ($canIpdAdmitHere) {
+    $ipdWards = $pdo->query('SELECT ward, per_day_rate, consultant_visit_fee FROM ipd_ward_rates WHERE is_enabled = 1 ORDER BY ward')->fetchAll();
+    $ipdDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name")->fetchAll();
+    $ipdAdmitFormAction = 'patients.php';
 }
 
 // ---------------- AJAX: quick-add area (used from the registration panel) ----------------
@@ -1183,6 +1203,10 @@ require __DIR__ . '/partials/sidebar.php';
                                          visit or creates a shell (byPatient=true). -->
                                     <button type="button" class="qa" onclick="openAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, 0, '', true)">Admit</button>
                                     <?php endif; ?>
+                                    <?php if ($canIpdAdmitHere): ?>
+                                    <!-- In-Door (IPD) admit — separate module/handler (byPatient=true). -->
+                                    <button type="button" class="qa" onclick="openIpdAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, 0, '', true)">In-Door</button>
+                                    <?php endif; ?>
                                     <!-- Procedure billing (e.g. ear piercing) is a separate, one-time flow — placeholder for a later phase. -->
                                     <button class="qa" disabled title="Procedure billing is coming in a later phase">Procedure</button>
                                 </div>
@@ -2059,6 +2083,7 @@ phoneInput.addEventListener('change', regBookingCheck);
 </script>
 <?php endif; ?>
 <?php if ($canAdmitHere) { require __DIR__ . '/partials/admit_modal.php'; } ?>
+<?php if ($canIpdAdmitHere) { require __DIR__ . '/partials/ipd_admit_modal.php'; } ?>
 <?php if ($admitError): ?>
 <script>window.addEventListener('load', function () { alert(<?= json_encode($admitError) ?>); });</script>
 <?php endif; ?>

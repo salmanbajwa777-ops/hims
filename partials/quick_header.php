@@ -44,7 +44,7 @@ $qhInitial = $qhName !== '' ? strtoupper(substr(trim($qhName), 0, 1)) : '?';
  * the partial is included by pages that never load today's visits, and a badge
  * that silently reads zero is worse than one extra indexed count.
  */
-$qhCounts = ['today' => 0, 'admissions' => 0];
+$qhCounts = ['today' => 0, 'admissions' => 0, 'ipd' => 0];
 try {
     $qhRow = $pdo->query("
         SELECT COUNT(*) AS total,
@@ -55,6 +55,13 @@ try {
     if ($qhRow) {
         $qhCounts['today']      = (int) $qhRow['total'];
         $qhCounts['admissions'] = (int) $qhRow['admitted'];
+    }
+    // Live In-Door count = currently-admitted IPD stays (not date-scoped, so a
+    // multi-day stay still shows). Tolerate the table not existing yet.
+    try {
+        $qhCounts['ipd'] = (int) $pdo->query("SELECT COUNT(*) FROM ipd_admissions WHERE status <> 'DISCHARGED'")->fetchColumn();
+    } catch (Throwable $e) {
+        // ipd_admissions not migrated yet — leave at 0.
     }
 } catch (Throwable $e) {
     // A badge is not worth a fatal. Fall through with zeros.
@@ -98,6 +105,9 @@ if ($qhCan('RECEPTION_REGISTER_PATIENTS') || $qhCan('NURSING_RECORD_ADMISSIONS')
 }
 if ($qhCan('NURSING_RECORD_ADMISSIONS')) {
     $qhButtons[] = ['slug' => 'admissions', 'label' => 'Admissions', 'icon' => 'bed', 'href' => 'admissions.php', 'tone' => 'violet', 'count' => $qhCounts['admissions']];
+}
+if ($qhCan('IPD_VIEW_WARD')) {
+    $qhButtons[] = ['slug' => 'ipd', 'label' => 'In-Door', 'icon' => 'bed', 'href' => 'ipd_admissions.php', 'tone' => 'blue', 'count' => $qhCounts['ipd']];
 }
 if ($qhCan('RECEPTION_REGISTER_PATIENTS')) {
     $qhButtons[] = ['slug' => 'patients', 'label' => 'Patients', 'icon' => 'users', 'href' => 'patients.php', 'tone' => 'teal', 'count' => null];

@@ -510,6 +510,28 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         $t[$k . '_count'] = (int) $r['n'];
     }
 
+    // IPD (In-Door) bills fold into the SAME admission buckets so a receptionist's
+    // signed shift close covers IPD cash without a new UI field. Additive and
+    // guarded — an unmigrated ipd_bills table degrades to "no IPD cash", never a
+    // fatal. (This is the one deliberate IPD touch of billing.php.)
+    try {
+        $stmt = $pdo->prepare("
+            SELECT (payment_method = 'cash') AS is_cash,
+                   COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
+            FROM ipd_bills
+            WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+            GROUP BY is_cash
+        ");
+        $stmt->execute([$winStart, $winEnd, $userId]);
+        foreach ($stmt->fetchAll() as $r) {
+            $k = ((int) $r['is_cash']) ? 'cash_admission' : 'online_admission';
+            $t[$k . '_total'] += (float) $r['total'];
+            $t[$k . '_count'] += (int) $r['n'];
+        }
+    } catch (Throwable $e) {
+        // ipd_bills not migrated yet — leave admission buckets as-is.
+    }
+
     $stmt = $pdo->prepare("
         SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
         FROM refunds

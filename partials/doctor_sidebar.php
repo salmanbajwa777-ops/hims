@@ -31,6 +31,7 @@ function ds_icon(string $name): string {
         'chart'   => '<path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4"/>',
         'clock'   => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
         'user'    => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+        'bed'     => '<path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M3 16h18"/><path d="M7 10V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3"/>',
     ];
     return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . ($paths[$name] ?? '') . '</svg>';
 }
@@ -87,6 +88,9 @@ function ds_icon(string $name): string {
         <div class="nav-group-label">Clinical</div>
         <a class="nav-item <?= $dsActive === 'console' ? 'active' : '' ?>" href="doctor.php"><span class="nav-icon"><?= ds_icon('grid') ?></span> My Console</a>
         <a class="nav-item" href="doctor.php"><span class="nav-icon"><?= ds_icon('users') ?></span> My Queue <?php if ($dsWaitingCount): ?><span class="count"><?= $dsWaitingCount ?></span><?php endif; ?></a>
+        <?php if (function_exists('has_permission') && has_permission('IPD_VIEW_WARD')): ?>
+        <a class="nav-item <?= $dsActive === 'ipd' ? 'active' : '' ?>" href="ipd_admissions.php"><span class="nav-icon"><?= ds_icon('bed') ?></span> In-Door (IPD)</a>
+        <?php endif; ?>
         <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('stetho') ?></span> Consultations</a>
         <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('file') ?></span> Prescriptions</a>
     </div>

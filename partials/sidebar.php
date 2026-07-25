@@ -47,7 +47,7 @@ $sbIsAdmin  = $sbBaseRole === 'ADMIN';
 if ($sbBaseRole === 'DOCTOR') {
     // Map the caller's reception slug onto the doctor nav's active states;
     // unmapped pages simply highlight nothing.
-    $dsActive = ['patients' => 'patients', 'profile' => 'profile'][$navActive] ?? '';
+    $dsActive = ['patients' => 'patients', 'profile' => 'profile', 'ipd' => 'ipd'][$navActive] ?? '';
     if (!isset($dsUserName)) {
         $sbMe = $pdo->prepare('SELECT name FROM users WHERE id = ?');
         $sbMe->execute([$_SESSION['user_id']]);
@@ -130,6 +130,8 @@ $sbGroups = [
              'perm' => 'RECEPTION_GENERATE_INVOICES'],
             ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php',
              'perm' => 'NURSING_RECORD_ADMISSIONS'],
+            ['slug' => 'ipd',         'label' => 'In-Door (IPD)',   'icon' => 'bed',      'href' => 'ipd_admissions.php',
+             'perm' => 'IPD_VIEW_WARD'],
             ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php',
              'perm' => 'RECEPTION_MANAGE_BOOKINGS'],
             ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',   'href' => 'expenses.php',
@@ -146,6 +148,7 @@ $sbGroups = [
             ['slug' => 'staff',       'label' => 'Staff & Doctors', 'icon' => 'stetho',  'href' => 'staff.php'],
             ['slug' => 'locations',   'label' => 'Cities & Areas',  'icon' => 'pin',     'href' => 'locations.php'],
             ['slug' => 'er_services', 'label' => 'ER Services & Rates','icon' => 'receipt','href' => 'er_services.php'],
+            ['slug' => 'ipd_ward_rates', 'label' => 'In-Door Ward Rates','icon' => 'bed','href' => 'ipd_ward_rates.php'],
             ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
             ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
             ['slug' => 'procedure_master', 'label' => 'Procedures',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
