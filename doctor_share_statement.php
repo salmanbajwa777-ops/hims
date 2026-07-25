@@ -211,19 +211,16 @@ $feeLabels = [
 $pageTitle = 'Doctor Share Statement';
 $extraCss = <<<CSS
 <style>
-.header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
-.header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
-
+/* No .header rules: the sidebar partial supplies the app bar. Form controls
+   inherit app.css — including its :focus-visible ring — so only the layout of
+   the picker row is defined here. */
 .pick-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .pick-form .fld { display: flex; flex-direction: column; gap: 4px; }
 .pick-form label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
-.pick-form input, .pick-form select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
-.pick-form input:focus, .pick-form select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.pick-form input, .pick-form select { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-input, 10px); font: inherit; font-size: 13.5px; background: var(--card); color: var(--text); }
 
 /* ---- The statement sheet: A5 portrait, one page ---- */
-.sheet { background: var(--card); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-sm);
+.sheet { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card, 14px); box-shadow: var(--shadow-sm);
          padding: 22px 26px; max-width: 560px; }
 .sheet h2 { font-size: 17px; margin: 0 0 2px; font-weight: 800; }
 .sheet .sub { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
@@ -240,9 +237,9 @@ $extraCss = <<<CSS
                    letter-spacing: .05em; color: var(--text-muted); }
 .ltab tr.rule td { border-bottom: 1px solid var(--border); padding: 0; height: 6px; }
 .ltab tr.sum td { font-weight: 700; padding-top: 7px; }
-.ltab tr.grand td { font-weight: 800; font-size: 14px; padding-top: 9px; border-top: 2px solid var(--ink, #16211C); }
+.ltab tr.grand td { font-weight: 800; font-size: 14px; padding-top: 9px; border-top: 2px solid var(--text); }
 .ltab .muted { color: var(--text-muted); font-weight: 400; }
-.ltab tr.neg td.n { color: #B42318; }
+.ltab tr.neg td.n { color: var(--danger); }
 
 .sign { display: flex; gap: 26px; margin-top: 26px; }
 .sign div { flex: 1; border-top: 1px solid var(--border); padding-top: 5px; font-size: 10.5px; color: var(--text-muted); text-align: center; }
@@ -269,19 +266,14 @@ require __DIR__ . '/partials/sidebar.php';
 
 $m = fn(float $v) => 'Rs ' . number_format($v);
 ?>
-        <header class="header">
-            <div class="page-title" style="font-size:16px;">Doctor Share Statement</div>
-            <div class="header-right">
-                <span class="header-date"><?= date('D, d/m/Y') ?></span>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
-
         <div class="content">
+            <!-- No page-level <header>: the sidebar partial already provides the
+                 app bar (Sage & Clay, 7940fdf). A second one repeated the title
+                 and the date the chrome had just shown. -->
             <div class="page-head">
                 <div>
-                    <div class="page-title">Doctor Share Statement</div>
-                    <div class="page-sub">Earned share for a date range, by the day the money was collected</div>
+                    <h1 class="page-title">Doctor Share Statement</h1>
+                    <div class="page-meta">Earned share for a date range, by the day the money was collected</div>
                 </div>
                 <form class="pick-form" method="GET" action="doctor_share_statement.php">
                     <div class="fld">

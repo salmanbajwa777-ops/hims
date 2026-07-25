@@ -223,22 +223,18 @@ $pageTitle = 'Expense Report';
 // the file's own comment warns about.
 $headExtra = <<<CSS
 <style>
-.header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
-.header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
-
+/* No .header rules: the sidebar partial supplies the app bar. Inputs inherit
+   app.css, including its :focus-visible ring. */
 .month-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.month-form input[type=month], .month-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
-.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.month-form input[type=month], .month-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-input, 10px); font: inherit; font-size: 13.5px; background: var(--card); color: var(--text); }
 .month-form .to-sep { font-size: 12.5px; color: var(--text-muted); margin: 0 2px; }
 .mode-fields { display: inline-flex; align-items: center; gap: 8px; }
 
 /* Month | Date range switch */
-.mode-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+.mode-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--card); }
 .mode-tab { border: 0; background: transparent; font: inherit; font-size: 12.5px; font-weight: 600;
             padding: 9px 13px; cursor: pointer; color: var(--text-secondary); }
-.mode-tab.on { background: var(--primary, #1A7F7E); color: #fff; }
+.mode-tab.on { background: var(--primary); color: var(--on-primary); }
 
 /* Donut + legend. Inline SVG: no library, prints cleanly, no extra request. */
 .pie-wrap { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
@@ -268,8 +264,8 @@ $headExtra = <<<CSS
 
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
-.up   { color: #b42318; font-weight: 700; }
-.down { color: #067647; font-weight: 700; }
+.up   { color: var(--danger); font-weight: 700; }
+.down { color: var(--ok); font-weight: 700; }
 .flat { color: var(--text-muted); }
 
 /* Share-of-total bar, drawn inline behind the percentage. */
@@ -286,7 +282,7 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 .trend .amt { font-size: 10.5px; font-weight: 700; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
 
 .disb-note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
-.warn-note { border-left: 3px solid #b54708; background: #fffaeb; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 16px; }
+.warn-note { border-left: 3px solid var(--warn); background: var(--card-alt); padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 16px; }
 
 @media print {
     .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group, .mode-tabs { display: none !important; }
@@ -307,19 +303,13 @@ $fmtDelta = function (float $d): string {
     return '<span class="' . $cls . '">' . ($d > 0 ? '+' : '−') . 'Rs ' . number_format(abs($d)) . '</span>';
 };
 ?>
-        <header class="header">
-            <div class="page-title" style="font-size:16px;">Expense Report</div>
-            <div class="header-right">
-                <span class="header-date"><?= date('D, d/m/Y') ?></span>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
-
         <div class="content">
+            <!-- No page-level <header>: the sidebar partial supplies the app bar
+                 (Sage & Clay, 7940fdf). A second one repeated the title and date. -->
             <div class="page-head">
                 <div>
-                    <div class="page-title">Expense Report — <?= htmlspecialchars($monthLabel) ?></div>
-                    <div class="page-sub">Grouped by the month each cost belongs to, not the day it was paid</div>
+                    <h1 class="page-title">Expense Report — <?= htmlspecialchars($monthLabel) ?></h1>
+                    <div class="page-meta">Grouped by the month each cost belongs to, not the day it was paid</div>
                 </div>
                 <?php
                 // Carries the current period through to CSV/print without
