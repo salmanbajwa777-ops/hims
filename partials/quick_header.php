@@ -106,25 +106,19 @@ if ($qhCan('RECEPTION_REGISTER_PATIENTS') || $qhCan('NURSING_RECORD_ADMISSIONS')
 if ($qhCan('NURSING_RECORD_ADMISSIONS')) {
     $qhButtons[] = ['slug' => 'admissions', 'label' => 'Admissions', 'icon' => 'bed', 'href' => 'admissions.php', 'tone' => 'violet', 'count' => $qhCounts['admissions']];
 }
-if ($qhCan('IPD_VIEW_WARD')) {
-    $qhButtons[] = ['slug' => 'ipd', 'label' => 'In-Door', 'icon' => 'bed', 'href' => 'ipd_admissions.php', 'tone' => 'blue', 'count' => $qhCounts['ipd']];
-}
+// In-Door lives in the sidebar; not repeated here.
 if ($qhCan('RECEPTION_REGISTER_PATIENTS')) {
     $qhButtons[] = ['slug' => 'patients', 'label' => 'Patients', 'icon' => 'users', 'href' => 'patients.php', 'tone' => 'teal', 'count' => null];
 }
 if ($qhCan('RECEPTION_MANAGE_BOOKINGS')) {
     $qhButtons[] = ['slug' => 'bookings', 'label' => 'Bookings', 'icon' => 'calendar', 'href' => 'bookings.php', 'tone' => 'blue', 'count' => null];
 }
-if ($qhCan('RECEPTION_REGISTER_PATIENTS')) {
-    $qhButtons[] = ['slug' => 'register', 'label' => 'Add New Patient', 'icon' => 'plus', 'href' => 'patients.php?register=1', 'tone' => 'primary', 'count' => null];
-}
+// "Add New Patient" is reached from the Patients page; not repeated here.
 // Walk-in ER service bill — a quick injection/nebulization/dressing charge, no admission.
 if ($qhCan('RECEPTION_RAISE_ER_BILL')) {
     $qhButtons[] = ['slug' => 'er_bill', 'label' => 'ER Service', 'icon' => 'activity', 'href' => 'er_bill.php', 'tone' => 'rose', 'count' => null];
 }
-if ($qhCan('FINANCIAL_POST_EXPENSES')) {
-    $qhButtons[] = ['slug' => 'expenses', 'label' => 'Expenses', 'icon' => 'wallet', 'href' => 'expenses.php', 'tone' => 'rose', 'count' => null];
-}
+// Expenses lives in the sidebar; not repeated here.
 if ($qhCan('RECEPTION_CLOSE_DAY')) {
     $qhButtons[] = ['slug' => 'shift_closing', 'label' => 'Day Closing', 'icon' => 'wallet', 'href' => 'shift_closing.php', 'tone' => 'amber', 'count' => null];
 }
