@@ -1390,3 +1390,114 @@ function clinic_doctor_shares(PDO $pdo, string $start, string $end): array {
     uasort($out['rows'], function ($a, $b) { return $b['doctor'] <=> $a['doctor']; });
     return $out;
 }
+
+// ============================================================================
+// OPERATING EXPENSES FOR A PERIOD  (Accounts Phase 5, added 2026-07-26)
+//
+// The expense half of the P&L, using the SAME rules as expense_report.php so
+// the two pages can never disagree:
+//
+//   * grouped on COALESCE(period_month, expense_date) — the month a cost
+//     BELONGS to, so July's salary paid in August counts in July;
+//   * voided and REJECTED postings excluded;
+//   * DISBURSEMENTS EXCLUDED. Doctor Shares is money passing through the
+//     clinic, and the P&L already deducts the EARNED share from revenue.
+//     Counting the posted row as an operating cost as well would understate
+//     profit by exactly the doctor share. This is the single most important
+//     invariant on the P&L page.
+//
+// Returns per-category rows plus the operating total, and the disbursement
+// total separately so a caller can reconcile earned-vs-paid without ever
+// mixing it into costs.
+// ============================================================================
+function clinic_operating_expenses(PDO $pdo, string $start, string $end): array {
+    $out = ['rows' => [], 'operating' => 0.0, 'disbursed' => 0.0, 'count' => 0];
+
+    // period_month / is_disbursement arrive with add_accounts_phase1.sql. Fall
+    // back to expense_date grouping with nothing flagged as a disbursement, so
+    // a database mid-migration still renders a (less correct) figure instead of
+    // failing the whole page.
+    $hasPhase1 = false;
+    try {
+        $hasPhase1 = (int) $pdo->query("
+            SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND ((table_name = 'expenses'           AND column_name = 'period_month')
+                OR (table_name = 'expense_categories' AND column_name = 'is_disbursement'))
+        ")->fetchColumn() === 2;
+    } catch (Throwable $e) { /* leave false */ }
+
+    $periodExpr = $hasPhase1 ? 'COALESCE(e.period_month, e.expense_date)' : 'e.expense_date';
+    $disbExpr   = $hasPhase1 ? 'ec.is_disbursement' : '0';
+
+    try {
+        $q = $pdo->prepare("
+            SELECT ec.id, ec.name, $disbExpr AS is_disb,
+                   COUNT(*) AS n, COALESCE(SUM(e.amount), 0) AS amt
+            FROM expenses e
+            JOIN expense_categories ec ON ec.id = e.category_id
+            WHERE $periodExpr BETWEEN ? AND ?
+              AND e.voided_at IS NULL AND e.approval_status <> 'REJECTED'
+            GROUP BY ec.id, ec.name, is_disb
+            ORDER BY amt DESC
+        ");
+        $q->execute([$start, $end]);
+        foreach ($q->fetchAll() as $r) {
+            if ((int) $r['is_disb'] === 1) {
+                $out['disbursed'] += (float) $r['amt'];
+                continue;                       // never an operating cost
+            }
+            $out['rows'][(int) $r['id']] = [
+                'name' => $r['name'],
+                'amt'  => (float) $r['amt'],
+                'n'    => (int) $r['n'],
+            ];
+            $out['operating'] += (float) $r['amt'];
+            $out['count']     += (int) $r['n'];
+        }
+    } catch (PDOException $e) {
+        error_log('[clinic_operating_expenses] ' . $e->getMessage());
+    }
+
+    return $out;
+}
+
+// ---------------------------------------------------------------------------
+// MONTH-END CLOSE
+//
+// A closed month renders from STORED NUMBERS, never by recomputing. Without
+// that, a bill voided in August silently rewrites a July that has already been
+// reported on and paid out against. Closing also blocks back-dated postings
+// into the month, since expenses.expense_date is admin-editable and a closed
+// month would otherwise be trivially rewritable.
+// ---------------------------------------------------------------------------
+
+/** The closing row for a month ('YYYY-MM'), or null if the month is open. */
+function month_closing(PDO $pdo, string $month): ?array {
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+        return null;
+    }
+    try {
+        $q = $pdo->prepare('SELECT * FROM monthly_closings WHERE period_month = ? AND reopened_at IS NULL');
+        $q->execute([$month . '-01']);
+        return $q->fetch() ?: null;
+    } catch (PDOException $e) {
+        return null;   // table not created yet — every month is open
+    }
+}
+
+/**
+ * Guard for anything that would write into a closed month. Returns an error
+ * message, or null when the write may proceed. Mirrors require_day_open()'s
+ * shape so callers read the same way.
+ */
+function require_month_open(PDO $pdo, ?string $date = null): ?string {
+    $date = $date ?: date('Y-m-d');
+    $closing = month_closing($pdo, date('Y-m', strtotime($date)));
+    if (!$closing) {
+        return null;
+    }
+    return 'The books for ' . date('F Y', strtotime($date)) . ' are closed (closed on '
+         . date('d/m/Y', strtotime($closing['closed_at'])) . '). Post this to the current month, '
+         . 'or ask an admin to reopen that month first.';
+}
