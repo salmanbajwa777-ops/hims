@@ -162,18 +162,36 @@ function create_bill_for_visit(
 function generate_admission_invoice_number(PDO $pdo): string {
     $year = (int) date('Y');
     $month = (int) date('n');
+    $yymm = substr((string) $year, 2, 2) . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
 
-    $stmt = $pdo->prepare('
+    // Don't trust the counter alone: LAST_INSERT_ID() on an ON DUPLICATE KEY
+    // *update* is unreliable across setups (this re-issued duplicate numbers for
+    // EXP-/RF- series after a restore or re-run migration). Take GREATEST of the
+    // stored counter and the real max already in admission_bills for this month,
+    // then persist. The stored number is "A{seq}{YY}{MM}" so the sequence is the
+    // middle: strip the leading "A" and the trailing 4 chars (YYMM).
+    $stmt = $pdo->prepare("
+        SELECT GREATEST(
+            COALESCE((SELECT next_seq - 1 FROM admission_invoice_counters WHERE yr = :y AND mo = :m), 0),
+            COALESCE((SELECT MAX(CAST(SUBSTRING(invoice_number, 2, CHAR_LENGTH(invoice_number) - 5) AS UNSIGNED))
+                      FROM admission_bills WHERE invoice_number LIKE :pfx), 0)
+        ) + 1
+    ");
+    $stmt->execute([':y' => $year, ':m' => $month, ':pfx' => 'A%' . $yymm]);
+    $seq = (int) $stmt->fetchColumn();
+    if ($seq < 1) {
+        $seq = 1;
+    }
+
+    // Persist the high-water mark. next_seq is "the next number to hand out", so
+    // store seq + 1.
+    $pdo->prepare('
         INSERT INTO admission_invoice_counters (yr, mo, next_seq)
-        VALUES (?, ?, 2)
-        ON DUPLICATE KEY UPDATE next_seq = LAST_INSERT_ID(next_seq) + 1
-    ');
-    $stmt->execute([$year, $month]);
-    $seq = $stmt->rowCount() === 1 ? 1 : (int) $pdo->lastInsertId();
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE next_seq = GREATEST(next_seq, VALUES(next_seq))
+    ')->execute([$year, $month, $seq + 1]);
 
-    return 'A' . $seq
-        . substr((string) $year, 2, 2)
-        . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+    return 'A' . $seq . $yymm;
 }
 
 // Billed stay-hours from a raw minute count.
@@ -362,18 +380,31 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
 // online rather than migrating old rows.
 // ============================================================================
 
-// Yearly closing-slip number, e.g. "DC-2026-0187". Same atomic-upsert pattern
-// as generate_refund_number().
+// Yearly closing-slip number, e.g. "DC-2026-0187". Same GREATEST-of-counter-and-
+// actual-max pattern as generate_refund_number(): don't trust LAST_INSERT_ID() on
+// an ON DUPLICATE KEY update — it re-issues DC-2026-0001 when the counter falls
+// behind the real max in shift_closings (restore / re-run migration).
 function generate_closing_number(PDO $pdo): string {
     $year = (int) date('Y');
 
+    $stmt = $pdo->prepare("
+        SELECT GREATEST(
+            COALESCE((SELECT last_sequence FROM closing_sequences WHERE sequence_year = :y), 0),
+            COALESCE((SELECT MAX(CAST(SUBSTRING_INDEX(closing_number, '-', -1) AS UNSIGNED))
+                      FROM shift_closings WHERE closing_number LIKE :pfx), 0)
+        ) + 1
+    ");
+    $stmt->execute([':y' => $year, ':pfx' => 'DC-' . $year . '-%']);
+    $seq = (int) $stmt->fetchColumn();
+    if ($seq < 1) {
+        $seq = 1;
+    }
+
     $pdo->prepare('
         INSERT INTO closing_sequences (sequence_year, last_sequence)
-        VALUES (?, 1)
-        ON DUPLICATE KEY UPDATE last_sequence = LAST_INSERT_ID(last_sequence) + 1
-    ')->execute([$year]);
-    $lastId = (int) $pdo->lastInsertId();
-    $seq = $lastId > 0 ? $lastId : 1;
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE last_sequence = GREATEST(last_sequence, VALUES(last_sequence))
+    ')->execute([$year, $seq]);
 
     return 'DC-' . $year . '-' . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
 }

@@ -36,17 +36,36 @@ $canApprove = has_permission('FINANCIAL_APPROVE_EXPENSES');
 $error = '';
 $success = '';
 
-// Yearly expense voucher number, e.g. "EXP-2026-0014". Same race-safe
-// atomic-upsert + LAST_INSERT_ID() pattern as refund numbers (config/billing.php).
+// Yearly expense voucher number, e.g. "EXP-2026-0014". Same race-safe pattern
+// as generate_refund_number() (config/billing.php): we do NOT trust
+// LAST_INSERT_ID() on an ON DUPLICATE KEY *update* — its return value is
+// unreliable across setups and was re-issuing EXP-2026-0001 whenever the
+// expense_sequences counter fell behind the actual max in `expenses` (e.g. after
+// a restore, manual insert, or re-run migration). Instead take GREATEST of the
+// stored counter and the real max already in the table, then persist that.
 function generate_expense_number(PDO $pdo): string {
     $year = (int) date('Y');
+
+    $stmt = $pdo->prepare("
+        SELECT GREATEST(
+            COALESCE((SELECT last_sequence FROM expense_sequences WHERE sequence_year = :y), 0),
+            COALESCE((SELECT MAX(CAST(SUBSTRING_INDEX(expense_number, '-', -1) AS UNSIGNED))
+                      FROM expenses WHERE expense_number LIKE :pfx), 0)
+        ) + 1
+    ");
+    $stmt->execute([':y' => $year, ':pfx' => 'EXP-' . $year . '-%']);
+    $seq = (int) $stmt->fetchColumn();
+    if ($seq < 1) {
+        $seq = 1;
+    }
+
+    // Persist the new high-water mark so the counter tracks reality.
     $pdo->prepare('
         INSERT INTO expense_sequences (sequence_year, last_sequence)
-        VALUES (?, 1)
-        ON DUPLICATE KEY UPDATE last_sequence = LAST_INSERT_ID(last_sequence) + 1
-    ')->execute([$year]);
-    $lastId = (int) $pdo->lastInsertId();
-    $seq = $lastId > 0 ? $lastId : 1;
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE last_sequence = GREATEST(last_sequence, VALUES(last_sequence))
+    ')->execute([$year, $seq]);
+
     return 'EXP-' . $year . '-' . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
 }
 
