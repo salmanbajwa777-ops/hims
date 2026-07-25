@@ -228,23 +228,34 @@ that line's doctor share is reversed.
 naming the original payout number, the patient, the date and the reason. A
 deduction a doctor cannot trace is a dispute waiting to happen.
 
-#### The edge case this creates
+#### Negative payouts — carry forward (DECIDED 2026-07-26)
 
-**A clawback can exceed the period's earnings**, leaving a negative payout.
-Realistic: a doctor on leave all of August, whose large July procedure is
-voided in August.
+**A clawback can exceed the period's earnings.** Realistic: a doctor on leave
+all of August whose large July bill is voided in August.
 
-The system must NOT pay a negative amount. Proposed handling:
+```
+August earned                    11,760
+July bill voided (clawback)     −17,640
+─────────────────────────────────────────
+August net                       −5,880   ← cannot pay a negative
+```
 
-- The payout is still created, showing negative `net_paid`
-- **No expense is posted** — no cash moves
-- The shortfall carries as an opening balance against the doctor's *next*
-  payout, via `carried_balance` on `doctor_payouts`
-- The statement says plainly: *"Rs X carried forward — deducted from your next
-  payout"*
+The system must never pay a negative amount, so:
 
-This keeps the debt visible and recoverable instead of silently written off,
-and never requires anyone to hand money back.
+- The payout **is** created and shows the negative figure — the arithmetic is
+  never hidden
+- **No expense is posted.** No cash moves, and `net_paid` is 0
+- The Rs 5,880 becomes `carried_out`, landing as `carried_in` on the doctor's
+  next payout
+- The statement says plainly: *"Rs 5,880 carried forward — will be deducted
+  from your next payout"*
+
+```
+September earned                 40,000
+Brought forward from August      −5,880
+─────────────────────────────────────────
+September net                    34,120   ← settled
+```
 
 ```sql
 -- on doctor_payouts
@@ -252,9 +263,16 @@ carried_in   DECIMAL(12,2) NOT NULL DEFAULT 0,  -- brought forward from last pay
 carried_out  DECIMAL(12,2) NOT NULL DEFAULT 0,  -- unrecovered, goes to the next
 ```
 
-*Open: is carry-forward right, or should a negative balance simply be written
-off? Carry-forward is recommended — it is the only option that keeps the number
-honest without demanding a refund from the doctor.*
+A balance can chain across several periods if earnings stay low; each payout
+carries whatever remains. `carried_in` must be read from the doctor's most
+recent **settled** payout, not merely the most recent row, or a draft would
+consume the balance without paying anything.
+
+**Leavers.** A doctor who leaves carrying a balance has no future payout to
+deduct from, so it becomes a write-off in practice. An admin must be able to
+write off a stranded balance **explicitly, with a reason** — recorded in the
+audit log, never a silent default. Without this the balance sits forever
+against an inactive doctor and quietly overstates what the clinic is owed.
 
 ### Tax deposit register
 
@@ -293,20 +311,12 @@ checked against reality.** Freezing a wrong number is worse than not freezing.
    payout.** Reversed at the ORIGINALLY PAID figures, not recomputed at today's
    rate. Guarded by `UNIQUE (source_type, source_id, line_kind)` so the same
    voided bill can never be deducted twice. See the Clawbacks section.
-1a. **Carry-forward vs write-off** — still open, recommendation below.
-   A clawback can exceed a period's earnings, leaving a negative payout.
-   Carry-forward puts the shortfall on the NEXT payout as an opening balance
-   (`carried_in` / `carried_out`) and settles it out of future earnings;
-   write-off has the clinic absorb it. *Recommend carry-forward: it is the only
-   choice consistent with having agreed to clawbacks at all — writing off at
-   the boundary would mean clawbacks work except when they are large, which is
-   exactly when they matter. Nobody is ever asked to hand money back either
-   way; carry-forward just keeps the debt visible until future work covers it.*
-
-   **Caveat that needs a rule regardless:** a doctor who LEAVES carrying a
-   balance has no future payout to deduct from, so it becomes a write-off in
-   practice. Design should let an admin explicitly write off a stranded balance
-   with a reason — a recorded decision, never a silent default.
+1a. ~~**Carry-forward vs write-off**~~ — **DECIDED 2026-07-26: CARRY FORWARD.**
+   A clawback that exceeds a period's earnings does NOT get written off. The
+   shortfall lands on the next payout as an opening balance
+   (`carried_in` / `carried_out`) and is settled out of future earnings. No
+   doctor is ever asked to hand money back; the debt simply stays visible until
+   future work covers it. See "Negative payouts" below for the mechanics.
 
 2. ~~**Payout period**~~ — **DECIDED 2026-07-26: monthly by default, but any
    from/to range is allowed.** Each payout records its own `period_start` /
