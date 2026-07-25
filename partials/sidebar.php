@@ -149,12 +149,15 @@ $sbGroups = [
     [
         // Admin-only money group: post/approve spending, close the till, receive
         // the cash. Reporting on that money lives in Analytics, not here.
+        // Collapsible for the same reason as Settings — see that group's note.
         'label' => 'Finances',
         'admin' => true,
         'items' => [
-            ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',  'href' => 'expenses.php'],
-            ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',   'href' => 'shift_closing.php'],
-            ['slug' => 'handovers',   'label' => 'Cash Handovers',  'icon' => 'wallet',  'href' => 'admin_handovers.php'],
+            ['slug' => 'finances', 'label' => 'Finances', 'icon' => 'wallet', 'href' => '#', 'children' => [
+                ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',  'href' => 'expenses.php'],
+                ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',   'href' => 'shift_closing.php'],
+                ['slug' => 'handovers',   'label' => 'Cash Handovers',  'icon' => 'wallet',  'href' => 'admin_handovers.php'],
+            ]],
         ],
     ],
     [
@@ -183,10 +186,12 @@ $sbGroups = [
         'label' => 'Analytics',
         'admin' => true,
         'items' => [
-            ['slug' => 'expense_report', 'label' => 'Expense Report', 'icon' => 'chart', 'href' => 'expense_report.php',
-             'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
-            ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
-            ['slug' => 'reports', 'label' => 'More Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
+            ['slug' => 'analytics', 'label' => 'Analytics', 'icon' => 'chart', 'href' => '#', 'children' => [
+                ['slug' => 'expense_report', 'label' => 'Expense Report', 'icon' => 'chart', 'href' => 'expense_report.php',
+                 'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
+                ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
+                ['slug' => 'reports', 'label' => 'More Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
+            ]],
         ],
     ],
     [
@@ -253,7 +258,20 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
             $visibleItems = array_filter($visibleItems, fn($it) => !empty($it['perm']) || !empty($it['children']));
         }
         if (!$visibleItems) { continue; }
-        echo '<div class="nav-group"><div class="nav-group-label">' . htmlspecialchars($g['label']) . '</div>';
+        // Suppress the group heading when the group is nothing but one
+        // collapsible parent of the same name — otherwise Finances and
+        // Analytics each render an uppercase "FINANCES" label directly above a
+        // "Finances" button, saying the same word twice in two type styles.
+        // Management keeps its heading: it holds Google Sheet Sync alongside
+        // the Settings parent, so the label still groups more than one thing.
+        $sbOnlyItem  = count($visibleItems) === 1 ? reset($visibleItems) : null;
+        $sbHideLabel = $sbOnlyItem
+            && !empty($sbOnlyItem['children'])
+            && $sbOnlyItem['label'] === $g['label'];
+        echo '<div class="nav-group">';
+        if (!$sbHideLabel) {
+            echo '<div class="nav-group-label">' . htmlspecialchars($g['label']) . '</div>';
+        }
         foreach ($visibleItems as $it) {
             // ---- Collapsible parent (e.g. Settings) ----------------------
             // Children are filtered by exactly the same visibility rule as
@@ -263,7 +281,9 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
             // rendering an empty disclosure.
             if (!empty($it['children'])) {
                 $kids = array_filter($it['children'], $sbItemVisible);
-                if (!$kids) { continue; }
+                // A parent offering nothing but not-built-yet stubs is a
+                // disclosure that opens onto a dead end — drop it entirely.
+                if (!array_filter($kids, fn($k) => empty($k['disabled']))) { continue; }
                 $openHere = false;
                 foreach ($kids as $k) {
                     if ($navActive === $k['slug']) { $openHere = true; break; }
@@ -278,9 +298,16 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
                    . '</button>';
                 echo '<div class="nav-sub' . ($openHere ? ' open' : '') . '" id="' . $subId . '">';
                 foreach ($kids as $k) {
-                    $kcls  = 'nav-item nav-child' . ($navActive === $k['slug'] ? ' active' : '');
-                    $kattr = $navActive === $k['slug'] ? ' aria-current="page"' : '';
-                    echo '<a class="' . $kcls . '" href="' . htmlspecialchars($k['href']) . '"' . $kattr . '>'
+                    // Children honour 'disabled' exactly as top-level items do —
+                    // without this a not-built-yet child (More Reports) would
+                    // render as a live link straight to '#'.
+                    $kcls = 'nav-item nav-child';
+                    if (!empty($k['disabled']))    { $kcls .= ' disabled'; }
+                    if ($navActive === $k['slug']) { $kcls .= ' active'; }
+                    $khref = !empty($k['disabled']) ? '#' : $k['href'];
+                    $kattr = !empty($k['disabled']) ? ' title="Not built yet" aria-disabled="true"' : '';
+                    if ($navActive === $k['slug']) { $kattr .= ' aria-current="page"'; }
+                    echo '<a class="' . $kcls . '" href="' . htmlspecialchars($khref) . '"' . $kattr . '>'
                        . '<span class="nav-icon">' . sb_icon($k['icon']) . '</span> '
                        . htmlspecialchars($k['label']) . '</a>';
                 }

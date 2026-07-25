@@ -198,7 +198,7 @@ button { font-family: inherit; }
 }
 .nav-item.active .count { background: rgba(255,255,255,.22); }
 
-/* ---- Collapsible sub-navigation (Settings) ----
+/* ---- Collapsible sub-navigation (Settings, Finances, Analytics) ----
    The parent is a <button>, so it needs the button reset the <a> items don't:
    without width/font/text-align/border it renders as a shrink-wrapped native
    control with centred 13.3px system text and sits visibly apart from its
