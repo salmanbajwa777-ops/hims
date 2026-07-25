@@ -542,6 +542,9 @@ require __DIR__ . '/partials/sidebar.php';
                             </td>
                             <td class="ta-r">
                                 <div class="q-acts">
+                                    <?php if (has_permission('RECEPTION_RAISE_ER_BILL')): ?>
+                                        <a class="qa" href="er_bill.php?patient_id=<?= (int) $row['patient_id'] ?>" title="Raise a walk-in ER service bill for this patient">ER</a>
+                                    <?php endif; ?>
                                     <?php if ($isAdmitted && $row['admission_id'] && $row['admission_status'] === 'DISCHARGE_IN_PROGRESS'): ?>
                                         <a class="qa warn" href="admission_discharge.php?id=<?= (int) $row['admission_id'] ?>">Bill discharge</a>
                                     <?php elseif ($isAdmitted && $row['admission_id']): ?>
