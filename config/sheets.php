@@ -424,6 +424,66 @@ function sheet_row_for_admission_bill(PDO $pdo, int $admissionBillId, ?int $acto
     ));
 }
 
+/**
+ * ER walk-in service row (Receipt = "ER Service"). No doctor, no visit — a direct
+ * patient charge for one or more ER services, listed in "Other Procedures".
+ */
+function sheet_row_for_er_bill(PDO $pdo, int $erBillId, ?int $actorId): ?array {
+    $stmt = $pdo->prepare('
+        SELECT e.id, e.invoice_number, e.subtotal, e.grand_total, e.status,
+               e.payment_method, e.paid_at, e.created_at, e.created_by_id,
+               p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
+               ' . sheet_email_select($pdo) . ',
+               c.name AS city_name, a.name AS area_name
+        FROM er_bills e
+        JOIN patients p ON p.id = e.patient_id
+        LEFT JOIN cities c ON c.id = p.city_id
+        LEFT JOIN areas a ON a.id = p.area_id
+        WHERE e.id = ?
+    ');
+    $stmt->execute([$erBillId]);
+    $r = $stmt->fetch();
+    if (!$r) { return null; }
+
+    $gross    = (float) $r['subtotal'];
+    $net      = (float) $r['grand_total'];
+    $discount = round($gross - $net, 2);
+
+    $payLabels = ['cash' => 'Cash', 'card' => 'Online-Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
+    $payment = $r['status'] === 'waived' ? 'Waived (no charge)' : ($payLabels[$r['payment_method']] ?? '');
+
+    // The service line names, joined, for the descriptive column.
+    $svc = $pdo->prepare('SELECT description, quantity FROM er_bill_items WHERE er_bill_id = ? ORDER BY id');
+    $svc->execute([$erBillId]);
+    $names = [];
+    foreach ($svc->fetchAll() as $it) {
+        $qty = (int) $it['quantity'];
+        $names[] = $it['description'] . ($qty > 1 ? " ×$qty" : '');
+    }
+
+    $when = $r['paid_at'] ?: $r['created_at'];
+
+    return array_merge([
+        'Date'                => date('d/m/Y', strtotime($when)),
+        'Receipt'             => 'ER Service',
+        'Invoice Number'      => $r['invoice_number'],
+        'RNumber'             => $r['mrn'],
+        'Patient Name'        => $r['patient_name'],
+        'Father/Husband Name' => $r['father_name'],
+        'Date Of Birth'       => $r['dob'] ? date('d/m/Y', strtotime($r['dob'])) : '',
+        'Email'               => $r['email'],
+        'Phone/Mobile'        => $r['phone'],
+        'Checkup Type'        => 'ER Service',
+        'City'                => $r['city_name'],
+        'Area/Address'        => $r['area_name'],
+        'Payment Method'      => $payment,
+        'Other Procedures'    => implode(', ', $names),
+        'TotalAmount'         => number_format($gross, 2, '.', ''),
+        'Discount'            => $discount > 0 ? number_format($discount, 2, '.', '') : '',
+        'Net Total'           => number_format($net, 2, '.', ''),
+    ], sheet_actor_fields($pdo, $actorId ?: (int) $r['created_by_id'], $erBillId));
+}
+
 // ============================================================================
 // Delivery
 // ============================================================================
@@ -484,6 +544,7 @@ function sheet_push(PDO $pdo, string $docType, int $docRef, ?int $actorId = null
         if ($docType === 'INVOICE')        { $row = sheet_row_for_bill($pdo, $docRef, $actorId); }
         elseif ($docType === 'ADMISSION')  { $row = sheet_row_for_admission($pdo, $docRef, $actorId); }
         elseif ($docType === 'DISCHARGE')  { $row = sheet_row_for_admission_bill($pdo, $docRef, $actorId); }
+        elseif ($docType === 'ER_SERVICE') { $row = sheet_row_for_er_bill($pdo, $docRef, $actorId); }
         if (!$row) { return; }
 
         // The row's own Date decides its yearly tab, so a document saved just after

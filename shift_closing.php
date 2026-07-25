@@ -482,14 +482,20 @@ require __DIR__ . '/partials/sidebar.php';
                 <div style="overflow-x:auto;">
                 <table class="ttable">
                     <tr class="section"><td colspan="3">Money in</td></tr>
+                    <?php
+                    // ER is folded into the admission buckets; show it split out here so
+                    // the cashier can see walk-in service cash for their own reconciliation.
+                    $cashEr = (int) ($tally['cash_er_count'] ?? 0);
+                    $onlineEr = (int) ($tally['online_er_count'] ?? 0);
+                    ?>
                     <tr>
                         <td>Cash <span class="count-chip"><?= $tally['cash_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)">consult <?= $tally['cash_consult_count'] ?> · admission <?= $tally['cash_admission_count'] ?></td>
+                        <td class="num" style="color:var(--text-muted)">consult <?= $tally['cash_consult_count'] ?> · admission <?= $tally['cash_admission_count'] - $cashEr ?><?= $cashEr ? ' · ER ' . $cashEr : '' ?></td>
                         <td class="num"><?= number_format($tally['cash_total'], 2) ?></td>
                     </tr>
                     <tr>
                         <td>Online <span class="count-chip"><?= $tally['online_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)">consult <?= $tally['online_consult_count'] ?> · admission <?= $tally['online_admission_count'] ?></td>
+                        <td class="num" style="color:var(--text-muted)">consult <?= $tally['online_consult_count'] ?> · admission <?= $tally['online_admission_count'] - $onlineEr ?><?= $onlineEr ? ' · ER ' . $onlineEr : '' ?></td>
                         <td class="num"><?= number_format($tally['online_total'], 2) ?></td>
                     </tr>
                     <tr class="section"><td colspan="3">Money out</td></tr>

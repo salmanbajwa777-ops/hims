@@ -118,6 +118,10 @@ if ($qhCan('RECEPTION_MANAGE_BOOKINGS')) {
 if ($qhCan('RECEPTION_REGISTER_PATIENTS')) {
     $qhButtons[] = ['slug' => 'register', 'label' => 'Add New Patient', 'icon' => 'plus', 'href' => 'patients.php?register=1', 'tone' => 'primary', 'count' => null];
 }
+// Walk-in ER service bill — a quick injection/nebulization/dressing charge, no admission.
+if ($qhCan('RECEPTION_RAISE_ER_BILL')) {
+    $qhButtons[] = ['slug' => 'er_bill', 'label' => 'ER Service', 'icon' => 'activity', 'href' => 'er_bill.php', 'tone' => 'rose', 'count' => null];
+}
 if ($qhCan('FINANCIAL_POST_EXPENSES')) {
     $qhButtons[] = ['slug' => 'expenses', 'label' => 'Expenses', 'icon' => 'wallet', 'href' => 'expenses.php', 'tone' => 'rose', 'count' => null];
 }

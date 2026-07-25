@@ -194,6 +194,37 @@ function generate_admission_invoice_number(PDO $pdo): string {
     return 'A' . $seq . $yymm;
 }
 
+// ER walk-in service invoice number: "E" + sequence + YY + MM (e.g. E1202607 is
+// the 12th ER bill of July 2026). Same GREATEST-of-(counter, real max) pattern as
+// the admission series so it survives DB re-imports, with its own counter table so
+// the "E" series never collides with the consult / "A" / IPD numbers.
+function generate_er_invoice_number(PDO $pdo): string {
+    $year = (int) date('Y');
+    $month = (int) date('n');
+    $yymm = substr((string) $year, 2, 2) . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+
+    $stmt = $pdo->prepare("
+        SELECT GREATEST(
+            COALESCE((SELECT next_seq - 1 FROM er_invoice_counters WHERE yr = :y AND mo = :m), 0),
+            COALESCE((SELECT MAX(CAST(SUBSTRING(invoice_number, 2, CHAR_LENGTH(invoice_number) - 5) AS UNSIGNED))
+                      FROM er_bills WHERE invoice_number LIKE :pfx), 0)
+        ) + 1
+    ");
+    $stmt->execute([':y' => $year, ':m' => $month, ':pfx' => 'E%' . $yymm]);
+    $seq = (int) $stmt->fetchColumn();
+    if ($seq < 1) {
+        $seq = 1;
+    }
+
+    $pdo->prepare('
+        INSERT INTO er_invoice_counters (yr, mo, next_seq)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE next_seq = GREATEST(next_seq, VALUES(next_seq))
+    ')->execute([$year, $month, $seq + 1]);
+
+    return 'E' . $seq . $yymm;
+}
+
 // Billed stay-hours from a raw minute count.
 //   0–44 completed minutes  -> 0.5 hour (flat half hour)
 //   45 minutes and above    -> round DOWN to the previous quarter-hour
@@ -478,6 +509,8 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         'cash_admission_total' => 0.0, 'cash_admission_count' => 0,
         'online_consult_total' => 0.0, 'online_consult_count' => 0,
         'online_admission_total' => 0.0, 'online_admission_count' => 0,
+        'cash_er_total' => 0.0, 'cash_er_count' => 0,
+        'online_er_total' => 0.0, 'online_er_count' => 0,
         'cash_refund_total' => 0.0, 'cash_refund_count' => 0,
         'expense_total' => 0.0, 'expense_count' => 0,
     ];
@@ -532,6 +565,34 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         // ipd_bills not migrated yet — leave admission buckets as-is.
     }
 
+    // ER walk-in service bills (their own "E" series, no admission). Kept in their
+    // OWN cash_er_/online_er_ keys for the live Day Closing page to show ER on its
+    // own line, AND folded into the admission buckets (like IPD) so the STORED
+    // closing columns + the printed A5 slip capture ER cash without a schema change.
+    // Guarded — an unmigrated er_bills table degrades to "no ER cash", never a fatal.
+    try {
+        $stmt = $pdo->prepare("
+            SELECT (payment_method = 'cash') AS is_cash,
+                   COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
+            FROM er_bills
+            WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+            GROUP BY is_cash
+        ");
+        $stmt->execute([$winStart, $winEnd, $userId]);
+        foreach ($stmt->fetchAll() as $r) {
+            $isCash = (int) $r['is_cash'];
+            $erKey = $isCash ? 'cash_er' : 'online_er';
+            $t[$erKey . '_total'] = (float) $r['total'];
+            $t[$erKey . '_count'] = (int) $r['n'];
+            // Also fold into the admission buckets so stored totals + slip include it.
+            $admKey = $isCash ? 'cash_admission' : 'online_admission';
+            $t[$admKey . '_total'] += (float) $r['total'];
+            $t[$admKey . '_count'] += (int) $r['n'];
+        }
+    } catch (Throwable $e) {
+        // er_bills not migrated yet — leave ER buckets at zero.
+    }
+
     // Cash refunds are attributed to the DRAWER they came out of (paid_out_by_id)
     // — normally the receptionist who took the original payment — not whoever
     // clicked "Refund" (generated_by_id could be a doctor/admin with no drawer).
@@ -564,6 +625,9 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         // expenses module not migrated — treat as zero
     }
 
+    // ER is already folded into the admission buckets above, so it is NOT added
+    // again here (that would double-count). cash_er_/online_er_ remain available
+    // for the live page to show ER split out from admissions.
     $t['cash_total']   = round($t['cash_consult_total'] + $t['cash_admission_total'], 2);
     $t['cash_count']   = $t['cash_consult_count'] + $t['cash_admission_count'];
     $t['online_total'] = round($t['online_consult_total'] + $t['online_admission_total'], 2);
@@ -889,4 +953,49 @@ function void_admission_bill(PDO $pdo, int $admBillId, int $userId, string $reas
         return [false, 'Could not void the admission bill. Please try again.'];
     }
     return [true, "Admission bill {$ab['invoice_number']} voided. The number is kept for the record."];
+}
+
+// Void an ER walk-in bill (`er_bills`). Reverses the bill so its cash drops out
+// of the tally. Refused if the payer's shift is already closed (their signed
+// tally already counted it). Mirrors void_refund / void_admission_bill.
+function void_er_bill(PDO $pdo, int $erBillId, int $userId, string $reason): array {
+    $reason = trim($reason);
+    if ($reason === '') {
+        return [false, 'A void needs a reason.'];
+    }
+    $stmt = $pdo->prepare('SELECT id, invoice_number, status, paid_at, paid_by_id, created_by_id, voided_at
+                           FROM er_bills WHERE id = ?');
+    $stmt->execute([$erBillId]);
+    $eb = $stmt->fetch();
+    if (!$eb) {
+        return [false, 'ER bill not found.'];
+    }
+    if ($eb['voided_at'] !== null) {
+        return [false, 'This ER bill is already voided.'];
+    }
+    if ($eb['status'] === 'paid' && $eb['paid_at']) {
+        $lockDate = date('Y-m-d', strtotime($eb['paid_at']));
+        $lockUser = (int) ($eb['paid_by_id'] ?: $eb['created_by_id']);
+        $dayLock = require_day_open($pdo, $lockDate, $lockUser);
+        if ($dayLock) {
+            return [false, $dayLock . ' Voiding this ER bill would change that day\'s signed tally.'];
+        }
+    }
+    $pdo->beginTransaction();
+    try {
+        $upd = $pdo->prepare("UPDATE er_bills SET status = 'voided', voided_at = NOW(), voided_by_id = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL");
+        $upd->execute([$userId, $reason, $erBillId]);
+        if ($upd->rowCount() !== 1) {
+            $pdo->rollBack();
+            return [false, 'Could not void the ER bill (already voided?).'];
+        }
+        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+            ->execute([$userId, 'er_bill_voided', "Voided ER bill {$eb['invoice_number']} (#$erBillId) — $reason"]);
+        $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('[void_er_bill] ' . $e->getMessage());
+        return [false, 'Could not void the ER bill. Please try again.'];
+    }
+    return [true, "ER bill {$eb['invoice_number']} voided. The number is kept for the record."];
 }
