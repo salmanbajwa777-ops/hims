@@ -318,46 +318,53 @@ $navActive = 'shift_closing';
 require __DIR__ . '/partials/sidebar.php';
 ?>
 <style>
-.close-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 22px; align-items: start; }
-@media (max-width: 980px) { .close-grid { grid-template-columns: 1fr; } }
-.close-col { display: flex; flex-direction: column; gap: 22px; }
+/* One A5-proportioned sheet: the whole closing fits on a single screen, no scrolling.
+   Ledger on the left half, count + handover on the right, one rule down the middle. */
+.sheet { max-width: 900px; margin: 0 auto; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-sm); overflow: hidden; }
+.sheet-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.sheet-head h1 { font-size: 17px; font-weight: 700; letter-spacing: -.01em; margin: 0; }
+.sheet-head .who { font-size: 12px; color: var(--text-muted); }
+.sheet-body { display: grid; grid-template-columns: 1fr 1fr; }
+.sheet-body > div { padding: 16px 20px; }
+.sheet-body > div + div { border-left: 1px solid var(--border); }
+@media (max-width: 820px) {
+    .sheet-body { grid-template-columns: 1fr; }
+    .sheet-body > div + div { border-left: none; border-top: 1px solid var(--border); }
+}
 
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-@media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
-.tile { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 16px 18px; box-shadow: var(--shadow-sm); }
-.tile .lbl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
-.tile .val { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.tile .hint { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.tile.hero { background: var(--primary-dark); border-color: var(--primary-dark); }
-.tile.hero .lbl { color: #9BD4CF; } .tile.hero .val { color: #fff; } .tile.hero .hint { color: #7FB8B3; }
+.blk { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 6px; }
+.blk + .blk, .ltab + .blk { margin-top: 16px; }
 
-.ttable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.ttable th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); padding: 7px 10px; border-bottom: 1px solid var(--border); }
-.ttable td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
-.ttable tr:last-child td { border-bottom: none; }
-.ttable td.num, .ttable th.num { text-align: right; white-space: nowrap; }
-.ttable td.neg { color: var(--red); }
-.ttable tr.total td { font-weight: 700; border-top: 2px solid var(--border-strong); background: var(--bg); }
-.ttable tr.grand td { font-weight: 700; background: var(--primary-light); }
-.ttable tr.section td { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); background: var(--bg); padding: 5px 10px; }
-.count-chip { display: inline-block; min-width: 24px; text-align: center; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-weight: 600; padding: 0 8px; color: var(--text-secondary); }
+.ltab { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+.ltab td { padding: 5px 0; border-bottom: 1px dotted var(--border); }
+.ltab td.num { text-align: right; white-space: nowrap; }
+.ltab td.neg { color: var(--red-text); }
+.ltab td.sub { color: var(--text-muted); font-size: 11.5px; }
+.ltab tr.total td { font-weight: 700; font-size: 14px; border-top: 1.5px solid var(--border-strong); border-bottom: none; padding-top: 7px; }
+.ltab tr:last-child td { border-bottom: none; }
 
-.variance-strip { display: flex; justify-content: space-between; align-items: center; border-radius: var(--radius-input); padding: 11px 15px; margin-top: 14px; font-weight: 600; font-size: 13.5px; }
+.expect { display: flex; justify-content: space-between; align-items: baseline; background: var(--primary-dark); color: #fff; border-radius: var(--radius-input); padding: 12px 15px; margin-bottom: 14px; }
+.expect .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #9BD4CF; }
+.expect .v { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+.variance-strip { display: flex; justify-content: space-between; align-items: center; border-radius: var(--radius-input); padding: 9px 13px; margin: -4px 0 14px; font-weight: 600; font-size: 12.5px; }
 .variance-strip.ok { background: var(--green-bg); color: var(--green-text); }
 .variance-strip.short { background: var(--red-bg); color: var(--red-text); }
 .variance-strip.over { background: var(--amber-bg); color: var(--amber-text); }
-.variance-strip .amt { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.variance-strip .amt { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-.cfield { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-.cfield label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.cfield input, .cfield select, .cfield textarea { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); }
-.cfield textarea { resize: vertical; min-height: 56px; }
+.cfield { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.cfield label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); }
+.cfield input, .cfield select, .cfield textarea { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); }
+.cfield textarea { resize: vertical; min-height: 46px; }
 .cfield input:focus, .cfield select:focus, .cfield textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+.two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.two-up .cfield { margin-bottom: 12px; }
 
 .close-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: var(--radius-btn); font: inherit; font-weight: 600; font-size: 14px; padding: 12px 22px; cursor: pointer; background: var(--primary-dark); color: #fff; width: 100%; }
 .close-btn:hover { background: var(--primary); }
 .close-btn.amber { background: var(--amber); color: #3B2E08; }
-.lock-note { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 10px; }
+.lock-note { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
 .alert-error { background: var(--red-bg); color: var(--red-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 500; }
 .closed-box { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-card); padding: 20px 22px; }
 .closed-box.amberish { background: var(--amber-bg); color: var(--amber-text); }
@@ -365,57 +372,61 @@ require __DIR__ . '/partials/sidebar.php';
 .closed-box .row { margin-top: 6px; font-size: 13.5px; }
 .closed-actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
 .closed-actions a { display: inline-flex; align-items: center; padding: 9px 16px; border-radius: var(--radius-btn); font-weight: 600; font-size: 13px; background: var(--card); color: var(--text); border: 1px solid var(--border); }
-.edit-banner { background: var(--amber-bg); color: var(--amber-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 600; }
+.edit-banner { background: var(--amber-bg); color: var(--amber-text); border-radius: var(--radius-input); padding: 10px 14px; font-size: 12.5px; font-weight: 600; }
+.notice-stack { max-width: 900px; margin: 0 auto 14px; display: flex; flex-direction: column; gap: 10px; }
 </style>
 
 <div class="content">
 
-    <div class="page-head">
-        <h1>My Shift Closing — <?= date('D d/m/Y', strtotime($today)) ?><?= $isPastDay ? ' (late close)' : '' ?></h1>
-        <p><?= htmlspecialchars($myName) ?>'s own takings only: payments you recorded, refunds you issued, expenses you posted. Colleagues close their shifts separately.</p>
+    <?php $hasNotices = $lateCloseError || $error || $isPastDay || $isOvernight || $myUnclosed || $editMode; ?>
+    <?php if ($hasNotices): ?>
+    <div class="notice-stack">
+        <?php if ($lateCloseError): ?>
+            <div class="alert-error"><?= htmlspecialchars($lateCloseError) ?></div>
+        <?php endif; ?>
+
+        <?php if ($error): ?>
+            <div class="alert-error"><?= htmlspecialchars($error) ?></div>
+        <?php endif; ?>
+
+        <?php if ($isPastDay): ?>
+            <div class="edit-banner">
+                Closing a <b>past</b> day left open. Older than <?= LATE_CLOSE_WINDOW_DAYS ?> days → admin only.
+                <a href="shift_closing.php" style="color:var(--amber-text);text-decoration:underline;">Back to today</a>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($isOvernight): ?>
+            <div class="edit-banner">
+                Past midnight — still closing the <b><?= date('D d/m/Y', strtotime($today)) ?></b> business day.
+                Everything up to <?= sprintf('%02d:00', $cutoffHour) ?> counts here.
+            </div>
+        <?php endif; ?>
+
+        <?php if ($myUnclosed): ?>
+            <div class="edit-banner">
+                <?= count($myUnclosed) ?> unclosed day<?= count($myUnclosed) === 1 ? '' : 's' ?>:
+                <?php foreach ($myUnclosed as $u): ?>
+                    <a href="shift_closing.php?date=<?= htmlspecialchars($u['date']) ?>"
+                       style="color:var(--amber-text);text-decoration:underline;margin-left:6px;">
+                        <?= date('D d/m', strtotime($u['date'])) ?> (Rs <?= number_format($u['expected_cash'], 0) ?>)
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($editMode): ?>
+            <div class="edit-banner">
+                Editing <?= htmlspecialchars($closing['closing_number']) ?> — count and handover reopen below.
+                Changes are logged old&rarr;new and admin is emailed. The shift's payments stay locked.
+            </div>
+        <?php endif; ?>
     </div>
-
-    <?php if ($lateCloseError): ?>
-        <div class="alert-error" style="margin-bottom:18px;"><?= htmlspecialchars($lateCloseError) ?></div>
-    <?php endif; ?>
-
-    <?php if ($isPastDay): ?>
-        <div class="edit-banner" style="margin-bottom:18px;">
-            You're closing a <b>past</b> business day (<?= date('D d/m/Y', strtotime($today)) ?>) that was left open.
-            The figures below are that day's takings. Days older than <?= LATE_CLOSE_WINDOW_DAYS ?> can only be closed by an admin.
-            <a href="shift_closing.php" style="color:var(--amber-text);text-decoration:underline;font-weight:700;">Back to today</a>
-        </div>
-    <?php endif; ?>
-
-    <?php if ($myUnclosed): ?>
-        <div class="edit-banner" style="margin-bottom:18px;">
-            <b>You have <?= count($myUnclosed) ?> unclosed day<?= count($myUnclosed) === 1 ? '' : 's' ?> to close:</b>
-            <span style="display:inline-flex;gap:8px;flex-wrap:wrap;margin-left:6px;">
-            <?php foreach ($myUnclosed as $u): ?>
-                <a href="shift_closing.php?date=<?= htmlspecialchars($u['date']) ?>"
-                   style="color:var(--amber-text);text-decoration:underline;font-weight:700;">
-                    <?= date('D d/m', strtotime($u['date'])) ?> (Rs <?= number_format($u['expected_cash'], 0) ?>)
-                </a>
-            <?php endforeach; ?>
-            </span>
-        </div>
-    <?php endif; ?>
-
-    <?php if ($isOvernight): ?>
-        <div class="edit-banner" style="margin-bottom:18px;">
-            It's past midnight — you're still closing the <b><?= date('D d/m/Y', strtotime($today)) ?></b> business day
-            (the shift that opened yesterday). All cash you took this evening AND after midnight, up to <?= sprintf('%02d:00', $cutoffHour) ?>,
-            counts on this one closing. The new day begins at <?= sprintf('%02d:00', $cutoffHour) ?>.
-        </div>
-    <?php endif; ?>
-
-    <?php if ($error): ?>
-        <div class="alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
     <?php if ($closing && !$editMode): ?>
 
-        <div class="closed-box<?= $closing['status'] === 'EDITED' ? ' amberish' : '' ?>">
+        <div class="closed-box<?= $closing['status'] === 'EDITED' ? ' amberish' : '' ?>" style="max-width:900px;margin:0 auto;">
             <b>Your shift is closed — slip <?= htmlspecialchars($closing['closing_number']) ?><?= $closing['status'] === 'EDITED' ? ' (edited ×' . (int) $closing['edit_count'] . ', awaiting admin review)' : '' ?></b>
             <div class="row">
                 Counted Rs <?= number_format((float) $closing['counted_cash'], 2) ?>
@@ -435,146 +446,100 @@ require __DIR__ . '/partials/sidebar.php';
     <?php endif; ?>
 
     <?php if ($showForm): ?>
-
-    <?php if ($editMode): ?>
-        <div class="edit-banner">
-            Editing closing <?= htmlspecialchars($closing['closing_number']) ?> — your count and handover figures reopen below.
-            Every change is logged old&rarr;new, highlighted for admin, and admin is emailed immediately.
-            The shift's payments stay locked; only the physical-count side can change.
-        </div>
-    <?php endif; ?>
-
-    <div class="tiles">
-        <div class="tile">
-            <div class="lbl">My collections</div>
-            <div class="val">Rs <?= number_format($tally['net_collected'], 0) ?></div>
-            <div class="hint"><?= $tally['cash_count'] + $tally['online_count'] ?> payments recorded by me</div>
-        </div>
-        <div class="tile">
-            <div class="lbl">My cash</div>
-            <div class="val">Rs <?= number_format($tally['cash_total'] - $tally['cash_refund_total'], 0) ?></div>
-            <div class="hint"><?= $tally['cash_count'] ?> payments<?= $tally['cash_refund_count'] ? ' − ' . $tally['cash_refund_count'] . ' refund' . ($tally['cash_refund_count'] > 1 ? 's' : '') : '' ?></div>
-        </div>
-        <div class="tile">
-            <div class="lbl">My online</div>
-            <div class="val">Rs <?= number_format($tally['online_total'], 0) ?></div>
-            <div class="hint"><?= $tally['online_count'] ?> payments · bank a/c</div>
-        </div>
-        <div class="tile hero">
-            <div class="lbl">Expected cash in hand</div>
-            <div class="val">Rs <?= number_format($formExpected, 0) ?></div>
-            <div class="hint">Cash <?= number_format($tally['cash_total'], 0) ?> − refunds <?= number_format($tally['cash_refund_total'], 0) ?> − expenses <?= number_format($tally['expense_total'], 0) ?></div>
-        </div>
-    </div>
+    <?php
+    // ER is folded into the admission buckets; split it out on the line so the
+    // cashier can see walk-in service cash for their own reconciliation.
+    $cashEr = (int) ($tally['cash_er_count'] ?? 0);
+    $onlineEr = (int) ($tally['online_er_count'] ?? 0);
+    ?>
 
     <form method="POST" action="shift_closing.php" id="closeForm">
     <input type="hidden" name="action" value="<?= $editMode ? 'edit_closing' : 'close_day' ?>">
     <input type="hidden" name="closing_date" value="<?= htmlspecialchars($today) ?>">
 
-    <div class="close-grid">
+    <div class="sheet">
 
-        <!-- ==== LEFT: system-side ledger (this user only) ==== -->
-        <div class="close-col">
+        <div class="sheet-head">
+            <h1><?= $editMode ? 'Edit Closing' : 'Shift Closing' ?> — <?= date('D d/m/Y', strtotime($today)) ?><?= $isPastDay ? ' (late)' : '' ?></h1>
+            <span class="who"><?= htmlspecialchars($myName) ?> · my takings only</span>
+        </div>
 
-            <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">My collections by method</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Consultation invoices and admission bills where <b>you</b> recorded the payment. System figures — nothing to enter here.</p>
-                <div style="overflow-x:auto;">
-                <table class="ttable">
-                    <tr class="section"><td colspan="3">Money in</td></tr>
-                    <?php
-                    // ER is folded into the admission buckets; show it split out here so
-                    // the cashier can see walk-in service cash for their own reconciliation.
-                    $cashEr = (int) ($tally['cash_er_count'] ?? 0);
-                    $onlineEr = (int) ($tally['online_er_count'] ?? 0);
-                    ?>
+        <div class="sheet-body">
+
+            <!-- ==== LEFT: system-side ledger (this user only) ==== -->
+            <div>
+                <p class="blk">My collections — system figures</p>
+                <table class="ltab">
                     <tr>
-                        <td>Cash <span class="count-chip"><?= $tally['cash_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)">consult <?= $tally['cash_consult_count'] ?> · admission <?= $tally['cash_admission_count'] - $cashEr ?><?= $cashEr ? ' · ER ' . $cashEr : '' ?></td>
+                        <td>Cash <?= $tally['cash_count'] ?></td>
+                        <td class="sub">consult <?= $tally['cash_consult_count'] ?> · adm <?= $tally['cash_admission_count'] - $cashEr ?><?= $cashEr ? ' · ER ' . $cashEr : '' ?></td>
                         <td class="num"><?= number_format($tally['cash_total'], 2) ?></td>
                     </tr>
                     <tr>
-                        <td>Online <span class="count-chip"><?= $tally['online_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)">consult <?= $tally['online_consult_count'] ?> · admission <?= $tally['online_admission_count'] - $onlineEr ?><?= $onlineEr ? ' · ER ' . $onlineEr : '' ?></td>
+                        <td>Online <?= $tally['online_count'] ?></td>
+                        <td class="sub">consult <?= $tally['online_consult_count'] ?> · adm <?= $tally['online_admission_count'] - $onlineEr ?><?= $onlineEr ? ' · ER ' . $onlineEr : '' ?></td>
                         <td class="num"><?= number_format($tally['online_total'], 2) ?></td>
                     </tr>
-                    <tr class="section"><td colspan="3">Money out</td></tr>
                     <tr>
-                        <td>Refunds — cash <span class="count-chip"><?= $tally['cash_refund_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)"><?= $tally['cash_refund_count'] ? 'issued by me' : 'none today' ?></td>
+                        <td>Refunds — cash <?= $tally['cash_refund_count'] ?></td>
+                        <td class="sub">issued by me</td>
                         <td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td>
                     </tr>
                     <tr>
-                        <td>Expenses — counter <span class="count-chip"><?= $tally['expense_count'] ?></span></td>
-                        <td class="num" style="color:var(--text-muted)"><?= $tally['expense_count'] ? '<a href="expenses.php" style="color:var(--primary-dark);text-decoration:underline;">my EXP vouchers</a>' : 'none today' ?></td>
+                        <td>Expenses — EXP <?= $tally['expense_count'] ?></td>
+                        <td class="sub"><?= $tally['expense_count'] ? '<a href="expenses.php" style="color:var(--primary-dark);text-decoration:underline;">vouchers</a>' : '—' ?></td>
                         <td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td>
                     </tr>
                     <tr class="total">
-                        <td colspan="2">My net collected today</td>
+                        <td colspan="2">Net collected</td>
                         <td class="num">Rs <?= number_format($tally['net_collected'], 2) ?></td>
                     </tr>
                 </table>
-                </div>
-            </div>
 
-            <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Cash-in-hand math</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">What you should physically be holding right now. (The drawer float is admin's, not part of your tally.)</p>
-                <div style="overflow-x:auto;">
-                <table class="ttable">
-                    <tr><td>My cash payments received</td><td class="num"><?= number_format($tally['cash_total'], 2) ?></td></tr>
-                    <tr><td>− My cash refunds paid out</td><td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td></tr>
-                    <tr><td>− My counter expenses (EXP)</td><td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td></tr>
-                    <tr class="grand"><td>Expected cash in hand</td><td class="num">Rs <?= number_format($tally['expected_cash'], 2) ?></td></tr>
+                <p class="blk">Cash-in-hand math</p>
+                <table class="ltab">
+                    <tr><td colspan="2">Cash received</td><td class="num"><?= number_format($tally['cash_total'], 2) ?></td></tr>
+                    <tr><td colspan="2">− Refunds paid out</td><td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td></tr>
+                    <tr><td colspan="2">− Counter expenses</td><td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td></tr>
+                    <tr class="total"><td colspan="2">Expected in hand</td><td class="num">Rs <?= number_format($tally['expected_cash'], 2) ?></td></tr>
                 </table>
-                </div>
                 <?php if ($editMode && abs($tally['expected_cash'] - $formExpected) > 0.009): ?>
-                <p style="font-size:12px;color:var(--amber-text);margin-top:10px;">Note: the closing snapshot (Rs <?= number_format($formExpected, 2) ?>) is the figure your count is checked against — it was frozen when you closed.</p>
+                <p style="font-size:11px;color:var(--amber-text);margin-top:8px;">Your count is checked against the frozen snapshot: Rs <?= number_format($formExpected, 2) ?>.</p>
+                <?php else: ?>
+                <p style="font-size:11px;color:var(--text-muted);margin-top:8px;">Drawer float is admin's — not part of your tally. Online (Rs <?= number_format($tally['online_total'], 2) ?>) is verified against the bank app, never counted.</p>
                 <?php endif; ?>
             </div>
 
-            <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Online — verify, don't count</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:0;">
-                    Match your <b><?= $tally['online_count'] ?></b> online payment<?= $tally['online_count'] === 1 ? '' : 's' ?>
-                    totalling <b>Rs <?= number_format($tally['online_total'], 2) ?></b> against the bank app before closing.
-                    Online money never passes through your hands.
-                </p>
-            </div>
-
-        </div>
-
-        <!-- ==== RIGHT: physical count + handover ==== -->
-        <div class="close-col">
-
-            <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Physical cash count</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Count the cash in the drawer and enter the total you physically have.</p>
-                <div class="cfield">
-                    <label for="counted_cash">Counted cash (Rs)</label>
-                    <input id="counted_cash" name="counted_cash" type="number" min="0" step="1"
-                           inputmode="numeric" required
-                           value="<?= $editMode ? number_format((float) $closing['counted_cash'], 0, '.', '') : '' ?>"
-                           placeholder="0"
-                           style="font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;">
+            <!-- ==== RIGHT: physical count + handover ==== -->
+            <div>
+                <div class="expect">
+                    <span class="k">Expected cash in hand</span>
+                    <span class="v">Rs <?= number_format($formExpected, 0) ?></span>
                 </div>
+
+                <div class="two-up">
+                    <div class="cfield">
+                        <label for="counted_cash">Counted cash (Rs)</label>
+                        <input id="counted_cash" name="counted_cash" type="number" min="0" step="1"
+                               inputmode="numeric" required
+                               value="<?= $editMode ? number_format((float) $closing['counted_cash'], 0, '.', '') : '' ?>"
+                               placeholder="0"
+                               style="font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;">
+                    </div>
+                    <div class="cfield">
+                        <label for="handover_declared">Handed to admin (Rs)</label>
+                        <input id="handover_declared" name="handover_declared" type="number" min="0" step="1"
+                               value="<?= number_format($suggestedHandover, 0, '.', '') ?>"
+                               <?= $editMode ? 'data-touched="1"' : '' ?>
+                               style="font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;">
+                    </div>
+                </div>
+
                 <div class="variance-strip ok" id="varianceStrip">
-                    <span id="varianceLabel">Variance vs expected (<?= number_format($formExpected, 0) ?>)</span>
+                    <span id="varianceLabel">Variance vs expected</span>
                     <span class="amt" id="varianceAmt">&nbsp;</span>
                 </div>
-            </div>
 
-            <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;"><?= $editMode ? 'Corrected handover' : 'Handover & close' ?></h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">All your counted cash goes to admin. Write the amount you are physically handing over.</p>
-
-                <div class="cfield">
-                    <label for="handover_declared">Cash handed to admin (Rs)</label>
-                    <input id="handover_declared" name="handover_declared" type="number" min="0" step="1"
-                           value="<?= number_format($suggestedHandover, 0, '.', '') ?>"
-                           <?= $editMode ? 'data-touched="1"' : '' ?>
-                           style="font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;">
-                </div>
                 <?php if (!$editMode): ?>
                 <div class="cfield">
                     <label for="handover_to_id">Handing over to (admin)</label>
@@ -588,7 +553,7 @@ require __DIR__ . '/partials/sidebar.php';
                 <div class="cfield">
                     <label for="variance_note">Variance note <span style="font-weight:400;color:var(--text-muted)">(required when short/over)</span></label>
                     <textarea id="variance_note" name="variance_note" maxlength="255"
-                              placeholder="Explain any difference between counted and expected cash"><?= $editMode ? htmlspecialchars($closing['variance_note'] ?? '') : '' ?></textarea>
+                              placeholder="Explain any difference"><?= $editMode ? htmlspecialchars($closing['variance_note'] ?? '') : '' ?></textarea>
                 </div>
 
                 <?php if ($editMode): ?>
@@ -596,13 +561,13 @@ require __DIR__ . '/partials/sidebar.php';
                         onclick="return confirm('Save the corrected figures? Admin will be notified immediately and the changes highlighted for approval.');">
                     Save changes &amp; notify admin
                 </button>
-                <p class="lock-note">Reprints the slip with the corrected figures — sign the new copy and replace the filed one.</p>
+                <p class="lock-note">Reprints the slip — sign the new copy and replace the filed one.</p>
                 <?php else: ?>
                 <button class="close-btn" type="submit"
                         onclick="return confirm('Close your shift? Your payments and refunds for today will be locked, and the A5 closing slip will open for printing.');">
-                    Submit closing &amp; open A5 slip
+                    Submit closing &amp; print A5 slip
                 </button>
-                <p class="lock-note">Locks your payments for today, prints the closing slip (sign both lines, file the paper), and queues the handover in the admin portal. You can still edit the count until admin marks it received.</p>
+                <p class="lock-note">Locks today's payments, prints the slip (sign both lines, file it), queues the handover. Editable until admin marks it received.</p>
                 <?php endif; ?>
             </div>
 
