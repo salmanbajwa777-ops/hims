@@ -218,7 +218,10 @@ try {
     $ds->execute([$winStart, $winEnd]);
     $todayDoctorShare = (float) $ds->fetchColumn();
 } catch (Throwable $e) { /* consult share columns missing — leave zero */ }
-$todayNet = $todayCollections - $todayExpenses - $todayDoctorShare;
+// Clinic share = what the clinic keeps of collections after the doctors' cut.
+// This is the clinic's actual gross income; Net then nets off running expenses.
+$todayClinicShare = max(0.0, $todayCollections - $todayDoctorShare);
+$todayNet = $todayClinicShare - $todayExpenses;
 
 // ---- Admissions snapshot (replaces the fake "bed occupancy" rings) --------
 // There is no bed-inventory table, so we show the real census: how many
@@ -518,7 +521,7 @@ tr.top-performer td:first-child::before { content: "★"; color: var(--amber); m
 tabular { font-variant-numeric: tabular-nums; }
 
 /* ---------- Financial summary ---------- */
-.fin-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.fin-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
 .fin-card { padding: 4px 2px; }
 .fin-card .label { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 6px; }
 .fin-card .value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
@@ -574,6 +577,9 @@ tabular { font-variant-numeric: tabular-nums; }
 }
 .nag-banner a { font-weight: 700; text-decoration: underline; }
 
+@media (max-width: 1500px) {
+    .fin-grid { grid-template-columns: repeat(3, 1fr); }
+}
 @media (max-width: 1200px) {
     .fin-grid { grid-template-columns: repeat(2, 1fr); }
     .row-2 { grid-template-columns: 1fr; }
@@ -811,8 +817,9 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="fin-grid">
                         <?php $kfmt = fn ($v) => abs($v) >= 1000 ? number_format($v / 1000, 1) . 'k' : number_format($v); ?>
                         <div class="fin-card"><div class="label">Collections</div><div class="value"><?= $kfmt($todayCollections) ?></div><div class="trend">today</div></div>
-                        <a class="fin-card" href="expenses.php" style="text-decoration:none;color:inherit;"><div class="label">Expenses</div><div class="value"><?= $kfmt($todayExpenses) ?></div><div class="trend">today</div></a>
                         <div class="fin-card"><div class="label">Doctor Share</div><div class="value"><?= $kfmt($todayDoctorShare) ?></div><div class="trend">today</div></div>
+                        <div class="fin-card"><div class="label">Clinic Share</div><div class="value"><?= $kfmt($todayClinicShare) ?></div><div class="trend">clinic income</div></div>
+                        <a class="fin-card" href="expenses.php" style="text-decoration:none;color:inherit;"><div class="label">Expenses</div><div class="value"><?= $kfmt($todayExpenses) ?></div><div class="trend">today</div></a>
                         <div class="fin-card"><div class="label">Net</div><div class="value"><?= $kfmt($todayNet) ?></div><div class="trend <?= $todayNet >= 0 ? 'up' : 'down' ?>"><?= $todayNet >= 0 ? 'positive' : 'negative' ?></div></div>
                     </div>
                 </div>
