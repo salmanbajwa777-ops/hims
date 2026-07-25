@@ -208,6 +208,15 @@ $feeLabels = [
     'FREE_FOLLOWUP'          => 'Free follow-up',
 ];
 
+// ---- A5 print view ---------------------------------------------------------
+// Its own standalone document (letterhead, ruled tables, white background), the
+// same shape as the day-closing slip — NOT a print stylesheet over the screen
+// card, which is what made the old output look like a web page on paper.
+if (isset($_GET['print']) && $doc) {
+    include __DIR__ . '/views/doctor_share_print_partial.php';
+    exit;
+}
+
 $pageTitle = 'Doctor Share Statement';
 $extraCss = <<<CSS
 <style>
@@ -260,18 +269,10 @@ $extraCss = <<<CSS
 
 .empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13.5px; }
 
-@media print {
-    /* A5 portrait, single sheet. Margins tight so the whole statement fits
-       without a second page even with every fee-type line present. */
-    @page { size: A5 portrait; margin: 9mm 10mm; }
-    .sidebar, .mobile-bar, .header, .pick-card, .print-btn, .nav-group, .page-head { display: none !important; }
-    .main, .content { margin: 0 !important; padding: 0 !important; }
-    .sheet { border: none !important; box-shadow: none !important; border-radius: 0 !important;
-             padding: 0 !important; max-width: none !important; }
-    body { background: #fff !important; }
-    .ltab { font-size: 11px; }
-    .sheet h2 { font-size: 15px; }
-}
+/* No @media print here on purpose: printing goes through ?print=1, which
+   renders views/doctor_share_print_partial.php as its own A5 document. A print
+   stylesheet over this screen card is what produced the two-page, borderless
+   output it replaced. */
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -318,7 +319,8 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     </div>
                     <button type="submit" class="btn">View</button>
                     <?php if ($doc): ?>
-                    <button type="button" class="btn secondary print-btn" onclick="window.print()">Print A5</button>
+                    <a class="btn secondary print-btn" target="_blank"
+                       href="doctor_share_statement.php?print=1&amp;doctor_id=<?= (int) $doctorId ?>&amp;from=<?= htmlspecialchars($from) ?>&amp;to=<?= htmlspecialchars($to) ?>">Print A5</a>
                     <?php endif; ?>
                 </form>
             </div>

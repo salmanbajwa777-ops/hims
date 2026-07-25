@@ -129,6 +129,9 @@ CREATE TABLE doctor_payouts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     payout_number  VARCHAR(30) UNIQUE NOT NULL,   -- DP-2026-0001
     doctor_id      INT NOT NULL,
+    -- "Paid up to this date" is recorded, not inferred. The next payout for a
+    -- doctor defaults to period_start = the day after their last settled
+    -- period_end, so gaps and overlaps cannot be created by accident.
     period_start   DATE NOT NULL,
     period_end     DATE NOT NULL,
     gross_amount   DECIMAL(12,2) NOT NULL,   -- fees the doctor's work generated
@@ -290,19 +293,40 @@ checked against reality.** Freezing a wrong number is worse than not freezing.
    payout.** Reversed at the ORIGINALLY PAID figures, not recomputed at today's
    rate. Guarded by `UNIQUE (source_type, source_id, line_kind)` so the same
    voided bill can never be deducted twice. See the Clawbacks section.
-1a. **NEW, follow-on:** a clawback can exceed a period's earnings and make a
-   payout negative. Carry the shortfall forward to the next payout
-   (`carried_in` / `carried_out`), or write it off? *(Recommend: carry forward
-   — the only option that stays honest without asking the doctor to hand money
-   back.)*
-2. **Payout period** — always a calendar month, or arbitrary ranges? The
-   statement page already allows any range. *(Recommend: allow any, default to
-   last month.)*
-3. **Part-payments** — can a doctor be paid twice for one month (an advance,
-   then a balance)? The current expense flow allows it and warns. *(Recommend:
-   keep allowing; `already_paid` handles it.)*
-4. **CNIC/NTN on `users`** — needed for a filing-ready register. Add now or
-   keep the register internal-only?
-5. **Who may run a payout?** Admin only, or does MANAGER get it? Note the
-   segregation-of-duties argument: whoever computes the payout arguably should
-   not also be able to void the bills behind it.
+1a. **Carry-forward vs write-off** — still open, recommendation below.
+   A clawback can exceed a period's earnings, leaving a negative payout.
+   Carry-forward puts the shortfall on the NEXT payout as an opening balance
+   (`carried_in` / `carried_out`) and settles it out of future earnings;
+   write-off has the clinic absorb it. *Recommend carry-forward: it is the only
+   choice consistent with having agreed to clawbacks at all — writing off at
+   the boundary would mean clawbacks work except when they are large, which is
+   exactly when they matter. Nobody is ever asked to hand money back either
+   way; carry-forward just keeps the debt visible until future work covers it.*
+
+   **Caveat that needs a rule regardless:** a doctor who LEAVES carrying a
+   balance has no future payout to deduct from, so it becomes a write-off in
+   practice. Design should let an admin explicitly write off a stranded balance
+   with a reason — a recorded decision, never a silent default.
+
+2. ~~**Payout period**~~ — **DECIDED 2026-07-26: monthly by default, but any
+   from/to range is allowed.** Each payout records its own `period_start` /
+   `period_end`, so "paid up to this date" is a fact on the record rather than
+   an assumption. The next payout for a doctor defaults to starting the day
+   after their last settled `period_end`, which makes gaps and overlaps
+   impossible to create by accident.
+
+3. ~~**Part-payments**~~ — **DECIDED: allowed.** A doctor may be paid more than
+   once for the same period (advance, then balance). `already_paid` on the
+   payout and the existing "already disbursed" warning cover it.
+
+4. ~~**CNIC/NTN**~~ — **DECIDED: skip.** Handled manually outside the system.
+   The tax register stays internal-only: per doctor, per month, gross / tax
+   withheld / net paid, for whoever does the filing to work from. No identity
+   columns on `users`.
+
+5. ~~**Who may run a payout**~~ — **DECIDED: admin only.** New permission
+   `FINANCIAL_RUN_PAYOUT`, granted to ADMIN. Not part of the MANAGER bundle.
+   Note the consequence: admin can both void a bill and run the payout that
+   claws it back, so there is no segregation of duties here — the audit log is
+   the only control, which is acceptable at this clinic's size but should be a
+   conscious choice rather than an oversight.
