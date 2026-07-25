@@ -158,12 +158,35 @@ CREATE TABLE doctor_payout_lines (
     source_id     INT NOT NULL,           -- bills.id or ipd_doctor_visits.id
     occurred_on   DATE NOT NULL,
     patient_name  VARCHAR(255) NULL,      -- snapshot; survives a patient merge
+    -- NEGATIVE on a clawback line. Signed, so SUM(doctor_share) over a payout
+    -- is always its true value with no CASE on line_kind anywhere.
     gross         DECIMAL(10,2) NOT NULL,
     tax           DECIMAL(10,2) NOT NULL,
     doctor_share  DECIMAL(10,2) NOT NULL,
-    FOREIGN KEY (payout_id) REFERENCES doctor_payouts(id) ON DELETE CASCADE
+    -- EARNING = work done in this payout's own period.
+    -- CLAWBACK = reversal of something paid in an EARLIER period.
+    line_kind     ENUM('EARNING','CLAWBACK') NOT NULL DEFAULT 'EARNING',
+    -- Clawback provenance: which settled payout this reverses, and why. Without
+    -- these a doctor cannot audit a deduction, and "why is my payout short?"
+    -- becomes an argument instead of a lookup.
+    clawback_of_payout_id INT NULL,
+    clawback_reason VARCHAR(255) NULL,
+    FOREIGN KEY (payout_id) REFERENCES doctor_payouts(id) ON DELETE CASCADE,
+    FOREIGN KEY (clawback_of_payout_id) REFERENCES doctor_payouts(id) ON DELETE SET NULL,
+    -- One clawback per source line, ever. This is the guard that stops the same
+    -- voided bill being deducted on two consecutive payouts.
+    UNIQUE KEY uniq_clawback (source_type, source_id, line_kind)
 );
 ```
+
+**`UNIQUE (source_type, source_id, line_kind)` is the load-bearing constraint.**
+Clawbacks are found by re-checking every previously-paid source row for a void
+or refund, and without the guard a bill voided in August would be deducted
+again in September, and again in October. The unique key makes double-clawback
+impossible at the database level rather than relying on query correctness.
+
+It also permits exactly one EARNING and one CLAWBACK per source row, which is
+the intended lifecycle: paid once, reversed at most once.
 
 **Every figure is snapshotted at payout time.** A later void or refund cannot
 rewrite a payout that has already been made, and rate changes apply forward
@@ -179,13 +202,56 @@ only. This is the whole point of the phase.
 Step 4 replaces today's manual expense posting, so the disbursement and its
 line detail can never disagree.
 
-### Clawbacks
+### Clawbacks — DECIDED 2026-07-26
 
 A bill voided or refunded *after* its payout is settled appears as a **negative
-line on the next payout**, never as a silent edit to the settled one. The
-statement gains an "adjustments from prior periods" section.
+line on the next payout**, never as a silent edit to the settled one. Ignoring
+it would mean the clinic absorbs the loss on money the doctor was already paid.
 
-*This is the question I most want your answer on — see below.*
+**How they are found.** When a payout is created, alongside the period's
+earnings the engine scans every source row already paid on a *previous* payout
+for this doctor and checks whether it has since been voided or refunded. Each
+hit becomes a CLAWBACK line at the **originally paid** figures — negated. Not
+recomputed: the doctor is repaid exactly what they were given, at the rate in
+force then, even if their percentage has changed since.
+
+Reversing at today's rate would be wrong in both directions — a raised
+percentage would claw back more than was ever paid.
+
+**Partial refunds** claw back proportionally: refund 40% of a bill and 40% of
+that line's doctor share is reversed.
+
+**The statement gains an "Adjustments from prior periods" section**, each line
+naming the original payout number, the patient, the date and the reason. A
+deduction a doctor cannot trace is a dispute waiting to happen.
+
+#### The edge case this creates
+
+**A clawback can exceed the period's earnings**, leaving a negative payout.
+Realistic: a doctor on leave all of August, whose large July procedure is
+voided in August.
+
+The system must NOT pay a negative amount. Proposed handling:
+
+- The payout is still created, showing negative `net_paid`
+- **No expense is posted** — no cash moves
+- The shortfall carries as an opening balance against the doctor's *next*
+  payout, via `carried_balance` on `doctor_payouts`
+- The statement says plainly: *"Rs X carried forward — deducted from your next
+  payout"*
+
+This keeps the debt visible and recoverable instead of silently written off,
+and never requires anyone to hand money back.
+
+```sql
+-- on doctor_payouts
+carried_in   DECIMAL(12,2) NOT NULL DEFAULT 0,  -- brought forward from last payout
+carried_out  DECIMAL(12,2) NOT NULL DEFAULT 0,  -- unrecovered, goes to the next
+```
+
+*Open: is carry-forward right, or should a negative balance simply be written
+off? Carry-forward is recommended — it is the only option that keeps the number
+honest without demanding a refund from the doctor.*
 
 ### Tax deposit register
 
@@ -220,9 +286,15 @@ checked against reality.** Freezing a wrong number is worse than not freezing.
 
 ## Questions
 
-1. **Clawbacks** — a July bill voided in August, after July was paid out.
-   Negative line on August's payout, or ignore it? *(Recommend: negative line.
-   Ignoring means the clinic silently absorbs it.)*
+1. ~~**Clawbacks**~~ — **DECIDED 2026-07-26: negative line on the next
+   payout.** Reversed at the ORIGINALLY PAID figures, not recomputed at today's
+   rate. Guarded by `UNIQUE (source_type, source_id, line_kind)` so the same
+   voided bill can never be deducted twice. See the Clawbacks section.
+1a. **NEW, follow-on:** a clawback can exceed a period's earnings and make a
+   payout negative. Carry the shortfall forward to the next payout
+   (`carried_in` / `carried_out`), or write it off? *(Recommend: carry forward
+   — the only option that stays honest without asking the doctor to hand money
+   back.)*
 2. **Payout period** — always a calendar month, or arbitrary ranges? The
    statement page already allows any range. *(Recommend: allow any, default to
    last month.)*

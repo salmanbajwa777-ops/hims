@@ -211,33 +211,47 @@ $feeLabels = [
 $pageTitle = 'Doctor Share Statement';
 $extraCss = <<<CSS
 <style>
-/* No .header rules: the sidebar partial supplies the app bar. Form controls
-   inherit app.css — including its :focus-visible ring — so only the layout of
-   the picker row is defined here. */
-.pick-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
-.pick-form .fld { display: flex; flex-direction: column; gap: 4px; }
-.pick-form label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
-.pick-form input, .pick-form select { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-input, 10px); font: inherit; font-size: 13.5px; background: var(--card); color: var(--text); }
+/* No .header rules: the sidebar partial supplies the app bar.
+   Controls follow the same .f-group / .filters pattern as expenses.php, so the
+   picker reads as one toolbar inside a card rather than three loose fields
+   floating on the canvas. */
+.f-group { margin-bottom: 14px; }
+.f-group label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
+.f-group input, .f-group select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text);
+}
+.f-group input:focus, .f-group select:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); background: var(--card);
+}
+.filters { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.filters .f-group { margin: 0; }
+.filters .f-group input, .filters .f-group select { width: auto; min-width: 150px; }
+.filters .spacer { flex: 1; }
 
 /* ---- The statement sheet: A5 portrait, one page ---- */
 .sheet { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card, 14px); box-shadow: var(--shadow-sm);
-         padding: 22px 26px; max-width: 560px; }
-.sheet h2 { font-size: 17px; margin: 0 0 2px; font-weight: 800; }
-.sheet .sub { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
-.sheet .doc-line { display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
-                   border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 12px; }
-.sheet .doc-line .who { font-size: 15px; font-weight: 700; }
-.sheet .doc-line .terms { font-size: 11.5px; color: var(--text-muted); }
+         padding: 26px 30px; max-width: 620px; }
+.sheet h2 { font-size: 18px; margin: 0 0 2px; font-weight: 800; letter-spacing: -.01em; }
+.sheet .sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
+.sheet .doc-line { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap;
+                   border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px; }
+.sheet .doc-line .who { font-size: 15.5px; font-weight: 700; }
+.sheet .doc-line .terms { font-size: 12px; color: var(--text-secondary); }
 
-.ltab { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.ltab td { padding: 4px 0; vertical-align: baseline; }
+.ltab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ltab td { padding: 5px 0; vertical-align: baseline; }
 .ltab td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ltab td.qty { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; width: 52px; }
-.ltab tr.sect td { padding-top: 11px; font-weight: 700; font-size: 11px; text-transform: uppercase;
-                   letter-spacing: .05em; color: var(--text-muted); }
-.ltab tr.rule td { border-bottom: 1px solid var(--border); padding: 0; height: 6px; }
-.ltab tr.sum td { font-weight: 700; padding-top: 7px; }
-.ltab tr.grand td { font-weight: 800; font-size: 14px; padding-top: 9px; border-top: 2px solid var(--text); }
+.ltab td.qty { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; width: 56px; }
+/* Section headers double as the visual rhythm — a rule above each keeps the
+   three streams legible without boxing every one of them. */
+.ltab tr.sect td { padding-top: 15px; padding-bottom: 3px; font-weight: 700; font-size: 10.5px;
+                   text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+.ltab tr.rule td { border-bottom: 1px solid var(--border); padding: 0; height: 8px; }
+.ltab tr.sum td { font-weight: 700; padding-top: 8px; }
+/* The one number the whole sheet exists to produce. */
+.ltab tr.grand td { font-weight: 800; font-size: 15.5px; padding-top: 12px; padding-bottom: 4px;
+                    border-top: 2px solid var(--text); color: var(--primary-dark); }
 .ltab .muted { color: var(--text-muted); font-weight: 400; }
 .ltab tr.neg td.n { color: var(--danger); }
 
@@ -250,7 +264,7 @@ $extraCss = <<<CSS
     /* A5 portrait, single sheet. Margins tight so the whole statement fits
        without a second page even with every fee-type line present. */
     @page { size: A5 portrait; margin: 9mm 10mm; }
-    .sidebar, .mobile-bar, .header, .pick-form, .print-btn, .nav-group, .page-head { display: none !important; }
+    .sidebar, .mobile-bar, .header, .pick-card, .print-btn, .nav-group, .page-head { display: none !important; }
     .main, .content { margin: 0 !important; padding: 0 !important; }
     .sheet { border: none !important; box-shadow: none !important; border-radius: 0 !important;
              padding: 0 !important; max-width: none !important; }
@@ -275,11 +289,18 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     <h1 class="page-title">Doctor Share Statement</h1>
                     <div class="page-meta">Earned share for a date range, by the day the money was collected</div>
                 </div>
-                <form class="pick-form" method="GET" action="doctor_share_statement.php">
-                    <div class="fld">
+            </div>
+
+            <!-- Picker lives in its own card, the same shape as the Expenses
+                 filter bar, instead of floating loose in the page head. -->
+            <div class="card pick-card">
+                <div class="section-title">Build a statement</div>
+                <div class="section-sub">Money is counted on the day it was collected, not the day of the visit.</div>
+                <form class="filters" method="GET" action="doctor_share_statement.php">
+                    <div class="f-group">
                         <label>Doctor</label>
                         <select name="doctor_id" required>
-                            <option value="">Select&hellip;</option>
+                            <option value="">Select a doctor&hellip;</option>
                             <?php foreach ($doctors as $d): ?>
                             <option value="<?= (int) $d['id'] ?>" <?= (int) $d['id'] === $doctorId ? 'selected' : '' ?>>
                                 <?= htmlspecialchars($d['name']) ?>
@@ -287,17 +308,17 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="fld">
+                    <div class="f-group">
                         <label>From</label>
                         <input type="date" name="from" value="<?= htmlspecialchars($from) ?>">
                     </div>
-                    <div class="fld">
+                    <div class="f-group">
                         <label>To</label>
                         <input type="date" name="to" value="<?= htmlspecialchars($to) ?>">
                     </div>
-                    <button type="submit" class="btn secondary">View</button>
+                    <button type="submit" class="btn">View</button>
                     <?php if ($doc): ?>
-                    <button type="button" class="btn print-btn" onclick="window.print()">Print A5</button>
+                    <button type="button" class="btn secondary print-btn" onclick="window.print()">Print A5</button>
                     <?php endif; ?>
                 </form>
             </div>

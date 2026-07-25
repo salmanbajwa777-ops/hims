@@ -226,7 +226,8 @@ $headExtra = <<<CSS
 /* No .header rules: the sidebar partial supplies the app bar. Inputs inherit
    app.css, including its :focus-visible ring. */
 .month-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.month-form input[type=month], .month-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-input, 10px); font: inherit; font-size: 13.5px; background: var(--card); color: var(--text); }
+.month-form input[type=month], .month-form input[type=date] { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); }
+.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); background: var(--card); }
 .month-form .to-sep { font-size: 12.5px; color: var(--text-muted); margin: 0 2px; }
 .mode-fields { display: inline-flex; align-items: center; gap: 8px; }
 
@@ -285,7 +286,7 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 .warn-note { border-left: 3px solid var(--warn); background: var(--card-alt); padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 16px; }
 
 @media print {
-    .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group, .mode-tabs { display: none !important; }
+    .sidebar, .mobile-bar, .header, .pick-card, .print-btn, .nav-group { display: none !important; }
     /* Keep slice colours in print — the report is unreadable in greyscale. */
     .pie, .pie-legend .dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .main { margin: 0 !important; }
@@ -311,13 +312,18 @@ $fmtDelta = function (float $d): string {
                     <h1 class="page-title">Expense Report — <?= htmlspecialchars($monthLabel) ?></h1>
                     <div class="page-meta">Grouped by the month each cost belongs to, not the day it was paid</div>
                 </div>
-                <?php
-                // Carries the current period through to CSV/print without
-                // rebuilding the query string in three places.
-                $periodQs = $mode === 'range'
-                    ? 'mode=range&from=' . urlencode($monthStart) . '&to=' . urlencode($monthEnd)
-                    : 'month=' . urlencode($month);
-                ?>
+            </div>
+
+            <?php
+            // Carries the current period through to CSV/print without
+            // rebuilding the query string in three places.
+            $periodQs = $mode === 'range'
+                ? 'mode=range&from=' . urlencode($monthStart) . '&to=' . urlencode($monthEnd)
+                : 'month=' . urlencode($month);
+            ?>
+            <!-- Period picker in its own card, matching the Expenses filter bar
+                 and the share statement, instead of floating in the page head. -->
+            <div class="card pick-card">
                 <form class="month-form" method="GET" action="expense_report.php" id="periodForm">
                     <!-- Month is the common case, so it stays the default view and
                          the range inputs only appear when asked for. -->
@@ -336,9 +342,9 @@ $fmtDelta = function (float $d): string {
                         <input type="date" name="to" value="<?= htmlspecialchars($monthEnd) ?>" max="<?= date('Y-m-d') ?>">
                     </span>
 
-                    <button type="submit" class="btn secondary">View</button>
+                    <button type="submit" class="btn">View</button>
                     <a class="btn secondary" href="expense_report.php?<?= $periodQs ?>&amp;export=csv">CSV</a>
-                    <button type="button" class="btn print-btn" onclick="window.print()">Print</button>
+                    <button type="button" class="btn secondary print-btn" onclick="window.print()">Print</button>
                 </form>
             </div>
 
