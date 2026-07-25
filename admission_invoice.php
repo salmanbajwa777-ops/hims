@@ -100,16 +100,24 @@ $paymentModeNote = $bill['status'] !== 'draft'
         .addr { font-size: 9px; line-height: 1.35; margin-top: 5px; margin-bottom: 4px; }
         .tagline { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.15; margin-bottom: 9px; white-space: nowrap; }
         .meta { width: 100%; border-collapse: collapse; font-size: 9px; }
-        .meta td { border: 1px solid #C8C8C8; padding: 3px 5px; vertical-align: top; }
+        /* Fixed row height + nowrap so a long value can never grow a row taller than
+           its opposite number in the ID table — keeping the two halves symmetric.
+           Overlong values are shrunk (see .fit) rather than wrapped or clipped. */
+        .meta td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; vertical-align: middle; white-space: nowrap; overflow: hidden; }
         .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
         .meta td.v { font-weight: bold; }
-        /* Payment mode as a light footnote riding beside the patient name. */
-        .pay-note { font-weight: normal; font-size: 8px; color: #555; white-space: nowrap; }
+        /* Payment mode as a light note centred in the footnote row (matches the
+           consultation slip's foot). */
+        .pay-note { font-weight: normal; color: #555; white-space: nowrap; text-align: center; }
         .clinic-contact { margin-top: 0; margin-bottom: 4px; }
         .ids { width: 100%; border-collapse: collapse; font-size: 9px; }
-        .ids td { border: 1px solid #C8C8C8; padding: 3px 5px; }
+        .ids td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; vertical-align: middle; white-space: nowrap; overflow: hidden; }
         .ids td.k { background: #F4F4F4; font-weight: bold; width: 42%; }
         .ids td.v { font-weight: bold; }
+        /* A value too long for its cell is scaled down in place: the cell keeps its
+           width and height, only the text shrinks so the whole sheet stays symmetric.
+           The wrapper shrink-wraps its text; JS drops its font-size until it fits. */
+        .fit { display: inline-block; max-width: 100%; }
 
         .doc-title { text-align: center; font-weight: bold; font-size: 11px; letter-spacing: 1px; margin: 3mm 0 1mm; }
         .items { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 0; }
@@ -177,15 +185,15 @@ $paymentModeNote = $bill['status'] !== 'draft'
                     <tr><td class="k">Invoice #</td><td class="v"><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>
                     <tr><td class="k">Admitted</td><td class="v"><?= date('d/m/Y H:i', strtotime($bill['admitted_at'])) ?></td></tr>
                     <tr><td class="k">Discharged</td><td class="v"><?= $bill['discharged_at'] ? date('d/m/Y H:i', strtotime($bill['discharged_at'])) : '—' ?></td></tr>
-                    <tr><td class="k">Doctor</td><td class="v"><?= htmlspecialchars($bill['doctor_name'] ? mb_strtoupper($bill['doctor_name'], 'UTF-8') : '—') ?></td></tr>
+                    <tr><td class="k">Doctor</td><td class="v"><span class="fit"><?= htmlspecialchars($bill['doctor_name'] ? mb_strtoupper($bill['doctor_name'], 'UTF-8') : '—') ?></span></td></tr>
                 </table>
             </div>
             <div class="head-right">
                 <div class="tagline"><?= $clinicTagline ?></div>
                 <div class="addr clinic-contact"><b>Email:</b> <?= $clinicEmail ?><br><b>Phone:</b> <?= $clinicPhone ?></div>
                 <table class="meta">
-                    <tr><td class="k">Name:</td><td class="v"><?= htmlspecialchars($patientNameUpper) ?><?php if ($paymentModeNote !== ''): ?> <span class="pay-note">(Paid: <?= htmlspecialchars($paymentModeNote) ?>)</span><?php endif; ?></td></tr>
-                    <tr><td class="k">S/D/W Of:</td><td class="v"><?= htmlspecialchars($fatherNameUpper) ?></td></tr>
+                    <tr><td class="k">Name:</td><td class="v"><span class="fit"><?= htmlspecialchars($patientNameUpper) ?></span></td></tr>
+                    <tr><td class="k">S/D/W Of:</td><td class="v"><span class="fit"><?= htmlspecialchars($fatherNameUpper) ?></span></td></tr>
                     <tr><td class="k">DOB:</td><td><?= $dobDisplay ?></td></tr>
                     <tr><td class="k">Phone:</td><td><?= htmlspecialchars($bill['phone']) ?></td></tr>
                     <tr><td class="k">Type</td><td class="v"><?= htmlspecialchars($bill['admission_type']) ?></td></tr>
@@ -246,9 +254,27 @@ $paymentModeNote = $bill['status'] !== 'draft'
         <div class="quote">Get well soon.</div>
         <div class="foot">
             <span>Printed <?= date('Y-m-d H:i') ?></span>
+            <?php if ($paymentModeNote !== ''): ?><span class="pay-note">Paid: <?= htmlspecialchars($paymentModeNote) ?></span><?php endif; ?>
             <span><?= htmlspecialchars($clinicName) ?></span>
         </div>
     </div>
-    <script>window.onload = function () { window.print(); };</script>
+    <script>
+        // Long values (name, father's name, doctor) keep their cell's fixed width and
+        // height — only their font shrinks until the text fits on one line, so the two
+        // header halves stay symmetric. Runs before printing so the PDF captures it.
+        function fitCells() {
+            document.querySelectorAll('.fit').forEach(function (el) {
+                var size = 9; // matches .meta/.ids base font-size (px)
+                el.style.fontSize = size + 'px';
+                // Shrink while the text is wider than its cell; floor at 6px so it
+                // never becomes illegible.
+                while (el.scrollWidth > el.parentElement.clientWidth && size > 6) {
+                    size -= 0.5;
+                    el.style.fontSize = size + 'px';
+                }
+            });
+        }
+        window.onload = function () { fitCells(); window.print(); };
+    </script>
 </body>
 </html>
