@@ -69,6 +69,12 @@ echo json_encode([
     'doctor'       => round($earned['doctor'], 2),
     'clinic'       => round($earned['clinic'], 2),
     'bills'        => $earned['bills'],
+    // Stream split, so the form can say where the money came from — an in-door
+    // patient's consultations are the consultant's income too.
+    'opd_doctor'   => round($earned['opd_doctor'] ?? 0, 2),
+    'opd_bills'    => (int) ($earned['opd_bills'] ?? 0),
+    'ipd_doctor'   => round($earned['ipd_doctor'] ?? 0, 2),
+    'ipd_visits'   => (int) ($earned['ipd_visits'] ?? 0),
     'already_paid' => round($alreadyPaid, 2),
     // What the amount box should be set to: the balance still owed, so a
     // part-payment tops up rather than re-paying the whole month.

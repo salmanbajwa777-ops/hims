@@ -513,6 +513,7 @@ $headExtra = <<<CSS
 .earned-box .muted { color: var(--text-muted); font-weight: 400; }
 .earned-box.warn { background: rgba(234,88,12,.10); border-color: rgba(234,88,12,.30); color: #9A3412; }
 .earned-box .warn-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(0,0,0,.15); }
+.earned-box .stream-line { margin-top: 4px; font-size: 12px; }
 .over-warn.show { display: block; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .link-btn.warn { color: var(--red-text); }
@@ -823,15 +824,30 @@ if (!$isAdmin) {
         .then(function (d) {
             if (d.bills === 0) {
                 earned.className = 'earned-box warn';
-                earned.innerHTML = '<strong>No paid consultations</strong> for this doctor in that month. '
+                earned.innerHTML = '<strong>Nothing earned</strong> by this doctor in that month — '
+                    + 'no paid OPD consultations and no paid in-door ward rounds. '
                     + 'Check the month before posting.';
                 return;
             }
             var html = '<div><strong>' + money(d.doctor) + '</strong> earned '
-                     + '<span class="muted">from ' + d.bills + ' paid consultation' + (d.bills === 1 ? '' : 's')
-                     + ' (' + money(d.gross) + ' gross';
+                     + '<span class="muted">(' + money(d.gross) + ' gross';
             if (d.tax > 0) { html += ', ' + money(d.tax) + ' tax withheld'; }
             html += ')</span></div>';
+
+            // Where it came from. In-door rounds are consultation income too, so
+            // show both lines whenever the doctor has any IPD work — otherwise
+            // the total looks unexplained against the OPD count alone.
+            if (d.ipd_visits > 0) {
+                html += '<div class="stream-line">'
+                      + 'OPD ' + money(d.opd_doctor) + ' <span class="muted">· ' + d.opd_bills
+                      + ' consultation' + (d.opd_bills === 1 ? '' : 's') + '</span>'
+                      + ' &nbsp;|&nbsp; In-door ' + money(d.ipd_doctor)
+                      + ' <span class="muted">· ' + d.ipd_visits + ' ward round'
+                      + (d.ipd_visits === 1 ? '' : 's') + '</span></div>';
+            } else {
+                html += '<div class="stream-line muted">from ' + d.opd_bills
+                      + ' paid consultation' + (d.opd_bills === 1 ? '' : 's') + '</div>';
+            }
 
             if (d.already_paid > 0) {
                 html += '<div class="warn-line">Already disbursed for this month: <strong>'
