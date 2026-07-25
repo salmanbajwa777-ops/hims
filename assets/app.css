@@ -197,6 +197,34 @@ button { font-family: inherit; }
     border-radius: var(--radius-pill); padding: 1px 8px;
 }
 .nav-item.active .count { background: rgba(255,255,255,.22); }
+
+/* ---- Collapsible sub-navigation (Settings) ----
+   The parent is a <button>, so it needs the button reset the <a> items don't:
+   without width/font/text-align/border it renders as a shrink-wrapped native
+   control with centred 13.3px system text and sits visibly apart from its
+   siblings. */
+.nav-parent {
+    width: 100%; border: 0; background: none; text-align: left; cursor: pointer;
+    font-family: inherit; font-size: var(--fs-cell); font-weight: 500;
+}
+.nav-parent-label { flex: 1; min-width: 0; }
+.nav-caret {
+    width: 16px; height: 16px; flex: none; display: flex;
+    align-items: center; justify-content: center;
+    transition: transform .18s ease; opacity: .7;
+}
+.nav-caret svg { width: 14px; height: 14px; display: block; }
+.nav-parent.open .nav-caret { transform: rotate(180deg); }
+/* A closed submenu is display:none rather than max-height:0 so its links are
+   removed from the tab order, not merely hidden. */
+.nav-sub { display: none; margin: 2px 0 2px 11px; padding-left: 9px; border-left: 1px solid rgba(255,255,255,.14); }
+.nav-sub.open { display: block; }
+/* Children keep the nav link size (--fs-cell); the indent + rule already carry
+   the hierarchy, and --fs-micro is a row-meta size, too small to click. */
+.nav-child { padding: 7px 10px; }
+/* The parent stays highlighted-adjacent when a child is current: the child
+   itself carries .active, so nothing extra is needed on the parent beyond the
+   open state the server already sets. */
 /* The icon box must never inherit an SVG's intrinsic size — these SVGs carry
    no width/height attributes, so an unconstrained one renders enormous. */
 .nav-icon {

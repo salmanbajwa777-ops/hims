@@ -142,7 +142,7 @@ $sbGroups = [
             // copy from appearing twice.
             ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',   'href' => 'expenses.php',
              'perm' => 'FINANCIAL_POST_EXPENSES', 'notAdmin' => true],
-            ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'wallet',   'href' => 'shift_closing.php',
+            ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',    'href' => 'shift_closing.php',
              'perm' => 'RECEPTION_CLOSE_DAY', 'notAdmin' => true],
         ],
     ],
@@ -162,11 +162,11 @@ $sbGroups = [
         'admin' => true,
         'items' => [
             ['slug' => 'sheet_log',   'label' => 'Google Sheet Sync','icon' => 'receipt', 'href' => 'sheet_log.php'],
-            // The nine configuration screens used to sit flat in this group,
+            // These eight configuration screens used to sit flat in this group,
             // which made Management a wall of ten links where only two were
             // day-to-day work. They are now ONE collapsible parent: the setup
-            // you touch rarely folds away, and the parent auto-expands when the
-            // current page is one of its children (see $sbActiveInChildren).
+            // you touch rarely folds away, and the renderer auto-expands the
+            // parent when the current page is one of its children.
             ['slug' => 'settings', 'label' => 'Settings', 'icon' => 'gear', 'href' => '#', 'children' => [
                 ['slug' => 'staff',       'label' => 'Staff & Doctors', 'icon' => 'stetho',  'href' => 'staff.php'],
                 ['slug' => 'permissions', 'label' => 'Permissions',     'icon' => 'lock',    'href' => 'permissions.php'],
@@ -225,7 +225,17 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
         // MANAGER holding FINANCIAL_VIEW_CLINIC_REPORTS could reach the Expense
         // Report by URL yet never see a link to it.
         if (!empty($g['admin']) && !$sbIsAdmin) {
-            $permItems = array_filter($g['items'], fn($it) => !empty($it['perm']) && has_permission($it['perm']));
+            $permItems = [];
+            foreach ($g['items'] as $it) {
+                // A collapsible parent survives if ANY of its children is
+                // perm-granted, and is then narrowed to just those children.
+                if (!empty($it['children'])) {
+                    $kids = array_filter($it['children'], fn($k) => !empty($k['perm']) && has_permission($k['perm']));
+                    if ($kids) { $it['children'] = $kids; $permItems[] = $it; }
+                    continue;
+                }
+                if (!empty($it['perm']) && has_permission($it['perm'])) { $permItems[] = $it; }
+            }
             if (!$permItems) { continue; }
             $g['items'] = $permItems;
         }
@@ -238,7 +248,9 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
         $visibleItems = array_filter($g['items'], $sbItemVisible);
         if (!$groupRoleOk) {
             // Keep only perm-granted items for an out-of-role visitor; if none, skip.
-            $visibleItems = array_filter($visibleItems, fn($it) => !empty($it['perm']));
+            // A collapsible parent has no 'perm' of its own — it qualifies on its
+            // children, which the per-item pass above has already filtered.
+            $visibleItems = array_filter($visibleItems, fn($it) => !empty($it['perm']) || !empty($it['children']));
         }
         if (!$visibleItems) { continue; }
         echo '<div class="nav-group"><div class="nav-group-label">' . htmlspecialchars($g['label']) . '</div>';
@@ -327,9 +339,21 @@ function himsCloseNav() {
     var btn = document.querySelector('.mobile-bar .hamburger');
     if (btn) { btn.setAttribute('aria-expanded', 'false'); }
 }
+// Expand/collapse a Settings-style submenu. The parent button and its sibling
+// .nav-sub are toggled together; state is not persisted because the server
+// already opens the group containing the current page on every render.
+function himsToggleSub(btn) {
+    var sub = document.getElementById(btn.getAttribute('aria-controls'));
+    var open = !btn.classList.contains('open');
+    btn.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (sub) { sub.classList.toggle('open', open); }
+}
 // Close on Esc, and after tapping any real nav link inside the drawer.
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { himsCloseNav(); } });
-document.querySelectorAll('#himsSidebar .nav-item:not(.disabled)').forEach(function (a) {
+// NOT .nav-parent: that button expands a submenu, it doesn't navigate — closing
+// the drawer on it would make the Settings group impossible to open on mobile.
+document.querySelectorAll('#himsSidebar .nav-item:not(.disabled):not(.nav-parent)').forEach(function (a) {
     a.addEventListener('click', himsCloseNav);
 });
 </script>
