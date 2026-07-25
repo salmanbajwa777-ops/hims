@@ -187,6 +187,8 @@ $sbGroups = [
         'admin' => true,
         'items' => [
             ['slug' => 'analytics', 'label' => 'Analytics', 'icon' => 'chart', 'href' => '#', 'children' => [
+                ['slug' => 'doctor_share_statement', 'label' => 'Doctor Share Statement', 'icon' => 'stetho', 'href' => 'doctor_share_statement.php',
+                 'perm' => 'FINANCIAL_VIEW_ALL_COMMISSIONS'],
                 ['slug' => 'expense_report', 'label' => 'Expense Report', 'icon' => 'chart', 'href' => 'expense_report.php',
                  'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
                 ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
