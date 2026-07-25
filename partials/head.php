@@ -53,7 +53,19 @@ $headExtra = $headExtra ?? '';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/app.css">
+    <?php
+    /* Cache-bust the stylesheet on its own mtime.
+       The server sends `Cache-Control: public, max-age=604800` for static
+       assets, so without this a browser keeps a SEVEN-DAY-OLD app.css after a
+       deploy — which on 2026-07-26 meant the new theme shipped, the deploy went
+       green, and staff still saw the page render with no sidebar styling at all
+       (unstyled markup, giant un-sized SVG icons). filemtime() changes on every
+       deploy, so the URL changes, so the cache is bypassed exactly when it
+       should be and honoured the rest of the time. */
+    $appCss = __DIR__ . '/../assets/app.css';
+    $cssVer = @filemtime($appCss) ?: time();
+    ?>
+    <link rel="stylesheet" href="assets/app.css?v=<?= $cssVer ?>">
     <?= $headExtra ?>
     <script>
     /* Auto-dismiss success flash messages after 2s, everywhere in the app.

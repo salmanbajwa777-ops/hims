@@ -695,7 +695,7 @@ if (!$isAdmin) {
         </div>
     </div>
 </div>
-<script src="assets/js/date-picker.js"></script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 <script>
 // Month picker toggle. Salaries and Doctor Shares are paid in a LATER month than
 // they belong to, so those categories must capture which month — everything else

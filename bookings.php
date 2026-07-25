@@ -709,6 +709,6 @@ function openCancel(id, name) {
 function closeCancel() { document.getElementById('cxOverlay').classList.remove('open'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCancel(); });
 </script>
-<script src="assets/js/date-picker.js"></script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>

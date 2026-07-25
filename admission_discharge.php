@@ -551,7 +551,7 @@ require __DIR__ . '/partials/sidebar.php';
         </div>
     </div>
 </div>
-<script src="assets/js/date-picker.js"></script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 <script>
 // Discount type toggle — switch the visible field and the hidden mode flag.
 function discSetMode(mode) {

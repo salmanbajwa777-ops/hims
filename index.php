@@ -147,8 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         input:focus {
             outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(26,127,126,.15);
+            border-color: var(--primary-accent);
+            box-shadow: 0 0 0 3px rgba(63,122,99,.18);
         }
         button {
             width: 100%;
@@ -220,6 +220,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <p class="forgot">Forgot your password? Ask an administrator to reset it.</p>
     </div>
-<script src="assets/js/date-picker.js"></script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>

@@ -1594,6 +1594,6 @@ document.getElementById('cancelConsultPanel').addEventListener('click', () => co
 <?php if (($error || $success) && ($_POST['action'] ?? '') === 'save_consult_types'): ?>consultPanelOverlay.classList.add('open');
 <?php endif; ?>
 </script>
-<script src="assets/js/date-picker.js"></script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>
