@@ -189,6 +189,8 @@ $sbGroups = [
             ['slug' => 'analytics', 'label' => 'Analytics', 'icon' => 'chart', 'href' => '#', 'children' => [
                 ['slug' => 'doctor_share_statement', 'label' => 'Doctor Share Statement', 'icon' => 'stetho', 'href' => 'doctor_share_statement.php',
                  'perm' => 'FINANCIAL_VIEW_ALL_COMMISSIONS'],
+                ['slug' => 'pnl_report', 'label' => 'Profit & Loss', 'icon' => 'chart', 'href' => 'pnl_report.php',
+                 'perm' => 'FINANCIAL_VIEW_DAILY_PL'],
                 ['slug' => 'income_report', 'label' => 'Income Report', 'icon' => 'wallet', 'href' => 'income_report.php',
                  'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
                 ['slug' => 'expense_report', 'label' => 'Expense Report', 'icon' => 'chart', 'href' => 'expense_report.php',

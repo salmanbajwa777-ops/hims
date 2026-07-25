@@ -116,12 +116,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
     // salary posted for a month whose days are all closed must still go in.
     $dayLock = $source === 'CASH_COUNTER' ? require_day_open($pdo) : null;
 
+    // A closed month takes no more postings, whatever the source. Checked
+    // against the ACCOUNTING period — a salary posted today but belonging to a
+    // closed month would otherwise silently alter a P&L already signed off.
+    // Non-period expenses land on today, so this only ever bites a back-dated one.
+    $monthLock = function_exists('require_month_open')
+        ? require_month_open($pdo, $isPeriodBased && $periodMonth !== '' ? $periodMonth . '-01' : date('Y-m-d'))
+        : null;
+
     if ($isAdminOnly && !$isAdmin) {
         $error = 'Only an admin may post under that category.';
     } elseif ($isPeriodBased && !preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
         $error = 'Pick the month this payment is for.';
     } elseif ($needsDoctor && $paidToDoctorId <= 0) {
         $error = 'Pick the doctor this payment is for.';
+    } elseif ($monthLock) {
+        $error = $monthLock;
     } elseif ($dayLock) {
         $error = $dayLock;
     } elseif ($categoryId <= 0) {
