@@ -91,6 +91,10 @@ try {
             FROM expenses
             WHERE expense_date = CURDATE() AND voided_at IS NULL
               AND approval_status <> 'REJECTED'
+              -- Drawer reconciliation: counter cash only. Salary/rent postings
+              -- are BANK/OWNER and would otherwise show as a huge phantom
+              -- shortfall against the admin's own counter takings.
+              AND source = 'CASH_COUNTER'
             GROUP BY posted_by_id
         ) m
         JOIN users u ON u.id = m.uid
@@ -116,19 +120,35 @@ $admBilling = $pdo->query("
 ")->fetch();
 
 // ---- Counter expenses today (voided excluded) ----
+// COUNTER means counter: source = 'CASH_COUNTER' only. A monthly salary or rent
+// posting is BANK/OWNER money that never touched the drawer, so including it
+// here would report a Rs 400,000 "day" the moment payroll is posted. The
+// source filter is applied via a guarded column check because the enum only
+// grew BANK/OWNER in add_accounts_phase1.sql — on a database where that has
+// not run yet, every row is CASH_COUNTER anyway and the unfiltered query is
+// already correct.
 $exp = ['cnt' => 0, 'total' => 0.0];
 $expByCat = [];
 try {
+    $hasSource = (bool) $pdo->query("
+        SELECT COUNT(*) FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'expenses'
+          AND column_name = 'source' AND column_type LIKE '%BANK%'
+    ")->fetchColumn();
+    $counterOnly = $hasSource ? " AND %s.source = 'CASH_COUNTER'" : '';
+
     $exp = $pdo->query("
         SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
-        FROM expenses WHERE expense_date = CURDATE() AND voided_at IS NULL
-    ")->fetch();
+        FROM expenses WHERE expense_date = CURDATE() AND voided_at IS NULL"
+        . sprintf($counterOnly, 'expenses')
+    )->fetch();
     $expByCat = $pdo->query("
         SELECT ec.name, COALESCE(SUM(e.amount), 0) AS total
         FROM expenses e JOIN expense_categories ec ON ec.id = e.category_id
-        WHERE e.expense_date = CURDATE() AND e.voided_at IS NULL
-        GROUP BY ec.id, ec.name ORDER BY total DESC
-    ")->fetchAll();
+        WHERE e.expense_date = CURDATE() AND e.voided_at IS NULL"
+        . sprintf($counterOnly, 'e') . "
+        GROUP BY ec.id, ec.name ORDER BY total DESC"
+    )->fetchAll();
 } catch (Throwable $e) { /* expense tables may not exist yet */ }
 
 // ---- Bookings today (this runs at 21:00, BEFORE the 22:00 no-show sweep, so

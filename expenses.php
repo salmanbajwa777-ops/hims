@@ -75,11 +75,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
     $amount      = round((float) ($_POST['amount'] ?? 0), 2);
     $description = trim($_POST['description'] ?? '');
     $paidTo      = trim($_POST['paid_to'] ?? '');
+    // Non-counter money (salary/rent paid by bank or owner) never touches the
+    // drawer. Admin-only — the form only offers the selector to an admin.
+    $source      = $isAdmin ? ($_POST['source'] ?? 'CASH_COUNTER') : 'CASH_COUNTER';
+    if (!in_array($source, ['CASH_COUNTER', 'BANK', 'OWNER'], true)) {
+        $source = 'CASH_COUNTER';
+    }
+    // Period-based categories (Salaries, Doctor Shares) are paid in a LATER
+    // month than they belong to, so the admin picks the month. Everything else
+    // — rent included — is a running-month cost keyed off expense_date.
+    $periodMonth = trim($_POST['period_month'] ?? '');   // 'YYYY-MM' from <input type=month>
 
-    // Expenses come out of the counted drawer — a closed day takes no more.
-    $dayLock = require_day_open($pdo);
+    // What kind of category is this? Decides the month picker, the drawer
+    // lock and the limit checks. Read before validation so the rules can
+    // branch on it; the authoritative re-read happens under FOR UPDATE below.
+    $catMeta = ['is_period_based' => 0, 'is_admin_only' => 0];
+    if ($categoryId > 0) {
+        try {
+            $cm = $pdo->prepare('SELECT is_period_based, is_admin_only FROM expense_categories WHERE id = ?');
+            $cm->execute([$categoryId]);
+            $catMeta = $cm->fetch() ?: $catMeta;
+        } catch (PDOException $e) { /* pre-migration: flags absent, treat as plain */ }
+    }
+    $isPeriodBased = (bool) ($catMeta['is_period_based'] ?? 0);
+    $isAdminOnly   = (bool) ($catMeta['is_admin_only'] ?? 0);
 
-    if ($dayLock) {
+    // Only CASH_COUNTER money is subject to the drawer's day-lock. A bank
+    // salary posted for a month whose days are all closed must still go in.
+    $dayLock = $source === 'CASH_COUNTER' ? require_day_open($pdo) : null;
+
+    if ($isAdminOnly && !$isAdmin) {
+        $error = 'Only an admin may post under that category.';
+    } elseif ($isPeriodBased && !preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+        $error = 'Pick the month this payment is for.';
+    } elseif ($dayLock) {
         $error = $dayLock;
     } elseif ($categoryId <= 0) {
         $error = 'Pick a category.';
@@ -107,7 +136,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             // PENDING. Admins bypass limits entirely (nothing to flag).
             $overLimit = false;
             $limitBreaches = [];
-            if (!$isAdmin) {
+            // Shift limits police the counter float. Bank/owner money is not in
+            // that float, so a Rs 400,000 payroll must not be measured against a
+            // Rs 5,000 counter cap (it would flag over-limit on every payroll run).
+            if (!$isAdmin && $source === 'CASH_COUNTER') {
                 // Per-category cap: this category's spend today, all users.
                 $catLimit = (float) $category['shift_limit'];
                 if ($catLimit > 0) {
@@ -155,15 +187,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             $expenseNumber = generate_expense_number($pdo);
             // over_limit/limit_note fall back gracefully if the migration hasn't
             // run yet (mid-deploy): retry without those columns.
+            // 'YYYY-MM' -> first of that month; NULL for running-month costs.
+            $periodValue = $isPeriodBased && $periodMonth !== '' ? $periodMonth . '-01' : null;
             try {
                 $pdo->prepare('
                     INSERT INTO expenses
                         (expense_number, category_id, amount, description, paid_to, expense_date,
+                         period_month, source,
                          posted_by_id, approval_status, over_limit, limit_note, approved_by_id, approved_at)
-                    VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                    VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
                 ')->execute([
                     $expenseNumber, $categoryId, $amount, $description,
-                    $paidTo !== '' ? $paidTo : null, $userId, $status,
+                    $paidTo !== '' ? $paidTo : null,
+                    $periodValue, $source,
+                    $userId, $status,
                     $overLimit ? 1 : 0, $limitNote,
                     $isAdmin ? $userId : null,
                 ]);
@@ -286,7 +323,18 @@ if (isset($_GET['posted'])) {
 }
 
 // ---- Data for the page ----
-$categories = $pdo->query('SELECT id, name, shift_limit FROM expense_categories WHERE is_active = 1 ORDER BY name')->fetchAll();
+// is_period_based / is_admin_only arrive with add_accounts_phase1.sql. Fall back
+// to the old column list if that migration has not run yet, so a mid-deploy page
+// still renders (the flags then read as 0 and every category behaves as before).
+try {
+    $categories = $pdo->query(
+        'SELECT id, name, shift_limit, is_period_based, is_admin_only
+           FROM expense_categories WHERE is_active = 1' . ($isAdmin ? '' : ' AND is_admin_only = 0') . '
+          ORDER BY name'
+    )->fetchAll();
+} catch (PDOException $e) {
+    $categories = $pdo->query('SELECT id, name, shift_limit FROM expense_categories WHERE is_active = 1 ORDER BY name')->fetchAll();
+}
 
 // Per-category spend so far today (all users) — feeds the client-side over-limit
 // warning so the receptionist is told before they submit, not just after.
@@ -477,14 +525,44 @@ if (!$isAdmin) {
                                 <option value="<?= (int) $c['id'] ?>"
                                         data-cat-limit="<?= htmlspecialchars((string) (float) $c['shift_limit']) ?>"
                                         data-cat-spent="<?= htmlspecialchars((string) ($catSpentToday[(int) $c['id']] ?? 0)) ?>"
-                                        data-cat-name="<?= htmlspecialchars($c['name']) ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
+                                        data-cat-name="<?= htmlspecialchars($c['name']) ?>"
+                                        data-period-based="<?= (int) ($c['is_period_based'] ?? 0) ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
                                 <?php endforeach; ?>
                             </select>
+                        </div>
+                        <!-- Month picker: shown only for period-based categories
+                             (Salaries, Doctor Shares) — money paid in one month
+                             that belongs to another. Toggled by the script below;
+                             hidden by default and NOT required, so a normal
+                             running-month expense submits exactly as before. -->
+                        <div class="f-group" id="periodGroup" style="display:none;">
+                            <label>Which month is this payment for?</label>
+                            <input type="month" name="period_month" id="expPeriod"
+                                   max="<?= date('Y-m') ?>">
+                            <div class="muted-note" style="margin-top:6px;">
+                                July's salary paid in August still belongs to July's accounts.
+                            </div>
                         </div>
                         <div class="f-group">
                             <label>Amount (Rs)</label>
                             <input type="number" name="amount" id="expAmount" step="0.01" min="1" placeholder="0" required>
                         </div>
+                        <?php if ($isAdmin): ?>
+                        <!-- Admin-only. A receptionist can only ever spend counter
+                             cash, so the field is not rendered for them and the
+                             POST handler pins their source to CASH_COUNTER. -->
+                        <div class="f-group">
+                            <label>Paid from</label>
+                            <select name="source" id="expSource">
+                                <option value="CASH_COUNTER">Counter cash (affects the day tally)</option>
+                                <option value="BANK">Bank transfer</option>
+                                <option value="OWNER">Owner / outside the counter</option>
+                            </select>
+                            <div class="muted-note" style="margin-top:6px;">
+                                Only counter cash is deducted from the shift's expected drawer.
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         <?php if (!$isAdmin): ?>
                         <div class="over-warn" id="overWarn"></div>
                         <?php endif; ?>
@@ -618,6 +696,40 @@ if (!$isAdmin) {
     </div>
 </div>
 <script src="assets/js/date-picker.js"></script>
+<script>
+// Month picker toggle. Salaries and Doctor Shares are paid in a LATER month than
+// they belong to, so those categories must capture which month — everything else
+// (rent included) is a running-month cost keyed off the posting date.
+// Driven by expense_categories.is_period_based, never by category NAME, so
+// adding another deferred-payment category later needs no code change.
+// Runs for admins too, unlike the over-limit script below.
+(function () {
+    var cat = document.getElementById('expCategory');
+    var grp = document.getElementById('periodGroup');
+    var inp = document.getElementById('expPeriod');
+    if (!cat || !grp || !inp) return;
+
+    function sync() {
+        var opt = cat.options[cat.selectedIndex];
+        var on = !!(opt && opt.getAttribute('data-period-based') === '1');
+        grp.style.display = on ? '' : 'none';
+        // Only required while visible, or the browser would block submission on
+        // a hidden field and give the user nothing to fix.
+        inp.required = on;
+        if (on && !inp.value) {
+            // Default to LAST month: salaries are paid after the month worked,
+            // which is the overwhelmingly common case.
+            var d = new Date();
+            d.setDate(1);
+            d.setMonth(d.getMonth() - 1);
+            inp.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        }
+        if (!on) { inp.value = ''; }
+    }
+    cat.addEventListener('change', sync);
+    sync();
+})();
+</script>
 <?php if (!$isAdmin): ?>
 <script>
 // Over-limit awareness: as the receptionist picks a category + amount, show a

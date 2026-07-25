@@ -160,8 +160,10 @@ $sbGroups = [
         'label' => 'Analytics',
         'admin' => true,
         'items' => [
+            ['slug' => 'expense_report', 'label' => 'Expense Report', 'icon' => 'chart', 'href' => 'expense_report.php',
+             'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
             ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
-            ['slug' => 'reports', 'label' => 'Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
+            ['slug' => 'reports', 'label' => 'More Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
         ],
     ],
     [
@@ -187,7 +189,15 @@ $sbItemVisible = function (array $it) use ($sbBaseRole) {
 
 $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, $sbItemVisible) {
     foreach ($sbGroups as $g) {
-        if (!empty($g['admin']) && !$sbIsAdmin) { continue; }
+        // An 'admin' group is admin-by-default, but a perm-granted item inside it
+        // still surfaces — same principle as the role gate below. Without this a
+        // MANAGER holding FINANCIAL_VIEW_CLINIC_REPORTS could reach the Expense
+        // Report by URL yet never see a link to it.
+        if (!empty($g['admin']) && !$sbIsAdmin) {
+            $permItems = array_filter($g['items'], fn($it) => !empty($it['perm']) && has_permission($it['perm']));
+            if (!$permItems) { continue; }
+            $g['items'] = $permItems;
+        }
         // A group's role gate is the DEFAULT audience, not an absolute lock: a
         // user outside those roles may still enter the group if they hold a
         // perm-granted item inside it (e.g. a nurse with Day Closing sees the

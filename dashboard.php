@@ -22,14 +22,27 @@ $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good
 
 // Today's real counter-cash expenses (voided excluded). Guarded so the dashboard
 // keeps rendering if sql/add_expenses.sql hasn't been run yet.
+// source = 'CASH_COUNTER' keeps monthly salary/rent postings (BANK/OWNER, added
+// in add_accounts_phase1.sql) out of a figure that is meant to read "cash that
+// left the drawer today" — otherwise payroll day shows as a Rs 400,000 expense.
+// Falls back to the unfiltered sum if that migration has not run, where every
+// row is CASH_COUNTER anyway.
 $todayExpenses = 0.0;
 try {
-    $todayExpenses = (float) $pdo->query('
+    $todayExpenses = (float) $pdo->query("
         SELECT COALESCE(SUM(amount), 0) FROM expenses
         WHERE expense_date = CURDATE() AND voided_at IS NULL
-    ')->fetchColumn();
+          AND source = 'CASH_COUNTER'
+    ")->fetchColumn();
 } catch (Throwable $e) {
-    // Migration not applied yet — show zero rather than fatal.
+    try {
+        $todayExpenses = (float) $pdo->query('
+            SELECT COALESCE(SUM(amount), 0) FROM expenses
+            WHERE expense_date = CURDATE() AND voided_at IS NULL
+        ')->fetchColumn();
+    } catch (Throwable $e2) {
+        // Migration not applied yet — show zero rather than fatal.
+    }
 }
 
 // ===========================================================================

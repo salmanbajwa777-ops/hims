@@ -1004,3 +1004,77 @@ function void_er_bill(PDO $pdo, int $erBillId, int $userId, string $reason): arr
     }
     return [true, "ER bill {$eb['invoice_number']} voided. The number is kept for the record."];
 }
+
+// ============================================================================
+// DOCTOR / CLINIC REVENUE SPLIT  (single source of truth — added 2026-07-26)
+//
+// THE RULE (confirmed 2026-07-26): tax comes off the FULL amount FIRST, and
+// whatever remains is split by the doctor's share %.
+//
+//     Rs 100 fee, 10% tax, 70/30 split
+//       -> tax     10   (deposited by the clinic)
+//       -> remainder 90
+//       -> doctor  63   (70% of 90)
+//       -> clinic  27   (30% of 90)
+//
+// This UNIFIES two rules that used to disagree. Consultations always worked
+// this way (add_consult_revenue_share.sql). doctor_procedures documented the
+// OPPOSITE (split first, then withhold tax from the doctor's share only),
+// which quietly left the clinic paying tax on the doctor's behalf out of its
+// own share. Procedures have never been billed — zero transactions — so the
+// rules were unified at the only moment it was free to do so.
+//
+// Use this function EVERYWHERE a share is computed. It replaces the SQL
+// expression that was copy-pasted into dashboard.php (x2), doctor.php and
+// doctor_analytics.php — four places that had to be edited in lockstep or a
+// doctor's dashboard would disagree with their payout statement.
+//
+// Returns floats, unrounded. Round at the point of DISPLAY, not here, so a
+// month's worth of lines does not accumulate rounding drift. The payout engine
+// (Phase 6) snapshots these figures per line at disbursement time.
+// ============================================================================
+function doctor_split(float $amount, float $sharePct, bool $hasTax, float $taxPct): array {
+    // Guard rails: a negative amount, or percentages outside 0-100, are data
+    // errors rather than arithmetic ones. Clamp instead of throwing so a single
+    // bad row cannot take down a whole monthly report.
+    $amount   = max(0.0, $amount);
+    $sharePct = min(100.0, max(0.0, $sharePct));
+    $taxPct   = $hasTax ? min(100.0, max(0.0, $taxPct)) : 0.0;
+
+    $tax       = $amount * $taxPct / 100;
+    $remainder = $amount - $tax;
+    $doctor    = $remainder * $sharePct / 100;
+    $clinic    = $remainder - $doctor;   // subtraction, not a second %, so the
+                                         // three parts always re-sum to $amount
+
+    return [
+        'gross'  => $amount,
+        'tax'    => $tax,
+        'doctor' => $doctor,
+        'clinic' => $clinic,
+    ];
+}
+
+// The same rule expressed as SQL, for set-based aggregation where looping in
+// PHP would be wasteful (monthly reports over thousands of bills).
+//
+// $amt/$share/$hasTax/$tax are COLUMN EXPRESSIONS, not values — e.g.
+//   doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct')
+// Never pass user input here; these are hardcoded column names at every call
+// site and must stay that way.
+//
+// Keep this in lockstep with doctor_split() above. If the rule ever changes,
+// both must change together — that is the price of having a SQL form at all.
+function doctor_split_sql(string $amt, string $share, string $hasTax, string $tax, string $part = 'doctor'): string {
+    // Tax first: the remainder that actually gets split.
+    $remainder = "($amt - CASE WHEN $hasTax = 1 THEN $amt * $tax / 100 ELSE 0 END)";
+    switch ($part) {
+        case 'tax':
+            return "(CASE WHEN $hasTax = 1 THEN $amt * $tax / 100 ELSE 0 END)";
+        case 'clinic':
+            return "($remainder - $remainder * $share / 100)";
+        case 'doctor':
+        default:
+            return "($remainder * $share / 100)";
+    }
+}
