@@ -144,17 +144,25 @@ $pageSize = $isA4 ? 'A4' : 'A5';
         /* Butted straight against the header box: -1px so the two share a single rule
            rather than showing a gap or a doubled border. */
         .fee-table { margin-top: -1px; }
+        /* Row height matched to the header ID/patient tables above (.ids/.meta td):
+           same fixed 18px height and zero vertical padding, so the fee header, the
+           consultation line, the vitals header and the write-in row all sit on the
+           SAME grid as the MR#/Invoice/Token/Doctor rows — one uniform row height
+           down the whole sheet. Only horizontal padding is kept. */
         .fee-table td, .fee-table th,
-        .vitals-table td, .vitals-table th { border: 1px solid #C8C8C8; padding: 4px 6px; }
+        .vitals-table td, .vitals-table th {
+            border: 1px solid #C8C8C8; padding: 0 6px; height: 18px; vertical-align: middle;
+        }
         /* Heading cells share the same greyscale ground as the header tables' label
            column, so every heading on the sheet reads as one system: grey + bold. */
         .fee-table th, .vitals-table th { background: #F4F4F4; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: center; }
         .vitals-table { margin-top: -1px; }
-        /* Write-in row: tall enough to take a handwritten figure, at least the height
-           of the label row above it. */
-        .vitals-cell td { height: 9mm; }
+        /* Write-in row matches every other row (18px, same as header A). The doctor's
+           handwriting space is the large blank area BELOW the sheet, not this cell, so
+           it no longer needs its own taller height. */
+        .vitals-cell td { height: 18px; }
 
         /* The area below is the doctor's handwriting space, so the quote is NOT pushed
            to the foot of the page — it sits just under the vitals block and the sheet
@@ -193,9 +201,11 @@ $pageSize = $isA4 ? 'A4' : 'A5';
         .ids, .meta { font-size: 12.5px; }
         .ids td, .meta td { height: 26px; }
         .fee-table, .vitals-table { font-size: 13px; }
+        /* Same rule as A5: fee/vitals rows match the header ID rows (26px on A4),
+           zero vertical padding, so the whole sheet keeps one uniform row height. */
         .fee-table td, .fee-table th,
-        .vitals-table td, .vitals-table th { padding: 7px 9px; }
-        .vitals-cell td { height: 14mm; }
+        .vitals-table td, .vitals-table th { padding: 0 9px; height: 26px; }
+        .vitals-cell td { height: 26px; }
         .quote { font-size: 13px; padding-top: 8mm; }
         .foot { font-size: 10px; }
 <?php endif; ?>
