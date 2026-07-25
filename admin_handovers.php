@@ -80,6 +80,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
     }
 }
 
+// ---------------- Admin closes a stranded shift on the receptionist's behalf ----
+// Only for days older than the receptionist self-close window (5 days). Uses the
+// receptionist's own system tally; the closing row still belongs to them
+// (cashier_id) so attribution is unchanged, but closed_by_admin_id records who
+// actually did it. Admin is both the closer and the handover recipient.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin_close_behalf') {
+    $cashierId = (int) ($_POST['cashier_id'] ?? 0);
+    $closeDate = $_POST['close_date'] ?? '';
+    $counted = round(max(0.0, (float) str_replace(',', '', $_POST['counted_cash'] ?? '0')), 2);
+    $handover = round((float) str_replace(',', '', $_POST['handover_received'] ?? '0'), 2);
+    $note = trim($_POST['behalf_note'] ?? '');
+
+    $validDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $closeDate) ? $closeDate : '';
+    $ageDays = $validDate ? (int) round((strtotime(business_day($pdo)) - strtotime($validDate)) / 86400) : -1;
+
+    try {
+        $pdo->beginTransaction();
+
+        if ($cashierId <= 0 || $validDate === '') {
+            $error = 'Pick a valid receptionist and date to close.';
+        } elseif ($ageDays <= 5) {
+            // Inside the window — the receptionist closes this themselves.
+            $error = 'That day is still within the receptionist\'s own 5-day window — they should close it.';
+        } elseif (!user_holds_drawer($pdo, $cashierId)) {
+            $error = 'That user does not run a cash drawer.';
+        } elseif (day_closing($pdo, $validDate, $cashierId)) {
+            $error = 'That shift is already closed.';
+        } elseif ($note === '') {
+            $error = 'A note is required when closing on a receptionist\'s behalf.';
+        } else {
+            $tally = day_cash_tally($pdo, $validDate, $cashierId);
+            $variance = round($counted - $tally['expected_cash'], 2);
+            $closingNumber = generate_closing_number($pdo);
+
+            $pdo->prepare('
+                INSERT INTO shift_closings
+                    (closing_number, closing_date, cashier_id, closed_by_admin_id, opening_float,
+                     cash_consult_total, cash_consult_count,
+                     cash_admission_total, cash_admission_count,
+                     online_total, online_count,
+                     cash_refund_total, cash_refund_count,
+                     expense_total, expense_count,
+                     expected_cash, counted_cash, variance, variance_note,
+                     float_retained, handover_declared, handover_to_id,
+                     status, handover_received, received_by_id, received_at, slip_filed)
+                VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?,
+                        'RECEIVED', ?, ?, NOW(), 1)
+            ')->execute([
+                $closingNumber, $validDate, $cashierId, $_SESSION['user_id'],
+                $tally['cash_consult_total'], $tally['cash_consult_count'],
+                $tally['cash_admission_total'], $tally['cash_admission_count'],
+                $tally['online_total'], $tally['online_count'],
+                $tally['cash_refund_total'], $tally['cash_refund_count'],
+                $tally['expense_total'], $tally['expense_count'],
+                $tally['expected_cash'], $counted, $variance, $note,
+                $handover, $_SESSION['user_id'],
+                $handover, $_SESSION['user_id'],
+            ]);
+            $closingId = (int) $pdo->lastInsertId();
+
+            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+                ->execute([$_SESSION['user_id'], 'shift_closed_on_behalf',
+                    "Admin closed stranded shift $closingNumber for cashier #$cashierId on $validDate: "
+                    . 'counted Rs ' . number_format($counted, 2) . ' vs expected Rs '
+                    . number_format($tally['expected_cash'], 2) . ' (variance ' . number_format($variance, 2)
+                    . "); note: $note"]);
+
+            $pdo->commit();
+
+            $success = "Closed $closingNumber on behalf of the receptionist for " . date('d/m/Y', strtotime($validDate)) . '.';
+        }
+
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('[admin_close_behalf] ' . $e->getMessage());
+        $error = 'Could not close the shift on their behalf. Please try again.';
+    }
+}
+
+// Stranded shifts: any drawer receptionist's unclosed business days OLDER than the
+// self-close window (age > 5), with money movement, going back a reasonable span.
+$strandedShifts = [];
+try {
+    foreach (receptionists_with_drawer($pdo) as $recp) {
+        $days = unclosed_business_days($pdo, (int) $recp['id'], 30, true);
+        foreach ($days as $d) {
+            if ($d['age_days'] > 5) {
+                $strandedShifts[] = [
+                    'cashier_id'    => (int) $recp['id'],
+                    'cashier_name'  => $recp['name'],
+                    'date'          => $d['date'],
+                    'expected_cash' => $d['expected_cash'],
+                    'age_days'      => $d['age_days'],
+                ];
+            }
+        }
+    }
+    // Oldest first — the most urgent to reconcile.
+    usort($strandedShifts, fn($a, $b) => $b['age_days'] <=> $a['age_days']);
+} catch (Throwable $e) {
+    $strandedShifts = [];
+}
+
 // ---------------- Page data ----------------
 try {
     $pendingStmt = $pdo->query("
@@ -288,6 +396,59 @@ require __DIR__ . '/partials/sidebar.php';
                 </form>
                 <?php endforeach; ?>
             </div>
+
+            <?php if ($strandedShifts): ?>
+            <div class="card">
+                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Stranded shifts — close on behalf
+                    <span class="ho-pill red" style="margin-left:8px;"><?= count($strandedShifts) ?></span>
+                </h2>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">
+                    Days a receptionist left unclosed for more than 5 days. Count the cash you're holding for that day,
+                    enter what you received, and add a note. This closes and receives it in one step, on their behalf.
+                </p>
+
+                <?php foreach ($strandedShifts as $i => $s): ?>
+                <form method="POST" action="admin_handovers.php" style="<?= $i > 0 ? 'margin-top:20px;padding-top:20px;border-top:1px solid var(--border);' : '' ?>">
+                    <input type="hidden" name="action" value="admin_close_behalf">
+                    <input type="hidden" name="cashier_id" value="<?= (int) $s['cashier_id'] ?>">
+                    <input type="hidden" name="close_date" value="<?= htmlspecialchars($s['date']) ?>">
+
+                    <div class="pend" style="border-color:var(--red);background:var(--red-bg);">
+                        <div>
+                            <div class="who"><?= htmlspecialchars($s['cashier_name']) ?> — <?= date('D d/m/Y', strtotime($s['date'])) ?></div>
+                            <div class="det"><?= (int) $s['age_days'] ?> days ago · expected cash Rs <?= number_format($s['expected_cash'], 0) ?> (their system tally)</div>
+                        </div>
+                        <div>
+                            <div class="amt">Rs <?= number_format($s['expected_cash'], 0) ?></div>
+                            <div class="det" style="text-align:right;">expected</div>
+                        </div>
+                    </div>
+
+                    <div class="hfield">
+                        <label>Counted cash for that day (Rs)</label>
+                        <input name="counted_cash" type="number" min="0" step="1" required
+                               value="<?= number_format($s['expected_cash'], 0, '.', '') ?>">
+                    </div>
+                    <div class="hfield">
+                        <label>Actual amount you received (Rs)</label>
+                        <input name="handover_received" type="number" min="0" step="1" required
+                               value="<?= number_format($s['expected_cash'], 0, '.', '') ?>">
+                    </div>
+                    <div class="hfield">
+                        <label>Note (required) — why this was closed late</label>
+                        <input name="behalf_note" type="text" maxlength="255" required
+                               placeholder="e.g. receptionist off sick; cash reconciled from safe">
+                    </div>
+
+                    <button class="rcv-btn" type="submit"
+                            onclick="return confirm('Close <?= htmlspecialchars(date('d/m/Y', strtotime($s['date'])), ENT_QUOTES) ?> on behalf of <?= htmlspecialchars($s['cashier_name'], ENT_QUOTES) ?>? This is recorded under your name.');">
+                        Close &amp; receive on their behalf
+                    </button>
+                    <p class="hint-note">Records the closing under <?= htmlspecialchars($s['cashier_name']) ?>, stamped "closed by you on their behalf".</p>
+                </form>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
 
         </div>
 

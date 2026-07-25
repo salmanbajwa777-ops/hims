@@ -4,6 +4,7 @@ require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/notify.php';
+require_once __DIR__ . '/config/billing.php';
 refresh_session_permissions($pdo);
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
@@ -51,6 +52,18 @@ $qhActive = 'today';
 $qhBrand = false; // the sidebar already carries the HIMS mark
 $hour = (int) date('G');
 $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good Evening');
+
+// Straggler reminder: this receptionist's unclosed business days (incl. today) in
+// the last 5 that had money movement. Only for drawer holders; tolerant of any DB
+// hiccup so the landing page never breaks over a reminder.
+$myUnclosedDays = [];
+try {
+    if (has_permission('RECEPTION_CLOSE_DAY') && user_holds_drawer($pdo, (int) $_SESSION['user_id'])) {
+        $myUnclosedDays = unclosed_business_days($pdo, (int) $_SESSION['user_id'], 5, true);
+    }
+} catch (Throwable $e) {
+    $myUnclosedDays = [];
+}
 
 function icon(string $name, int $size = 18): string {
     $paths = [
@@ -407,6 +420,20 @@ require __DIR__ . '/partials/sidebar.php';
             <div class="nag-banner">
                 <span>You're signed in with a temporary password. Please set a new one to secure your account.</span>
                 <a href="change-password.php">Change password now &rarr;</a>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($myUnclosedDays): ?>
+            <div class="nag-banner" style="flex-wrap:wrap;">
+                <span><b>You have <?= count($myUnclosedDays) ?> shift<?= count($myUnclosedDays) === 1 ? '' : 's' ?> still to close.</b>
+                    Close them before the day ages out — after 5 days an admin has to do it for you.</span>
+                <span style="display:inline-flex;gap:10px;flex-wrap:wrap;">
+                <?php foreach ($myUnclosedDays as $u): ?>
+                    <a href="shift_closing.php?date=<?= htmlspecialchars($u['date']) ?>">
+                        <?= date('D d/m', strtotime($u['date'])) ?> (Rs <?= number_format($u['expected_cash'], 0) ?>) &rarr;
+                    </a>
+                <?php endforeach; ?>
+                </span>
             </div>
             <?php endif; ?>
 

@@ -532,10 +532,15 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         // ipd_bills not migrated yet — leave admission buckets as-is.
     }
 
+    // Cash refunds are attributed to the DRAWER they came out of (paid_out_by_id)
+    // — normally the receptionist who took the original payment — not whoever
+    // clicked "Refund" (generated_by_id could be a doctor/admin with no drawer).
+    // COALESCE keeps any legacy row with a NULL drawer behaving as it did before.
     $stmt = $pdo->prepare("
         SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
         FROM refunds
-        WHERE refund_mode = 'cash' AND voided_at IS NULL AND created_at >= ? AND created_at < ? AND generated_by_id = ?
+        WHERE refund_mode = 'cash' AND voided_at IS NULL AND created_at >= ? AND created_at < ?
+          AND COALESCE(paid_out_by_id, generated_by_id) = ?
     ");
     $stmt->execute([$winStart, $winEnd, $userId]);
     $r = $stmt->fetch();
@@ -571,6 +576,116 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     );
 
     return $t;
+}
+
+// Cheap schema probe so code tolerates a migration not being run yet. Cached per
+// (table, column) for the request. Returns false on any error (missing table etc).
+function column_exists(PDO $pdo, string $table, string $column): bool {
+    static $cache = [];
+    $key = $table . '.' . $column;
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1');
+        $stmt->execute([$table, $column]);
+        return $cache[$key] = (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return $cache[$key] = false;
+    }
+}
+
+// Drawer-holding receptionists: every ACTIVE user whose EFFECTIVE permissions
+// include RECEPTION_CLOSE_DAY (role default ∪ per-user grant, minus per-user
+// revoke). This is the permission-driven "who runs a cash drawer" signal — the
+// base_role enum was collapsed to ADMIN/DOCTOR/STAFF, so role name no longer
+// identifies receptionists. Returns [['id'=>.., 'name'=>..], ...] ordered by name.
+function receptionists_with_drawer(PDO $pdo): array {
+    $sql = "
+        SELECT u.id, u.name
+        FROM users u
+        WHERE u.is_active = 1
+          AND (
+            EXISTS (
+                SELECT 1 FROM role_permissions rp
+                JOIN permissions p ON p.id = rp.permission_id
+                WHERE rp.base_role = u.base_role AND p.`key` = 'RECEPTION_CLOSE_DAY'
+            )
+            OR EXISTS (
+                SELECT 1 FROM user_permission_overrides o
+                JOIN permissions p ON p.id = o.permission_id
+                WHERE o.user_id = u.id AND p.`key` = 'RECEPTION_CLOSE_DAY' AND o.granted = 1
+            )
+          )
+          AND NOT EXISTS (
+                SELECT 1 FROM user_permission_overrides o
+                JOIN permissions p ON p.id = o.permission_id
+                WHERE o.user_id = u.id AND p.`key` = 'RECEPTION_CLOSE_DAY' AND o.granted = 0
+          )
+        ORDER BY u.name
+    ";
+    try {
+        return $pdo->query($sql)->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+// True if this user currently holds a cash drawer (effective RECEPTION_CLOSE_DAY).
+function user_holds_drawer(PDO $pdo, int $userId): bool {
+    if ($userId <= 0) {
+        return false;
+    }
+    foreach (receptionists_with_drawer($pdo) as $r) {
+        if ((int) $r['id'] === $userId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Which drawer a CASH refund should be charged to. Normally the receptionist who
+// took the ORIGINAL payment (bills.paid_by_id), collected minutes earlier — even
+// when a doctor/admin clicks Refund. Returns that user id when it is a valid
+// drawer holder, else null to signal "the clicker must pick a receptionist".
+function resolve_refund_drawer(PDO $pdo, array $bill, int $clickerId): ?int {
+    $originalPayer = (int) ($bill['paid_by_id'] ?? 0);
+    if ($originalPayer > 0 && user_holds_drawer($pdo, $originalPayer)) {
+        return $originalPayer;
+    }
+    // Fall back to the clicker only when THEY hold a drawer (the receptionist is
+    // refunding at their own counter). Otherwise null → the form prompts for a payer.
+    if (user_holds_drawer($pdo, $clickerId)) {
+        return $clickerId;
+    }
+    return null;
+}
+
+// A receptionist's unclosed BUSINESS days within the last $lookback days that had
+// money movement (so we don't nag about days they weren't working). Newest first.
+// Each entry: ['date'=>Y-m-d, 'expected_cash'=>float, 'age_days'=>int]. Excludes
+// the live business day only when $includeToday is false.
+function unclosed_business_days(PDO $pdo, int $userId, int $lookback = 5, bool $includeToday = true): array {
+    $todayBiz = business_day($pdo);
+    $out = [];
+    for ($i = ($includeToday ? 0 : 1); $i <= $lookback; $i++) {
+        $date = date('Y-m-d', strtotime($todayBiz . " -{$i} day"));
+        if (day_closing($pdo, $date, $userId)) {
+            continue;   // already closed
+        }
+        $tally = day_cash_tally($pdo, $date, $userId);
+        $hadMoney = ($tally['cash_count'] + $tally['online_count'] + $tally['cash_refund_count'] + $tally['expense_count']) > 0;
+        if (!$hadMoney) {
+            continue;   // nothing to close on that day
+        }
+        $out[] = [
+            'date'          => $date,
+            'expected_cash' => (float) $tally['expected_cash'],
+            'age_days'      => $i,
+        ];
+    }
+    return $out;   // already newest-first (i grows into the past)
 }
 
 // One user's closing row for a date, or null while their shift is still open.
@@ -675,8 +790,12 @@ function void_refund(PDO $pdo, int $refundId, int $userId, string $reason): arra
     if ($reason === '') {
         return [false, 'A void needs a reason.'];
     }
-    $stmt = $pdo->prepare('SELECT id, refund_number, refund_mode, created_at, generated_by_id, voided_at
-                           FROM refunds WHERE id = ?');
+    // paid_out_by_id may be absent if the add_refund_paid_out_by.sql migration
+    // hasn't run yet — select it defensively so an unmigrated DB still voids.
+    $hasDrawerCol = column_exists($pdo, 'refunds', 'paid_out_by_id');
+    $drawerSelect = $hasDrawerCol ? 'paid_out_by_id, ' : '';
+    $stmt = $pdo->prepare("SELECT id, refund_number, refund_mode, created_at, generated_by_id, {$drawerSelect}voided_at
+                           FROM refunds WHERE id = ?");
     $stmt->execute([$refundId]);
     $r = $stmt->fetch();
     if (!$r) {
@@ -688,10 +807,13 @@ function void_refund(PDO $pdo, int $refundId, int $userId, string $reason): arra
     if ($r['voided_at'] !== null) {
         return [false, 'This refund is already voided.'];
     }
-    // A cash refund left the drawer on the generator's shift — refuse if closed.
+    // A cash refund left a specific drawer — refuse if THAT receptionist's shift
+    // is closed (their signed tally already accounts for the refund). The drawer
+    // is paid_out_by_id, falling back to the generator for legacy/NULL rows.
     if ($r['refund_mode'] === 'cash' && $r['created_at']) {
         $lockDate = date('Y-m-d', strtotime($r['created_at']));
-        $dayLock = require_day_open($pdo, $lockDate, (int) $r['generated_by_id']);
+        $drawerId = (int) (($r['paid_out_by_id'] ?? null) ?: $r['generated_by_id']);
+        $dayLock = require_day_open($pdo, $lockDate, $drawerId);
         if ($dayLock) {
             return [false, $dayLock . ' Voiding this refund would change that day\'s signed tally.'];
         }

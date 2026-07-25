@@ -25,13 +25,36 @@ refresh_session_permissions($pdo);
 require_permission('RECEPTION_CLOSE_DAY');
 
 $error = '';
-// The shift's BUSINESS day (cutoff-hour aware): before the cutoff hour we are
-// still closing the day that started yesterday, so an overnight shift stays one
-// closing and its evening takings don't fall off the tally after midnight.
-$today = business_day($pdo);
-$cutoffHour = day_cutoff_hour($pdo);
-$isOvernight = $today !== date('Y-m-d');   // now past midnight but before cutoff
 $uid = (int) $_SESSION['user_id'];
+$cutoffHour = day_cutoff_hour($pdo);
+
+// The live BUSINESS day (cutoff-hour aware): before the cutoff hour we are still
+// closing the day that started yesterday, so an overnight shift stays one closing
+// and its evening takings don't fall off the tally after midnight.
+$liveBiz = business_day($pdo);
+
+// LATE CLOSING: a receptionist may close any of their own unclosed business days
+// within the last 5. ?date=YYYY-MM-DD targets a past day; default is the live day.
+// Anything older than 5 days, or already closed, or in the future, is refused —
+// an admin closes older stragglers on the reception's behalf (admin_handovers.php).
+const LATE_CLOSE_WINDOW_DAYS = 5;
+$today = $liveBiz;
+$lateCloseError = '';
+$requestedDate = $_GET['date'] ?? $_POST['closing_date'] ?? '';
+if ($requestedDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedDate)) {
+    $reqTs = strtotime($requestedDate);
+    $ageDays = $reqTs !== false ? (int) round((strtotime($liveBiz) - $reqTs) / 86400) : -1;
+    if ($reqTs === false || $ageDays < 0) {
+        $lateCloseError = 'That date is not valid for closing.';
+    } elseif ($ageDays > LATE_CLOSE_WINDOW_DAYS) {
+        $lateCloseError = 'Days older than ' . LATE_CLOSE_WINDOW_DAYS
+            . ' are closed by an admin on your behalf — ask an admin to close ' . date('d/m/Y', $reqTs) . '.';
+    } else {
+        $today = $requestedDate;   // valid past day inside the window
+    }
+}
+$isPastDay = $today !== $liveBiz;
+$isOvernight = !$isPastDay && $today !== date('Y-m-d');   // now past midnight but before cutoff
 
 // Counted cash is now entered as a single total (the note-by-note breakdown was
 // removed as unnecessary friction). Read the one field, floor at zero.
@@ -43,13 +66,20 @@ function sc_counted_cash(): float {
 if (isset($_GET['print']) && isset($_GET['closing_id'])) {
     $closingId = (int) $_GET['closing_id'];
 
-    $stmt = $pdo->prepare('
-        SELECT c.*, cu.name AS cashier_name, au.name AS admin_name
+    // closed_by_admin_id only exists after add_admin_late_close.sql; join for the
+    // "on behalf of" line only when the column is present, so pre-migration prints work.
+    $behalfJoin = column_exists($pdo, 'shift_closings', 'closed_by_admin_id')
+        ? 'LEFT JOIN users cb ON cb.id = c.closed_by_admin_id'
+        : '';
+    $behalfSelect = $behalfJoin ? ', cb.name AS closed_by_admin_name' : '';
+    $stmt = $pdo->prepare("
+        SELECT c.*, cu.name AS cashier_name, au.name AS admin_name{$behalfSelect}
         FROM shift_closings c
         JOIN users cu ON cu.id = c.cashier_id
         JOIN users au ON au.id = c.handover_to_id
+        {$behalfJoin}
         WHERE c.id = ?
-    ');
+    ");
     $stmt->execute([$closingId]);
     $closing = $stmt->fetch();
 
@@ -68,8 +98,16 @@ if (isset($_GET['print']) && isset($_GET['closing_id'])) {
     exit;
 }
 
+// A close/edit POST carrying an out-of-window date would otherwise silently fall
+// back to closing the live day. Refuse it outright so nothing lands on the wrong day.
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && in_array($_POST['action'] ?? '', ['close_day', 'edit_closing'], true)
+    && $lateCloseError !== '') {
+    $error = $lateCloseError;
+}
+
 // ---------------- Submit closing ----------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_day') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_day' && $error === '') {
     $handoverToId = (int) ($_POST['handover_to_id'] ?? 0);
     $handoverDeclared = round((float) str_replace(',', '', $_POST['handover_declared'] ?? '0'), 2);
     $varianceNote = trim($_POST['variance_note'] ?? '');
@@ -150,7 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
 }
 
 // ---------------- Edit a closed shift (same cashier, before admin receives) --
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_closing') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_closing' && $error === '') {
     $handoverDeclared = round((float) str_replace(',', '', $_POST['handover_declared'] ?? '0'), 2);
     $varianceNote = trim($_POST['variance_note'] ?? '');
 
@@ -267,6 +305,13 @@ $meStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
 $meStmt->execute([$uid]);
 $myName = $meStmt->fetchColumn() ?: 'Me';
 
+// Straggler list: my unclosed business days in the window, EXCLUDING the live day
+// (that one is the normal close below). Only shown to drawer holders.
+$myUnclosed = [];
+if (user_holds_drawer($pdo, $uid)) {
+    $myUnclosed = unclosed_business_days($pdo, $uid, LATE_CLOSE_WINDOW_DAYS, false);
+}
+
 $pageTitle = 'Day Closing';
 require __DIR__ . '/partials/head.php';
 $navActive = 'shift_closing';
@@ -326,9 +371,35 @@ require __DIR__ . '/partials/sidebar.php';
 <div class="content">
 
     <div class="page-head">
-        <h1>My Shift Closing — <?= date('D d/m/Y', strtotime($today)) ?></h1>
+        <h1>My Shift Closing — <?= date('D d/m/Y', strtotime($today)) ?><?= $isPastDay ? ' (late close)' : '' ?></h1>
         <p><?= htmlspecialchars($myName) ?>'s own takings only: payments you recorded, refunds you issued, expenses you posted. Colleagues close their shifts separately.</p>
     </div>
+
+    <?php if ($lateCloseError): ?>
+        <div class="alert-error" style="margin-bottom:18px;"><?= htmlspecialchars($lateCloseError) ?></div>
+    <?php endif; ?>
+
+    <?php if ($isPastDay): ?>
+        <div class="edit-banner" style="margin-bottom:18px;">
+            You're closing a <b>past</b> business day (<?= date('D d/m/Y', strtotime($today)) ?>) that was left open.
+            The figures below are that day's takings. Days older than <?= LATE_CLOSE_WINDOW_DAYS ?> can only be closed by an admin.
+            <a href="shift_closing.php" style="color:var(--amber-text);text-decoration:underline;font-weight:700;">Back to today</a>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($myUnclosed): ?>
+        <div class="edit-banner" style="margin-bottom:18px;">
+            <b>You have <?= count($myUnclosed) ?> unclosed day<?= count($myUnclosed) === 1 ? '' : 's' ?> to close:</b>
+            <span style="display:inline-flex;gap:8px;flex-wrap:wrap;margin-left:6px;">
+            <?php foreach ($myUnclosed as $u): ?>
+                <a href="shift_closing.php?date=<?= htmlspecialchars($u['date']) ?>"
+                   style="color:var(--amber-text);text-decoration:underline;font-weight:700;">
+                    <?= date('D d/m', strtotime($u['date'])) ?> (Rs <?= number_format($u['expected_cash'], 0) ?>)
+                </a>
+            <?php endforeach; ?>
+            </span>
+        </div>
+    <?php endif; ?>
 
     <?php if ($isOvernight): ?>
         <div class="edit-banner" style="margin-bottom:18px;">
@@ -356,7 +427,7 @@ require __DIR__ . '/partials/sidebar.php';
             <div class="closed-actions">
                 <a href="shift_closing.php?print=1&closing_id=<?= (int) $closing['id'] ?>" target="_blank">Reprint A5 closing slip</a>
                 <?php if (in_array($closing['status'], ['PENDING_RECEIPT', 'EDITED'], true)): ?>
-                    <a href="shift_closing.php?edit=1" style="border-color:var(--amber);color:var(--amber-text);background:var(--amber-bg);">Edit my closing</a>
+                    <a href="shift_closing.php?edit=1<?= $isPastDay ? '&date=' . htmlspecialchars($today) : '' ?>" style="border-color:var(--amber);color:var(--amber-text);background:var(--amber-bg);">Edit my closing</a>
                 <?php endif; ?>
             </div>
         </div>
@@ -398,6 +469,7 @@ require __DIR__ . '/partials/sidebar.php';
 
     <form method="POST" action="shift_closing.php" id="closeForm">
     <input type="hidden" name="action" value="<?= $editMode ? 'edit_closing' : 'close_day' ?>">
+    <input type="hidden" name="closing_date" value="<?= htmlspecialchars($today) ?>">
 
     <div class="close-grid">
 

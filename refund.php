@@ -14,7 +14,7 @@ $success = '';
 // Full context for one bill: patient, visit, doctor, and what has been refunded so far.
 function load_refund_context(PDO $pdo, int $billId): ?array {
     $stmt = $pdo->prepare('
-        SELECT b.id, b.invoice_number, b.grand_total, b.paid_amount, b.status, b.payment_method,
+        SELECT b.id, b.invoice_number, b.grand_total, b.paid_amount, b.status, b.payment_method, b.paid_by_id,
                v.id AS visit_id, v.doctor_id,
                p.mrn, p.name AS patient_name, p.father_name, p.dob,
                d.name AS doctor_name, d.specialty AS doctor_specialty,
@@ -79,17 +79,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
     $notes = trim($_POST['notes'] ?? '');
     $refundMode = $_POST['refund_mode'] ?? 'cash';
     $approvedById = (int) ($_POST['approved_by_id'] ?? 0);
-
-    // A closed day accepts no more refunds — cash refunds come out of the
-    // drawer that has already been counted and signed for.
-    $dayLock = require_day_open($pdo);
+    $paidOutByPicked = (int) ($_POST['paid_out_by_id'] ?? 0);
 
     try {
         $pdo->beginTransaction();
 
         // Lock the bill row so two concurrent refunds cannot both read the same
         // remaining balance and each pass the cap check.
-        $lockStmt = $pdo->prepare('SELECT id, paid_amount, status FROM bills WHERE id = ? FOR UPDATE');
+        $lockStmt = $pdo->prepare('SELECT id, paid_amount, status, paid_by_id FROM bills WHERE id = ? FOR UPDATE');
         $lockStmt->execute([$billId]);
         $bill = $lockStmt->fetch();
 
@@ -100,6 +97,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
         $alreadyRefunded = refunded_total($pdo, $billId);
         $paid = (float) ($bill['paid_amount'] ?? 0);
         $remaining = round($paid - $alreadyRefunded, 2);
+
+        // Whose drawer the cash comes out of. Only cash refunds touch a drawer.
+        // Normally the receptionist who took the original payment; null means we
+        // must have the clicker pick a receptionist explicitly.
+        $isCash = ($refundMode === 'cash');
+        $drawerId = $isCash ? resolve_refund_drawer($pdo, $bill ?: [], (int) $_SESSION['user_id']) : null;
+        if ($isCash && $drawerId === null && $paidOutByPicked > 0
+            && user_holds_drawer($pdo, $paidOutByPicked)) {
+            $drawerId = $paidOutByPicked;   // fall back to the explicit pick
+        }
+
+        // A cash refund is refused if the DRAWER receptionist's shift is already
+        // closed — the money would come out of a signed, counted-for tally.
+        $dayLock = ($isCash && $drawerId) ? require_day_open($pdo, null, $drawerId) : null;
 
         if ($dayLock) {
             $error = $dayLock;
@@ -116,15 +127,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
         } elseif ($approvedById !== (int) $visit['doctor_id']) {
             // The approver must be the doctor on that visit (confirmed).
             $error = 'The refund must be approved by the doctor who saw this patient.';
+        } elseif ($isCash && $drawerId === null) {
+            // Cash refund but no drawer could be resolved and none validly picked.
+            $error = 'Select which receptionist is paying out this cash refund.';
         } else {
             $refundNumber = generate_refund_number($pdo);
 
             $pdo->prepare('
-                INSERT INTO refunds (refund_number, bill_id, amount, reason, notes, refund_mode, approved_by_id, generated_by_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO refunds (refund_number, bill_id, amount, reason, notes, refund_mode, approved_by_id, generated_by_id, paid_out_by_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ')->execute([
                 $refundNumber, $billId, $amount, $reason, $notes ?: null,
-                $refundMode, $approvedById, $_SESSION['user_id'],
+                $refundMode, $approvedById, $_SESSION['user_id'], $drawerId,
             ]);
             $refundId = (int) $pdo->lastInsertId();
 
@@ -179,6 +193,14 @@ if (!$bill) {
 $paid = (float) ($bill['paid_amount'] ?? 0);
 $alreadyRefunded = refunded_total($pdo, $billId);
 $remaining = round($paid - $alreadyRefunded, 2);
+
+// A cash refund is charged to the drawer of the receptionist who took the
+// original payment. When that person (and the clicker) don't hold a drawer, the
+// form must ask WHICH receptionist is paying it out. Resolve up-front so the
+// picker is shown only in that case; JS also re-checks it against refund mode.
+$autoDrawerId = resolve_refund_drawer($pdo, $bill, (int) $_SESSION['user_id']);
+$needsPayerPick = ($autoDrawerId === null);
+$drawerReceptionists = $needsPayerPick ? receptionists_with_drawer($pdo) : [];
 
 // Login only stores user_id/base_role in the session, so the display name is read here.
 $meStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
@@ -325,6 +347,23 @@ td { padding: 9px 10px; border-top: 1px solid var(--border); font-size: 13px; }
             </div>
         </div>
 
+        <?php if ($needsPayerPick): ?>
+        <!-- Original payer isn't a drawer-holding receptionist, so a cash refund
+             needs an explicit payer. Shown only for cash mode (JS toggles it). -->
+        <div id="payerPick" style="margin-top:16px;">
+            <label class="lbl" for="paid_out_by_id">Cash paid out by (receptionist)</label>
+            <select class="inp" id="paid_out_by_id" name="paid_out_by_id">
+                <option value="">Select the receptionist paying out…</option>
+                <?php foreach ($drawerReceptionists as $r): ?>
+                    <option value="<?= (int) $r['id'] ?>"><?= htmlspecialchars($r['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:5px;">
+                This refund is charged to that receptionist's cash drawer at closing.
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div style="margin-top:14px;">
             <label class="lbl" for="notes">Notes <span style="text-transform:none;letter-spacing:0;font-weight:500;">(printed on the voucher)</span></label>
             <input class="inp" id="notes" name="notes" maxlength="255" placeholder="Optional detail for the record">
@@ -411,6 +450,22 @@ td { padding: 9px 10px; border-top: 1px solid var(--border); font-size: 13px; }
         });
     });
     check();
+})();
+
+// The "paid out by" picker only exists when the original payer isn't a drawer
+// holder. It applies only to CASH refunds, so hide + un-require it for card/bank.
+(function () {
+    var pick = document.getElementById('payerPick');
+    var mode = document.getElementById('refund_mode');
+    if (!pick || !mode) return;
+    var sel = document.getElementById('paid_out_by_id');
+    function sync() {
+        var cash = mode.value === 'cash';
+        pick.style.display = cash ? '' : 'none';
+        if (sel) sel.required = cash;
+    }
+    mode.addEventListener('change', sync);
+    sync();
 })();
 </script>
 </body>

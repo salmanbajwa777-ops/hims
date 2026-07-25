@@ -98,6 +98,12 @@ $adminNameUpper = mb_strtoupper($closing['admin_name'] ?? '', 'UTF-8');
         </div>
         <?php endif; ?>
 
+        <?php if (!empty($closing['closed_by_admin_name'])): ?>
+        <div style="text-align:center;font-size:9.5px;font-weight:bold;letter-spacing:1px;border:1.5px solid #000;padding:2px 6px;margin:3px auto 0;width:fit-content;">
+            CLOSED BY <?= htmlspecialchars(mb_strtoupper($closing['closed_by_admin_name'], 'UTF-8')) ?> ON BEHALF OF <?= htmlspecialchars($cashierNameUpper) ?> (LATE CLOSE)
+        </div>
+        <?php endif; ?>
+
         <hr>
 
         <table class="meta-table">
