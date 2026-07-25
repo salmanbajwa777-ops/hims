@@ -218,7 +218,11 @@ if (isset($_GET['print']) && $doc) {
 }
 
 $pageTitle = 'Doctor Share Statement';
-$extraCss = <<<CSS
+// NB: the variable head.php actually renders is $headExtra. Naming this
+// $extraCss silently dropped every rule on this page — the tiles, the ledger
+// and the two-column layout all fell back to unstyled defaults, which is
+// exactly what the "this doesn't match the app" report was.
+$headExtra = <<<CSS
 <style>
 /* No .header rules: the sidebar partial supplies the app bar.
    Controls follow the same .f-group / .filters pattern as expenses.php, so the
@@ -270,27 +274,37 @@ $extraCss = <<<CSS
 /* Line table. Every padding/border is stated explicitly because app.css has a
    global `td { padding:12px 10px; border-top }` that otherwise doubles the row
    height and draws a rule under every single line. */
-.ltab { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.ltab td { padding: 7px 0; vertical-align: baseline; border-top: none; font-size: 13.5px; }
-.ltab td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; width: 130px; }
-.ltab td.qty { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; width: 60px; }
-.ltab tr.sect td { padding: 18px 0 4px; font-weight: 700; font-size: 10.5px;
-                   text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); border-top: none; }
-.ltab tr.sect:first-child td { padding-top: 4px; }
-.ltab tr.sum td { font-weight: 700; border-top: 1px solid var(--border); padding-top: 8px; }
-.ltab tr.grand td { font-weight: 800; font-size: 16px; padding-top: 12px; padding-bottom: 2px;
-                    border-top: 2px solid var(--text); color: var(--primary-dark); }
-.ltab .muted { color: var(--text-muted); font-weight: 400; }
-.ltab tr.neg td.n { color: var(--danger); }
+/* Dotted rules per line and a solid rule above each total — the same ledger
+   vocabulary as the day-closing sheet, which is what makes that page read as a
+   document rather than a web table. */
+.ltab { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ltab td { padding: 5px 0; vertical-align: baseline; border-top: none;
+           border-bottom: 1px dotted var(--border); font-size: 13px; }
+.ltab td.n { text-align: right; white-space: nowrap; width: 130px; }
+.ltab td.qty { text-align: right; color: var(--text-muted); width: 60px; font-size: 11.5px; }
+.ltab tr.sect td { padding: 16px 0 4px; font-weight: 700; font-size: 10.5px;
+                   text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted);
+                   border-top: none; border-bottom: none; }
+.ltab tr.sect:first-child td { padding-top: 2px; }
+.ltab tr.sum td { font-weight: 700; font-size: 14px; border-top: 1.5px solid var(--border-strong);
+                  border-bottom: none; padding-top: 7px; }
+.ltab tr.grand td { font-weight: 700; font-size: 15px; padding-top: 8px;
+                    border-top: 1.5px solid var(--border-strong); border-bottom: none; }
+.ltab .muted { color: var(--text-muted); font-weight: 400; font-size: 11.5px; }
+.ltab tr.neg td.n { color: var(--red-text); }
 
-/* Right rail: how the money was split, as a readable ladder. */
-.rail .step { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 7px 0; }
-.rail .step + .step { border-top: 1px solid var(--row-line, var(--border)); }
+/* Right rail: the split as a ladder, ending in the dark payable block that
+   mirrors the closing sheet's EXPECTED CASH IN HAND. */
+.rail .step { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 6px 0;
+              border-bottom: 1px dotted var(--border); }
 .rail .step .n { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
-.rail .step.neg .n { color: var(--danger); }
+.rail .step.neg .n { color: var(--red-text); }
 .rail .step.muted, .rail .step.muted .n { color: var(--text-muted); font-weight: 400; }
-.rail .step.tot { border-top: 2px solid var(--text); margin-top: 4px; padding-top: 10px; font-weight: 800; font-size: 15px; }
-.rail .step.tot .n { color: var(--primary-dark); font-weight: 800; }
+.rail .payable { display: flex; justify-content: space-between; align-items: baseline;
+                 background: var(--primary-dark); color: #fff; border-radius: var(--radius-input);
+                 padding: 12px 15px; margin-top: 14px; }
+.rail .payable .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #9BD4CF; }
+.rail .payable .v { font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 
 .empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13.5px; }
 
@@ -459,7 +473,12 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     <?php if ($paidOut > 0): ?>
                     <div class="step neg"><span>Already disbursed</span><span class="n">&minus;<?= $m($paidOut) ?></span></div>
                     <?php endif; ?>
-                    <div class="step tot"><span><?= $paidOut > 0 ? 'Net still payable' : 'Net payable' ?></span><span class="n"><?= $m($netPayable) ?></span></div>
+                    <!-- Same dark block as the closing sheet's expected-cash
+                         panel: the one figure the page exists to produce. -->
+                    <div class="payable">
+                        <span class="k"><?= $paidOut > 0 ? 'Net still payable' : 'Net payable' ?></span>
+                        <span class="v"><?= $m($netPayable) ?></span>
+                    </div>
                 </div>
             </div>
             <?php endif; ?>
