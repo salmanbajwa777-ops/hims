@@ -29,14 +29,41 @@ require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
 require_permission('FINANCIAL_VIEW_CLINIC_REPORTS');
 
-$month      = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
-$monthStart = $month . '-01';
-$monthEnd   = date('Y-m-t', strtotime($monthStart));
-$monthLabel = date('F Y', strtotime($monthStart));
-// Previous month, for the month-over-month column.
-$prevStart  = date('Y-m-01', strtotime($monthStart . ' -1 month'));
-$prevEnd    = date('Y-m-t', strtotime($prevStart));
-$prevLabel  = date('M Y', strtotime($prevStart));
+// ---------------------------------------------------------------------------
+// PERIOD. Two modes:
+//   month  — one calendar month (the default; keeps the month-over-month column)
+//   range  — arbitrary from/to, for a quarter, a tax year, or an odd window
+// The comparison column only makes sense against a like-for-like previous
+// period, so in range mode we compare against the IMMEDIATELY PRECEDING window
+// of the same length rather than "last month".
+// ---------------------------------------------------------------------------
+$mode = ($_GET['mode'] ?? '') === 'range' ? 'range' : 'month';
+
+$isDate = fn($s) => (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $s ?? '');
+
+if ($mode === 'range') {
+    $monthStart = $isDate($_GET['from'] ?? '') ? $_GET['from'] : date('Y-m-01');
+    $monthEnd   = $isDate($_GET['to'] ?? '')   ? $_GET['to']   : date('Y-m-d');
+    // Swap rather than error if the user picks them backwards.
+    if ($monthStart > $monthEnd) { [$monthStart, $monthEnd] = [$monthEnd, $monthStart]; }
+    $month      = date('Y-m', strtotime($monthStart));   // still used for CSV naming
+    $monthLabel = date('d/m/Y', strtotime($monthStart)) . ' – ' . date('d/m/Y', strtotime($monthEnd));
+
+    // Preceding window of identical length, so "change" compares like with like.
+    $span      = max(1, (int) ((strtotime($monthEnd) - strtotime($monthStart)) / 86400) + 1);
+    $prevEnd   = date('Y-m-d', strtotime($monthStart . ' -1 day'));
+    $prevStart = date('Y-m-d', strtotime($prevEnd . ' -' . ($span - 1) . ' day'));
+    $prevLabel = 'prev ' . $span . 'd';
+} else {
+    $month      = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
+    $monthStart = $month . '-01';
+    $monthEnd   = date('Y-m-t', strtotime($monthStart));
+    $monthLabel = date('F Y', strtotime($monthStart));
+    // Previous month, for the month-over-month column.
+    $prevStart  = date('Y-m-01', strtotime($monthStart . ' -1 month'));
+    $prevEnd    = date('Y-m-t', strtotime($prevStart));
+    $prevLabel  = date('M Y', strtotime($prevStart));
+}
 
 // ---------------------------------------------------------------------------
 // Schema probe. add_accounts_phase1.sql may not have been run yet (code deploys
@@ -160,7 +187,8 @@ $trendMax = max(1.0, max($trendMonths));
 // ---------------------------------------------------------------------------
 if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="expenses-' . $month . '.csv"');
+    $csvName = $mode === 'range' ? 'expenses-' . $monthStart . '_to_' . $monthEnd : 'expenses-' . $month;
+    header('Content-Disposition: attachment; filename="' . $csvName . '.csv"');
     $out = fopen('php://output', 'w');
     fputcsv($out, ['Expense Report', $monthLabel]);
     fputcsv($out, []);
@@ -198,8 +226,35 @@ $extraCss = <<<CSS
 .logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
 
 .month-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.month-form input[type=month] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
+.month-form input[type=month], .month-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
 .month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.month-form .to-sep { font-size: 12.5px; color: var(--text-muted); margin: 0 2px; }
+.mode-fields { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Month | Date range switch */
+.mode-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+.mode-tab { border: 0; background: transparent; font: inherit; font-size: 12.5px; font-weight: 600;
+            padding: 9px 13px; cursor: pointer; color: var(--text-secondary); }
+.mode-tab.on { background: var(--primary, #1A7F7E); color: #fff; }
+
+/* Donut + legend. Inline SVG: no library, prints cleanly, no extra request. */
+.pie-wrap { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.pie { width: 210px; height: 210px; flex: 0 0 auto; transform: rotate(-90deg); }
+.pie .slice { transition: opacity .12s; }
+.pie:hover .slice { opacity: .45; }
+.pie .slice:hover { opacity: 1; }
+.pie-total { transform: rotate(90deg); transform-origin: 21px 21px; text-anchor: middle;
+             font-size: 6px; font-weight: 800; fill: var(--text-primary, #16211C); }
+.pie-cap { transform: rotate(90deg); transform-origin: 21px 21px; text-anchor: middle;
+           font-size: 2.4px; font-weight: 600; fill: var(--text-muted); letter-spacing: .04em; }
+.pie-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 260px; min-width: 240px; }
+.pie-legend li { display: flex; align-items: center; gap: 9px; padding: 5px 0; font-size: 12.5px;
+                 border-bottom: 1px solid var(--border); }
+.pie-legend li:last-child { border-bottom: 0; }
+.pie-legend .dot { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+.pie-legend .nm { flex: 1 1 auto; }
+.pie-legend .vl { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.pie-legend .pc { font-variant-numeric: tabular-nums; color: var(--text-muted); width: 46px; text-align: right; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow-sm); }
@@ -231,7 +286,9 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 .warn-note { border-left: 3px solid #b54708; background: #fffaeb; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 16px; }
 
 @media print {
-    .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group { display: none !important; }
+    .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group, .mode-tabs { display: none !important; }
+    /* Keep slice colours in print — the report is unreadable in greyscale. */
+    .pie, .pie-legend .dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .main { margin: 0 !important; }
     .card { box-shadow: none !important; border: 1px solid #ccc; break-inside: avoid; }
 }
@@ -261,10 +318,33 @@ $fmtDelta = function (float $d): string {
                     <div class="page-title">Expense Report — <?= htmlspecialchars($monthLabel) ?></div>
                     <div class="page-sub">Grouped by the month each cost belongs to, not the day it was paid</div>
                 </div>
-                <form class="month-form" method="GET" action="expense_report.php">
-                    <input type="month" name="month" value="<?= htmlspecialchars($month) ?>" max="<?= date('Y-m') ?>">
+                <?php
+                // Carries the current period through to CSV/print without
+                // rebuilding the query string in three places.
+                $periodQs = $mode === 'range'
+                    ? 'mode=range&from=' . urlencode($monthStart) . '&to=' . urlencode($monthEnd)
+                    : 'month=' . urlencode($month);
+                ?>
+                <form class="month-form" method="GET" action="expense_report.php" id="periodForm">
+                    <!-- Month is the common case, so it stays the default view and
+                         the range inputs only appear when asked for. -->
+                    <div class="mode-tabs" role="tablist">
+                        <button type="button" class="mode-tab<?= $mode === 'month' ? ' on' : '' ?>" data-mode="month">Month</button>
+                        <button type="button" class="mode-tab<?= $mode === 'range' ? ' on' : '' ?>" data-mode="range">Date range</button>
+                    </div>
+                    <input type="hidden" name="mode" id="modeField" value="<?= htmlspecialchars($mode) ?>">
+
+                    <span class="mode-fields" data-for="month"<?= $mode === 'range' ? ' style="display:none;"' : '' ?>>
+                        <input type="month" name="month" value="<?= htmlspecialchars($month) ?>" max="<?= date('Y-m') ?>">
+                    </span>
+                    <span class="mode-fields" data-for="range"<?= $mode === 'month' ? ' style="display:none;"' : '' ?>>
+                        <input type="date" name="from" value="<?= htmlspecialchars($monthStart) ?>" max="<?= date('Y-m-d') ?>">
+                        <span class="to-sep">to</span>
+                        <input type="date" name="to" value="<?= htmlspecialchars($monthEnd) ?>" max="<?= date('Y-m-d') ?>">
+                    </span>
+
                     <button type="submit" class="btn secondary">View</button>
-                    <a class="btn secondary" href="expense_report.php?month=<?= urlencode($month) ?>&amp;export=csv">CSV</a>
+                    <a class="btn secondary" href="expense_report.php?<?= $periodQs ?>&amp;export=csv">CSV</a>
                     <button type="button" class="btn print-btn" onclick="window.print()">Print</button>
                 </form>
             </div>
@@ -307,10 +387,79 @@ $fmtDelta = function (float $d): string {
                 <?php endif; ?>
             </div>
 
+            <?php
+            // ---- Pie: operating spend by category -------------------------
+            // Drawn as inline SVG arcs — no chart library, so it survives the
+            // artifact CSP, prints cleanly, and adds no request. Slices below
+            // 2% collapse into "Other" so the legend stays readable.
+            $pieRows = [];
+            foreach ($cur as $r) {
+                if ((int) $r['is_disb'] === 1) { continue; }   // disbursements are not operating spend
+                $pieRows[] = ['name' => $r['name'], 'amt' => (float) $r['amt']];
+            }
+            $pieOther = 0.0;
+            $pieSlices = [];
+            foreach ($pieRows as $p) {
+                if ($opTotal > 0 && $p['amt'] / $opTotal < 0.02) { $pieOther += $p['amt']; }
+                else { $pieSlices[] = $p; }
+            }
+            if ($pieOther > 0) { $pieSlices[] = ['name' => 'Other (under 2% each)', 'amt' => $pieOther]; }
+
+            // Fixed hues spaced around the wheel: distinguishable side by side,
+            // stable between reloads, and legible in print.
+            $pieColors = ['#0E5456','#1A7F7E','#2E9E86','#7FB069','#C7B446','#E08D3C',
+                          '#D2603A','#B4456B','#8355A8','#4C6EB5','#5E8CA8','#7D8B99'];
+            ?>
+            <?php if ($pieSlices && $opTotal > 0): ?>
+            <div class="card">
+                <div class="section-title">Where the Money Went</div>
+                <div class="section-sub">Operating spend by category. Disbursements are excluded — they are not a clinic cost.</div>
+                <div class="pie-wrap">
+                    <svg class="pie" viewBox="0 0 42 42" role="img" aria-label="Expenses by category">
+                        <?php
+                        // Stroke-dasharray donut: each slice is an arc on one
+                        // circle, offset by everything drawn before it. Avoids
+                        // hand-rolling arc path maths and stays crisp at any size.
+                        $circ = 100;                 // circumference in user units
+                        $offset = 25;                // start at 12 o'clock
+                        foreach ($pieSlices as $i => $s):
+                            $pct = $s['amt'] / $opTotal * 100;
+                            $col = $pieColors[$i % count($pieColors)];
+                        ?>
+                        <circle class="slice" cx="21" cy="21" r="15.915" fill="transparent"
+                                stroke="<?= $col ?>" stroke-width="6"
+                                stroke-dasharray="<?= number_format($pct, 3, '.', '') ?> <?= number_format($circ - $pct, 3, '.', '') ?>"
+                                stroke-dashoffset="<?= number_format($offset, 3, '.', '') ?>">
+                            <title><?= htmlspecialchars($s['name']) ?>: Rs <?= number_format($s['amt']) ?> (<?= number_format($pct, 1) ?>%)</title>
+                        </circle>
+                        <?php
+                            // Next slice starts where this one ended. Dashoffset
+                            // runs backwards, hence the subtraction.
+                            $offset -= $pct;
+                            if ($offset < 0) { $offset += $circ; }
+                        endforeach;
+                        ?>
+                        <text x="21" y="20" class="pie-total"><?= number_format($opTotal / 1000, 0) ?>k</text>
+                        <text x="21" y="24.5" class="pie-cap">operating</text>
+                    </svg>
+                    <ul class="pie-legend">
+                        <?php foreach ($pieSlices as $i => $s): ?>
+                        <li>
+                            <span class="dot" style="background:<?= $pieColors[$i % count($pieColors)] ?>;"></span>
+                            <span class="nm"><?= htmlspecialchars($s['name']) ?></span>
+                            <span class="vl">Rs <?= number_format($s['amt']) ?></span>
+                            <span class="pc"><?= number_format($s['amt'] / $opTotal * 100, 1) ?>%</span>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <!-- By category -->
             <div class="card">
                 <div class="section-title">By Category</div>
-                <div class="section-sub">Share of the operating total, with last month alongside. Voided and rejected postings are excluded.</div>
+                <div class="section-sub">Share of the operating total, with the preceding period alongside. Voided and rejected postings are excluded.</div>
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
@@ -395,7 +544,10 @@ $fmtDelta = function (float $d): string {
             <!-- Trend -->
             <div class="card">
                 <div class="section-title">Six-Month Trend</div>
-                <div class="section-sub">Operating expenses only, by the month each cost belongs to.</div>
+                <div class="section-sub">
+                    Operating expenses only, by the month each cost belongs to.
+                    <?= $mode === 'range' ? 'Always whole months, so the last bar may be wider than the range above.' : '' ?>
+                </div>
                 <div class="trend">
                     <?php foreach ($trendMonths as $ym => $amt):
                         $h = $trendMax > 0 ? ($amt / $trendMax) * 100 : 0; ?>
@@ -456,5 +608,34 @@ $fmtDelta = function (float $d): string {
         </div>
     </div>
 </div>
+<script>
+// Month | Date range switch. Only the active mode's inputs are submitted, so a
+// stale hidden field can never override the mode the user actually picked.
+(function () {
+    var form  = document.getElementById('periodForm');
+    var field = document.getElementById('modeField');
+    if (!form || !field) return;
+
+    var tabs = form.querySelectorAll('.mode-tab');
+    var sets = form.querySelectorAll('.mode-fields');
+
+    function apply(mode) {
+        field.value = mode;
+        tabs.forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-mode') === mode); });
+        sets.forEach(function (s) {
+            var on = s.getAttribute('data-for') === mode;
+            s.style.display = on ? '' : 'none';
+            // Disabled inputs are not submitted — this is what keeps the unused
+            // mode's values out of the query string entirely.
+            s.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+        });
+    }
+
+    tabs.forEach(function (t) {
+        t.addEventListener('click', function () { apply(t.getAttribute('data-mode')); });
+    });
+    apply(field.value === 'range' ? 'range' : 'month');
+})();
+</script>
 </body>
 </html>
