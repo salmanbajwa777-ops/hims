@@ -218,7 +218,10 @@ if (($_GET['export'] ?? '') === 'csv') {
 }
 
 $pageTitle = 'Expense Report';
-$extraCss = <<<CSS
+// NB: the variable head.php actually renders is $headExtra. Naming this
+// $extraCss silently dropped every rule on this page — the giant unsized SVG
+// the file's own comment warns about.
+$headExtra = <<<CSS
 <style>
 .header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
 .header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
@@ -415,7 +418,12 @@ $fmtDelta = function (float $d): string {
                 <div class="section-title">Where the Money Went</div>
                 <div class="section-sub">Operating spend by category. Disbursements are excluded — they are not a clinic cost.</div>
                 <div class="pie-wrap">
-                    <svg class="pie" viewBox="0 0 42 42" role="img" aria-label="Expenses by category">
+                    <!-- width/height attributes as well as the CSS: an SVG with
+                         only a viewBox expands to fill its container if the
+                         stylesheet ever fails to load, which is exactly how this
+                         chart first shipped. -->
+                    <svg class="pie" viewBox="0 0 42 42" width="210" height="210"
+                         role="img" aria-label="Expenses by category">
                         <?php
                         // Stroke-dasharray donut: each slice is an arc on one
                         // circle, offset by everything drawn before it. Avoids

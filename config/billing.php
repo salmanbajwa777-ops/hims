@@ -1239,3 +1239,154 @@ function doctor_earned_for_month(PDO $pdo, int $doctorId, string $month): array 
 
     return $out;
 }
+
+// ============================================================================
+// UNIFIED CLINIC REVENUE  (Accounts Phase 3, added 2026-07-26)
+//
+// Revenue lives in FOUR tables that nothing ever joined: bills (OPD),
+// admission_bills (ER/short-stay admissions), er_bills (walk-in ER services)
+// and ipd_bills (in-door). Every report before this read `bills` alone, and
+// cron/daily_summary.php summed only bills + admission_bills — so the daily
+// income email has been UNDERSTATING revenue by the ER and IPD streams.
+//
+// Cash basis throughout: a stream counts when its bill was PAID (paid_at),
+// never when it was raised. Voided bills are excluded everywhere.
+//
+// Refunds are returned SEPARATELY rather than pre-subtracted, because a caller
+// showing "where the money came from" wants gross per stream, while a caller
+// computing net profit wants the deduction. Netting here would have hidden
+// that choice.
+//
+// Each stream is independently wrapped: a database missing the IPD or ER
+// module returns zeros for it instead of failing the whole report.
+// ============================================================================
+function clinic_revenue(PDO $pdo, string $start, string $end): array {
+    // Half-open window [start 00:00:00, end+1day 00:00:00) so a bill paid at
+    // 23:30 on the last day is included without any 23:59:59 edge case.
+    $from = $start . ' 00:00:00';
+    $to   = date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00';
+
+    $streams = [
+        'opd'       => ['label' => 'OPD Consultations', 'table' => 'bills'],
+        'admission' => ['label' => 'Admissions',        'table' => 'admission_bills'],
+        'er'        => ['label' => 'ER Services',       'table' => 'er_bills'],
+        'ipd'       => ['label' => 'In-Door (IPD)',     'table' => 'ipd_bills'],
+    ];
+
+    $out = ['streams' => [], 'gross' => 0.0, 'refunds' => 0.0, 'net' => 0.0,
+            'cash' => 0.0, 'online' => 0.0, 'bills' => 0];
+
+    foreach ($streams as $key => $s) {
+        $row = ['label' => $s['label'], 'gross' => 0.0, 'bills' => 0, 'cash' => 0.0, 'online' => 0.0];
+        try {
+            // Table name comes from the hardcoded map above, never user input.
+            $q = $pdo->prepare("
+                SELECT COUNT(*)                        AS n,
+                       COALESCE(SUM(paid_amount), 0)   AS gross,
+                       COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN paid_amount ELSE 0 END), 0) AS cash,
+                       COALESCE(SUM(CASE WHEN payment_method <> 'cash' THEN paid_amount ELSE 0 END), 0) AS online
+                FROM {$s['table']}
+                WHERE status = 'paid' AND voided_at IS NULL
+                  AND paid_at >= ? AND paid_at < ?
+            ");
+            $q->execute([$from, $to]);
+            if ($r = $q->fetch()) {
+                $row['gross']  = (float) $r['gross'];
+                $row['bills']  = (int) $r['n'];
+                $row['cash']   = (float) $r['cash'];
+                $row['online'] = (float) $r['online'];
+            }
+        } catch (PDOException $e) {
+            // Stream's table absent on this database — leave the row at zero.
+        }
+        $out['streams'][$key] = $row;
+        $out['gross']  += $row['gross'];
+        $out['cash']   += $row['cash'];
+        $out['online'] += $row['online'];
+        $out['bills']  += $row['bills'];
+    }
+
+    // Refunds are OPD-only today (refunds.bill_id -> bills). Keyed off the
+    // refund's own date, so one issued in a later month reduces THAT month.
+    try {
+        $rq = $pdo->prepare("
+            SELECT COALESCE(SUM(amount), 0) FROM refunds
+            WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?
+        ");
+        $rq->execute([$from, $to]);
+        $out['refunds'] = (float) $rq->fetchColumn();
+    } catch (PDOException $e) { /* no refunds table */ }
+
+    $out['net'] = max(0.0, $out['gross'] - $out['refunds']);
+    return $out;
+}
+
+// What the DOCTORS earned across the same window — the figure that must come
+// off revenue before anything is called clinic income. Mirrors
+// doctor_earned_for_month() but for every doctor at once and over an arbitrary
+// range, so the P&L and a single doctor's statement can never disagree.
+//
+// Returns per-doctor rows plus totals. 'tax' is what the clinic withholds and
+// deposits; a doctor who self-deposits (consult_has_tax = 0) contributes zero
+// to it, which is correct and not missing data.
+function clinic_doctor_shares(PDO $pdo, string $start, string $end): array {
+    $from = $start . ' 00:00:00';
+    $to   = date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00';
+    $out  = ['rows' => [], 'doctor' => 0.0, 'tax' => 0.0];
+
+    // ---- OPD consultations ----
+    try {
+        $d = doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'doctor');
+        $t = doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'tax');
+        $q = $pdo->prepare("
+            SELECT dr.id, dr.name, COALESCE(SUM($d), 0) AS doc, COALESCE(SUM($t), 0) AS tax
+            FROM bills b
+            JOIN visits v ON v.id = b.visit_id
+            JOIN users dr ON dr.id = v.doctor_id
+            WHERE b.status = 'paid' AND b.voided_at IS NULL
+              AND b.paid_at >= ? AND b.paid_at < ?
+            GROUP BY dr.id, dr.name
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) {
+            $id = (int) $r['id'];
+            if (!isset($out['rows'][$id])) {
+                $out['rows'][$id] = ['name' => $r['name'], 'doctor' => 0.0, 'tax' => 0.0];
+            }
+            $out['rows'][$id]['doctor'] += (float) $r['doc'];
+            $out['rows'][$id]['tax']    += (float) $r['tax'];
+            $out['doctor'] += (float) $r['doc'];
+            $out['tax']    += (float) $r['tax'];
+        }
+    } catch (PDOException $e) { /* consult share columns or tables absent */ }
+
+    // ---- IPD ward rounds (an in-door consult is consultation income) ----
+    try {
+        $d = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'doctor');
+        $t = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'tax');
+        $q = $pdo->prepare("
+            SELECT dr.id, dr.name, COALESCE(SUM($d), 0) AS doc, COALESCE(SUM($t), 0) AS tax
+            FROM ipd_doctor_visits dv
+            JOIN ipd_bills ib ON ib.admission_id = dv.admission_id
+            JOIN users dr     ON dr.id = dv.doctor_id
+            WHERE dv.is_paid = 1 AND dv.visit_charge > 0
+              AND ib.status = 'paid' AND ib.voided_at IS NULL
+              AND ib.paid_at >= ? AND ib.paid_at < ?
+            GROUP BY dr.id, dr.name
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) {
+            $id = (int) $r['id'];
+            if (!isset($out['rows'][$id])) {
+                $out['rows'][$id] = ['name' => $r['name'], 'doctor' => 0.0, 'tax' => 0.0];
+            }
+            $out['rows'][$id]['doctor'] += (float) $r['doc'];
+            $out['rows'][$id]['tax']    += (float) $r['tax'];
+            $out['doctor'] += (float) $r['doc'];
+            $out['tax']    += (float) $r['tax'];
+        }
+    } catch (PDOException $e) { /* IPD module not installed */ }
+
+    uasort($out['rows'], function ($a, $b) { return $b['doctor'] <=> $a['doctor']; });
+    return $out;
+}
