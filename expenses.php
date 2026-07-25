@@ -89,16 +89,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
     // What kind of category is this? Decides the month picker, the drawer
     // lock and the limit checks. Read before validation so the rules can
     // branch on it; the authoritative re-read happens under FOR UPDATE below.
-    $catMeta = ['is_period_based' => 0, 'is_admin_only' => 0];
+    $catMeta = ['is_period_based' => 0, 'is_admin_only' => 0, 'needs_doctor' => 0];
     if ($categoryId > 0) {
         try {
-            $cm = $pdo->prepare('SELECT is_period_based, is_admin_only FROM expense_categories WHERE id = ?');
+            $cm = $pdo->prepare('SELECT is_period_based, is_admin_only, needs_doctor FROM expense_categories WHERE id = ?');
             $cm->execute([$categoryId]);
             $catMeta = $cm->fetch() ?: $catMeta;
-        } catch (PDOException $e) { /* pre-migration: flags absent, treat as plain */ }
+        } catch (PDOException $e) {
+            try {
+                $cm = $pdo->prepare('SELECT is_period_based, is_admin_only FROM expense_categories WHERE id = ?');
+                $cm->execute([$categoryId]);
+                $catMeta = $cm->fetch() ?: $catMeta;
+            } catch (PDOException $e2) { /* pre-migration: flags absent, treat as plain */ }
+        }
     }
     $isPeriodBased = (bool) ($catMeta['is_period_based'] ?? 0);
     $isAdminOnly   = (bool) ($catMeta['is_admin_only'] ?? 0);
+    $needsDoctor   = (bool) ($catMeta['needs_doctor'] ?? 0);
+
+    // Who the disbursement was paid to. Only meaningful for needs_doctor
+    // categories; forced NULL otherwise so an ordinary expense can never carry
+    // a stray doctor id from a stale form field.
+    $paidToDoctorId = $needsDoctor ? (int) ($_POST['paid_to_doctor_id'] ?? 0) : 0;
 
     // Only CASH_COUNTER money is subject to the drawer's day-lock. A bank
     // salary posted for a month whose days are all closed must still go in.
@@ -108,6 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
         $error = 'Only an admin may post under that category.';
     } elseif ($isPeriodBased && !preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
         $error = 'Pick the month this payment is for.';
+    } elseif ($needsDoctor && $paidToDoctorId <= 0) {
+        $error = 'Pick the doctor this payment is for.';
     } elseif ($dayLock) {
         $error = $dayLock;
     } elseif ($categoryId <= 0) {
@@ -189,32 +203,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             // run yet (mid-deploy): retry without those columns.
             // 'YYYY-MM' -> first of that month; NULL for running-month costs.
             $periodValue = $isPeriodBased && $periodMonth !== '' ? $periodMonth . '-01' : null;
+            $doctorValue = $paidToDoctorId > 0 ? $paidToDoctorId : null;
             try {
                 $pdo->prepare('
                     INSERT INTO expenses
-                        (expense_number, category_id, amount, description, paid_to, expense_date,
-                         period_month, source,
+                        (expense_number, category_id, amount, description, paid_to, paid_to_doctor_id,
+                         expense_date, period_month, source,
                          posted_by_id, approval_status, over_limit, limit_note, approved_by_id, approved_at)
-                    VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                    VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
                 ')->execute([
                     $expenseNumber, $categoryId, $amount, $description,
-                    $paidTo !== '' ? $paidTo : null,
+                    $paidTo !== '' ? $paidTo : null, $doctorValue,
                     $periodValue, $source,
                     $userId, $status,
                     $overLimit ? 1 : 0, $limitNote,
                     $isAdmin ? $userId : null,
                 ]);
             } catch (PDOException $e) {
-                $pdo->prepare('
-                    INSERT INTO expenses
-                        (expense_number, category_id, amount, description, paid_to, expense_date,
-                         posted_by_id, approval_status, approved_by_id, approved_at)
-                    VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
-                ')->execute([
-                    $expenseNumber, $categoryId, $amount, $description,
-                    $paidTo !== '' ? $paidTo : null, $userId, $status,
-                    $isAdmin ? $userId : null,
-                ]);
+                // paid_to_doctor_id absent (migration not yet run) — retry without it.
+                try {
+                    $pdo->prepare('
+                        INSERT INTO expenses
+                            (expense_number, category_id, amount, description, paid_to, expense_date,
+                             period_month, source,
+                             posted_by_id, approval_status, over_limit, limit_note, approved_by_id, approved_at)
+                        VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                    ')->execute([
+                        $expenseNumber, $categoryId, $amount, $description,
+                        $paidTo !== '' ? $paidTo : null,
+                        $periodValue, $source,
+                        $userId, $status,
+                        $overLimit ? 1 : 0, $limitNote,
+                        $isAdmin ? $userId : null,
+                    ]);
+                } catch (PDOException $e2) {
+                    // Oldest shape: no period/source/over_limit columns either.
+                    $pdo->prepare('
+                        INSERT INTO expenses
+                            (expense_number, category_id, amount, description, paid_to, expense_date,
+                             posted_by_id, approval_status, approved_by_id, approved_at)
+                        VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                    ')->execute([
+                        $expenseNumber, $categoryId, $amount, $description,
+                        $paidTo !== '' ? $paidTo : null, $userId, $status,
+                        $isAdmin ? $userId : null,
+                    ]);
+                }
             }
             $expenseId = (int) $pdo->lastInsertId();
 
@@ -326,15 +360,35 @@ if (isset($_GET['posted'])) {
 // is_period_based / is_admin_only arrive with add_accounts_phase1.sql. Fall back
 // to the old column list if that migration has not run yet, so a mid-deploy page
 // still renders (the flags then read as 0 and every category behaves as before).
+// needs_doctor arrives later still (add_expense_paid_to_doctor.sql), so the
+// fallbacks step down one migration at a time rather than all the way to the
+// original column list.
 try {
     $categories = $pdo->query(
-        'SELECT id, name, shift_limit, is_period_based, is_admin_only
+        'SELECT id, name, shift_limit, is_period_based, is_admin_only, needs_doctor
            FROM expense_categories WHERE is_active = 1' . ($isAdmin ? '' : ' AND is_admin_only = 0') . '
           ORDER BY name'
     )->fetchAll();
 } catch (PDOException $e) {
-    $categories = $pdo->query('SELECT id, name, shift_limit FROM expense_categories WHERE is_active = 1 ORDER BY name')->fetchAll();
+    try {
+        $categories = $pdo->query(
+            'SELECT id, name, shift_limit, is_period_based, is_admin_only
+               FROM expense_categories WHERE is_active = 1' . ($isAdmin ? '' : ' AND is_admin_only = 0') . '
+              ORDER BY name'
+        )->fetchAll();
+    } catch (PDOException $e2) {
+        $categories = $pdo->query('SELECT id, name, shift_limit FROM expense_categories WHERE is_active = 1 ORDER BY name')->fetchAll();
+    }
 }
+
+// Doctors for the disbursement picker. Admin-only screen concern, but the list
+// is cheap and the <select> is hidden for everyone else anyway.
+$doctorsList = [];
+try {
+    $doctorsList = $pdo->query(
+        "SELECT id, name FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name"
+    )->fetchAll();
+} catch (PDOException $e) { /* is_active may predate add_user_active_status.sql */ }
 
 // Per-category spend so far today (all users) — feeds the client-side over-limit
 // warning so the receptionist is told before they submit, not just after.
@@ -451,6 +505,14 @@ $headExtra = <<<CSS
 .st-rejected { color: var(--red-text, #b3261e); background: rgba(225,29,72,.09); border: 1px solid rgba(225,29,72,.24); }
 .st-over { color: #9A3412; background: rgba(234,88,12,.12); border: 1px solid rgba(234,88,12,.32); margin-top: 3px; }
 .over-warn { background: rgba(234,88,12,.10); border: 1px solid rgba(234,88,12,.30); color: #9A3412; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin: -4px 0 14px; display: none; }
+/* Earned-share readout under the doctor picker. Neutral while it reports a
+   clean figure; amber once something needs a second look (nothing earned that
+   month, or a disbursement already posted for it). */
+.earned-box { margin-top: 10px; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5;
+              background: var(--primary-light, rgba(26,127,126,.08)); border: 1px solid var(--border); }
+.earned-box .muted { color: var(--text-muted); font-weight: 400; }
+.earned-box.warn { background: rgba(234,88,12,.10); border-color: rgba(234,88,12,.30); color: #9A3412; }
+.earned-box .warn-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(0,0,0,.15); }
 .over-warn.show { display: block; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .link-btn.warn { color: var(--red-text); }
@@ -526,7 +588,8 @@ if (!$isAdmin) {
                                         data-cat-limit="<?= htmlspecialchars((string) (float) $c['shift_limit']) ?>"
                                         data-cat-spent="<?= htmlspecialchars((string) ($catSpentToday[(int) $c['id']] ?? 0)) ?>"
                                         data-cat-name="<?= htmlspecialchars($c['name']) ?>"
-                                        data-period-based="<?= (int) ($c['is_period_based'] ?? 0) ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
+                                        data-period-based="<?= (int) ($c['is_period_based'] ?? 0) ?>"
+                                        data-needs-doctor="<?= (int) ($c['needs_doctor'] ?? 0) ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -542,6 +605,24 @@ if (!$isAdmin) {
                             <div class="muted-note" style="margin-top:6px;">
                                 July's salary paid in August still belongs to July's accounts.
                             </div>
+                        </div>
+                        <!-- Doctor picker: disbursement categories must name WHO
+                             was paid, or the row cannot be reconciled against what
+                             that doctor earned. Driven by needs_doctor, not by the
+                             category name. -->
+                        <div class="f-group" id="doctorGroup" style="display:none;">
+                            <label>Which doctor is being paid?</label>
+                            <select name="paid_to_doctor_id" id="expDoctor">
+                                <option value="">Select a doctor&hellip;</option>
+                                <?php foreach ($doctorsList as $d): ?>
+                                <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <!-- Filled by doctor_earned.php once doctor + month are
+                                 both chosen. Shows what was earned and what has
+                                 already been paid, so a double payment is visible
+                                 BEFORE the button is pressed. -->
+                            <div id="earnedBox" class="earned-box" style="display:none;"></div>
                         </div>
                         <div class="f-group">
                             <label>Amount (Rs)</label>
@@ -709,6 +790,76 @@ if (!$isAdmin) {
     var inp = document.getElementById('expPeriod');
     if (!cat || !grp || !inp) return;
 
+    // Doctor picker + earned-share auto-load. Null on non-admin pages, where the
+    // disbursement category is not offered at all.
+    var docGrp = document.getElementById('doctorGroup');
+    var docSel = document.getElementById('expDoctor');
+    var earned = document.getElementById('earnedBox');
+    var amount = document.getElementById('expAmount');
+
+    function money(n) { return 'Rs ' + Math.round(n).toLocaleString('en-US'); }
+
+    // Ask the server what this doctor earned in this month and pre-fill the
+    // amount with the BALANCE still owed, so a part-payment tops up rather than
+    // re-paying the whole month. The figure stays editable — an agreed
+    // adjustment is normal, so this suggests rather than dictates.
+    var lastKey = '';
+    function loadEarned() {
+        if (!docGrp || !docSel || !earned) return;
+        var id = docSel.value, m = inp.value;
+        if (!id || !m) { earned.style.display = 'none'; lastKey = ''; return; }
+        var key = id + '|' + m;
+        if (key === lastKey) return;          // avoid refetching on unrelated changes
+        lastKey = key;
+
+        earned.style.display = '';
+        earned.className = 'earned-box';
+        earned.textContent = 'Checking what was earned…';
+
+        fetch('doctor_earned.php?doctor_id=' + encodeURIComponent(id) + '&month=' + encodeURIComponent(m), {
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function (d) {
+            if (d.bills === 0) {
+                earned.className = 'earned-box warn';
+                earned.innerHTML = '<strong>No paid consultations</strong> for this doctor in that month. '
+                    + 'Check the month before posting.';
+                return;
+            }
+            var html = '<div><strong>' + money(d.doctor) + '</strong> earned '
+                     + '<span class="muted">from ' + d.bills + ' paid consultation' + (d.bills === 1 ? '' : 's')
+                     + ' (' + money(d.gross) + ' gross';
+            if (d.tax > 0) { html += ', ' + money(d.tax) + ' tax withheld'; }
+            html += ')</span></div>';
+
+            if (d.already_paid > 0) {
+                html += '<div class="warn-line">Already disbursed for this month: <strong>'
+                      + money(d.already_paid) + '</strong>'
+                      + (d.suggested > 0 ? ' — balance ' + money(d.suggested) : ' — fully paid')
+                      + '</div>';
+            }
+            earned.className = 'earned-box' + (d.already_paid > 0 ? ' warn' : '');
+            earned.innerHTML = html;
+
+            // Only overwrite an untouched or auto-filled amount — never clobber
+            // a figure the admin deliberately typed.
+            if (amount && (!amount.value || amount.dataset.auto === '1')) {
+                amount.value = d.suggested > 0 ? d.suggested : '';
+                amount.dataset.auto = '1';
+            }
+        })
+        .catch(function () {
+            earned.className = 'earned-box warn';
+            earned.textContent = 'Could not load the earned figure — enter the amount manually.';
+        });
+    }
+
+    if (amount) {
+        // Any manual keystroke ends auto-fill ownership of the field.
+        amount.addEventListener('input', function () { amount.dataset.auto = ''; });
+    }
+
     function sync() {
         var opt = cat.options[cat.selectedIndex];
         var on = !!(opt && opt.getAttribute('data-period-based') === '1');
@@ -725,8 +876,25 @@ if (!$isAdmin) {
             inp.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
         }
         if (!on) { inp.value = ''; }
+
+        // Doctor picker follows its own flag, not the month flag.
+        if (docGrp && docSel) {
+            var needsDoc = !!(opt && opt.getAttribute('data-needs-doctor') === '1');
+            docGrp.style.display = needsDoc ? '' : 'none';
+            docSel.required = needsDoc;
+            if (!needsDoc) {
+                docSel.value = '';
+                if (earned) { earned.style.display = 'none'; }
+                lastKey = '';
+                if (amount && amount.dataset.auto === '1') { amount.value = ''; amount.dataset.auto = ''; }
+            } else {
+                loadEarned();
+            }
+        }
     }
     cat.addEventListener('change', sync);
+    if (docSel) { docSel.addEventListener('change', loadEarned); }
+    inp.addEventListener('change', loadEarned);
     sync();
 })();
 </script>

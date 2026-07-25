@@ -1078,3 +1078,97 @@ function doctor_split_sql(string $amt, string $share, string $hasTax, string $ta
             return "($remainder * $share / 100)";
     }
 }
+
+// ============================================================================
+// DOCTOR EARNED SHARE FOR A MONTH  (added 2026-07-26)
+//
+// What a doctor EARNED in a calendar month, so the Doctor Shares disbursement
+// can be pre-filled instead of typed from a spreadsheet. Cash basis: keyed off
+// when the bill was PAID (b.paid_at), matching how every other money figure in
+// this app is recognised.
+//
+// Consultations only. Procedures are configured but have never been billed
+// (doctor_procedures holds rates, no transaction table writes to them);
+// admission_bills.admitting_doctor_id carries no share %; er_bills has no
+// doctor at all; ipd_doctor_visits records who visited but attaches no rate.
+// So this is the complete earned figure TODAY, and the moment any of those
+// streams becomes payable this function is the one place to extend.
+//
+// Returns gross / tax / doctor / clinic plus the bill count. The tax figure is
+// what the clinic withholds and deposits — for a doctor who self-deposits
+// (consult_has_tax = 0, e.g. DR SALMAN A BAJWA) it is correctly zero, which is
+// NOT missing data.
+//
+// Amounts are unrounded; round at display. Returns zeros (never throws) if the
+// consult_share_pct columns or the bills/visits tables are absent.
+// ============================================================================
+function doctor_earned_for_month(PDO $pdo, int $doctorId, string $month): array {
+    $zero = ['gross' => 0.0, 'tax' => 0.0, 'doctor' => 0.0, 'clinic' => 0.0, 'bills' => 0];
+    if ($doctorId <= 0 || !preg_match('/^\d{4}-\d{2}$/', $month)) {
+        return $zero;
+    }
+    $start = $month . '-01';
+    // Exclusive upper bound: [1st of month, 1st of next month). Avoids both the
+    // 23:59:59 gap and any leap/short-month arithmetic.
+    $end = date('Y-m-01', strtotime($start . ' +1 month'));
+
+    $doc    = doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'doctor');
+    $tax    = doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'tax');
+    $clinic = doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'clinic');
+
+    try {
+        $q = $pdo->prepare("
+            SELECT COUNT(*)                            AS bills,
+                   COALESCE(SUM(b.paid_amount), 0)     AS gross,
+                   COALESCE(SUM($tax), 0)              AS tax,
+                   COALESCE(SUM($doc), 0)              AS doctor,
+                   COALESCE(SUM($clinic), 0)           AS clinic
+            FROM bills b
+            JOIN visits v ON v.id = b.visit_id
+            JOIN users dr ON dr.id = v.doctor_id
+            WHERE dr.id = ?
+              AND b.status = 'paid'
+              AND b.voided_at IS NULL
+              AND b.paid_at >= ? AND b.paid_at < ?
+        ");
+        $q->execute([$doctorId, $start, $end]);
+        $r = $q->fetch();
+    } catch (PDOException $e) {
+        error_log('[doctor_earned_for_month] ' . $e->getMessage());
+        return $zero;
+    }
+    if (!$r) {
+        return $zero;
+    }
+
+    // Refunds issued against this doctor's bills claw back earned share. Keyed
+    // off the refund's own date, so a refund in a later month reduces THAT
+    // month — the same rule the dashboard uses, and it keeps a settled month
+    // settled once Phase 5 freezes it.
+    $refund = 0.0;
+    try {
+        $rq = $pdo->prepare("
+            SELECT COALESCE(SUM(r.amount), 0)
+            FROM refunds r
+            JOIN bills b  ON b.id = r.bill_id
+            JOIN visits v ON v.id = b.visit_id
+            WHERE v.doctor_id = ? AND r.voided_at IS NULL
+              AND r.created_at >= ? AND r.created_at < ?
+        ");
+        $rq->execute([$doctorId, $start, $end]);
+        $refund = (float) $rq->fetchColumn();
+    } catch (PDOException $e) { /* no refunds table, or no bill_id column */ }
+
+    $gross = max(0.0, (float) $r['gross'] - $refund);
+    // Re-split the refund-adjusted gross rather than subtracting the raw refund
+    // from the doctor's cut, so tax/doctor/clinic still re-sum to gross.
+    $ratio = ((float) $r['gross']) > 0 ? $gross / (float) $r['gross'] : 0.0;
+
+    return [
+        'gross'  => $gross,
+        'tax'    => (float) $r['tax']    * $ratio,
+        'doctor' => (float) $r['doctor'] * $ratio,
+        'clinic' => (float) $r['clinic'] * $ratio,
+        'bills'  => (int) $r['bills'],
+    ];
+}

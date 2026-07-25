@@ -89,6 +89,7 @@ if (!function_exists('sb_icon')) {
             'user'     => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
             'clock'    => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
             'wallet'   => '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
+            'gear'     => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>',
         ];
         $p = $paths[$name] ?? '';
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
@@ -134,26 +135,48 @@ $sbGroups = [
              'perm' => 'IPD_VIEW_WARD'],
             ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php',
              'perm' => 'RECEPTION_MANAGE_BOOKINGS'],
+            // Money handling is the ADMIN's Finances group (below). For everyone
+            // else these two stay right here in Workspace, because for a
+            // receptionist posting an expense and closing the till IS the day's
+            // work, not a separate finance function. 'notAdmin' keeps the admin
+            // copy from appearing twice.
             ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',   'href' => 'expenses.php',
-             'perm' => 'FINANCIAL_POST_EXPENSES'],
+             'perm' => 'FINANCIAL_POST_EXPENSES', 'notAdmin' => true],
             ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'wallet',   'href' => 'shift_closing.php',
-             'perm' => 'RECEPTION_CLOSE_DAY'],
+             'perm' => 'RECEPTION_CLOSE_DAY', 'notAdmin' => true],
+        ],
+    ],
+    [
+        // Admin-only money group: post/approve spending, close the till, receive
+        // the cash. Reporting on that money lives in Analytics, not here.
+        'label' => 'Finances',
+        'admin' => true,
+        'items' => [
+            ['slug' => 'expenses',    'label' => 'Expenses',        'icon' => 'wallet',  'href' => 'expenses.php'],
+            ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',   'href' => 'shift_closing.php'],
+            ['slug' => 'handovers',   'label' => 'Cash Handovers',  'icon' => 'wallet',  'href' => 'admin_handovers.php'],
         ],
     ],
     [
         'label' => 'Management',
         'admin' => true,
         'items' => [
-            ['slug' => 'handovers',   'label' => 'Cash Handovers',  'icon' => 'wallet',  'href' => 'admin_handovers.php'],
-            ['slug' => 'staff',       'label' => 'Staff & Doctors', 'icon' => 'stetho',  'href' => 'staff.php'],
-            ['slug' => 'locations',   'label' => 'Cities & Areas',  'icon' => 'pin',     'href' => 'locations.php'],
-            ['slug' => 'er_services', 'label' => 'ER Services & Rates','icon' => 'receipt','href' => 'er_services.php'],
-            ['slug' => 'ipd_ward_rates', 'label' => 'In-Door Ward Rates','icon' => 'bed','href' => 'ipd_ward_rates.php'],
-            ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
-            ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
-            ['slug' => 'procedure_master', 'label' => 'Procedures',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
             ['slug' => 'sheet_log',   'label' => 'Google Sheet Sync','icon' => 'receipt', 'href' => 'sheet_log.php'],
-            ['slug' => 'permissions', 'label' => 'Permissions',     'icon' => 'lock',    'href' => 'permissions.php'],
+            // The nine configuration screens used to sit flat in this group,
+            // which made Management a wall of ten links where only two were
+            // day-to-day work. They are now ONE collapsible parent: the setup
+            // you touch rarely folds away, and the parent auto-expands when the
+            // current page is one of its children (see $sbActiveInChildren).
+            ['slug' => 'settings', 'label' => 'Settings', 'icon' => 'gear', 'href' => '#', 'children' => [
+                ['slug' => 'staff',       'label' => 'Staff & Doctors', 'icon' => 'stetho',  'href' => 'staff.php'],
+                ['slug' => 'permissions', 'label' => 'Permissions',     'icon' => 'lock',    'href' => 'permissions.php'],
+                ['slug' => 'locations',   'label' => 'Cities & Areas',  'icon' => 'pin',     'href' => 'locations.php'],
+                ['slug' => 'er_services', 'label' => 'ER Services & Rates','icon' => 'receipt','href' => 'er_services.php'],
+                ['slug' => 'ipd_ward_rates', 'label' => 'In-Door Ward Rates','icon' => 'bed','href' => 'ipd_ward_rates.php'],
+                ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
+                ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
+                ['slug' => 'procedure_master', 'label' => 'Procedures',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
+            ]],
         ],
     ],
     [
@@ -181,13 +204,21 @@ $sbGroups = [
 // 'perm' gates on an ACTUAL permission, not a role — so a per-user grant (like a
 // nurse given RECEPTION_CLOSE_DAY) surfaces the link even though the role
 // wouldn't. Admin holds every key, so perm checks pass for admins automatically.
-$sbItemVisible = function (array $it) use ($sbBaseRole) {
+$sbItemVisible = function (array $it) use ($sbBaseRole, $sbIsAdmin) {
+    // 'notAdmin': this item exists elsewhere in the admin's nav (Finances), so
+    // hide the non-admin copy from admins instead of listing it twice.
+    if (!empty($it['notAdmin']) && $sbIsAdmin) { return false; }
     if (!empty($it['roles']) && !in_array($sbBaseRole, $it['roles'], true)) { return false; }
     if (!empty($it['perm']) && !has_permission($it['perm'])) { return false; }
     return true;
 };
 
-$sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, $sbItemVisible) {
+// The drawer and the desktop rail render the SAME nav markup, so every id must
+// be unique per rendering or the second copy's collapse toggle would target the
+// first copy's submenu. This counter suffixes them.
+$sbSubmenuSeq = 0;
+
+$sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, $sbItemVisible, &$sbSubmenuSeq) {
     foreach ($sbGroups as $g) {
         // An 'admin' group is admin-by-default, but a perm-granted item inside it
         // still surfaces — same principle as the role gate below. Without this a
@@ -212,6 +243,39 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
         if (!$visibleItems) { continue; }
         echo '<div class="nav-group"><div class="nav-group-label">' . htmlspecialchars($g['label']) . '</div>';
         foreach ($visibleItems as $it) {
+            // ---- Collapsible parent (e.g. Settings) ----------------------
+            // Children are filtered by exactly the same visibility rule as
+            // top-level items, so a non-admin who was granted just one of them
+            // sees the Settings parent with only that one link inside. A parent
+            // whose children ALL filter out is dropped entirely rather than
+            // rendering an empty disclosure.
+            if (!empty($it['children'])) {
+                $kids = array_filter($it['children'], $sbItemVisible);
+                if (!$kids) { continue; }
+                $openHere = false;
+                foreach ($kids as $k) {
+                    if ($navActive === $k['slug']) { $openHere = true; break; }
+                }
+                $subId = 'sbSub' . (++$sbSubmenuSeq);
+                echo '<button type="button" class="nav-item nav-parent' . ($openHere ? ' open' : '') . '"'
+                   . ' aria-expanded="' . ($openHere ? 'true' : 'false') . '" aria-controls="' . $subId . '"'
+                   . ' onclick="himsToggleSub(this)">'
+                   . '<span class="nav-icon">' . sb_icon($it['icon']) . '</span> '
+                   . '<span class="nav-parent-label">' . htmlspecialchars($it['label']) . '</span>'
+                   . '<span class="nav-caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>'
+                   . '</button>';
+                echo '<div class="nav-sub' . ($openHere ? ' open' : '') . '" id="' . $subId . '">';
+                foreach ($kids as $k) {
+                    $kcls  = 'nav-item nav-child' . ($navActive === $k['slug'] ? ' active' : '');
+                    $kattr = $navActive === $k['slug'] ? ' aria-current="page"' : '';
+                    echo '<a class="' . $kcls . '" href="' . htmlspecialchars($k['href']) . '"' . $kattr . '>'
+                       . '<span class="nav-icon">' . sb_icon($k['icon']) . '</span> '
+                       . htmlspecialchars($k['label']) . '</a>';
+                }
+                echo '</div>';
+                continue;
+            }
+
             $cls = 'nav-item';
             if (!empty($it['disabled']))     { $cls .= ' disabled'; }
             if ($navActive === $it['slug'])  { $cls .= ' active'; }
