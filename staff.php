@@ -5,7 +5,7 @@ require_once __DIR__ . '/config/notify.php';
 
 // Three base roles: pick the identity, then grant capabilities on the
 // Permissions tab / per-person overrides. STAFF covers every desk/ward worker.
-$roles = ['STAFF', 'DOCTOR', 'ADMIN'];
+$roles = ['STAFF', 'MANAGER', 'DOCTOR', 'ADMIN'];
 // Doctor specialty categories. Only DENTAL prints the tooth logo on invoices;
 // every other value falls through to the general logo (see *_print_partial.php).
 // Keys must match the users.specialty ENUM (add_doctor_specialty_categories.sql).
@@ -597,6 +597,7 @@ $categoryLabels = [
     'nursing'   => 'Nursing & Ward',
     'clinical'  => 'Clinical',
     'financial' => 'Money & Billing',
+    'managerial' => 'Managerial & Oversight',
     'admin'     => 'System Administration',
 ];
 
@@ -638,8 +639,10 @@ function roleBadgeColor(string $role): array {
         'ADMIN' => ['#EDE9FE', '#6D28D9'],
         'DOCTOR' => ['#E0F2F1', '#0E5456'],
         'STAFF' => ['#F1F5F9', '#334155'],
-        // Legacy values kept so historical/unmigrated rows still render a badge.
+        // MANAGER is a live role again (add_manager_role.sql, 2026-07-25): a STAFF-
+        // shaped account pre-granted the oversight bundle.
         'MANAGER' => ['#FEF3C7', '#92400E'],
+        // Legacy values kept so historical/unmigrated rows still render a badge.
         'ACCOUNTANT' => ['#ECFDF5', '#047857'],
         'NURSE' => ['#FCE7F3', '#9D174D'],
         'RECEPTIONIST' => ['#F1F5F9', '#334155'],

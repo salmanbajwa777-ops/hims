@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(150) UNIQUE,
     phone VARCHAR(30) UNIQUE,
     password VARCHAR(255) NOT NULL,
-    base_role ENUM('ADMIN','DOCTOR','MANAGER','ACCOUNTANT','NURSE','RECEPTIONIST') NOT NULL,
+    base_role ENUM('ADMIN','DOCTOR','MANAGER','STAFF') NOT NULL,
     must_change_password TINYINT(1) NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS permissions (
 
 CREATE TABLE IF NOT EXISTS role_permissions (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    base_role ENUM('ADMIN','DOCTOR','MANAGER','ACCOUNTANT','NURSE','RECEPTIONIST') NOT NULL,
+    base_role ENUM('ADMIN','DOCTOR','MANAGER','STAFF') NOT NULL,
     permission_id INT NOT NULL,
     FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE,
     UNIQUE KEY uniq_role_perm (base_role, permission_id)

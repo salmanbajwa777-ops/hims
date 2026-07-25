@@ -13,6 +13,7 @@ $categoryLabels = [
     'nursing'   => 'Nursing & Ward',
     'clinical'  => 'Clinical',
     'financial' => 'Money & Billing',
+    'managerial' => 'Managerial & Oversight',
     'admin'     => 'System Administration',
 ];
 
