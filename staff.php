@@ -10,6 +10,11 @@ $roles = ['STAFF', 'DOCTOR', 'ADMIN'];
 // every other value falls through to the general logo (see *_print_partial.php).
 // Keys must match the users.specialty ENUM (add_doctor_specialty_categories.sql).
 const SPECIALTY_OPTIONS = ['GENERAL', 'PEDIATRICIAN', 'ENT', 'DENTAL', 'PEDIATRIC_SURGEON'];
+// Consultation-invoice paper size, saved per doctor. Reception never picks a size —
+// the slip prints in the visiting doctor's saved size automatically (see
+// checkout.php's print branch + views/invoice_print_partial.php). A5 is the default
+// so every existing doctor keeps today's slip until an admin opts them into A4.
+const INVOICE_PAPER_OPTIONS = ['A5', 'A4'];
 $specialtyLabels = [
     'GENERAL' => 'General',
     'PEDIATRICIAN' => 'Pediatrician',
@@ -51,6 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     $password = trim($_POST['temp_password'] ?? '') !== '' ? trim($_POST['temp_password']) : DEFAULT_STAFF_PASSWORD;
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $specialty = in_array($_POST['specialty'] ?? '', SPECIALTY_OPTIONS, true) ? $_POST['specialty'] : 'GENERAL';
+    // Per-doctor invoice paper size (A5 default; only meaningful for doctors, but
+    // harmless on other roles since their visits never raise a consultation slip).
+    $invoicePaperSize = in_array($_POST['invoice_paper_size'] ?? '', INVOICE_PAPER_OPTIONS, true) ? $_POST['invoice_paper_size'] : 'A5';
     // Consultation revenue share (doctors only; zeroed for other roles).
     // Rule: tax comes off the FULL fee first, then the share % splits the net —
     // see sql/add_consult_revenue_share.sql. Non-taxable doctors split the full fee.
@@ -158,6 +166,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
 
                 $newUserId = (int) $pdo->lastInsertId();
 
+                // Invoice paper size lives in its own statement so the main INSERT keeps
+                // its existing pre-migration fallback untouched. No-op (silently) until
+                // sql/add_invoice_paper_size.sql has been applied.
+                try {
+                    $pdo->prepare('UPDATE users SET invoice_paper_size = ? WHERE id = ?')
+                        ->execute([$invoicePaperSize, $newUserId]);
+                } catch (PDOException $e) { /* column not migrated yet */ }
+
                 $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
 
                 foreach ($pendingDocs as $doc) {
@@ -203,6 +219,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $resetPassword = ($_POST['reset_password'] ?? '') === '1';
     $maxDiscountPct = trim($_POST['max_discount_pct'] ?? '') !== '' ? (float) $_POST['max_discount_pct'] : 0;
     $specialty = in_array($_POST['specialty'] ?? '', SPECIALTY_OPTIONS, true) ? $_POST['specialty'] : 'GENERAL';
+    // Per-doctor invoice paper size (A5 default). See add_staff for the rationale.
+    $invoicePaperSize = in_array($_POST['invoice_paper_size'] ?? '', INVOICE_PAPER_OPTIONS, true) ? $_POST['invoice_paper_size'] : 'A5';
     // Consultation revenue share — same rules as add_staff (tax off the full fee
     // first, then the share split; zeroed for non-doctor roles).
     $consultSharePct = trim($_POST['consult_share_pct'] ?? '') !== '' ? (float) $_POST['consult_share_pct'] : 0;
@@ -336,6 +354,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                         ]);
                     }
                 }
+
+                // See add_staff: standalone so the main UPDATE keeps its fallback path.
+                try {
+                    $pdo->prepare('UPDATE users SET invoice_paper_size = ? WHERE id = ?')
+                        ->execute([$invoicePaperSize, $editId]);
+                } catch (PDOException $e) { /* column not migrated yet */ }
 
                 $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
 
@@ -539,6 +563,20 @@ try {
     // Tolerate either migration (is_active / consult revenue share) not being run yet.
     $staff = $pdo->query('SELECT id, name, email, phone, base_role, must_change_password, 1 AS is_active, max_discount_pct, specialty, 0 AS consult_share_pct, 0 AS consult_has_tax, 0 AS consult_tax_pct, created_at FROM users ORDER BY name ASC')->fetchAll();
 }
+// Paper size is fetched separately so it's independent of the consult-share fallback
+// above — a missing column here must not knock out the rest of the listing. Defaults
+// to A5 for everyone if sql/add_invoice_paper_size.sql hasn't been applied.
+$paperSizes = [];
+try {
+    foreach ($pdo->query('SELECT id, invoice_paper_size FROM users')->fetchAll() as $r) {
+        $paperSizes[(int) $r['id']] = $r['invoice_paper_size'] ?: 'A5';
+    }
+} catch (PDOException $e) { /* column not migrated yet */ }
+foreach ($staff as &$s) {
+    $s['invoice_paper_size'] = $paperSizes[(int) $s['id']] ?? 'A5';
+}
+unset($s);
+
 $doctors = array_values(array_filter($staff, fn($s) => $s['base_role'] === 'DOCTOR'));
 $otherStaff = array_values(array_filter($staff, fn($s) => $s['base_role'] !== 'DOCTOR'));
 
@@ -769,6 +807,11 @@ require __DIR__ . '/partials/sidebar.php';
                                     Share <?= rtrim(rtrim(number_format((float) $s['consult_share_pct'], 2), '0'), '.') ?>%<?php if ((int) ($s['consult_has_tax'] ?? 0) === 1): ?> · tax <?= rtrim(rtrim(number_format((float) $s['consult_tax_pct'], 2), '0'), '.') ?>%<?php else: ?> · no tax<?php endif; ?>
                                 </div>
                                 <?php endif; ?>
+                                <?php if ($s['base_role'] === 'DOCTOR'): ?>
+                                <div class="muted" style="font-size:11.5px; margin-top:4px;">
+                                    Invoice <?= htmlspecialchars($s['invoice_paper_size']) ?>
+                                </div>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <?php if ((int) $s['is_active'] === 1): ?>
@@ -794,6 +837,7 @@ require __DIR__ . '/partials/sidebar.php';
                                    data-role="<?= htmlspecialchars($s['base_role'], ENT_QUOTES) ?>"
                                    data-discount="<?= htmlspecialchars((string) $s['max_discount_pct'], ENT_QUOTES) ?>"
                                    data-specialty="<?= htmlspecialchars($s['specialty'], ENT_QUOTES) ?>"
+                                   data-papersize="<?= htmlspecialchars($s['invoice_paper_size'], ENT_QUOTES) ?>"
                                    data-sharepct="<?= htmlspecialchars((string) $s['consult_share_pct'], ENT_QUOTES) ?>"
                                    data-hastax="<?= (int) $s['consult_has_tax'] ?>"
                                    data-taxpct="<?= htmlspecialchars((string) $s['consult_tax_pct'], ENT_QUOTES) ?>"
@@ -923,6 +967,13 @@ require __DIR__ . '/partials/sidebar.php';
                                 <?php foreach ($specialtyLabels as $specValue => $specLabel): ?>
                                     <option value="<?= $specValue ?>"><?= htmlspecialchars($specLabel) ?></option>
                                 <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="field" id="invoicePaperField" style="display:none;">
+                            <label for="invoice_paper_size">Invoice Paper Size <span class="opt">(the consultation slip prints in this size for their visits — reception picks nothing)</span></label>
+                            <select id="invoice_paper_size" name="invoice_paper_size">
+                                <option value="A5">A5 (compact receipt)</option>
+                                <option value="A4">A4 (full page)</option>
                             </select>
                         </div>
                         <div class="field" id="consultShareField" style="display:none;">
@@ -1109,6 +1160,7 @@ const submitBtn = document.getElementById('submitBtn');
 const passwordField = document.getElementById('passwordField');
 const tempPasswordField = document.getElementById('tempPasswordField');
 const specialtyField = document.getElementById('specialtyField');
+const invoicePaperField = document.getElementById('invoicePaperField');
 const baseRoleSelect = document.getElementById('base_role');
 const consultShareField = document.getElementById('consultShareField');
 const consultTaxField = document.getElementById('consultTaxField');
@@ -1121,6 +1173,7 @@ const consultShareHint = document.getElementById('consultShareHint');
 function updateSpecialtyVisibility() {
     const isDoctor = baseRoleSelect.value === 'DOCTOR';
     specialtyField.style.display = isDoctor ? '' : 'none';
+    invoicePaperField.style.display = isDoctor ? '' : 'none';
     consultShareField.style.display = isDoctor ? '' : 'none';
     consultTaxField.style.display = isDoctor ? '' : 'none';
 }
@@ -1162,6 +1215,7 @@ function resetToAddMode() {
     submitBtn.textContent = 'Create Account';
     document.getElementById('existingDocsWrap').style.display = 'none';
     document.getElementById('specialty').value = 'GENERAL';
+    document.getElementById('invoice_paper_size').value = 'A5';
     consultShareInput.value = '0';
     consultHasTaxCb.checked = false;
     consultTaxPctInput.value = '';
@@ -1179,6 +1233,7 @@ function openEditPanel(data) {
     document.getElementById('base_role').value = data.role || '';
     document.getElementById('max_discount_pct').value = data.discount || '0';
     document.getElementById('specialty').value = data.specialty || 'GENERAL';
+    document.getElementById('invoice_paper_size').value = data.papersize || 'A5';
     consultShareInput.value = data.sharepct || '0';
     consultHasTaxCb.checked = data.hastax === '1';
     consultTaxPctInput.value = consultHasTaxCb.checked ? (data.taxpct || '') : '';

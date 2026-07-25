@@ -53,6 +53,15 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
 
 // Everything below the vitals row is left blank on purpose: it is the doctor's
 // handwriting area, so the sheet must not stretch to fill it.
+
+// Paper size is a per-doctor setting (users.invoice_paper_size, chosen on staff.php).
+// A5 is the original slip, unchanged. A4 keeps the SAME layout but enlarges every
+// metric ~1.35x so it reads as a full-page document rather than a small receipt on a
+// big sheet — Option B. Reception never chooses; the size follows the visiting doctor.
+$isA4 = ($bill['invoice_paper_size'] ?? 'A5') === 'A4';
+$pageW = $isA4 ? '210mm' : '148mm';   // sheet width
+$pageH = $isA4 ? '297mm' : '210mm';   // sheet height (print box)
+$pageSize = $isA4 ? 'A4' : 'A5';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -65,12 +74,12 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { width: 148mm; margin: 0; padding: 0; }
+        html, body { width: <?= $pageW ?>; margin: 0; padding: 0; }
         body {
             font-family: 'Lora', Georgia, 'Times New Roman', serif;
             font-size: 9.5px; line-height: 1.3; color: #000; background: #fff;
         }
-        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
+        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: <?= $pageH ?>; }
 
         /* ---------- Header box ---------- */
         /* Bottom padding is ~1.4mm so the tables sit hard against the box edge and the
@@ -160,11 +169,36 @@ if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
         }
 
         @media print {
-            html, body { width: 148mm; height: 210mm; }
-            .sheet { min-height: 210mm; padding: 6mm 6mm 4mm; }
+            html, body { width: <?= $pageW ?>; height: <?= $pageH ?>; }
+            .sheet { min-height: <?= $pageH ?>; padding: 6mm 6mm 4mm; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            @page { size: A5; margin: 0; }
+            @page { size: <?= $pageSize ?>; margin: 0; }
         }
+<?php if ($isA4): ?>
+        /* ---------- A4 full-page overrides (Option B) ---------- */
+        /* Same structure as A5 — only scaled up. Header padding widens so the two
+           halves keep breathing room at the larger scale and the right column never
+           runs past the sheet edge. Nothing here uses magic pixel offsets: every value
+           is a proportional bump of its A5 counterpart. */
+        .sheet { font-size: 13px; padding: 10mm 10mm 8mm; }
+        .head-box { padding: 4mm 5mm 2mm; gap: 8mm; }
+        .band-1 { height: 44px; }
+        .band-2 { height: 40px; }
+        .clinic-logo { height: 44px; }
+        .brandtext { height: 44px; }
+        .clinic-name { font-size: 24px; }
+        .website { font-size: 10px; }
+        .tagline { font-size: 18px; }
+        .addr { font-size: 12px; }
+        .ids, .meta { font-size: 12.5px; }
+        .ids td, .meta td { height: 26px; }
+        .fee-table, .vitals-table { font-size: 13px; }
+        .fee-table td, .fee-table th,
+        .vitals-table td, .vitals-table th { padding: 7px 9px; }
+        .vitals-cell td { height: 14mm; }
+        .quote { font-size: 13px; padding-top: 8mm; }
+        .foot { font-size: 10px; }
+<?php endif; ?>
     </style>
 </head>
 <body>

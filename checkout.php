@@ -187,16 +187,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
 if (isset($_GET['print']) && isset($_GET['bill_id'])) {
     $billId = (int) $_GET['bill_id'];
 
-    $stmt = $pdo->prepare('
+    // d.invoice_paper_size drives the slip's page size per doctor (A5 default). It's
+    // requested via a separate try/catch so this print branch keeps working on servers
+    // where sql/add_invoice_paper_size.sql hasn't been applied yet.
+    $paperCol = 'd.invoice_paper_size';
+    try {
+        $pdo->query('SELECT invoice_paper_size FROM users LIMIT 1');
+    } catch (PDOException $e) {
+        $paperCol = "'A5'";
+    }
+
+    $stmt = $pdo->prepare("
         SELECT b.*, v.fee, v.discount_pct, v.token_no,
                p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
-               d.name AS doctor_name, d.specialty AS doctor_specialty
+               d.name AS doctor_name, d.specialty AS doctor_specialty,
+               $paperCol AS invoice_paper_size
         FROM bills b
         JOIN visits v ON v.id = b.visit_id
         JOIN patients p ON p.id = v.patient_id
         JOIN users d ON d.id = v.doctor_id
         WHERE b.id = ?
-    ');
+    ");
     $stmt->execute([$billId]);
     $bill = $stmt->fetch();
 
