@@ -119,6 +119,53 @@ try {
 } catch (Throwable $e) { $weekBars = []; }
 $weekAvg = $weekBars ? $weekTotal / count($weekBars) : 0.0;
 
+// ---- Net collections helper for an arbitrary [start, end) datetime window ---
+$netCollected = function (string $start, string $end) use ($pdo) {
+    $q = $pdo->prepare("SELECT COALESCE(SUM(paid_amount),0) FROM bills WHERE status='paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?");
+    $q->execute([$start, $end]);
+    $val = (float) $q->fetchColumn();
+    try {
+        $rq = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM refunds WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?");
+        $rq->execute([$start, $end]);
+        $val -= (float) $rq->fetchColumn();
+    } catch (Throwable $e) { /* no refunds table */ }
+    return max(0.0, $val);
+};
+
+// ---- Monthly revenue: last 4 calendar weeks (Mon–Sun buckets) --------------
+$monthBars = []; $monthTotal = 0.0; $monthPeakLabel = ''; $monthPeakVal = 0.0;
+try {
+    // Monday of the current week
+    $dow = (int) date('N', strtotime($bizToday));           // 1=Mon..7=Sun
+    $thisMon = date('Y-m-d', strtotime($bizToday . ' -' . ($dow - 1) . ' day'));
+    for ($w = 3; $w >= 0; $w--) {
+        $wkStart = date('Y-m-d', strtotime($thisMon . " -$w week"));
+        $wkEnd   = date('Y-m-d', strtotime($wkStart . ' +7 day'));
+        $val = $netCollected($wkStart . ' 00:00:00', $wkEnd . ' 00:00:00');
+        $label = date('j M', strtotime($wkStart));
+        $monthBars[] = ['day' => $label, 'val' => $val];
+        $monthTotal += $val;
+        if ($val >= $monthPeakVal) { $monthPeakVal = $val; $monthPeakLabel = 'Wk of ' . $label; }
+    }
+} catch (Throwable $e) { $monthBars = []; }
+$monthAvg = $monthBars ? $monthTotal / count($monthBars) : 0.0;
+
+// ---- Yearly revenue: last 12 calendar months -------------------------------
+$yearBars = []; $yearTotal = 0.0; $yearPeakLabel = ''; $yearPeakVal = 0.0;
+try {
+    $firstOfThisMonth = date('Y-m-01', strtotime($bizToday));
+    for ($m = 11; $m >= 0; $m--) {
+        $mStart = date('Y-m-01', strtotime($firstOfThisMonth . " -$m month"));
+        $mEnd   = date('Y-m-01', strtotime($mStart . ' +1 month'));
+        $val = $netCollected($mStart . ' 00:00:00', $mEnd . ' 00:00:00');
+        $label = date('M', strtotime($mStart));
+        $yearBars[] = ['day' => $label, 'val' => $val];
+        $yearTotal += $val;
+        if ($val >= $yearPeakVal) { $yearPeakVal = $val; $yearPeakLabel = date('F', strtotime($mStart)); }
+    }
+} catch (Throwable $e) { $yearBars = []; }
+$yearAvg = $yearBars ? $yearTotal / count($yearBars) : 0.0;
+
 // ---- Doctor performance today (real; no fake ratings) ---------------------
 $doctorPerf = [];
 try {
@@ -379,6 +426,8 @@ $headExtra = <<<CSS
 .chart-tab { padding: 6px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); cursor: pointer; }
 .chart-tab.active { background: #fff; color: var(--primary-dark); box-shadow: var(--shadow-sm); }
 .chart-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.rev-panel { display: none; }
+.rev-panel.active { display: block; }
 .bars { display: flex; align-items: flex-end; gap: 14px; height: 160px; margin-top: 8px; }
 .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
 .bar-fill {
@@ -537,35 +586,47 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="chart-head">
                         <div>
                             <div class="section-title" style="margin-bottom:0;">Revenue Analytics</div>
-                            <div class="section-sub" style="margin-bottom:0;">Weekly performance overview</div>
+                            <div class="section-sub" style="margin-bottom:0;" id="revSub">Weekly performance overview</div>
                         </div>
-                        <div class="chart-tabs">
-                            <div class="chart-tab active">Week</div>
-                            <div class="chart-tab">Month</div>
-                            <div class="chart-tab">Year</div>
+                        <div class="chart-tabs" id="revTabs">
+                            <div class="chart-tab active" data-range="week" data-sub="Weekly performance overview">Week</div>
+                            <div class="chart-tab" data-range="month" data-sub="Last 4 weeks">Month</div>
+                            <div class="chart-tab" data-range="year" data-sub="Last 12 months">Year</div>
                         </div>
                     </div>
-                    <div class="bars">
-                        <?php
+                    <?php
+                    // range key => [bars, total, avg, peakLabel, peakVal, totalLabel, avgLabel, peakRowLabel]
+                    $revPanels = [
+                        'week'  => [$weekBars,  $weekTotal,  $weekAvg,  $weekPeakDay,   $weekPeakVal,  '7-day Revenue', 'Daily Average',  'Peak Day'],
+                        'month' => [$monthBars, $monthTotal, $monthAvg, $monthPeakLabel, $monthPeakVal, '4-week Revenue', 'Weekly Average', 'Peak Week'],
+                        'year'  => [$yearBars,  $yearTotal,  $yearAvg,  $yearPeakLabel,  $yearPeakVal,  '12-month Revenue', 'Monthly Average', 'Peak Month'],
+                    ];
+                    foreach ($revPanels as $rk => $p):
+                        [$bars, $total, $avg, $peakLabel, $peakVal, $totalLbl, $avgLbl, $peakRowLbl] = $p;
                         $barMax = 0;
-                        foreach ($weekBars as $b) { $barMax = max($barMax, $b['val']); }
-                        if (!$weekBars): ?>
-                            <div style="width:100%;text-align:center;color:var(--text-muted);font-size:13px;align-self:center;">No revenue data yet.</div>
-                        <?php else:
-                        foreach ($weekBars as $b):
-                            $h = $barMax > 0 ? max(2, round(($b['val'] / $barMax) * 100)) : 2;
-                        ?>
-                        <div class="bar-col">
-                            <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= htmlspecialchars($b['day']) ?>: Rs <?= number_format($b['val']) ?>"></div>
-                            <div class="bar-day"><?= htmlspecialchars($b['day']) ?></div>
+                        foreach ($bars as $b) { $barMax = max($barMax, $b['val']); }
+                    ?>
+                    <div class="rev-panel<?= $rk === 'week' ? ' active' : '' ?>" data-range="<?= $rk ?>">
+                        <div class="bars">
+                            <?php if (!$bars): ?>
+                                <div style="width:100%;text-align:center;color:var(--text-muted);font-size:13px;align-self:center;">No revenue data yet.</div>
+                            <?php else:
+                            foreach ($bars as $b):
+                                $h = $barMax > 0 ? max(2, round(($b['val'] / $barMax) * 100)) : 2;
+                            ?>
+                            <div class="bar-col">
+                                <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= htmlspecialchars($b['day']) ?>: Rs <?= number_format($b['val']) ?>"></div>
+                                <div class="bar-day"><?= htmlspecialchars($b['day']) ?></div>
+                            </div>
+                            <?php endforeach; endif; ?>
                         </div>
-                        <?php endforeach; endif; ?>
+                        <div class="revenue-summary">
+                            <div class="summary-row"><span class="label"><?= $totalLbl ?></span><span class="value">Rs <?= number_format($total) ?></span></div>
+                            <div class="summary-row"><span class="label"><?= $avgLbl ?></span><span class="value">Rs <?= number_format($avg) ?></span></div>
+                            <div class="summary-row"><span class="label"><?= $peakRowLbl ?></span><span class="value"><?= $peakVal > 0 ? htmlspecialchars($peakLabel) : '—' ?></span></div>
+                        </div>
                     </div>
-                    <div class="revenue-summary">
-                        <div class="summary-row"><span class="label">7-day Revenue</span><span class="value">Rs <?= number_format($weekTotal) ?></span></div>
-                        <div class="summary-row"><span class="label">Daily Average</span><span class="value">Rs <?= number_format($weekAvg) ?></span></div>
-                        <div class="summary-row"><span class="label">Peak Day</span><span class="value"><?= $weekPeakVal > 0 ? htmlspecialchars($weekPeakDay) : '—' ?></span></div>
-                    </div>
+                    <?php endforeach; ?>
                 </div>
 
                 <div class="card">
@@ -770,5 +831,22 @@ require __DIR__ . '/partials/sidebar.php';
     </div>
 </div>
 <script src="assets/js/date-picker.js"></script>
+<script>
+(function () {
+    var tabs = document.getElementById('revTabs');
+    if (!tabs) return;
+    var sub = document.getElementById('revSub');
+    tabs.addEventListener('click', function (e) {
+        var tab = e.target.closest('.chart-tab');
+        if (!tab) return;
+        var range = tab.getAttribute('data-range');
+        tabs.querySelectorAll('.chart-tab').forEach(function (t) { t.classList.toggle('active', t === tab); });
+        document.querySelectorAll('.rev-panel').forEach(function (p) {
+            p.classList.toggle('active', p.getAttribute('data-range') === range);
+        });
+        if (sub) sub.textContent = tab.getAttribute('data-sub') || sub.textContent;
+    });
+})();
+</script>
 </body>
 </html>
