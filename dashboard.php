@@ -95,73 +95,86 @@ try {
     $todayOutstanding = (float) $o->fetchColumn();
 } catch (Throwable $e) { /* leave zero */ }
 
+// ---- Revenue bucket helper: net collected + doctor share for a window ------
+// Doctor share uses the established consult formula (tax off full fee first,
+// then split) and degrades to 0 if the consult_share_pct columns aren't live.
+// Returns ['val'=>net total, 'doc'=>doctor share, 'clinic'=>clinic share].
+$revBucket = function (string $start, string $end) use ($pdo) {
+    $q = $pdo->prepare("SELECT COALESCE(SUM(paid_amount),0) FROM bills WHERE status='paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?");
+    $q->execute([$start, $end]);
+    $total = (float) $q->fetchColumn();
+    try {
+        $rq = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM refunds WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?");
+        $rq->execute([$start, $end]);
+        $total -= (float) $rq->fetchColumn();
+    } catch (Throwable $e) { /* no refunds table */ }
+    $total = max(0.0, $total);
+
+    $doc = 0.0;
+    try {
+        $ds = $pdo->prepare("
+            SELECT COALESCE(SUM(
+                CASE WHEN dr.consult_has_tax = 1
+                     THEN (b.paid_amount - b.paid_amount * dr.consult_tax_pct / 100) * dr.consult_share_pct / 100
+                     ELSE b.paid_amount * dr.consult_share_pct / 100 END
+            ), 0)
+            FROM bills b
+            JOIN visits v ON v.id = b.visit_id
+            JOIN users dr ON dr.id = v.doctor_id
+            WHERE b.status = 'paid' AND b.voided_at IS NULL AND b.paid_at >= ? AND b.paid_at < ?
+        ");
+        $ds->execute([$start, $end]);
+        $doc = (float) $ds->fetchColumn();
+    } catch (Throwable $e) { /* consult share columns missing — leave zero */ }
+    $doc = max(0.0, min($doc, $total));            // never exceed net collected
+    return ['val' => $total, 'doc' => $doc, 'clinic' => max(0.0, $total - $doc)];
+};
+
 // ---- Weekly revenue: net collections per business day, last 7 days --------
-$weekBars = [];   // [ ['day'=>'Mon', 'val'=>float], ... ]
-$weekTotal = 0.0; $weekPeakDay = ''; $weekPeakVal = 0.0;
+$weekBars = [];   // [ ['day'=>'Mon', 'val'=>, 'doc'=>, 'clinic'=>], ... ]
+$weekTotal = 0.0; $weekDocTotal = 0.0; $weekPeakDay = ''; $weekPeakVal = 0.0;
 try {
     for ($i = 6; $i >= 0; $i--) {
         $d = date('Y-m-d', strtotime($bizToday . " -$i day"));
         [$ws, $we] = business_day_window($pdo, $d);
-        $q = $pdo->prepare("SELECT COALESCE(SUM(paid_amount),0) FROM bills WHERE status='paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?");
-        $q->execute([$ws, $we]);
-        $val = (float) $q->fetchColumn();
-        try {
-            $rq = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM refunds WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?");
-            $rq->execute([$ws, $we]);
-            $val -= (float) $rq->fetchColumn();
-        } catch (Throwable $e) { /* no refunds table */ }
-        $val = max(0, $val);
-        $label = date('D', strtotime($d));
-        $weekBars[] = ['day' => $label, 'val' => $val];
-        $weekTotal += $val;
-        if ($val >= $weekPeakVal) { $weekPeakVal = $val; $weekPeakDay = date('l', strtotime($d)); }
+        $bk = $revBucket($ws, $we);
+        $bk['day'] = date('D', strtotime($d));
+        $weekBars[] = $bk;
+        $weekTotal += $bk['val']; $weekDocTotal += $bk['doc'];
+        if ($bk['val'] >= $weekPeakVal) { $weekPeakVal = $bk['val']; $weekPeakDay = date('l', strtotime($d)); }
     }
 } catch (Throwable $e) { $weekBars = []; }
 $weekAvg = $weekBars ? $weekTotal / count($weekBars) : 0.0;
 
-// ---- Net collections helper for an arbitrary [start, end) datetime window ---
-$netCollected = function (string $start, string $end) use ($pdo) {
-    $q = $pdo->prepare("SELECT COALESCE(SUM(paid_amount),0) FROM bills WHERE status='paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?");
-    $q->execute([$start, $end]);
-    $val = (float) $q->fetchColumn();
-    try {
-        $rq = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM refunds WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?");
-        $rq->execute([$start, $end]);
-        $val -= (float) $rq->fetchColumn();
-    } catch (Throwable $e) { /* no refunds table */ }
-    return max(0.0, $val);
-};
-
 // ---- Monthly revenue: last 4 calendar weeks (Mon–Sun buckets) --------------
-$monthBars = []; $monthTotal = 0.0; $monthPeakLabel = ''; $monthPeakVal = 0.0;
+$monthBars = []; $monthTotal = 0.0; $monthDocTotal = 0.0; $monthPeakLabel = ''; $monthPeakVal = 0.0;
 try {
-    // Monday of the current week
     $dow = (int) date('N', strtotime($bizToday));           // 1=Mon..7=Sun
     $thisMon = date('Y-m-d', strtotime($bizToday . ' -' . ($dow - 1) . ' day'));
     for ($w = 3; $w >= 0; $w--) {
         $wkStart = date('Y-m-d', strtotime($thisMon . " -$w week"));
         $wkEnd   = date('Y-m-d', strtotime($wkStart . ' +7 day'));
-        $val = $netCollected($wkStart . ' 00:00:00', $wkEnd . ' 00:00:00');
-        $label = date('j M', strtotime($wkStart));
-        $monthBars[] = ['day' => $label, 'val' => $val];
-        $monthTotal += $val;
-        if ($val >= $monthPeakVal) { $monthPeakVal = $val; $monthPeakLabel = 'Wk of ' . $label; }
+        $bk = $revBucket($wkStart . ' 00:00:00', $wkEnd . ' 00:00:00');
+        $bk['day'] = date('j M', strtotime($wkStart));
+        $monthBars[] = $bk;
+        $monthTotal += $bk['val']; $monthDocTotal += $bk['doc'];
+        if ($bk['val'] >= $monthPeakVal) { $monthPeakVal = $bk['val']; $monthPeakLabel = 'Wk of ' . $bk['day']; }
     }
 } catch (Throwable $e) { $monthBars = []; }
 $monthAvg = $monthBars ? $monthTotal / count($monthBars) : 0.0;
 
 // ---- Yearly revenue: last 12 calendar months -------------------------------
-$yearBars = []; $yearTotal = 0.0; $yearPeakLabel = ''; $yearPeakVal = 0.0;
+$yearBars = []; $yearTotal = 0.0; $yearDocTotal = 0.0; $yearPeakLabel = ''; $yearPeakVal = 0.0;
 try {
     $firstOfThisMonth = date('Y-m-01', strtotime($bizToday));
     for ($m = 11; $m >= 0; $m--) {
         $mStart = date('Y-m-01', strtotime($firstOfThisMonth . " -$m month"));
         $mEnd   = date('Y-m-01', strtotime($mStart . ' +1 month'));
-        $val = $netCollected($mStart . ' 00:00:00', $mEnd . ' 00:00:00');
-        $label = date('M', strtotime($mStart));
-        $yearBars[] = ['day' => $label, 'val' => $val];
-        $yearTotal += $val;
-        if ($val >= $yearPeakVal) { $yearPeakVal = $val; $yearPeakLabel = date('F', strtotime($mStart)); }
+        $bk = $revBucket($mStart . ' 00:00:00', $mEnd . ' 00:00:00');
+        $bk['day'] = date('M', strtotime($mStart));
+        $yearBars[] = $bk;
+        $yearTotal += $bk['val']; $yearDocTotal += $bk['doc'];
+        if ($bk['val'] >= $yearPeakVal) { $yearPeakVal = $bk['val']; $yearPeakLabel = date('F', strtotime($mStart)); }
     }
 } catch (Throwable $e) { $yearBars = []; }
 $yearAvg = $yearBars ? $yearTotal / count($yearBars) : 0.0;
@@ -431,10 +444,32 @@ $headExtra = <<<CSS
 .bars { display: flex; align-items: flex-end; gap: 14px; height: 160px; margin-top: 8px; }
 .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
 .bar-fill {
+    position: relative;
     width: 100%; max-width: 24px; border-radius: 4px 4px 0 0;
-    background: linear-gradient(180deg, var(--primary), var(--primary-dark));
+    background: linear-gradient(180deg, var(--primary), var(--primary-dark)); /* clinic share (base) */
+    overflow: hidden;
 }
+/* Doctor share sits on TOP of the stack (visually above clinic). */
+.bar-doctor { position: absolute; top: 0; left: 0; right: 0; background: var(--amber, #F59E0B); }
 .bar-day { font-size: 11px; color: var(--text-muted); }
+/* Legend */
+.chart-legend { display: flex; gap: 16px; margin: 4px 0 2px; }
+.lg-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.lg-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.lg-clinic { background: linear-gradient(180deg, var(--primary), var(--primary-dark)); }
+.lg-doctor { background: var(--amber, #F59E0B); }
+/* Ledger */
+.ledger-toggle {
+    margin-top: 16px; background: none; border: none; padding: 0; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; color: var(--primary-dark);
+}
+.ledger-toggle:hover { text-decoration: underline; }
+.ledger-wrap { margin-top: 12px; overflow-x: auto; }
+.ledger-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ledger-table th, .ledger-table td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.ledger-table th { color: var(--text-secondary); font-weight: 600; }
+.ledger-table td.num, .ledger-table th.num { text-align: right; white-space: nowrap; }
+.ledger-table tfoot td { font-weight: 700; border-bottom: none; border-top: 2px solid var(--border); }
 .revenue-summary { display: flex; flex-direction: column; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .summary-row { display: flex; justify-content: space-between; align-items: baseline; }
 .summary-row .label { font-size: 12.5px; color: var(--text-secondary); }
@@ -594,15 +629,20 @@ require __DIR__ . '/partials/sidebar.php';
                             <div class="chart-tab" data-range="year" data-sub="Last 12 months">Year</div>
                         </div>
                     </div>
+                    <div class="chart-legend">
+                        <span class="lg-item"><span class="lg-swatch lg-clinic"></span>Clinic share</span>
+                        <span class="lg-item"><span class="lg-swatch lg-doctor"></span>Doctor share</span>
+                    </div>
                     <?php
-                    // range key => [bars, total, avg, peakLabel, peakVal, totalLabel, avgLabel, peakRowLabel]
+                    // range key => [bars, total, docTotal, avg, peakLabel, peakVal, totalLbl, avgLbl, peakRowLbl, periodCol]
                     $revPanels = [
-                        'week'  => [$weekBars,  $weekTotal,  $weekAvg,  $weekPeakDay,   $weekPeakVal,  '7-day Revenue', 'Daily Average',  'Peak Day'],
-                        'month' => [$monthBars, $monthTotal, $monthAvg, $monthPeakLabel, $monthPeakVal, '4-week Revenue', 'Weekly Average', 'Peak Week'],
-                        'year'  => [$yearBars,  $yearTotal,  $yearAvg,  $yearPeakLabel,  $yearPeakVal,  '12-month Revenue', 'Monthly Average', 'Peak Month'],
+                        'week'  => [$weekBars,  $weekTotal,  $weekDocTotal,  $weekAvg,  $weekPeakDay,    $weekPeakVal,  '7-day Revenue',   'Daily Average',  'Peak Day',   'Day'],
+                        'month' => [$monthBars, $monthTotal, $monthDocTotal, $monthAvg, $monthPeakLabel, $monthPeakVal, '4-week Revenue',  'Weekly Average', 'Peak Week',  'Week of'],
+                        'year'  => [$yearBars,  $yearTotal,  $yearDocTotal,  $yearAvg,  $yearPeakLabel,  $yearPeakVal,  '12-month Revenue','Monthly Average','Peak Month', 'Month'],
                     ];
                     foreach ($revPanels as $rk => $p):
-                        [$bars, $total, $avg, $peakLabel, $peakVal, $totalLbl, $avgLbl, $peakRowLbl] = $p;
+                        [$bars, $total, $docTotal, $avg, $peakLabel, $peakVal, $totalLbl, $avgLbl, $peakRowLbl, $periodCol] = $p;
+                        $clinicTotal = max(0.0, $total - $docTotal);
                         $barMax = 0;
                         foreach ($bars as $b) { $barMax = max($barMax, $b['val']); }
                     ?>
@@ -613,18 +653,54 @@ require __DIR__ . '/partials/sidebar.php';
                             <?php else:
                             foreach ($bars as $b):
                                 $h = $barMax > 0 ? max(2, round(($b['val'] / $barMax) * 100)) : 2;
+                                // Split the stack: doctor portion sits on top of clinic portion.
+                                $docPct = $b['val'] > 0 ? round(($b['doc'] / $b['val']) * 100) : 0;
+                                $ttl = htmlspecialchars($b['day']) . ': Rs ' . number_format($b['val'])
+                                     . ' (Clinic Rs ' . number_format($b['clinic']) . ' · Doctor Rs ' . number_format($b['doc']) . ')';
                             ?>
                             <div class="bar-col">
-                                <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= htmlspecialchars($b['day']) ?>: Rs <?= number_format($b['val']) ?>"></div>
+                                <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= $ttl ?>">
+                                    <div class="bar-doctor" style="height: <?= $docPct ?>%;"></div>
+                                </div>
                                 <div class="bar-day"><?= htmlspecialchars($b['day']) ?></div>
                             </div>
                             <?php endforeach; endif; ?>
                         </div>
                         <div class="revenue-summary">
                             <div class="summary-row"><span class="label"><?= $totalLbl ?></span><span class="value">Rs <?= number_format($total) ?></span></div>
+                            <div class="summary-row"><span class="label">Clinic Share</span><span class="value">Rs <?= number_format($clinicTotal) ?></span></div>
+                            <div class="summary-row"><span class="label">Doctor Share</span><span class="value">Rs <?= number_format($docTotal) ?></span></div>
                             <div class="summary-row"><span class="label"><?= $avgLbl ?></span><span class="value">Rs <?= number_format($avg) ?></span></div>
                             <div class="summary-row"><span class="label"><?= $peakRowLbl ?></span><span class="value"><?= $peakVal > 0 ? htmlspecialchars($peakLabel) : '—' ?></span></div>
                         </div>
+                        <?php if ($bars): ?>
+                        <button type="button" class="ledger-toggle" aria-expanded="false">View ledger details</button>
+                        <div class="ledger-wrap" hidden>
+                            <table class="ledger-table">
+                                <thead>
+                                    <tr><th><?= htmlspecialchars($periodCol) ?></th><th class="num">Total</th><th class="num">Clinic</th><th class="num">Doctor</th></tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($bars as $b): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($b['day']) ?></td>
+                                        <td class="num">Rs <?= number_format($b['val']) ?></td>
+                                        <td class="num">Rs <?= number_format($b['clinic']) ?></td>
+                                        <td class="num">Rs <?= number_format($b['doc']) ?></td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td>Total</td>
+                                        <td class="num">Rs <?= number_format($total) ?></td>
+                                        <td class="num">Rs <?= number_format($clinicTotal) ?></td>
+                                        <td class="num">Rs <?= number_format($docTotal) ?></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -845,6 +921,18 @@ require __DIR__ . '/partials/sidebar.php';
             p.classList.toggle('active', p.getAttribute('data-range') === range);
         });
         if (sub) sub.textContent = tab.getAttribute('data-sub') || sub.textContent;
+    });
+
+    // Ledger expand/collapse (per panel)
+    document.querySelectorAll('.ledger-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var wrap = btn.nextElementSibling;
+            if (!wrap) return;
+            var open = wrap.hasAttribute('hidden');
+            if (open) { wrap.removeAttribute('hidden'); } else { wrap.setAttribute('hidden', ''); }
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            btn.textContent = open ? 'Hide ledger details' : 'View ledger details';
+        });
     });
 })();
 </script>
