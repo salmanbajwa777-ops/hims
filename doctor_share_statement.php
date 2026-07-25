@@ -238,34 +238,59 @@ $extraCss = <<<CSS
 .filters .f-group input, .filters .f-group select { width: auto; min-width: 150px; }
 .filters .spacer { flex: 1; }
 
-/* ---- The statement sheet: A5 portrait, one page ---- */
-.sheet { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card, 14px); box-shadow: var(--shadow-sm);
-         padding: 26px 30px; max-width: 620px; }
-.sheet h2 { font-size: 18px; margin: 0 0 2px; font-weight: 800; letter-spacing: -.01em; }
-.sheet .sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
-.sheet .doc-line { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap;
-                   border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px; }
-.sheet .doc-line .who { font-size: 15.5px; font-weight: 700; }
-.sheet .doc-line .terms { font-size: 12px; color: var(--text-secondary); }
+/* ---- Statement layout -----------------------------------------------------
+   The old screen view was a bare .sheet on the canvas whose rows stretched the
+   full width of a desktop monitor, so a four-line statement read as a wall of
+   floating text. Now: a headline strip carrying the three numbers anyone
+   actually opens this page for, then the working underneath in a real .card,
+   width-capped so the money column never drifts a metre from its label. */
+.stmt { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; max-width: 1080px; }
+@media (max-width: 980px) { .stmt { grid-template-columns: minmax(0, 1fr); } }
 
-.ltab { width: 100%; border-collapse: collapse; font-size: 13px; }
-.ltab td { padding: 5px 0; vertical-align: baseline; }
-.ltab td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ltab td.qty { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; width: 56px; }
-/* Section headers double as the visual rhythm — a rule above each keeps the
-   three streams legible without boxing every one of them. */
-.ltab tr.sect td { padding-top: 15px; padding-bottom: 3px; font-weight: 700; font-size: 10.5px;
-                   text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
-.ltab tr.rule td { border-bottom: 1px solid var(--border); padding: 0; height: 8px; }
-.ltab tr.sum td { font-weight: 700; padding-top: 8px; }
-/* The one number the whole sheet exists to produce. */
-.ltab tr.grand td { font-weight: 800; font-size: 15.5px; padding-top: 12px; padding-bottom: 4px;
+/* Headline tiles — net payable is the hero, the other two give it context. */
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; max-width: 1080px; }
+@media (max-width: 700px) { .tiles { grid-template-columns: 1fr; } }
+.tile { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card, 14px);
+        box-shadow: var(--shadow-sm); padding: 16px 18px; }
+.tile .k { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+           color: var(--text-muted); margin-bottom: 6px; }
+.tile .v { font-size: 23px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
+.tile .foot { font-size: 11.5px; color: var(--text-secondary); margin-top: 3px; }
+.tile.hero { background: var(--primary); border-color: var(--primary); }
+.tile.hero .k { color: rgba(255,255,255,.72); }
+.tile.hero .v, .tile.hero .foot { color: #fff; }
+.tile.hero .foot { color: rgba(255,255,255,.8); }
+
+/* Doctor identity strip above the breakdown. */
+.who-bar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;
+           padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.who-bar .who { font-size: 15px; font-weight: 700; }
+.who-bar .terms { font-size: 12px; color: var(--text-secondary); }
+
+/* Line table. Every padding/border is stated explicitly because app.css has a
+   global `td { padding:12px 10px; border-top }` that otherwise doubles the row
+   height and draws a rule under every single line. */
+.ltab { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ltab td { padding: 7px 0; vertical-align: baseline; border-top: none; font-size: 13.5px; }
+.ltab td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; width: 130px; }
+.ltab td.qty { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; width: 60px; }
+.ltab tr.sect td { padding: 18px 0 4px; font-weight: 700; font-size: 10.5px;
+                   text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); border-top: none; }
+.ltab tr.sect:first-child td { padding-top: 4px; }
+.ltab tr.sum td { font-weight: 700; border-top: 1px solid var(--border); padding-top: 8px; }
+.ltab tr.grand td { font-weight: 800; font-size: 16px; padding-top: 12px; padding-bottom: 2px;
                     border-top: 2px solid var(--text); color: var(--primary-dark); }
 .ltab .muted { color: var(--text-muted); font-weight: 400; }
 .ltab tr.neg td.n { color: var(--danger); }
 
-.sign { display: flex; gap: 26px; margin-top: 26px; }
-.sign div { flex: 1; border-top: 1px solid var(--border); padding-top: 5px; font-size: 10.5px; color: var(--text-muted); text-align: center; }
+/* Right rail: how the money was split, as a readable ladder. */
+.rail .step { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 7px 0; }
+.rail .step + .step { border-top: 1px solid var(--row-line, var(--border)); }
+.rail .step .n { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.rail .step.neg .n { color: var(--danger); }
+.rail .step.muted, .rail .step.muted .n { color: var(--text-muted); font-weight: 400; }
+.rail .step.tot { border-top: 2px solid var(--text); margin-top: 4px; padding-top: 10px; font-weight: 800; font-size: 15px; }
+.rail .step.tot .n { color: var(--primary-dark); font-weight: 800; }
 
 .empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13.5px; }
 
@@ -328,20 +353,37 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
             <?php if (!$doc): ?>
             <div class="card"><div class="empty">Pick a doctor and a date range to build the statement.</div></div>
             <?php else: ?>
-            <div class="sheet">
-                <h2>Doctor Share Statement</h2>
-                <div class="sub"><?= htmlspecialchars(date('d/m/Y', strtotime($from))) ?> &ndash; <?= htmlspecialchars(date('d/m/Y', strtotime($to))) ?></div>
-
-                <div class="doc-line">
-                    <span class="who"><?= htmlspecialchars($doc['name']) ?></span>
-                    <span class="terms">
-                        Share <?= number_format($sharePct, 0) ?>%<?php
-                        echo $hasTax ? ' &middot; Tax ' . number_format($taxPct, 0) . '% withheld' : ' &middot; Self-deposits tax';
-                        ?>
-                    </span>
+            <!-- The three numbers this page gets opened for, before any working. -->
+            <div class="tiles">
+                <div class="tile">
+                    <div class="k">Gross collected</div>
+                    <div class="v"><?= $m($grossCollected) ?></div>
+                    <div class="foot"><?= number_format($opdCount + $freeUnbilled + $ipdCount) ?> consultation<?= ($opdCount + $freeUnbilled + $ipdCount) === 1 ? '' : 's' ?> &middot; <?= htmlspecialchars(date('d/m/Y', strtotime($from))) ?> &ndash; <?= htmlspecialchars(date('d/m/Y', strtotime($to))) ?></div>
                 </div>
+                <div class="tile">
+                    <div class="k">Tax withheld</div>
+                    <div class="v"><?= $split['tax'] > 0 ? '&minus;' . $m($split['tax']) : 'Rs 0' ?></div>
+                    <div class="foot"><?= $hasTax ? number_format($taxPct, 0) . '% off the top' : 'Doctor self-deposits' ?></div>
+                </div>
+                <div class="tile hero">
+                    <div class="k"><?= $paidOut > 0 ? 'Net still payable' : 'Net payable' ?></div>
+                    <div class="v"><?= $m($netPayable) ?></div>
+                    <div class="foot"><?= htmlspecialchars($doc['name']) ?> &middot; <?= number_format($sharePct, 0) ?>% share</div>
+                </div>
+            </div>
 
-                <table class="ltab">
+            <div class="stmt">
+                <div class="card">
+                    <div class="who-bar">
+                        <span class="who"><?= htmlspecialchars($doc['name']) ?></span>
+                        <span class="terms">
+                            Share <?= number_format($sharePct, 0) ?>%<?php
+                            echo $hasTax ? ' &middot; Tax ' . number_format($taxPct, 0) . '% withheld' : ' &middot; Self-deposits tax';
+                            ?>
+                        </span>
+                    </div>
+
+                    <table class="ltab">
                     <!-- OPD -->
                     <tr class="sect"><td colspan="3">OPD Consultations</td></tr>
                     <?php if (!$opdRows && !$freeUnbilled): ?>
@@ -388,53 +430,36 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     <tr><td colspan="2" class="muted">Procedure billing is not live yet &mdash; nothing to include</td>
                         <td class="n">&mdash;</td></tr>
 
-                    <!-- Money -->
-                    <tr class="rule"><td colspan="3"></td></tr>
                     <tr class="sum">
                         <td colspan="2">Gross collected</td>
                         <td class="n"><?= $m($grossCollected) ?></td>
                     </tr>
+                    </table>
+                </div>
+
+                <!-- Right rail: gross -> tax -> split -> payable, as a ladder.
+                     Kept out of the line table so the breakdown of WORK and the
+                     breakdown of MONEY stop competing for the same column. -->
+                <div class="card rail">
+                    <div class="section-title">Settlement</div>
+                    <div class="section-sub">Tax comes off the full amount first, then the share is applied.</div>
+
+                    <div class="step"><span>Gross collected</span><span class="n"><?= $m($grossCollected) ?></span></div>
                     <?php if ($refundAmt > 0): ?>
-                    <tr class="neg">
-                        <td>Refunds issued</td>
-                        <td class="qty"><?= number_format($refundCount) ?></td>
-                        <td class="n">&minus;<?= $m($refundAmt) ?></td>
-                    </tr>
-                    <tr class="sum"><td colspan="2">Net collected</td><td class="n"><?= $m($netCollected) ?></td></tr>
+                    <div class="step neg"><span>Refunds issued (<?= number_format($refundCount) ?>)</span><span class="n">&minus;<?= $m($refundAmt) ?></span></div>
+                    <div class="step"><span>Net collected</span><span class="n"><?= $m($netCollected) ?></span></div>
                     <?php endif; ?>
-
-                    <tr class="neg">
-                        <td colspan="2">Tax withheld <span class="muted"><?= $hasTax ? '(' . number_format($taxPct, 0) . '% of gross)' : '(doctor self-deposits)' ?></span></td>
-                        <td class="n"><?= $split['tax'] > 0 ? '&minus;' . $m($split['tax']) : 'Rs 0' ?></td>
-                    </tr>
-                    <tr class="sum">
-                        <td colspan="2">Divisible amount</td>
-                        <td class="n"><?= $m($netCollected - $split['tax']) ?></td>
-                    </tr>
-                    <tr>
-                        <td colspan="2" class="muted">Clinic share (<?= number_format(100 - $sharePct, 0) ?>%)</td>
-                        <td class="n muted"><?= $m($split['clinic']) ?></td>
-                    </tr>
-                    <tr class="sum">
-                        <td colspan="2">Doctor share (<?= number_format($sharePct, 0) ?>%)</td>
-                        <td class="n"><?= $m($split['doctor']) ?></td>
-                    </tr>
-
+                    <div class="step neg">
+                        <span>Tax withheld <?= $hasTax ? '(' . number_format($taxPct, 0) . '%)' : '(self-deposited)' ?></span>
+                        <span class="n"><?= $split['tax'] > 0 ? '&minus;' . $m($split['tax']) : 'Rs 0' ?></span>
+                    </div>
+                    <div class="step"><span>Divisible amount</span><span class="n"><?= $m($netCollected - $split['tax']) ?></span></div>
+                    <div class="step muted"><span>Clinic share (<?= number_format(100 - $sharePct, 0) ?>%)</span><span class="n"><?= $m($split['clinic']) ?></span></div>
+                    <div class="step"><span>Doctor share (<?= number_format($sharePct, 0) ?>%)</span><span class="n"><?= $m($split['doctor']) ?></span></div>
                     <?php if ($paidOut > 0): ?>
-                    <tr class="neg">
-                        <td colspan="2">Already disbursed</td>
-                        <td class="n">&minus;<?= $m($paidOut) ?></td>
-                    </tr>
+                    <div class="step neg"><span>Already disbursed</span><span class="n">&minus;<?= $m($paidOut) ?></span></div>
                     <?php endif; ?>
-                    <tr class="grand">
-                        <td colspan="2"><?= $paidOut > 0 ? 'Net still payable' : 'Net payable' ?></td>
-                        <td class="n"><?= $m($netPayable) ?></td>
-                    </tr>
-                </table>
-
-                <div class="sign">
-                    <div>Prepared by</div>
-                    <div>Received by (<?= htmlspecialchars($doc['name']) ?>)</div>
+                    <div class="step tot"><span><?= $paidOut > 0 ? 'Net still payable' : 'Net payable' ?></span><span class="n"><?= $m($netPayable) ?></span></div>
                 </div>
             </div>
             <?php endif; ?>
