@@ -597,11 +597,16 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     // — normally the receptionist who took the original payment — not whoever
     // clicked "Refund" (generated_by_id could be a doctor/admin with no drawer).
     // COALESCE keeps any legacy row with a NULL drawer behaving as it did before.
+    // paid_out_by_id only exists after add_refund_paid_out_by.sql; fall back to
+    // the pre-migration behaviour (attribute to the clicker) when it is absent.
+    $drawerExpr = column_exists($pdo, 'refunds', 'paid_out_by_id')
+        ? 'COALESCE(paid_out_by_id, generated_by_id)'
+        : 'generated_by_id';
     $stmt = $pdo->prepare("
         SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
         FROM refunds
         WHERE refund_mode = 'cash' AND voided_at IS NULL AND created_at >= ? AND created_at < ?
-          AND COALESCE(paid_out_by_id, generated_by_id) = ?
+          AND $drawerExpr = ?
     ");
     $stmt->execute([$winStart, $winEnd, $userId]);
     $r = $stmt->fetch();

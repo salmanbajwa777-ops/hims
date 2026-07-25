@@ -114,9 +114,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin
             $variance = round($counted - $tally['expected_cash'], 2);
             $closingNumber = generate_closing_number($pdo);
 
-            $pdo->prepare('
+            // closed_by_admin_id only exists after add_admin_late_close.sql. Without
+            // it the closing still records correctly under the cashier; we just lose
+            // the "closed by X on behalf of Y" attribution until the migration runs.
+            $hasBehalfCol = column_exists($pdo, 'shift_closings', 'closed_by_admin_id');
+            $behalfCol = $hasBehalfCol ? 'closed_by_admin_id,' : '';
+            $behalfVal = $hasBehalfCol ? '?,' : '';
+
+            $params = [$closingNumber, $validDate, $cashierId];
+            if ($hasBehalfCol) {
+                $params[] = $_SESSION['user_id'];
+            }
+
+            $pdo->prepare("
                 INSERT INTO shift_closings
-                    (closing_number, closing_date, cashier_id, closed_by_admin_id, opening_float,
+                    (closing_number, closing_date, cashier_id, $behalfCol opening_float,
                      cash_consult_total, cash_consult_count,
                      cash_admission_total, cash_admission_count,
                      online_total, online_count,
@@ -125,10 +137,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin
                      expected_cash, counted_cash, variance, variance_note,
                      float_retained, handover_declared, handover_to_id,
                      status, handover_received, received_by_id, received_at, slip_filed)
-                VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?,
+                VALUES (?, ?, ?, $behalfVal 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?,
                         'RECEIVED', ?, ?, NOW(), 1)
-            ')->execute([
-                $closingNumber, $validDate, $cashierId, $_SESSION['user_id'],
+            ")->execute([
+                ...$params,
                 $tally['cash_consult_total'], $tally['cash_consult_count'],
                 $tally['cash_admission_total'], $tally['cash_admission_count'],
                 $tally['online_total'], $tally['online_count'],
@@ -232,18 +244,29 @@ $FIELD_LABELS = [
     'denominations'     => 'Denominations',
 ];
 
-$historyStmt = $pdo->query("
-    SELECT c.closing_number, c.closing_date, c.handover_declared, c.handover_received,
-           c.variance, c.received_at, c.id, c.edit_count,
-           cu.name AS cashier_name, ru.name AS received_by_name
-    FROM shift_closings c
-    JOIN users cu ON cu.id = c.cashier_id
-    LEFT JOIN users ru ON ru.id = c.received_by_id
-    WHERE c.status = 'RECEIVED'
-    ORDER BY c.closing_date DESC
-    LIMIT 30
-");
-$history = $historyStmt->fetchAll();
+// edit_count only exists after add_per_user_closings.sql. The $pending query
+// above survives without it (it selects c.*), so an unmigrated DB would fail
+// here instead — uncaught, as a 500. Select it only when it is really there.
+$editCountSelect = column_exists($pdo, 'shift_closings', 'edit_count')
+    ? 'c.edit_count,'
+    : '0 AS edit_count,';
+try {
+    $historyStmt = $pdo->query("
+        SELECT c.closing_number, c.closing_date, c.handover_declared, c.handover_received,
+               c.variance, c.received_at, c.id, $editCountSelect
+               cu.name AS cashier_name, ru.name AS received_by_name
+        FROM shift_closings c
+        JOIN users cu ON cu.id = c.cashier_id
+        LEFT JOIN users ru ON ru.id = c.received_by_id
+        WHERE c.status = 'RECEIVED'
+        ORDER BY c.closing_date DESC
+        LIMIT 30
+    ");
+    $history = $historyStmt->fetchAll();
+} catch (PDOException $e) {
+    error_log('[admin_handovers history] ' . $e->getMessage());
+    $history = [];
+}
 
 $pageTitle = 'Cash Handovers';
 require __DIR__ . '/partials/head.php';
