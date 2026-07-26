@@ -499,7 +499,12 @@ $pieColors = ['#0E5456', '#1A7F7E', '#2E9E86', '#7FB069', '#C7B446', '#E08D3C'];
         sets.forEach(function (s) {
             var on = s.getAttribute('data-for') === mode;
             s.style.display = on ? '' : 'none';
-            s.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+            // Also reach the hidden native input behind a dd/mm/yyyy proxy
+            // (date-picker.js) — that is the field that actually submits.
+            s.querySelectorAll('input').forEach(function (i) {
+                i.disabled = !on;
+                if (i._native) i._native.disabled = !on;
+            });
         });
     }
     tabs.forEach(function (t) {
@@ -508,5 +513,6 @@ $pieColors = ['#0E5456', '#1A7F7E', '#2E9E86', '#7FB069', '#C7B446', '#E08D3C'];
     apply(field.value);
 })();
 </script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>

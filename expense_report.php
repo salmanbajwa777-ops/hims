@@ -631,7 +631,12 @@ $fmtDelta = function (float $d): string {
             s.style.display = on ? '' : 'none';
             // Disabled inputs are not submitted — this is what keeps the unused
             // mode's values out of the query string entirely.
-            s.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+            // Also reach the hidden native input behind a dd/mm/yyyy proxy
+            // (date-picker.js) — that is the field that actually submits.
+            s.querySelectorAll('input').forEach(function (i) {
+                i.disabled = !on;
+                if (i._native) i._native.disabled = !on;
+            });
         });
     }
 
@@ -641,5 +646,6 @@ $fmtDelta = function (float $d): string {
     apply(field.value === 'range' ? 'range' : 'month');
 })();
 </script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>
