@@ -272,25 +272,38 @@ function generate_procedure_invoice_number(PDO $pdo): string {
 // when the tables don't exist yet (migration not run), which lets callers show
 // "not billed yet" instead of a misleading zero.
 function doctor_procedure_earnings(PDO $pdo, int $doctorId, string $from, string $toExcl): array {
-    $zero = ['gross' => 0.0, 'tax' => 0.0, 'doctor' => 0.0, 'clinic' => 0.0, 'bills' => 0, 'live' => false];
+    $zero = ['gross' => 0.0, 'disposables' => 0.0, 'tax' => 0.0, 'doctor' => 0.0,
+             'clinic' => 0.0, 'clinic_net' => 0.0, 'bills' => 0, 'live' => false];
     if ($doctorId <= 0) {
         return $zero;
     }
 
-    $doc    = doctor_split_sql('i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'doctor');
-    $tax    = doctor_split_sql('i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'tax');
-    $clinic = doctor_split_sql('i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'clinic');
+    // Disposables are a clinic cost taken off the top (see doctor_split()). The
+    // column arrived after the tables did, so fall back to the literal '0' when
+    // add_procedure_disposables.sql hasn't been run — with 0 the arithmetic is
+    // identical to the pre-disposables rule and nothing fatals.
+    $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
+
+    $args   = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
+    $doc    = doctor_split_sql(...[...$args, 'doctor',      $dispCol]);
+    $tax    = doctor_split_sql(...[...$args, 'tax',         $dispCol]);
+    $clinic = doctor_split_sql(...[...$args, 'clinic',      $dispCol]);
+    $cnet   = doctor_split_sql(...[...$args, 'clinic_net',  $dispCol]);
+    $disp   = doctor_split_sql(...[...$args, 'disposables', $dispCol]);
 
     try {
         $q = $pdo->prepare("
             SELECT COUNT(DISTINCT pb.id)         AS bills,
                    COALESCE(SUM(i.amount), 0)    AS gross,
+                   COALESCE(SUM($disp), 0)       AS disposables,
                    COALESCE(SUM($tax), 0)        AS tax,
                    COALESCE(SUM($doc), 0)        AS doctor,
-                   COALESCE(SUM($clinic), 0)     AS clinic
+                   COALESCE(SUM($clinic), 0)     AS clinic,
+                   COALESCE(SUM($cnet), 0)       AS clinic_net
             FROM procedure_bill_items i
             JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
             WHERE pb.doctor_id = ?
+              AND pb.status = 'paid'
               AND pb.voided_at IS NULL
               AND pb.paid_at >= ? AND pb.paid_at < ?
         ");
@@ -303,13 +316,54 @@ function doctor_procedure_earnings(PDO $pdo, int $doctorId, string $from, string
     }
 
     return [
-        'gross'  => (float) ($r['gross'] ?? 0),
-        'tax'    => (float) ($r['tax'] ?? 0),
-        'doctor' => (float) ($r['doctor'] ?? 0),
-        'clinic' => (float) ($r['clinic'] ?? 0),
-        'bills'  => (int) ($r['bills'] ?? 0),
-        'live'   => true,
+        'gross'       => (float) ($r['gross'] ?? 0),
+        'disposables' => (float) ($r['disposables'] ?? 0),
+        'tax'         => (float) ($r['tax'] ?? 0),
+        'doctor'      => (float) ($r['doctor'] ?? 0),
+        'clinic'      => (float) ($r['clinic'] ?? 0),
+        'clinic_net'  => (float) ($r['clinic_net'] ?? 0),
+        'bills'       => (int) ($r['bills'] ?? 0),
+        'live'        => true,
     ];
+}
+
+// Is procedure_bill_items.disposables_cost present (add_procedure_disposables.sql)?
+// Money code asks this; it must NOT be conflated with the procedure_master flag,
+// because a half-applied migration would then make the split silently fall back
+// to 0 on a database that does have the cost column. Each column is checked on
+// its own table.
+//
+// Cached per request: asked once per split expression, and the answer cannot
+// change mid-request. Lets the earnings/report SQL degrade to a literal 0
+// instead of erroring on an un-migrated database.
+function procedure_disposables_column(PDO $pdo): bool {
+    static $has = null;
+    if ($has !== null) {
+        return $has;
+    }
+    try {
+        $pdo->query('SELECT disposables_cost FROM procedure_bill_items LIMIT 1')->fetchAll();
+        $has = true;
+    } catch (PDOException $e) {
+        $has = false;
+    }
+    return $has;
+}
+
+// Is procedure_master.has_disposables present? The admin's per-procedure flag,
+// checked separately from the cost column above — UI code asks this one.
+function procedure_disposables_flag(PDO $pdo): bool {
+    static $has = null;
+    if ($has !== null) {
+        return $has;
+    }
+    try {
+        $pdo->query('SELECT has_disposables FROM procedure_master LIMIT 1')->fetchAll();
+        $has = true;
+    } catch (PDOException $e) {
+        $has = false;
+    }
+    return $has;
 }
 
 // Billed stay-hours from a raw minute count.
@@ -1166,25 +1220,43 @@ function void_procedure_bill(PDO $pdo, int $procBillId, int $userId, string $rea
 // month's worth of lines does not accumulate rounding drift. The payout engine
 // (Phase 6) snapshots these figures per line at disbursement time.
 // ============================================================================
-function doctor_split(float $amount, float $sharePct, bool $hasTax, float $taxPct): array {
+// $disposables (added 2026-07-27, procedures only) is a CLINIC COST recovered
+// off the top BEFORE tax and before the split — the confirmed three-step rule:
+//   1. deduct disposables   2. tax the remainder   3. split what's left
+// The patient's total never changes; this only decides how the money already
+// collected is carved up. Consultations and ward rounds pass 0 and behave
+// exactly as before. The clinic keeps the disposables back, so it is added to
+// the clinic's side and the four parts still re-sum to gross:
+//   disposables + tax + doctor + clinic == gross
+function doctor_split(float $amount, float $sharePct, bool $hasTax, float $taxPct, float $disposables = 0.0): array {
     // Guard rails: a negative amount, or percentages outside 0-100, are data
     // errors rather than arithmetic ones. Clamp instead of throwing so a single
     // bad row cannot take down a whole monthly report.
     $amount   = max(0.0, $amount);
     $sharePct = min(100.0, max(0.0, $sharePct));
     $taxPct   = $hasTax ? min(100.0, max(0.0, $taxPct)) : 0.0;
+    // Never let supplies exceed what was collected: a mis-keyed cost must not
+    // manufacture a negative tax or claw money out of the doctor's other lines.
+    $disposables = min($amount, max(0.0, $disposables));
 
-    $tax       = $amount * $taxPct / 100;
-    $remainder = $amount - $tax;
-    $doctor    = $remainder * $sharePct / 100;
+    $divisible = $amount - $disposables;          // step 1
+    $tax       = $divisible * $taxPct / 100;      // step 2
+    $remainder = $divisible - $tax;
+    $doctor    = $remainder * $sharePct / 100;    // step 3
     $clinic    = $remainder - $doctor;   // subtraction, not a second %, so the
-                                         // three parts always re-sum to $amount
+                                         // parts always re-sum to $amount
 
     return [
-        'gross'  => $amount,
-        'tax'    => $tax,
-        'doctor' => $doctor,
-        'clinic' => $clinic,
+        'gross'       => $amount,
+        'disposables' => $disposables,
+        'tax'         => $tax,
+        'doctor'      => $doctor,
+        // The recovered cost belongs to the clinic, so callers that add up
+        // clinic income don't have to know about disposables separately.
+        'clinic'      => $clinic + $disposables,
+        // The clinic's margin with the cost recovery stripped back out, for
+        // reports that want to show cost and margin as separate lines.
+        'clinic_net'  => $clinic,
     ];
 }
 
@@ -1198,17 +1270,33 @@ function doctor_split(float $amount, float $sharePct, bool $hasTax, float $taxPc
 //
 // Keep this in lockstep with doctor_split() above. If the rule ever changes,
 // both must change together — that is the price of having a SQL form at all.
-function doctor_split_sql(string $amt, string $share, string $hasTax, string $tax, string $part = 'doctor'): string {
-    // Tax first: the remainder that actually gets split.
-    $remainder = "($amt - CASE WHEN $hasTax = 1 THEN $amt * $tax / 100 ELSE 0 END)";
+// $disposables is an optional 5th COLUMN EXPRESSION (procedures only). It is
+// LAST and defaulted to the literal '0' so all pre-existing 4-argument call
+// sites keep their exact previous behaviour — with '0' the arithmetic below
+// reduces to plain tax-first-then-split.
+//
+// Parts: 'tax' | 'doctor' | 'clinic' | 'clinic_net' | 'disposables'.
+// 'clinic' INCLUDES the recovered cost (mirrors doctor_split()'s 'clinic');
+// 'clinic_net' excludes it. disposables + tax + doctor + clinic_net == amt.
+function doctor_split_sql(string $amt, string $share, string $hasTax, string $tax, string $part = 'doctor', string $disposables = '0'): string {
+    // Clamp the cost to the collected amount, mirroring the PHP guard: a
+    // mis-keyed supply cost must never produce a negative divisible base.
+    $disp      = "LEAST($amt, GREATEST(0, $disposables))";
+    $divisible = "($amt - $disp)";                                                    // step 1
+    $taxExpr   = "(CASE WHEN $hasTax = 1 THEN $divisible * $tax / 100 ELSE 0 END)";   // step 2
+    $remainder = "($divisible - $taxExpr)";
     switch ($part) {
         case 'tax':
-            return "(CASE WHEN $hasTax = 1 THEN $amt * $tax / 100 ELSE 0 END)";
+            return $taxExpr;
+        case 'disposables':
+            return $disp;
         case 'clinic':
+            return "($remainder - $remainder * $share / 100 + $disp)";
+        case 'clinic_net':
             return "($remainder - $remainder * $share / 100)";
         case 'doctor':
         default:
-            return "($remainder * $share / 100)";
+            return "($remainder * $share / 100)";                                     // step 3
     }
 }
 
@@ -1376,9 +1464,11 @@ function doctor_earned_for_month(PDO $pdo, int $doctorId, string $month): array 
 // ============================================================================
 // UNIFIED CLINIC REVENUE  (Accounts Phase 3, added 2026-07-26)
 //
-// Revenue lives in FOUR tables that nothing ever joined: bills (OPD),
-// admission_bills (ER/short-stay admissions), er_bills (walk-in ER services)
-// and ipd_bills (in-door). Every report before this read `bills` alone, and
+// Revenue lives in FIVE tables that nothing ever joined: bills (OPD),
+// admission_bills (ER/short-stay admissions), er_bills (walk-in ER services),
+// ipd_bills (in-door) and procedure_bills (procedures, wired in 2026-07-27 —
+// billed for weeks but invisible to every report). Every report before this
+// read `bills` alone, and
 // cron/daily_summary.php summed only bills + admission_bills — so the daily
 // income email has been UNDERSTATING revenue by the ER and IPD streams.
 //
@@ -1404,6 +1494,10 @@ function clinic_revenue(PDO $pdo, string $start, string $end): array {
         'admission' => ['label' => 'Admissions',        'table' => 'admission_bills'],
         'er'        => ['label' => 'ER Services',       'table' => 'er_bills'],
         'ipd'       => ['label' => 'In-Door (IPD)',     'table' => 'ipd_bills'],
+        // Procedures share the same shape as every other stream (status/
+        // voided_at/paid_at/paid_amount/payment_method), so it needs no special
+        // case here — only the per-LINE doctor split below differs.
+        'procedure' => ['label' => 'Procedures',        'table' => 'procedure_bills'],
     ];
 
     $out = ['streams' => [], 'gross' => 0.0, 'refunds' => 0.0, 'net' => 0.0,
@@ -1520,6 +1614,45 @@ function clinic_doctor_shares(PDO $pdo, string $start, string $end): array {
         }
     } catch (PDOException $e) { /* IPD module not installed */ }
 
+    // ---- Procedures (per-LINE share, not a per-doctor rate) ----
+    // Unlike the two blocks above, there is no single rate to join from `users`:
+    // every procedure_bill_items row carries its own snapshot of the share/tax
+    // agreed for THAT procedure, so the split has to be summed line-by-line and
+    // only then grouped up to the doctor. The bill still supplies the doctor,
+    // the cash date and the void flag. See doctor_procedure_earnings(), which
+    // must stay in agreement with this — a doctor's own statement and the P&L
+    // reading different numbers is the exact failure this shares a helper to
+    // avoid.
+    try {
+        // Disposables are a clinic cost taken off the top before tax. Degrade to
+        // the literal '0' when add_procedure_disposables.sql hasn't been run: the
+        // arithmetic then reduces to the pre-disposables rule instead of fataling.
+        $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
+        $args = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
+        $d = doctor_split_sql(...[...$args, 'doctor', $dispCol]);
+        $t = doctor_split_sql(...[...$args, 'tax',    $dispCol]);
+        $q = $pdo->prepare("
+            SELECT dr.id, dr.name, COALESCE(SUM($d), 0) AS doc, COALESCE(SUM($t), 0) AS tax
+            FROM procedure_bill_items i
+            JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
+            JOIN users dr           ON dr.id = pb.doctor_id
+            WHERE pb.status = 'paid' AND pb.voided_at IS NULL
+              AND pb.paid_at >= ? AND pb.paid_at < ?
+            GROUP BY dr.id, dr.name
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) {
+            $id = (int) $r['id'];
+            if (!isset($out['rows'][$id])) {
+                $out['rows'][$id] = ['name' => $r['name'], 'doctor' => 0.0, 'tax' => 0.0];
+            }
+            $out['rows'][$id]['doctor'] += (float) $r['doc'];
+            $out['rows'][$id]['tax']    += (float) $r['tax'];
+            $out['doctor'] += (float) $r['doc'];
+            $out['tax']    += (float) $r['tax'];
+        }
+    } catch (PDOException $e) { /* procedure billing tables not installed */ }
+
     uasort($out['rows'], function ($a, $b) { return $b['doctor'] <=> $a['doctor']; });
     return $out;
 }
@@ -1559,8 +1692,8 @@ function clinic_income_buckets(PDO $pdo, string $start, string $end, string $buc
 
     $add = function (array &$acc, $k, $v) { $acc[(int) $k] = ($acc[(int) $k] ?? 0.0) + (float) $v; };
 
-    // ---- Gross, per revenue stream (same four tables as clinic_revenue) ----
-    foreach (['bills', 'admission_bills', 'er_bills', 'ipd_bills'] as $tbl) {
+    // ---- Gross, per revenue stream (same five tables as clinic_revenue) ----
+    foreach (['bills', 'admission_bills', 'er_bills', 'ipd_bills', 'procedure_bills'] as $tbl) {
         try {
             // Table name is from the hardcoded list above, never user input.
             $q = $pdo->prepare("
@@ -1618,6 +1751,29 @@ function clinic_income_buckets(PDO $pdo, string $start, string $end, string $buc
         $q->execute([$from, $to]);
         foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
     } catch (PDOException $e) { /* IPD module not installed */ }
+
+    // ---- Doctor share + withheld tax: procedures ----
+    // Bucketed on pb.paid_at (the bill's cash date), not the item, so a line
+    // lands in the same bucket as the gross it was carved out of — otherwise a
+    // bar could show income the chart never credited. Per-LINE rates, so this
+    // aggregates the items and lets the GROUP BY collapse them; see the matching
+    // block in clinic_doctor_shares().
+    try {
+        $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
+        $args = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
+        $d = doctor_split_sql(...[...$args, 'doctor', $dispCol]);
+        $t = doctor_split_sql(...[...$args, 'tax',    $dispCol]);
+        $q = $pdo->prepare("
+            SELECT " . sprintf($expr, 'pb.paid_at') . " AS b, COALESCE(SUM($d), 0) + COALESCE(SUM($t), 0) AS amt
+            FROM procedure_bill_items i
+            JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
+            WHERE pb.status = 'paid' AND pb.voided_at IS NULL
+              AND pb.paid_at >= ? AND pb.paid_at < ?
+            GROUP BY b
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
+    } catch (PDOException $e) { /* procedure billing tables not installed */ }
 
     $out = [];
     foreach ($gross as $k => $g) {

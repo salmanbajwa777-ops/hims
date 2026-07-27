@@ -1,0 +1,75 @@
+-- =============================================================================
+-- Procedure disposables cost (2026-07-27)
+--
+-- Some procedures consume disposables (needles, sutures, dressings); most do
+-- not. The ADMIN marks which ones do, per procedure, in Procedures Master. For
+-- a flagged procedure reception types the actual cost at billing time (no
+-- default figure was wanted — supply use varies case to case). Procedures not
+-- flagged show no disposables field at all.
+--
+-- The clinic buys those supplies, so the cost is recovered BEFORE the
+-- doctor/clinic split — the confirmed three-step rule:
+--
+--     1. deduct disposables      2. tax the remainder      3. split what's left
+--
+--     Rs 3000 fee, Rs 500 disposables, 10% tax, 60/40
+--       -> disposables  500   (clinic keeps: cost recovery, NOT income)
+--       -> divisible   2500
+--       -> tax          250
+--       -> remainder   2250
+--       -> doctor      1350   (60% of 2250)
+--       -> clinic       900   (+ the 500 back = 1400 to the clinic)
+--
+-- The PATIENT'S TOTAL DOES NOT CHANGE. This is purely how already-collected
+-- money is carved up, so grand_total / paid_amount / the printed slip are
+-- untouched and no historical bill is re-priced.
+--
+-- TWO columns, two tables, two different jobs:
+--   procedure_master.has_disposables  — the admin's per-procedure FLAG.
+--   procedure_bill_items.disposables_cost — the amount reception actually
+--       entered, snapshotted onto the line like the share/tax rates, so
+--       un-flagging a procedure later never rewrites past bills.
+--
+-- DEFAULT 0 everywhere means existing rows keep their current arithmetic
+-- exactly: doctor_split*() with a 0 cost reduces to plain tax-first-then-split.
+--
+-- Flat and idempotent; no stored procedures (the Hostinger user is denied
+-- CREATE ROUTINE #1044). No ENGINE/CHARSET clause — forcing one broke the FKs
+-- in add_procedure_bills.sql; inherit the server default.
+-- Run in phpMyAdmin against the hims database.
+--
+-- MySQL has no "ADD COLUMN IF NOT EXISTS", so re-running either ALTER errors
+-- with #1060 "Duplicate column name". That error is harmless and simply means
+-- the column is already there.
+--
+-- DEPENDS ON sql/add_procedure_bills.sql having actually created the tables.
+-- Verify that FIRST:
+--   SELECT table_name FROM information_schema.tables
+--    WHERE table_schema = 'u402528120_hmis' AND table_name = 'procedure_bill_items';
+-- =============================================================================
+
+-- 1. The admin's flag: does this procedure consume disposables at all?
+--    Drives whether reception is shown a cost box for it.
+ALTER TABLE procedure_master
+    ADD COLUMN has_disposables TINYINT NOT NULL DEFAULT 0 AFTER mandatory_consent;
+
+-- 2. What reception actually entered for this line, snapshotted at billing time
+--    beside the share/tax rates.
+ALTER TABLE procedure_bill_items
+    ADD COLUMN disposables_cost DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER amount;
+
+-- =============================================================================
+-- End disposables migration.
+-- Verify with (fully qualified — querying information_schema switches
+-- phpMyAdmin's current-database context, which is what made an earlier verify
+-- block fail with "#1109 Unknown table 'permissions' in information_schema"):
+--
+--   SELECT table_name, column_name, column_type, column_default
+--     FROM information_schema.columns
+--    WHERE table_schema = 'u402528120_hmis'
+--      AND (
+--            (table_name = 'procedure_master'     AND column_name = 'has_disposables')
+--         OR (table_name = 'procedure_bill_items' AND column_name = 'disposables_cost')
+--          );
+--   -- expect 2 rows: tinyint default 0, and decimal(10,2) default 0
+-- =============================================================================

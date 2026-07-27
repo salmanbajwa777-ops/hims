@@ -189,13 +189,18 @@ $grossCollected = $opdGross + $ipdGross;
 $netCollected   = max(0.0, $grossCollected - $refundAmt);
 $split = doctor_split($netCollected, $sharePct, $hasTax, $taxPct);
 
-// Fold the per-procedure split into the totals so the ladder (gross -> tax ->
-// doctor/clinic) still re-sums with procedures included.
+// Fold the per-procedure split into the totals so the ladder (gross ->
+// supplies -> tax -> doctor/clinic) still re-sums with procedures included.
+// Disposables are a clinic cost taken off the top BEFORE tax and the split
+// (see doctor_split()); procEarn['clinic'] already has that cost added back,
+// so the parts continue to re-sum to gross.
+$procDisp = (float) ($procEarn['disposables'] ?? 0);
 $grossCollected += $procGross;
-$split['gross']  += $procEarn['gross'];
-$split['tax']    += $procEarn['tax'];
-$split['doctor'] += $procEarn['doctor'];
-$split['clinic'] += $procEarn['clinic'];
+$split['gross']       += $procEarn['gross'];
+$split['disposables'] = ($split['disposables'] ?? 0) + $procDisp;
+$split['tax']         += $procEarn['tax'];
+$split['doctor']      += $procEarn['doctor'];
+$split['clinic']      += $procEarn['clinic'];
 
 // ---- Already disbursed in this range (posted Doctor Shares expenses) -------
 $paidOut = 0.0;
@@ -495,14 +500,26 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     // amount from the split itself rather than from netCollected
                     // (which excludes procedure money).
                     $mixedRates = $procLive && $procCount > 0;
-                    $divisible  = $split['doctor'] + $split['clinic'];
+                    // Divisible = what tax and the split were actually computed on.
+                    // clinic INCLUDES the recovered supplies cost, so take it back
+                    // out — that money was never in the divisible pool.
+                    $divisible  = $split['doctor'] + $split['clinic'] - $procDisp;
                     ?>
+                    <?php if ($procDisp > 0): ?>
+                    <div class="step neg" title="Cost of disposables used in procedures. Recovered by the clinic before tax and before the split, so it is never part of the divisible amount.">
+                        <span>Disposables (supplies cost)</span>
+                        <span class="n">&minus;<?= $m($procDisp) ?></span>
+                    </div>
+                    <?php endif; ?>
                     <div class="step neg">
                         <span>Tax withheld <?= $mixedRates ? '' : ($hasTax ? '(' . number_format($taxPct, 0) . '%)' : '(self-deposited)') ?></span>
                         <span class="n"><?= $split['tax'] > 0 ? '&minus;' . $m($split['tax']) : 'Rs 0' ?></span>
                     </div>
                     <div class="step"><span>Divisible amount</span><span class="n"><?= $m($divisible) ?></span></div>
-                    <div class="step muted"><span>Clinic share<?= $mixedRates ? '' : ' (' . number_format(100 - $sharePct, 0) . '%)' ?></span><span class="n"><?= $m($split['clinic']) ?></span></div>
+                    <?php // Clinic's cut of the divisible pool only — the recovered
+                          // supplies cost is shown on its own line above, not folded
+                          // in here, or the percentage wouldn't reconcile. ?>
+                    <div class="step muted"><span>Clinic share<?= $mixedRates ? '' : ' (' . number_format(100 - $sharePct, 0) . '%)' ?></span><span class="n"><?= $m($split['clinic'] - $procDisp) ?></span></div>
                     <div class="step"><span>Doctor share<?= $mixedRates ? '' : ' (' . number_format($sharePct, 0) . '%)' ?></span><span class="n"><?= $m($split['doctor']) ?></span></div>
                     <?php if ($mixedRates): ?>
                     <div class="step muted" style="font-size:11px;"><span>Consultations and procedures are each split at their own rate.</span></div>

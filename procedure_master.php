@@ -17,23 +17,43 @@ require_once __DIR__ . '/config/guard_admin.php';
 $error = '';
 $success = '';
 
+// Has add_procedure_disposables.sql been run? The whole disposables UI is
+// conditional on it, so an un-migrated database keeps working exactly as before
+// instead of fataling on a missing column. Only the FLAG matters on this page —
+// the admin sets which procedures have disposables; the cost itself is entered
+// at billing time and lives on procedure_bill_items.
+require_once __DIR__ . '/config/billing.php';
+$procHasDisposables = procedure_disposables_flag($pdo);
+
 // ---- Add a procedure to the master catalogue ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_procedure') {
     $name = trim($_POST['name'] ?? '');
     $fee = (float) ($_POST['fee'] ?? 0);
     $consent = isset($_POST['mandatory_consent']) ? 1 : 0;
+    $hasDisp = isset($_POST['has_disposables']) ? 1 : 0;
 
     if ($name === '' || $fee < 0) {
         $error = 'A procedure needs a name and a non-negative rate.';
     } else {
-        $stmt = $pdo->prepare('
-            INSERT INTO procedure_master (name, fee, mandatory_consent, created_by_id)
-            VALUES (?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE fee = VALUES(fee), mandatory_consent = VALUES(mandatory_consent), is_active = 1
-        ');
-        $stmt->execute([$name, $fee, $consent, $_SESSION['user_id']]);
+        if ($procHasDisposables) {
+            $stmt = $pdo->prepare('
+                INSERT INTO procedure_master (name, fee, mandatory_consent, has_disposables, created_by_id)
+                VALUES (?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE fee = VALUES(fee), mandatory_consent = VALUES(mandatory_consent),
+                                        has_disposables = VALUES(has_disposables), is_active = 1
+            ');
+            $stmt->execute([$name, $fee, $consent, $hasDisp, $_SESSION['user_id']]);
+        } else {
+            $stmt = $pdo->prepare('
+                INSERT INTO procedure_master (name, fee, mandatory_consent, created_by_id)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE fee = VALUES(fee), mandatory_consent = VALUES(mandatory_consent), is_active = 1
+            ');
+            $stmt->execute([$name, $fee, $consent, $_SESSION['user_id']]);
+        }
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'procedure_added', "Added/updated procedure \"$name\" @ Rs $fee" . ($consent ? ' (consent required)' : '')]);
+            ->execute([$_SESSION['user_id'], 'procedure_added', "Added/updated procedure \"$name\" @ Rs $fee"
+                . ($consent ? ' (consent required)' : '') . ($hasDisp ? ' (has disposables)' : '')]);
         $success = "Procedure \"$name\" saved.";
     }
 }
@@ -45,8 +65,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     $names   = $_POST['name'] ?? [];
     $fees    = $_POST['fee'] ?? [];
     $consent = $_POST['mandatory_consent'] ?? [];
+    $disp    = $_POST['has_disposables'] ?? [];
     $active  = $_POST['is_active'] ?? [];
-    $upd = $pdo->prepare('UPDATE procedure_master SET name = ?, fee = ?, mandatory_consent = ?, is_active = ? WHERE id = ?');
+    // has_disposables arrived after this page did; keep saving without it when
+    // add_procedure_disposables.sql hasn't been run rather than fataling.
+    $upd = $procHasDisposables
+        ? $pdo->prepare('UPDATE procedure_master SET name = ?, fee = ?, mandatory_consent = ?, has_disposables = ?, is_active = ? WHERE id = ?')
+        : $pdo->prepare('UPDATE procedure_master SET name = ?, fee = ?, mandatory_consent = ?, is_active = ? WHERE id = ?');
     $saved = 0; $bad = false; $dupe = false;
     foreach ($names as $id => $rawName) {
         $id = (int) $id;
@@ -55,7 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         if ($id <= 0) { continue; }
         if ($name === '' || $fee < 0) { $bad = true; continue; }
         try {
-            $upd->execute([$name, $fee, isset($consent[$id]) ? 1 : 0, isset($active[$id]) ? 1 : 0, $id]);
+            $params = [$name, $fee, isset($consent[$id]) ? 1 : 0];
+            if ($procHasDisposables) { $params[] = isset($disp[$id]) ? 1 : 0; }
+            $params[] = isset($active[$id]) ? 1 : 0;
+            $params[] = $id;
+            $upd->execute($params);
             $saved++;
         } catch (PDOException $e) {
             if ($e->getCode() === '23000') { $dupe = true; } else { throw $e; }
@@ -311,6 +340,12 @@ require __DIR__ . '/partials/sidebar.php';
                             <input type="checkbox" name="mandatory_consent" value="1">
                             Requires consent form
                         </label>
+                        <?php if ($procHasDisposables): ?>
+                        <label class="consent-check" title="If ticked, reception is asked for the supplies cost when billing this procedure. The cost is deducted before tax and before the doctor/clinic split.">
+                            <input type="checkbox" name="has_disposables" value="1">
+                            Has disposables
+                        </label>
+                        <?php endif; ?>
                         <button type="submit" class="btn">Add</button>
                     </div>
                 </form>
@@ -325,11 +360,11 @@ require __DIR__ . '/partials/sidebar.php';
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
-                        <tr><th>Procedure</th><th style="width:130px;">Rate (Rs)</th><th style="width:150px;">Consent form</th><th style="width:90px;">Active</th></tr>
+                        <tr><th>Procedure</th><th style="width:130px;">Rate (Rs)</th><th style="width:150px;">Consent form</th><?php if ($procHasDisposables): ?><th style="width:150px;">Disposables</th><?php endif; ?><th style="width:90px;">Active</th></tr>
                     </thead>
                     <tbody>
                         <?php if (!$procedures): ?>
-                        <tr><td colspan="4" class="muted" style="padding:20px 10px;">No procedures yet — add one above.</td></tr>
+                        <tr><td colspan="<?= $procHasDisposables ? 5 : 4 ?>" class="muted" style="padding:20px 10px;">No procedures yet — add one above.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($procedures as $p): $pid = (int) $p['id']; ?>
                         <tr class="<?= (int) $p['is_active'] === 1 ? '' : 'row-inactive' ?>">
@@ -345,6 +380,17 @@ require __DIR__ . '/partials/sidebar.php';
                                     Mandatory
                                 </label>
                             </td>
+                            <?php if ($procHasDisposables): ?>
+                            <td>
+                                <!-- Flag only, no default amount: supply use varies case to case, so
+                                     reception types the actual cost when billing a flagged procedure.
+                                     Unflagged procedures show no cost box at all. -->
+                                <label class="consent-check" style="padding:0;" title="Reception will be asked for the supplies cost when billing this procedure">
+                                    <input type="checkbox" name="has_disposables[<?= $pid ?>]" value="1" <?= (int) ($p['has_disposables'] ?? 0) === 1 ? 'checked' : '' ?>>
+                                    Has disposables
+                                </label>
+                            </td>
+                            <?php endif; ?>
                             <td><label class="active-toggle"><input type="checkbox" name="is_active[<?= $pid ?>]" value="1" <?= (int) $p['is_active'] === 1 ? 'checked' : '' ?>><span></span></label></td>
                         </tr>
                         <?php endforeach; ?>

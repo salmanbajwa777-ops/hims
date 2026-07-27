@@ -184,11 +184,17 @@ $n2 = fn(float $v) => number_format($v, 2);
             // (doctor + clinic) instead of netCollected, which excludes
             // procedure money entirely.
             $mixedRates = $procLive && $procCount > 0;
-            $divisible  = $split['doctor'] + $split['clinic'];
+            $pDisp      = (float) ($procDisp ?? 0);
+            // clinic INCLUDES the recovered supplies cost; take it back out so
+            // the divisible amount is what tax and the split ran on.
+            $divisible  = $split['doctor'] + $split['clinic'] - $pDisp;
             ?>
+            <?php if ($pDisp > 0): ?>
+            <tr><td>Less: disposables (supplies cost)</td><td class="text-right">(<?= $n2($pDisp) ?>)</td></tr>
+            <?php endif; ?>
             <tr><td>Less: tax withheld <?= $mixedRates ? '' : ($hasTax ? '(' . number_format($taxPct, 0) . '% of gross)' : '(doctor self-deposits)') ?></td><td class="text-right">(<?= $n2($split['tax']) ?>)</td></tr>
             <tr class="sub"><td>Divisible amount</td><td class="text-right"><?= $n2($divisible) ?></td></tr>
-            <tr><td>Clinic share<?= $mixedRates ? '' : ' (' . number_format(100 - $sharePct, 0) . '%)' ?></td><td class="text-right"><?= $n2($split['clinic']) ?></td></tr>
+            <tr><td>Clinic share<?= $mixedRates ? '' : ' (' . number_format(100 - $sharePct, 0) . '%)' ?></td><td class="text-right"><?= $n2($split['clinic'] - $pDisp) ?></td></tr>
             <tr class="sub"><td>Doctor share<?= $mixedRates ? '' : ' (' . number_format($sharePct, 0) . '%)' ?></td><td class="text-right"><?= $n2($split['doctor']) ?></td></tr>
             <?php if ($mixedRates): ?>
             <tr class="none"><td colspan="2" style="font-size:8px;">Consultations and procedures carry their own share and tax rates; each is split at its own rate and totalled above.</td></tr>

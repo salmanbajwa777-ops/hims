@@ -17,11 +17,6 @@
  * Requires sql/add_procedure_bills.sql to be applied.
  */
 
-// TEMPORARY DIAGNOSTIC — remove once the 500 on this page is identified.
-ini_set('display_errors', '1');
-ini_set('display_startup_errors', '1');
-error_reporting(E_ALL);
-
 require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
@@ -34,6 +29,14 @@ require_permission('RECEPTION_RAISE_PROCEDURE_BILL');
 
 $error = '';
 $success = '';
+
+// Has add_procedure_disposables.sql been run? The supplies-cost field, its
+// column and its INSERT are all conditional on it, so an un-migrated database
+// bills exactly as it did before instead of fataling on a missing column.
+// BOTH halves are required here: the flag decides which procedures show the
+// field, the cost column is where the entered amount is stored — offering the
+// field without somewhere to put it would silently discard what was typed.
+$procHasDisposables = procedure_disposables_column($pdo) && procedure_disposables_flag($pdo);
 
 // ---------------- Print view (A5 procedure slip) ----------------
 if (isset($_GET['print']) && isset($_GET['procedure_bill_id'])) {
@@ -85,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
     $paymentMode = $_POST['payment_mode'] ?? '';        // CASH | DIGITAL
     $assignIds   = $_POST['assignment_id'] ?? [];       // parallel arrays
     $quantities  = $_POST['quantity'] ?? [];
+    $disposables = $_POST['disposables'] ?? [];
 
     // Settling a bill moves money — refuse once the cashier's shift is closed.
     $dayLock = require_day_open($pdo);
@@ -107,7 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
             $rowStmt = $pdo->prepare("
                 SELECT dp.id, dp.procedure_master_id, pm.name,
                        COALESCE(dp.fee, pm.fee) AS fee,
-                       dp.doctor_share_pct, dp.has_tax, dp.tax_percent
+                       dp.doctor_share_pct, dp.has_tax, dp.tax_percent" . ($procHasDisposables ? ",
+                       pm.has_disposables" : '') . "
                 FROM doctor_procedures dp
                 JOIN procedure_master pm ON pm.id = dp.procedure_master_id
                 WHERE dp.id = ? AND dp.doctor_id = ? AND dp.is_active = 1 AND pm.is_active = 1
@@ -118,12 +123,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
                 continue;   // unassigned/inactive/retired — skip silently
             }
             $rate = (float) $row['fee'];
+            $amount = round($rate * $qty, 2);
+            // Supplies cost is accepted ONLY for procedures the admin flagged,
+            // and never more than the line is worth — a mis-keyed figure must
+            // not drive the divisible amount negative. The flag is re-read from
+            // the DB here, so a hand-crafted POST can't smuggle a cost onto an
+            // unflagged procedure.
+            $dispCost = 0.0;
+            if ($procHasDisposables && (int) ($row['has_disposables'] ?? 0) === 1) {
+                $dispCost = min($amount, max(0.0, (float) ($disposables[$i] ?? 0)));
+            }
             $lines[] = [
                 'master_id'  => (int) $row['procedure_master_id'],
                 'name'       => $row['name'],
                 'qty'        => $qty,
                 'rate'       => $rate,
-                'amount'     => round($rate * $qty, 2),
+                'amount'     => $amount,
+                'disp'       => $dispCost,
                 'share_pct'  => (float) $row['doctor_share_pct'],
                 'has_tax'    => (int) $row['has_tax'],
                 'tax_pct'    => (float) $row['tax_percent'],
@@ -176,21 +192,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
             ]);
             $procBillId = (int) $pdo->lastInsertId();
 
-            $itemIns = $pdo->prepare('
-                INSERT INTO procedure_bill_items
-                    (procedure_bill_id, procedure_master_id, description, quantity, unit_rate, amount,
-                     doctor_share_pct, has_tax, tax_percent)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ');
+            $itemIns = $procHasDisposables
+                ? $pdo->prepare('
+                    INSERT INTO procedure_bill_items
+                        (procedure_bill_id, procedure_master_id, description, quantity, unit_rate, amount,
+                         disposables_cost, doctor_share_pct, has_tax, tax_percent)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ')
+                : $pdo->prepare('
+                    INSERT INTO procedure_bill_items
+                        (procedure_bill_id, procedure_master_id, description, quantity, unit_rate, amount,
+                         doctor_share_pct, has_tax, tax_percent)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ');
             foreach ($lines as $ln) {
                 // Spread the category discount proportionally across the lines so
                 // SUM(amount) always re-sums to grand_total — the doctor's share
                 // is then computed on what was ACTUALLY collected, not list price.
                 $lineAmount = $discountPct > 0 ? round($ln['amount'] * (1 - $discountPct / 100), 2) : $ln['amount'];
-                $itemIns->execute([
-                    $procBillId, $ln['master_id'], $ln['name'], $ln['qty'], $ln['rate'], $lineAmount,
-                    $ln['share_pct'], $ln['has_tax'], $ln['tax_pct'],
-                ]);
+                // The supplies cost is NOT discounted — the clinic paid the same
+                // for them whoever the patient is. But a discount can drop the
+                // line below the cost, so re-clamp: the deduction can never
+                // exceed what was actually collected on this line.
+                $lineDisp = min($lineAmount, (float) ($ln['disp'] ?? 0));
+                $params = [$procBillId, $ln['master_id'], $ln['name'], $ln['qty'], $ln['rate'], $lineAmount];
+                if ($procHasDisposables) { $params[] = $lineDisp; }
+                array_push($params, $ln['share_pct'], $ln['has_tax'], $ln['tax_pct']);
+                $itemIns->execute($params);
             }
 
             $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
@@ -262,7 +290,8 @@ $procDoctors = $pdo->query("
 // Every active assignment, grouped by doctor for the client-side picker.
 // COALESCE(dp.fee, pm.fee): NULL override = the master's current rate.
 $assignRows = $pdo->query("
-    SELECT dp.id, dp.doctor_id, pm.name, COALESCE(dp.fee, pm.fee) AS fee, pm.mandatory_consent
+    SELECT dp.id, dp.doctor_id, pm.name, COALESCE(dp.fee, pm.fee) AS fee, pm.mandatory_consent"
+    . ($procHasDisposables ? ", pm.has_disposables" : '') . "
     FROM doctor_procedures dp
     JOIN procedure_master pm ON pm.id = dp.procedure_master_id
     WHERE dp.is_active = 1 AND pm.is_active = 1
@@ -275,6 +304,9 @@ foreach ($assignRows as $r) {
         'name'    => $r['name'],
         'fee'     => (float) $r['fee'],
         'consent' => (int) $r['mandatory_consent'],
+        // Drives whether the line gets a supplies-cost box. Server re-checks it
+        // on submit, so this is a UI hint, not the authority.
+        'disp'    => (int) ($r['has_disposables'] ?? 0),
     ];
 }
 
@@ -328,6 +360,7 @@ $headExtra = <<<CSS
 .ltable td { padding: 8px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
 .ltable td.num, .ltable th.num { text-align: right; }
 .ltable .rm { color: var(--red); cursor: pointer; font-weight: 700; border: none; background: none; font-size: 15px; }
+.ltable .disp-in { width: 84px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13px; text-align: right; background: var(--bg); color: var(--text); }
 .ltable .empty td { color: var(--text-muted); text-align: center; padding: 18px; font-size: 13px; }
 .totbar { display: flex; align-items: baseline; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 2px solid var(--border-strong); }
 .totbar .lbl { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
@@ -461,12 +494,15 @@ require __DIR__ . '/partials/sidebar.php';
                                         <th>Procedure</th>
                                         <th class="num">Qty</th>
                                         <th class="num">Rate</th>
+                                        <?php if ($procHasDisposables): ?>
+                                        <th class="num" title="Cost of disposables used. Deducted before tax and before the doctor/clinic split. Does not change what the patient pays.">Supplies</th>
+                                        <?php endif; ?>
                                         <th class="num">Amount</th>
                                         <th></th>
                                     </tr>
                                 </thead>
                                 <tbody id="lineBody">
-                                    <tr class="empty" id="emptyRow"><td colspan="5">No procedures added yet.</td></tr>
+                                    <tr class="empty" id="emptyRow"><td colspan="<?= $procHasDisposables ? 6 : 5 ?>">No procedures added yet.</td></tr>
                                 </tbody>
                             </table>
 
@@ -577,6 +613,7 @@ require __DIR__ . '/partials/sidebar.php';
 
     var byDoctor = <?= json_encode($assignByDoctor, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     var discountPct = <?= $selectedCat ? (float) $selectedCat['procedures_pct'] : 0 ?>;
+    var dispOn = <?= $procHasDisposables ? 'true' : 'false' ?>;
 
     var pick = document.getElementById('procPick');
     var qtyIn = document.getElementById('procQty');
@@ -607,6 +644,7 @@ require __DIR__ . '/partials/sidebar.php';
             o.dataset.name = p.name;
             o.dataset.fee = p.fee;
             o.dataset.consent = p.consent;
+            o.dataset.disp = p.disp;
             pick.appendChild(o);
         });
         pick.disabled = list.length === 0;
@@ -623,12 +661,24 @@ require __DIR__ . '/partials/sidebar.php';
             subtotal += ln.amount;
             var tr = document.createElement('tr');
             tr.className = 'line';
+            // Supplies cell: an editable box only for procedures the admin
+            // flagged. Unflagged lines still post a disposables[] slot (empty)
+            // so the parallel arrays stay index-aligned with assignment_id[].
+            var dispCell = '';
+            if (dispOn) {
+                dispCell = ln.disp
+                    ? '<td class="num"><input type="number" class="disp-in" name="disposables[]" min="0" step="0.01"' +
+                          ' value="' + (ln.dispCost || '') + '" data-i="' + idx + '" placeholder="0"></td>'
+                    : '<td class="num"><input type="hidden" name="disposables[]" value="0">' +
+                          '<span class="muted">&mdash;</span></td>';
+            }
             tr.innerHTML =
                 '<td>' + ln.name +
                     '<input type="hidden" name="assignment_id[]" value="' + ln.id + '">' +
                     '<input type="hidden" name="quantity[]" value="' + ln.qty + '"></td>' +
                 '<td class="num">' + ln.qty + '</td>' +
                 '<td class="num">' + fmt(ln.rate) + '</td>' +
+                dispCell +
                 '<td class="num">' + fmt(ln.amount) + '</td>' +
                 '<td><button type="button" class="rm" data-i="' + idx + '" aria-label="Remove">&times;</button></td>';
             body.appendChild(tr);
@@ -662,7 +712,8 @@ require __DIR__ . '/partials/sidebar.php';
         var fee = parseFloat(opt.dataset.fee) || 0;
         lines.push({
             id: opt.value, name: opt.dataset.name, qty: qty, rate: fee,
-            amount: fee * qty, consent: opt.dataset.consent === '1'
+            amount: fee * qty, consent: opt.dataset.consent === '1',
+            disp: opt.dataset.disp === '1', dispCost: ''
         });
         pick.selectedIndex = 0; qtyIn.value = 1;
         render();
@@ -673,6 +724,15 @@ require __DIR__ . '/partials/sidebar.php';
         if (!btn) return;
         lines.splice(parseInt(btn.dataset.i, 10), 1);
         render();
+    });
+
+    // Keep a typed supplies cost on the model, so removing another line (which
+    // re-renders the whole table) doesn't wipe what the cashier already entered.
+    body.addEventListener('input', function (e) {
+        var inp = e.target.closest('.disp-in');
+        if (!inp) return;
+        var ln = lines[parseInt(inp.dataset.i, 10)];
+        if (ln) { ln.dispCost = inp.value; }
     });
 
     // A payment mode must be chosen — the server refuses otherwise, so catch it

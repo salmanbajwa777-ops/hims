@@ -28,6 +28,17 @@
 --
 -- No stored procedures / no DELIMITER: the Hostinger DB user is denied
 -- CREATE ROUTINE (#1044). Flat, idempotent statements only.
+--
+-- NO EXPLICIT ENGINE/CHARSET CLAUSE — deliberate, and load-bearing. The first
+-- version of this file ended each CREATE with
+-- "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"; forcing a charset that differs from
+-- the referenced patients/users tables makes every FOREIGN KEY fail with
+-- errno 150, so all three CREATEs silently aborted while the INSERT IGNOREs at
+-- the end still succeeded. The result looked like a successful migration but
+-- left procedure_bill.php fatal with "Table 'procedure_bills' doesn't exist".
+-- add_er_bills.sql declares no ENGINE either — inherit the server default and
+-- the FKs match whatever patients/users actually use.
+--
 -- Run in phpMyAdmin against the hims database. Timestamps are PKT (+05:00).
 -- =============================================================================
 
@@ -39,7 +50,7 @@ CREATE TABLE IF NOT EXISTS procedure_invoice_counters (
     mo       TINYINT  NOT NULL,
     next_seq INT      NOT NULL DEFAULT 1,
     PRIMARY KEY (yr, mo)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- 2. The bill header. Prepaid: raised and settled in one go, so paid_at /
 --    payment_method are written on INSERT and there is no draft state.
@@ -84,7 +95,7 @@ CREATE TABLE IF NOT EXISTS procedure_bills (
     FOREIGN KEY (paid_by_id)    REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (printed_by_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (voided_by_id)  REFERENCES users(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- 3. Line items. procedure_master_id is ON DELETE SET NULL, not CASCADE:
 --    retiring a procedure from the catalogue must never delete the history of
@@ -107,7 +118,7 @@ CREATE TABLE IF NOT EXISTS procedure_bill_items (
     KEY idx_pbi_bill (procedure_bill_id),
     FOREIGN KEY (procedure_bill_id)   REFERENCES procedure_bills(id) ON DELETE CASCADE,
     FOREIGN KEY (procedure_master_id) REFERENCES procedure_master(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- 4. Permission to raise a procedure bill. Separate key from the ER one so the
 --    two counters can be staffed independently. Granted to ADMIN and MANAGER
