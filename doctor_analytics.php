@@ -194,29 +194,16 @@ if ($view === 'revenue') {
     //   month — one bar PER DAY of the picked month  ← the headline view
     //   year  — 12 monthly bars
     //   total — one bar per year since this doctor's first paid consultation
-    $gran = in_array($_GET['gran'] ?? '', ['day', 'month', 'year', 'total'], true) ? $_GET['gran'] : 'month';
+    $gran = in_array($_GET['gran'] ?? '', ['month', 'year'], true) ? $_GET['gran'] : 'month';
 
-    // Comparison only makes sense for the two mid-range views; a 24-hour day and
-    // an all-time total have no natural counterpart period.
-    $compare = ($_GET['compare'] ?? '1') !== '0' && in_array($gran, ['month', 'year'], true);
+    // The Year view ALWAYS draws the previous year beside the current one
+    // (two bars per month), so its comparison is not optional.
+    $compare = ($gran === 'year') ? true : ($_GET['compare'] ?? '1') !== '0';
 
     $chartKeys = [];    // bucket keys in display order
     $chartLabels = [];  // x-axis label per key
 
-    if ($gran === 'day') {
-        $period = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y-m-d');
-        $curStart = $curEnd = $period;
-        $prevStart = $prevEnd = null;
-        $bucketExpr = 'HOUR(%s)';
-        $periodLabel = date('d/m/Y', strtotime($period));
-        $prevLabel = '';
-        $navPrev = date('Y-m-d', strtotime($period . ' -1 day'));
-        $navNext = $period >= date('Y-m-d') ? null : date('Y-m-d', strtotime($period . ' +1 day'));
-        for ($h = 0; $h < 24; $h++) {
-            $chartKeys[] = $h;
-            $chartLabels[] = str_pad((string) $h, 2, '0', STR_PAD_LEFT);
-        }
-    } elseif ($gran === 'month') {
+    if ($gran === 'month') {
         $period = preg_match('/^\d{4}-\d{2}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y-m');
         $curStart = $period . '-01';
         $curEnd = date('Y-m-t', strtotime($curStart));
@@ -232,7 +219,7 @@ if ($view === 'revenue') {
             $chartKeys[] = $d;
             $chartLabels[] = (string) $d;
         }
-    } elseif ($gran === 'year') {
+    } else { // year — 12 months, each paired against the same month last year
         $period = preg_match('/^\d{4}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y');
         $curStart = $period . '-01-01';
         $curEnd = $period . '-12-31';
@@ -245,29 +232,7 @@ if ($view === 'revenue') {
         $navNext = (int) $period >= (int) date('Y') ? null : (string) ((int) $period + 1);
         for ($m = 1; $m <= 12; $m++) {
             $chartKeys[] = $m;
-            $chartLabels[] = date('M', mktime(0, 0, 0, $m, 1));
-        }
-    } else { // total — every year that could hold data, oldest first
-        $fy = $pdo->prepare("
-            SELECT MIN(YEAR(v.visit_date)) FROM visits v
-            JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
-            WHERE v.doctor_id = ?
-        ");
-        $fy->execute([$doctorId]);
-        $yearNow = (int) date('Y');
-        $firstYear = (int) ($fy->fetchColumn() ?: $yearNow);
-        if ($firstYear < 2000 || $firstYear > $yearNow) { $firstYear = $yearNow; }
-        $period = '';
-        $curStart = $firstYear . '-01-01';
-        $curEnd = $yearNow . '-12-31';
-        $prevStart = $prevEnd = null;
-        $bucketExpr = 'YEAR(%s)';
-        $periodLabel = $firstYear === $yearNow ? (string) $yearNow : $firstYear . ' – ' . $yearNow;
-        $prevLabel = '';
-        $navPrev = $navNext = null;
-        for ($y = $firstYear; $y <= $yearNow; $y++) {
-            $chartKeys[] = $y;
-            $chartLabels[] = (string) $y;
+            $chartLabels[] = (string) $m;   // numeric 1–12, as in the reference
         }
     }
 
@@ -611,8 +576,18 @@ require __DIR__ . '/partials/head.php';
                 $pcLabels    = $chartLabels;
                 $pcGran      = $gran;
                 $pcPeriodLbl = $periodLabel;
-                $pcSeriesLbl = 'Earnings';
+                $pcSeriesLbl = ($gran === 'year') ? $periodLabel : 'Earnings';
                 $pcUnit      = 'PKR';
+                // Year: draw last year beside this year — two bars per month.
+                $pcBuckets2 = null;
+                if ($gran === 'year') {
+                    $pcBuckets2 = [];
+                    foreach ($bucketKeys as $bk) {
+                        $p = $prevSeries[$bk] ?? [];
+                        $pcBuckets2[$bk] = (float) ($p['full'] ?? 0) + (float) ($p['revisit'] ?? 0);
+                    }
+                    $pcSeriesLbl2 = $prevLabel;
+                }
                 $pcPrevUrl   = $navPrev !== null ? qs_view('revenue', ['gran' => $gran, 'period' => $navPrev, 'compare' => $compare ? '1' : '0']) : null;
                 $pcNextUrl   = $navNext !== null ? qs_view('revenue', ['gran' => $gran, 'period' => $navNext, 'compare' => $compare ? '1' : '0']) : null;
                 $pcTabUrl    = function (string $g) { return qs_view('revenue', ['gran' => $g]); };

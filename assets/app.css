@@ -892,3 +892,6 @@ html[data-view="mobile"] .pchart-foot .pcf { flex-direction: row; justify-conten
     .pchart-plot svg { min-width: 0; }
     .pchart-b .pchart-fill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Paired second series (Year view: previous year beside current). */
+.pchart-key.alt i { background: linear-gradient(180deg, rgba(74,87,79,.55), rgba(74,87,79,.12)); }

@@ -7,11 +7,11 @@
  *   doctor_analytics.php  bars = that doctor's EARNED share
  *   income_report.php     bars = CLINIC INCOME (gross − refunds − tax − shares)
  *
- * The four granularities mirror the solar-app reference the user asked for:
- *   day    — 24 hourly bars for one date
+ * Two granularities, mirroring the solar-app reference the user asked for:
  *   month  — one bar PER DAY of the picked month (the headline view)
- *   year   — 12 monthly bars
- *   total  — one bar per year since the first record
+ *   year   — 12 months, each a PAIR of bars: this year beside last year
+ * (An hourly Day view and an all-time Total were built first and cut on
+ * 2026-07-27 — neither earned its place beside these two.)
  *
  * Caller contract — set these before requiring this file:
  *   $pcBuckets   array<string|int, float>  bucket key => amount (missing = 0)
@@ -25,6 +25,13 @@
  *   $pcUnit      string                    axis unit caption, e.g. "PKR"
  *   $pcTipFmt    ?callable(string $label, float $v): string
  *
+ * OPTIONAL SECOND SERIES (the Year view's side-by-side comparison):
+ *   $pcBuckets2   array   same keys as $pcBuckets — drawn as a paired bar
+ *   $pcSeriesLbl2 string  legend text for it, e.g. "2025"
+ * With it set, every slot renders TWO bars (current beside previous) so month 1
+ * has two bars, month 2 has two, and so on. Without it the chart is a single
+ * series and nothing about the other views changes.
+ *
  * The bars are a plain inline SVG — the app ships no chart library and this
  * keeps the view printable and dependency-free.
  */
@@ -36,9 +43,18 @@ $pcBuckets  = $pcBuckets  ?? [];
 $pcKeys     = $pcKeys     ?? [];
 $pcLabels   = $pcLabels   ?? [];
 
+// A paired series is opt-in; null/absent keeps the original single-bar chart.
+$pcBuckets2   = $pcBuckets2 ?? null;
+$pcPaired     = is_array($pcBuckets2);
+$pcSeriesLbl2 = $pcSeriesLbl2 ?? 'Previous';
+
 // ---- Axis scale -------------------------------------------------------------
+// Both series share one scale, or the comparison would lie.
 $pcMax = 0.0;
-foreach ($pcKeys as $k) { $pcMax = max($pcMax, (float) ($pcBuckets[$k] ?? 0)); }
+foreach ($pcKeys as $k) {
+    $pcMax = max($pcMax, (float) ($pcBuckets[$k] ?? 0));
+    if ($pcPaired) { $pcMax = max($pcMax, (float) ($pcBuckets2[$k] ?? 0)); }
+}
 
 // Round the top to a friendly step so gridlines land on readable numbers
 // (80 / 60 / 40 …), the way the reference chart does.
@@ -71,9 +87,27 @@ $pcPlotW = $pcW - $pcPadL - $pcPadR;
 $pcPlotH = $pcH - $pcPadT - $pcPadB;
 $pcN     = max(1, count($pcKeys));
 $pcSlot  = $pcPlotW / $pcN;
-// Bar takes ~62% of its slot, like the reference's airy spacing.
-$pcBarW  = max(2.0, min(22.0, $pcSlot * 0.62));
-$pcGrid  = 8;   // 8 bands → the reference's 0,10,20…80 ladder
+// Bar takes ~62% of its slot, like the reference's airy spacing. A paired slot
+// splits that width between the two bars with a hairline gap, so the PAIR still
+// occupies the same footprint one bar would and the rhythm stays even.
+$pcGap   = $pcPaired ? max(1.0, $pcSlot * 0.05) : 0.0;
+$pcBarW  = $pcPaired
+    ? max(2.0, min(14.0, ($pcSlot * 0.72 - $pcGap) / 2))
+    : max(2.0, min(22.0, $pcSlot * 0.62));
+// Pick a band count that divides the axis into ROUND numbers. A fixed 8 bands
+// turns a 5,000 top into the unreadable 625 / 1.3k / 1.9k ladder; preferring a
+// divisor that lands on whole steps gives 1k / 2k / 3k instead.
+$pcGrid = 8;
+foreach ([8, 6, 5, 4, 10, 7, 9, 3] as $pcTryBands) {
+    $stepv = $pcAxisMax / $pcTryBands;
+    // "Round" = a 1/2/5 × power-of-ten step, the ladders people read easily.
+    $mag = pow(10, floor(log10(max($stepv, 1e-9))));
+    $lead = $stepv / $mag;
+    if (abs($lead - round($lead)) < 0.001 && in_array((int) round($lead), [1, 2, 5, 10], true)) {
+        $pcGrid = $pcTryBands;
+        break;
+    }
+}
 
 $pcYFor = function (float $v) use ($pcPadT, $pcPlotH, $pcAxisMax) {
     return $pcPadT + $pcPlotH - ($pcAxisMax > 0 ? ($v / $pcAxisMax) * $pcPlotH : 0);
@@ -101,7 +135,9 @@ foreach ($pcKeys as $i => $k) {
 <div class="pchart">
     <div class="pchart-bar">
         <div class="pchart-seg" role="group" aria-label="Chart granularity">
-            <?php foreach (['day' => 'Day', 'month' => 'Month', 'year' => 'Year', 'total' => 'Total'] as $g => $lab): ?>
+            <?php // Month and Year only (2026-07-27): a 24-bar hourly Day view and an
+                  // all-time Total weren't useful next to the two that are.
+                  foreach (['month' => 'Month', 'year' => 'Year'] as $g => $lab): ?>
             <a class="<?= $pcGran === $g ? 'on' : '' ?>" href="<?= htmlspecialchars($pcTabUrl($g)) ?>"><?= $lab ?></a>
             <?php endforeach; ?>
         </div>
@@ -127,6 +163,9 @@ foreach ($pcKeys as $i => $k) {
     <div class="pchart-legend">
         <span class="pchart-unit"><?= htmlspecialchars($pcUnit) ?></span>
         <span class="pchart-key"><i></i><?= htmlspecialchars($pcSeriesLbl) ?></span>
+        <?php if ($pcPaired): ?>
+        <span class="pchart-key alt"><i></i><?= htmlspecialchars($pcSeriesLbl2) ?></span>
+        <?php endif; ?>
     </div>
 
     <div class="pchart-plot">
@@ -137,6 +176,14 @@ foreach ($pcKeys as $i => $k) {
                 <stop offset="0%"   stop-color="var(--primary-accent)" stop-opacity="1"/>
                 <stop offset="100%" stop-color="var(--primary-accent)" stop-opacity=".18"/>
             </linearGradient>
+            <?php if ($pcPaired): ?>
+            <!-- Previous period: same gradient shape, muted, so the current
+                 year stays the figure the eye lands on first. -->
+            <linearGradient id="pcFill2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stop-color="var(--text-secondary)" stop-opacity=".55"/>
+                <stop offset="100%" stop-color="var(--text-secondary)" stop-opacity=".10"/>
+            </linearGradient>
+            <?php endif; ?>
         </defs>
 
         <!-- dashed gridlines + value ladder -->
@@ -155,18 +202,39 @@ foreach ($pcKeys as $i => $k) {
             $v = (float) ($pcBuckets[$k] ?? 0);
             $lab = (string) ($pcLabels[$i] ?? $k);
             $slotX = $pcPadL + $pcSlot * $i;
-            $x = $slotX + ($pcSlot - $pcBarW) / 2;
             $y = $pcYFor($v);
             $h = $pcYFor(0) - $y;
+            $rx = $pcBarW > 8 ? 3 : 1.5;
+
+            if ($pcPaired) {
+                // Current bar sits left of centre, previous right, the pair
+                // centred in the slot so month 1 has two bars, month 2 two, …
+                $pairW = 2 * $pcBarW + $pcGap;
+                $x  = $slotX + ($pcSlot - $pairW) / 2;
+                $x2 = $x + $pcBarW + $pcGap;
+                $v2 = (float) ($pcBuckets2[$k] ?? 0);
+                $y2 = $pcYFor($v2);
+                $h2 = $pcYFor(0) - $y2;
+                $tip = $lab . ' — ' . $pcSeriesLbl . ': ' . number_format($v)
+                     . ' · ' . $pcSeriesLbl2 . ': ' . number_format($v2) . ' ' . $pcUnit;
+            } else {
+                $x = $slotX + ($pcSlot - $pcBarW) / 2;
+                $tip = $pcTipFmt($lab, $v);
+            }
         ?>
         <g class="pchart-b">
-            <title><?= htmlspecialchars($pcTipFmt($lab, $v)) ?></title>
-            <!-- full-height hit area so hovering an empty day still reads its tooltip -->
+            <title><?= htmlspecialchars($tip) ?></title>
+            <!-- full-height hit area so hovering an empty slot still reads its tooltip -->
             <rect x="<?= round($slotX, 1) ?>" y="<?= $pcPadT ?>" width="<?= round($pcSlot, 1) ?>" height="<?= $pcPlotH ?>" fill="transparent"/>
+            <?php if ($pcPaired && $v2 > 0): ?>
+            <rect class="pchart-fill" x="<?= round($x2, 1) ?>" y="<?= round($y2, 1) ?>"
+                  width="<?= round($pcBarW, 1) ?>" height="<?= round(max(1.5, $h2), 1) ?>"
+                  rx="<?= $rx ?>" fill="url(#pcFill2)"/>
+            <?php endif; ?>
             <?php if ($v > 0): ?>
             <rect class="pchart-fill" x="<?= round($x, 1) ?>" y="<?= round($y, 1) ?>"
                   width="<?= round($pcBarW, 1) ?>" height="<?= round(max(1.5, $h), 1) ?>"
-                  rx="<?= $pcBarW > 8 ? 3 : 1.5 ?>" fill="url(#pcFill)"/>
+                  rx="<?= $rx ?>" fill="url(#pcFill)"/>
             <?php endif; ?>
             <?php if ($i % $pcEvery === 0): ?>
             <text class="pchart-ax" text-anchor="middle" x="<?= round($slotX + $pcSlot / 2, 1) ?>" y="<?= $pcH - $pcPadB + 18 ?>"><?= htmlspecialchars($lab) ?></text>
@@ -182,7 +250,7 @@ foreach ($pcKeys as $i => $k) {
             <span class="pcf-v tnum"><?= number_format($pcTotal) ?> <?= htmlspecialchars($pcUnit) ?></span>
         </div>
         <div class="pcf">
-            <span class="pcf-k">Best <?= $pcGran === 'day' ? 'hour' : ($pcGran === 'month' ? 'day' : ($pcGran === 'year' ? 'month' : 'year')) ?></span>
+            <span class="pcf-k">Best <?= $pcGran === 'month' ? 'day' : 'month' ?></span>
             <span class="pcf-v tnum"><?= $pcPeak > 0 ? htmlspecialchars($pcPeakLabel) . ' · ' . number_format($pcPeak) : '—' ?></span>
         </div>
         <div class="pcf">

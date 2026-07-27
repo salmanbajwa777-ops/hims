@@ -63,18 +63,11 @@ $dayCount = function ($s, $e) { return max(1, (int) ((strtotime($e) - strtotime(
 // both. It drives its OWN period independently of the Month/Range/Compare
 // tables below — those answer "what did this range total?", the chart answers
 // "how did it move day to day?".
-$chartGran = in_array($_GET['gran'] ?? '', ['day', 'month', 'year', 'total'], true) ? $_GET['gran'] : 'month';
+$chartGran = in_array($_GET['gran'] ?? '', ['month', 'year'], true) ? $_GET['gran'] : 'month';
 $cKeys = $cLabels = [];
+$chartData2 = null;   // previous-year series, Year view only
 
-if ($chartGran === 'day') {
-    $cPeriod = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y-m-d');
-    $cStart = $cEnd = $cPeriod;
-    $cBucket = 'hour';
-    $cLabel = date('d/m/Y', strtotime($cPeriod));
-    $cPrev = date('Y-m-d', strtotime($cPeriod . ' -1 day'));
-    $cNext = $cPeriod >= date('Y-m-d') ? null : date('Y-m-d', strtotime($cPeriod . ' +1 day'));
-    for ($h = 0; $h < 24; $h++) { $cKeys[] = $h; $cLabels[] = str_pad((string) $h, 2, '0', STR_PAD_LEFT); }
-} elseif ($chartGran === 'month') {
+if ($chartGran === 'month') {
     $cPeriod = preg_match('/^\d{4}-\d{2}$/', $_GET['period'] ?? '') ? $_GET['period'] : $month;
     $cStart = $cPeriod . '-01';
     $cEnd = date('Y-m-t', strtotime($cStart));
@@ -84,7 +77,7 @@ if ($chartGran === 'day') {
     $cNext = $cPeriod >= date('Y-m') ? null : date('Y-m', strtotime($cStart . ' +1 month'));
     $dim = (int) date('t', strtotime($cStart));
     for ($d = 1; $d <= $dim; $d++) { $cKeys[] = $d; $cLabels[] = (string) $d; }
-} elseif ($chartGran === 'year') {
+} else { // year — 12 months, each paired against the same month last year
     $cPeriod = preg_match('/^\d{4}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y');
     $cStart = $cPeriod . '-01-01';
     $cEnd = $cPeriod . '-12-31';
@@ -92,21 +85,9 @@ if ($chartGran === 'day') {
     $cLabel = (string) $cPeriod;
     $cPrev = (string) ((int) $cPeriod - 1);
     $cNext = (int) $cPeriod >= (int) date('Y') ? null : (string) ((int) $cPeriod + 1);
-    for ($m = 1; $m <= 12; $m++) { $cKeys[] = $m; $cLabels[] = date('M', mktime(0, 0, 0, $m, 1)); }
-} else { // total — every year the clinic has taken money in
-    $yNow = (int) date('Y');
-    $yFirst = $yNow;
-    try {
-        $fy = $pdo->query("SELECT MIN(YEAR(paid_at)) FROM bills WHERE status = 'paid' AND voided_at IS NULL")->fetchColumn();
-        if ($fy && (int) $fy >= 2000 && (int) $fy <= $yNow) { $yFirst = (int) $fy; }
-    } catch (PDOException $e) { /* fall back to this year alone */ }
-    $cPeriod = '';
-    $cStart = $yFirst . '-01-01';
-    $cEnd = $yNow . '-12-31';
-    $cBucket = 'year';
-    $cLabel = $yFirst === $yNow ? (string) $yNow : $yFirst . ' – ' . $yNow;
-    $cPrev = $cNext = null;
-    for ($y = $yFirst; $y <= $yNow; $y++) { $cKeys[] = $y; $cLabels[] = (string) $y; }
+    for ($m = 1; $m <= 12; $m++) { $cKeys[] = $m; $cLabels[] = (string) $m; }
+    $cPrevYear = (int) $cPeriod - 1;
+    $chartData2 = clinic_income_buckets($pdo, $cPrevYear . '-01-01', $cPrevYear . '-12-31', 'month');
 }
 
 $chartData = clinic_income_buckets($pdo, $cStart, $cEnd, $cBucket);
@@ -345,8 +326,11 @@ $pieColors = ['#0E5456', '#1A7F7E', '#2E9E86', '#7FB069', '#C7B446', '#E08D3C'];
                 $pcLabels    = $cLabels;
                 $pcGran      = $chartGran;
                 $pcPeriodLbl = $cLabel;
-                $pcSeriesLbl = 'Clinic income';
+                $pcSeriesLbl = ($chartGran === 'year') ? $cLabel : 'Clinic income';
                 $pcUnit      = 'PKR';
+                // Year: last year beside this year — two bars per month.
+                $pcBuckets2   = $chartData2;
+                $pcSeriesLbl2 = ($chartGran === 'year') ? (string) ((int) $cPeriod - 1) : '';
                 // Keep whatever range/compare the tables are showing when the
                 // chart's own tabs and arrows are used.
                 $chartQs = function (array $extra) use ($periodQs) {
