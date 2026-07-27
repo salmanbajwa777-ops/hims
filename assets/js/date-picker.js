@@ -73,12 +73,21 @@
         return proxy._native ? proxy._native.value : '';
     }
 
-    function renderPopup(proxy) {
+    // syncView=true snaps the grid to the currently selected date. That is right
+    // when the calendar OPENS, and when the user types a new date — but it must
+    // NOT happen on a redraw triggered by the month arrows, or the freshly
+    // advanced month is immediately reset to the selected one and the arrows
+    // appear dead. (That was the "I cannot change the dates" bug: with a value
+    // set, every ‹ / › click re-rendered straight back to the selected month.)
+    function renderPopup(proxy, syncView) {
         var iso = displayToIso(proxy.value) || ownerIso(proxy);
         var sel = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
         var today = new Date();
-        if (sel) { viewYear = +sel[1]; viewMonth = +sel[2] - 1; }
-        else if (viewYear == null) { viewYear = today.getFullYear(); viewMonth = today.getMonth(); }
+        if (sel && syncView) { viewYear = +sel[1]; viewMonth = +sel[2] - 1; }
+        else if (viewYear == null) {
+            if (sel) { viewYear = +sel[1]; viewMonth = +sel[2] - 1; }
+            else { viewYear = today.getFullYear(); viewMonth = today.getMonth(); }
+        }
 
         var min = proxy._native.getAttribute('min');
         var max = proxy._native.getAttribute('max');
@@ -123,12 +132,24 @@
     function openCalendar(proxy) {
         if (!popup) buildPopup();
         popupOwner = proxy;
-        renderPopup(proxy);
+        renderPopup(proxy, true);   // opening: show the selected date's month
         positionPopup(proxy);
     }
 
-    // delegated clicks inside the popup (nav + day pick)
-    document.addEventListener('click', function (e) {
+    // Day picks and month nav. Bound on POINTERUP, not click.
+    //
+    // buildPopup() calls preventDefault() on the popup's pointerdown to keep
+    // focus on the proxy input (losing focus would fire blur and close the
+    // calendar before the pick landed). The cost is that a click event is not
+    // guaranteed to follow a defaulted pointerdown — several
+    // browser/input-device combinations swallow it, which is exactly the
+    // reported "calendar opens but clicking a day does nothing". pointerup
+    // always fires, so the pick is handled there.
+    //
+    // The click listener is kept as a fallback for pointer-less input (keyboard
+    // Enter/Space on a focused day button synthesises a click but no pointer
+    // events). _ddmyHandled de-duplicates when both fire for one interaction.
+    function handlePick(e) {
         if (!popup || popup.style.display === 'none' || !popupOwner) return;
         if (!popup.contains(e.target)) return;
         var nav = e.target.closest('[data-nav]');
@@ -136,7 +157,7 @@
             viewMonth += +nav.getAttribute('data-nav');
             if (viewMonth < 0) { viewMonth = 11; viewYear--; }
             else if (viewMonth > 11) { viewMonth = 0; viewYear++; }
-            renderPopup(popupOwner);
+            renderPopup(popupOwner, false);   // keep the month the user moved to
             positionPopup(popupOwner);
             return;
         }
@@ -145,6 +166,34 @@
             commit(popupOwner, day.getAttribute('data-iso'));
             closePopup();
         }
+    }
+    // Observed sequences inside the popup (Chrome, verified):
+    //   day pick  : pointerdown -> pointerup -> click
+    //   month nav : pointerdown -> pointerup            (NO click — renderPopup
+    //               replaces the button mid-interaction, so the click has no
+    //               shared target and is never dispatched)
+    //   keyboard  : click only                          (no pointer events)
+    //
+    // So neither event alone is sufficient, and a plain boolean latch breaks:
+    // nav sets it with no click to clear it, poisoning the next keypress.
+    // Stamping the ORIGINATING pointer event id on the click is precise —
+    // a click paired with a handled pointerup carries the same pointerId, and
+    // a keyboard click carries none.
+    var lastHandledPointer = null;
+    document.addEventListener('pointerup', function (e) {
+        if (!popup || !popup.contains(e.target)) return;
+        lastHandledPointer = e.pointerId;
+        handlePick(e);
+    });
+    document.addEventListener('click', function (e) {
+        // A real mouse/touch click carries detail > 0 and follows the pointerup
+        // we just handled; a keyboard-synthesised one has detail === 0.
+        if (e.detail > 0 && lastHandledPointer !== null) {
+            lastHandledPointer = null;
+            return;
+        }
+        lastHandledPointer = null;
+        handlePick(e);
     });
 
     /* ---------- proxy <-> native sync ---------- */
@@ -195,7 +244,8 @@
             var iso = displayToIso(proxy.value);
             if (iso) {
                 native.value = iso;
-                if (popupOwner === proxy) { renderPopup(proxy); }
+                // Typing a date DOES move the grid to it.
+                if (popupOwner === proxy) { renderPopup(proxy, true); }
             }
         });
         proxy.addEventListener('change', function () {
