@@ -12,24 +12,34 @@
 --   limit_note  — human-readable snapshot of which limit(s) it broke, e.g.
 --                 "Exceeds Advances limit Rs 3,000 (Rs 0 spent, over by Rs 7,000)"
 --
--- Run in phpMyAdmin BEFORE deploying the code. Idempotent: safe to re-run.
+-- REWRITTEN 2026-07-27, flat. The original wrapped both ALTERs in a
+-- DELIMITER-guarded CREATE PROCEDURE, which the Hostinger DB user is DENIED
+-- (#1044 CREATE ROUTINE). It therefore never ran — a 2026-07-27 schema audit
+-- found this the only unapplied migration in the whole sql/ directory, while
+-- the code that reads these columns had already shipped. Flat ALTERs only.
+--
+-- MySQL has no "ADD COLUMN IF NOT EXISTS", so re-running errors with
+-- #1060 "Duplicate column name". That error is harmless — it means the column
+-- is already there. Run the statements one at a time if one has been applied.
+--
+-- Run in phpMyAdmin against the hims database.
 -- =============================================================================
 
-DROP PROCEDURE IF EXISTS hims_add_expense_over_limit_columns;
-DELIMITER $$
-CREATE PROCEDURE hims_add_expense_over_limit_columns()
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_schema = DATABASE()
-                     AND table_name = 'expenses' AND column_name = 'over_limit') THEN
-        ALTER TABLE expenses ADD COLUMN over_limit TINYINT(1) NOT NULL DEFAULT 0 AFTER approval_status;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                   WHERE table_schema = DATABASE()
-                     AND table_name = 'expenses' AND column_name = 'limit_note') THEN
-        ALTER TABLE expenses ADD COLUMN limit_note VARCHAR(255) NULL AFTER over_limit;
-    END IF;
-END$$
-DELIMITER ;
-CALL hims_add_expense_over_limit_columns();
-DROP PROCEDURE IF EXISTS hims_add_expense_over_limit_columns;
+ALTER TABLE u402528120_hmis.expenses
+    ADD COLUMN over_limit TINYINT(1) NOT NULL DEFAULT 0 AFTER approval_status;
+
+ALTER TABLE u402528120_hmis.expenses
+    ADD COLUMN limit_note VARCHAR(255) NULL AFTER over_limit;
+
+-- =============================================================================
+-- Verify (fully qualified — querying information_schema switches phpMyAdmin's
+-- current-database context, which is what makes a following bare table name
+-- fail with "#1109 Unknown table ... in information_schema"):
+--
+--   SELECT column_name, column_type, column_default
+--     FROM information_schema.columns
+--    WHERE table_schema = 'u402528120_hmis'
+--      AND table_name   = 'expenses'
+--      AND column_name IN ('over_limit', 'limit_note');
+--   -- expect 2 rows: tinyint(1) default 0, and varchar(255) nullable
+-- =============================================================================
