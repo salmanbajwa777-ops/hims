@@ -134,9 +134,10 @@ function doctor_token_prefix(?string $storedPrefix, ?string $doctorName): string
  * the wrong BU. Same reasoning covers "ud din", "bin", "al" and the like — they are
  * skipped outright so a three-part name still initialises on its real surname.
  *
- * Honorifics are dropped first — "Dr. Asad Mahmood" must give AM, not DA. Names are
- * usually stored bare (see the ALL-CAPS convention), but reception does sometimes type
- * the title in.
+ * Honorifics are dropped first, and that is the common case here, not an edge one:
+ * doctors are stored WITH the title ("DR SALMAN A BAJWA"), so keeping it would make
+ * every prefix start with D and collide. Punctuation is normalised to whitespace
+ * before splitting, so "DR." and a trailing "RAHMAN." both behave.
  *
  * Anything this gets wrong is fixable: admin sets an explicit prefix on staff.php and
  * the stored value always wins over this fallback.
