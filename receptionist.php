@@ -98,13 +98,19 @@ $todayRows = $pdo->query("
            adm.id AS admission_id, adm.status AS admission_status,
            dct.label AS consult_label,
            b.id AS bill_id, b.grand_total, b.paid_amount, b.status AS bill_status,
-           COALESCE(r.refunded, 0) AS refunded
+           COALESCE(r.refunded, 0) AS refunded,
+           -- The stay is billed SEPARATELY ("A" series, admission_bills) and the
+           -- consultation bill is often Rs 0 for a straight-to-admission patient,
+           -- so the row must carry both or the money column reads a false zero.
+           ab.id AS adm_bill_id, ab.status AS adm_bill_status,
+           COALESCE(ab.paid_amount, 0) AS adm_paid_amount
     FROM visits v
     JOIN patients p ON p.id = v.patient_id
     JOIN users dr ON dr.id = v.doctor_id
     JOIN doctor_consult_types dct ON dct.id = v.doctor_consult_type_id
     LEFT JOIN bills b ON b.visit_id = v.id AND b.voided_at IS NULL
     LEFT JOIN admissions adm ON adm.visit_id = v.id
+    LEFT JOIN admission_bills ab ON ab.admission_id = adm.id AND ab.voided_at IS NULL
     LEFT JOIN (
         SELECT bill_id, SUM(amount) AS refunded FROM refunds WHERE voided_at IS NULL GROUP BY bill_id
     ) r ON r.bill_id = b.id
@@ -130,7 +136,9 @@ foreach ($todayRows as $row) {
     if ($row['disposition'] === 'SHORT_STAY') {
         $countAdmitted++;
     }
-    $grossCollected += (float) $row['paid_amount'];
+    // Consultation + stay. Admission revenue was missing entirely, so the
+    // day's collected-cash card under-reported by every discharge bill.
+    $grossCollected += (float) $row['paid_amount'] + (float) $row['adm_paid_amount'];
     $totalRefunded += (float) $row['refunded'];
 }
 $netCollected = $grossCollected - $totalRefunded;
@@ -430,6 +438,9 @@ require __DIR__ . '/partials/sidebar.php';
                             $isAdmitted = $row['disposition'] === 'SHORT_STAY';
                             $refunded   = (float) $row['refunded'];
                             $paidAmount = (float) $row['paid_amount'];
+                            // Stay money lives in admission_bills, not bills.
+                            $admPaid      = (float) $row['adm_paid_amount'];
+                            $rowPaidTotal = $paidAmount + $admPaid;
 
                             // ---- Status: ONE pill, one tone. -------------------
                             // The old row carried up to four simultaneous signals
@@ -481,6 +492,9 @@ require __DIR__ . '/partials/sidebar.php';
                                 . htmlspecialchars(json_encode($row['doctor_name']), ENT_QUOTES) . ')"';
                             $invoiceHref = $row['bill_id']
                                 ? 'checkout.php?print=1&amp;bill_id=' . (int) $row['bill_id'] : '';
+                            // admission_invoice.php is keyed by ADMISSION id, not bill id.
+                            $admInvoiceHref = $row['adm_bill_id']
+                                ? 'admission_invoice.php?id=' . (int) $row['admission_id'] : '';
                             $profileHref = 'patients.php?q=' . urlencode($row['mrn']);
 
                             // [label, html-attrs, is-link] for primary + secondary.
@@ -489,6 +503,17 @@ require __DIR__ . '/partials/sidebar.php';
                             if ($isAdmitted && $row['admission_id'] && $row['admission_status'] === 'DISCHARGE_IN_PROGRESS') {
                                 $primary = ['Bill discharge', 'href="admission_discharge.php?id=' . (int) $row['admission_id'] . '"', true];
                                 if ($invoiceHref) { $secondary = ['Invoice', 'href="' . $invoiceHref . '" target="_blank" rel="noopener"', true]; }
+                            } elseif ($isAdmitted && $row['admission_id'] && $row['admission_status'] === 'DISCHARGED') {
+                                // The stay is over — nothing is being "managed". Reprinting the
+                                // A-series discharge invoice is what reception actually wants
+                                // here, so that is the solid button and the (read-only) stay
+                                // record demotes to the outline.
+                                if ($admInvoiceHref) {
+                                    $primary   = ['Invoice', 'href="' . $admInvoiceHref . '" target="_blank" rel="noopener"', true];
+                                    $secondary = ['View stay', 'href="admission.php?id=' . (int) $row['admission_id'] . '"', true];
+                                } else {
+                                    $primary = ['View stay', 'href="admission.php?id=' . (int) $row['admission_id'] . '"', true, true];
+                                }
                             } elseif ($isAdmitted && $row['admission_id']) {
                                 $primary = ['Manage stay', 'href="admission.php?id=' . (int) $row['admission_id'] . '"', true];
                                 if ($invoiceHref) { $secondary = ['Invoice', 'href="' . $invoiceHref . '" target="_blank" rel="noopener"', true]; }
@@ -516,6 +541,11 @@ require __DIR__ . '/partials/sidebar.php';
                             }
                             if (!in_array('Profile', $used, true)) {
                                 $overflow[] = ['Profile', 'href="' . $profileHref . '"', true, false];
+                            }
+                            // A discharged row promotes the ADMISSION invoice, so the
+                            // consultation slip would otherwise become unreachable.
+                            if ($invoiceHref && !in_array('Invoice', $used, true)) {
+                                $overflow[] = ['Consult invoice', 'href="' . $invoiceHref . '" target="_blank" rel="noopener"', true, false];
                             }
                             if ($canRefund) {
                                 $overflow[] = ['Refund', 'href="refund.php?bill_id=' . (int) $row['bill_id'] . '"', true, true];
@@ -548,10 +578,13 @@ require __DIR__ . '/partials/sidebar.php';
                             </div>
                             <div class="c-paid qpaid">
                                 <?php if ($refunded > 0): ?>
-                                    <span class="struck">Rs <?= number_format($paidAmount, 0) ?></span>
+                                    <span class="struck">Rs <?= number_format($rowPaidTotal, 0) ?></span>
                                     <div class="refunded">refunded <?= number_format($refunded, 0) ?></div>
                                 <?php else: ?>
-                                    Rs <?= number_format($paidAmount, 0) ?>
+                                    Rs <?= number_format($rowPaidTotal, 0) ?>
+                                    <?php if ($admPaid > 0 && $paidAmount > 0): ?>
+                                        <div class="qsub">consult <?= number_format($paidAmount, 0) ?> &middot; stay <?= number_format($admPaid, 0) ?></div>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </div>
                             <div class="qactions">

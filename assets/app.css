@@ -522,6 +522,8 @@ td { padding: 12px 10px; border-top: 1px solid var(--row-line); font-size: var(-
 /* Refunded: the struck amount + clay note IS the signal — no opacity drop. */
 .qpaid .struck { text-decoration: line-through; color: var(--text-muted); }
 .qpaid .refunded { font-size: var(--fs-micro); color: var(--danger); font-weight: 600; }
+/* Consult + stay split, shown only when a row carries BOTH bills. */
+.qpaid .qsub { font-size: var(--fs-micro); color: var(--text-muted); font-weight: 500; }
 
 .qactions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
 .qbtn {
