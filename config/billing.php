@@ -1392,6 +1392,109 @@ function clinic_doctor_shares(PDO $pdo, string $start, string $end): array {
 }
 
 // ============================================================================
+// CLINIC INCOME, BUCKETED  (period chart, added 2026-07-27)
+//
+// clinic_revenue()/clinic_doctor_shares() collapse a whole range into ONE
+// total, which is all the Income Report needed until the Day/Month/Year/Total
+// chart arrived. This returns the SAME figure sliced into time buckets so the
+// chart's bars sum to the page's headline instead of being computed a second,
+// subtly different way.
+//
+//   $bucket = 'hour' | 'day' | 'month' | 'year'
+//
+// Returns [bucketKey => clinicIncome], where clinic income is
+// gross − refunds − tax withheld − doctor shares, floored at zero per bucket
+// exactly as the page floors the period total. Buckets with no money are
+// simply absent; the caller renders them as zero.
+//
+// Every stream is independently try-wrapped, so a database without the ER or
+// IPD module returns a chart missing those streams rather than a 500.
+// ============================================================================
+function clinic_income_buckets(PDO $pdo, string $start, string $end, string $bucket = 'day'): array {
+    $expr = [
+        'hour'  => 'HOUR(%s)',
+        'day'   => 'DAY(%s)',
+        'month' => 'MONTH(%s)',
+        'year'  => 'YEAR(%s)',
+    ][$bucket] ?? 'DAY(%s)';
+
+    $from = $start . ' 00:00:00';
+    $to   = date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00';
+
+    $gross = [];   // bucket => money in
+    $minus = [];   // bucket => refunds + tax + doctor share
+
+    $add = function (array &$acc, $k, $v) { $acc[(int) $k] = ($acc[(int) $k] ?? 0.0) + (float) $v; };
+
+    // ---- Gross, per revenue stream (same four tables as clinic_revenue) ----
+    foreach (['bills', 'admission_bills', 'er_bills', 'ipd_bills'] as $tbl) {
+        try {
+            // Table name is from the hardcoded list above, never user input.
+            $q = $pdo->prepare("
+                SELECT " . sprintf($expr, 'paid_at') . " AS b, COALESCE(SUM(paid_amount), 0) AS amt
+                FROM {$tbl}
+                WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?
+                GROUP BY b
+            ");
+            $q->execute([$from, $to]);
+            foreach ($q->fetchAll() as $r) { $add($gross, $r['b'], $r['amt']); }
+        } catch (PDOException $e) { /* stream not installed on this database */ }
+    }
+
+    // ---- Refunds (OPD-only today), keyed off the refund's own date ----
+    try {
+        $q = $pdo->prepare("
+            SELECT " . sprintf($expr, 'created_at') . " AS b, COALESCE(SUM(amount), 0) AS amt
+            FROM refunds WHERE voided_at IS NULL AND created_at >= ? AND created_at < ?
+            GROUP BY b
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
+    } catch (PDOException $e) { /* no refunds table */ }
+
+    // ---- Doctor share + withheld tax: OPD consultations ----
+    try {
+        $d = doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'doctor');
+        $t = doctor_split_sql('b.paid_amount', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'tax');
+        $q = $pdo->prepare("
+            SELECT " . sprintf($expr, 'b.paid_at') . " AS b, COALESCE(SUM($d), 0) + COALESCE(SUM($t), 0) AS amt
+            FROM bills b
+            JOIN visits v ON v.id = b.visit_id
+            JOIN users dr ON dr.id = v.doctor_id
+            WHERE b.status = 'paid' AND b.voided_at IS NULL AND b.paid_at >= ? AND b.paid_at < ?
+            GROUP BY b
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
+    } catch (PDOException $e) { /* consult share columns not migrated */ }
+
+    // ---- Doctor share + withheld tax: IPD ward rounds ----
+    try {
+        $d = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'doctor');
+        $t = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'tax');
+        $q = $pdo->prepare("
+            SELECT " . sprintf($expr, 'ib.paid_at') . " AS b, COALESCE(SUM($d), 0) + COALESCE(SUM($t), 0) AS amt
+            FROM ipd_doctor_visits dv
+            JOIN ipd_bills ib ON ib.admission_id = dv.admission_id
+            JOIN users dr     ON dr.id = dv.doctor_id
+            WHERE dv.is_paid = 1 AND dv.visit_charge > 0
+              AND ib.status = 'paid' AND ib.voided_at IS NULL
+              AND ib.paid_at >= ? AND ib.paid_at < ?
+            GROUP BY b
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
+    } catch (PDOException $e) { /* IPD module not installed */ }
+
+    $out = [];
+    foreach ($gross as $k => $g) {
+        $out[$k] = max(0.0, $g - ($minus[$k] ?? 0.0));
+    }
+    ksort($out);
+    return $out;
+}
+
+// ============================================================================
 // OPERATING EXPENSES FOR A PERIOD  (Accounts Phase 5, added 2026-07-26)
 //
 // The expense half of the P&L, using the SAME rules as expense_report.php so

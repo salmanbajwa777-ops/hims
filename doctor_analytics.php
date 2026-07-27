@@ -189,39 +189,87 @@ if ($view === 'patients') {
 // VIEW: revenue — build series for the chart + summary
 // ============================================================================
 if ($view === 'revenue') {
-    // Day granularity was cut (2026-07-23, user request): Month and Year only.
-    $gran = in_array($_GET['gran'] ?? '', ['month', 'year'], true) ? $_GET['gran'] : 'month';
-    $compare = ($_GET['compare'] ?? '1') !== '0';
+    // Four granularities, matching the shared period chart (partials/period_chart.php):
+    //   day   — 24 hourly bars for one date
+    //   month — one bar PER DAY of the picked month  ← the headline view
+    //   year  — 12 monthly bars
+    //   total — one bar per year since this doctor's first paid consultation
+    $gran = in_array($_GET['gran'] ?? '', ['day', 'month', 'year', 'total'], true) ? $_GET['gran'] : 'month';
 
-    // Anchor period. month → a year of monthly bars; year → the last 6 years.
-    if ($gran === 'month') {
+    // Comparison only makes sense for the two mid-range views; a 24-hour day and
+    // an all-time total have no natural counterpart period.
+    $compare = ($_GET['compare'] ?? '1') !== '0' && in_array($gran, ['month', 'year'], true);
+
+    $chartKeys = [];    // bucket keys in display order
+    $chartLabels = [];  // x-axis label per key
+
+    if ($gran === 'day') {
+        $period = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y-m-d');
+        $curStart = $curEnd = $period;
+        $prevStart = $prevEnd = null;
+        $bucketExpr = 'HOUR(%s)';
+        $periodLabel = date('d/m/Y', strtotime($period));
+        $prevLabel = '';
+        $navPrev = date('Y-m-d', strtotime($period . ' -1 day'));
+        $navNext = $period >= date('Y-m-d') ? null : date('Y-m-d', strtotime($period . ' +1 day'));
+        for ($h = 0; $h < 24; $h++) {
+            $chartKeys[] = $h;
+            $chartLabels[] = str_pad((string) $h, 2, '0', STR_PAD_LEFT);
+        }
+    } elseif ($gran === 'month') {
+        $period = preg_match('/^\d{4}-\d{2}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y-m');
+        $curStart = $period . '-01';
+        $curEnd = date('Y-m-t', strtotime($curStart));
+        $prevStart = date('Y-m-01', strtotime($curStart . ' -1 month'));
+        $prevEnd = date('Y-m-t', strtotime($prevStart));
+        $bucketExpr = 'DAY(%s)';
+        $periodLabel = date('m.Y', strtotime($curStart));
+        $prevLabel = date('M Y', strtotime($prevStart));
+        $navPrev = date('Y-m', strtotime($curStart . ' -1 month'));
+        $navNext = $period >= date('Y-m') ? null : date('Y-m', strtotime($curStart . ' +1 month'));
+        $daysInMonth = (int) date('t', strtotime($curStart));
+        for ($d = 1; $d <= $daysInMonth; $d++) {
+            $chartKeys[] = $d;
+            $chartLabels[] = (string) $d;
+        }
+    } elseif ($gran === 'year') {
         $period = preg_match('/^\d{4}$/', $_GET['period'] ?? '') ? $_GET['period'] : date('Y');
         $curStart = $period . '-01-01';
         $curEnd = $period . '-12-31';
-        $prevStart = ($period - 1) . '-01-01';
-        $prevEnd = ($period - 1) . '-12-31';
+        $prevStart = ((int) $period - 1) . '-01-01';
+        $prevEnd = ((int) $period - 1) . '-12-31';
         $bucketExpr = 'MONTH(%s)';
-        $bucketCount = 12;
-        $periodLabel = $period;
-        $prevLabel = (string) ($period - 1);
-        $navPrev = (string) ($period - 1);
-        $navNext = (string) ($period + 1);
-    } else { // year — one fixed window, no prev/next nav, no comparison pair
+        $periodLabel = (string) $period;
+        $prevLabel = (string) ((int) $period - 1);
+        $navPrev = (string) ((int) $period - 1);
+        $navNext = (int) $period >= (int) date('Y') ? null : (string) ((int) $period + 1);
+        for ($m = 1; $m <= 12; $m++) {
+            $chartKeys[] = $m;
+            $chartLabels[] = date('M', mktime(0, 0, 0, $m, 1));
+        }
+    } else { // total — every year that could hold data, oldest first
+        $fy = $pdo->prepare("
+            SELECT MIN(YEAR(v.visit_date)) FROM visits v
+            JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
+            WHERE v.doctor_id = ?
+        ");
+        $fy->execute([$doctorId]);
         $yearNow = (int) date('Y');
-        $firstYear = $yearNow - 5;
+        $firstYear = (int) ($fy->fetchColumn() ?: $yearNow);
+        if ($firstYear < 2000 || $firstYear > $yearNow) { $firstYear = $yearNow; }
         $period = '';
         $curStart = $firstYear . '-01-01';
         $curEnd = $yearNow . '-12-31';
         $prevStart = $prevEnd = null;
         $bucketExpr = 'YEAR(%s)';
-        $bucketCount = 6;
-        $periodLabel = $firstYear . ' – ' . $yearNow;
+        $periodLabel = $firstYear === $yearNow ? (string) $yearNow : $firstYear . ' – ' . $yearNow;
         $prevLabel = '';
         $navPrev = $navNext = null;
-        $compare = false;
+        for ($y = $firstYear; $y <= $yearNow; $y++) {
+            $chartKeys[] = $y;
+            $chartLabels[] = (string) $y;
+        }
     }
-
-    if (!isset($firstYear)) { $firstYear = null; }
 
     // One period's stacked series: [bucket => [full, revisit]].
     // Amounts are the DOCTOR'S EARNED share — (paid − tax) × share% — not gross
@@ -232,11 +280,18 @@ if ($view === 'revenue') {
     $earnedExpr = "(CASE WHEN dr.consult_has_tax = 1
                         THEN (b2.paid_amount - b2.paid_amount * dr.consult_tax_pct / 100) * dr.consult_share_pct / 100
                         ELSE b2.paid_amount * dr.consult_share_pct / 100 END)";
-    $seriesFor = function (string $start, string $end) use ($pdo, $doctorId, $bucketExpr, $earnedExpr): array {
+
+    // visits.visit_date is a DATE, so HOUR() on it is always 0 — the hourly
+    // (day) view has to read the registration TIMESTAMP instead. Every other
+    // granularity buckets on visit_date, which is the clinical day the money is
+    // attributed to.
+    $bucketCol = ($gran === 'day') ? 'v.created_at' : 'v.visit_date';
+
+    $seriesFor = function (string $start, string $end) use ($pdo, $doctorId, $bucketExpr, $earnedExpr, $bucketCol): array {
         $buckets = [];
 
         $cSql = "
-            SELECT " . sprintf($bucketExpr, 'v.visit_date') . " AS b,
+            SELECT " . sprintf($bucketExpr, $bucketCol) . " AS b,
                    SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN $earnedExpr ELSE 0 END) AS full_amt,
                    SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN $earnedExpr ELSE 0 END) AS revisit_amt,
                    SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
@@ -255,7 +310,7 @@ if ($view === 'revenue') {
             // consult_share columns not migrated yet — earnings read zero, but the
             // counts still matter, so re-run the same buckets without the amounts.
             $cSql0 = "
-                SELECT " . sprintf($bucketExpr, 'v.visit_date') . " AS b,
+                SELECT " . sprintf($bucketExpr, $bucketCol) . " AS b,
                        0 AS full_amt, 0 AS revisit_amt,
                        SUM(CASE WHEN v.consultation_fee_type = 'FULL' THEN 1 ELSE 0 END) AS full_n,
                        SUM(CASE WHEN v.consultation_fee_type <> 'FULL' THEN 1 ELSE 0 END) AS revisit_n
@@ -280,14 +335,12 @@ if ($view === 'revenue') {
     $curSeries = $seriesFor($curStart, $curEnd);
     $prevSeries = ($compare && $prevStart) ? $seriesFor($prevStart, $prevEnd) : [];
 
-    // Bucket key list in display order (year view keys are actual years).
-    $bucketKeys = [];
-    for ($i = 1; $i <= $bucketCount; $i++) {
-        $bucketKeys[] = ($gran === 'year') ? ($firstYear + $i - 1) : $i;
-    }
-    // Comparison pairs the SAME bucket index of the previous period; for the
-    // month view that's the same month number last year, for days the same
-    // day-of-month last month (days 29–31 may have no counterpart — fine).
+    // Bucket keys are built with the period above ($chartKeys / $chartLabels):
+    // hour-of-day, day-of-month, month number, or the actual year.
+    $bucketKeys = $chartKeys;
+    // Comparison pairs the SAME bucket key in the previous period — the same
+    // day-of-month last month, or the same month last year. Days 29–31 may have
+    // no counterpart in a shorter month, which reads as zero; that's correct.
 
     $sum = fn(array $series, string $k) => array_sum(array_map(fn($b) => (float) ($b[$k] ?? 0), $series));
     $tot = [
@@ -430,12 +483,11 @@ $headExtra = <<<CSS
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .dotk { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
 
-/* Chart */
-.chart-wrap { overflow-x: auto; }
-.chart-wrap svg { display: block; min-width: 640px; width: 100%; height: auto; }
-.axis-lab { font-size: 10px; fill: var(--text-muted); font-family: inherit; }
-.bar-g rect { transition: opacity .12s ease; }
-.bar-g:hover rect { opacity: .85; }
+/* Comparison line under the shared period chart */
+.cmp-line { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
+.cmp-line .up { color: #067647; font-weight: 700; }
+.cmp-line .down { color: #b42318; font-weight: 700; }
+.cmp-line .muted { color: var(--text-muted); }
 
 /* Summary cards */
 .sum-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
@@ -545,102 +597,49 @@ require __DIR__ . '/partials/head.php';
 
 <?php if ($view === 'revenue'): ?>
             <div class="card">
-                <div class="ctrl-bar" style="margin-bottom:18px">
-                    <div class="seg" role="group" aria-label="Granularity">
-                        <a class="<?= $gran === 'month' ? 'on' : '' ?>" href="<?= qs_view('revenue', ['gran' => 'month']) ?>">Month</a>
-                        <a class="<?= $gran === 'year' ? 'on' : '' ?>" href="<?= qs_view('revenue', ['gran' => 'year']) ?>">Year</a>
-                    </div>
-                    <?php if ($navPrev !== null): ?>
-                    <div class="datepick">
-                        <a class="arrow" aria-label="Previous period" href="<?= qs_view('revenue', ['gran' => $gran, 'period' => $navPrev, 'compare' => $compare ? '1' : '0']) ?>">&lsaquo;</a>
-                        <span class="cur tnum"><?= htmlspecialchars($periodLabel) ?></span>
-                        <a class="arrow" aria-label="Next period" href="<?= qs_view('revenue', ['gran' => $gran, 'period' => $navNext, 'compare' => $compare ? '1' : '0']) ?>">&rsaquo;</a>
-                    </div>
-                    <a class="btn secondary small" href="<?= qs_view('revenue', ['gran' => $gran, 'period' => $period, 'compare' => $compare ? '0' : '1']) ?>">
-                        Compare vs <?= htmlspecialchars($prevLabel) ?>: <b><?= $compare ? 'ON' : 'OFF' ?></b>
-                    </a>
-                    <?php else: ?>
-                    <span class="cur tnum" style="font-size:13px;font-weight:600"><?= htmlspecialchars($periodLabel) ?></span>
-                    <?php endif; ?>
-                    <div class="chart-legend">
-                        <span><span class="dotk" style="background:var(--primary)"></span>Full</span>
-                        <span><span class="dotk" style="background:#0891B2"></span>Revisits</span>
-                        <?php if ($compare): ?><span style="color:var(--text-muted)"><span class="dotk" style="background:#A7D8D7"></span><?= htmlspecialchars($prevLabel) ?> (faded)</span><?php endif; ?>
-                    </div>
-                </div>
-
                 <?php
-                // ---- Inline SVG stacked bar chart ----
-                $W = 760; $H = 280; $padL = 52; $padR = 10; $padT = 14; $padB = 34;
-                $plotW = $W - $padL - $padR; $plotH = $H - $padT - $padB;
-
-                $maxVal = 0;
-                foreach ($bucketKeys as $i => $bk) {
-                    $key = ($gran === 'year') ? $bk : ($i + 1);
-                    $c = $curSeries[$key] ?? [];
-                    $p = $prevSeries[$key] ?? [];
-                    $maxVal = max($maxVal,
-                        (float)($c['full'] ?? 0) + (float)($c['revisit'] ?? 0),
-                        (float)($p['full'] ?? 0) + (float)($p['revisit'] ?? 0));
+                // The chart is the shared partial both consoles use, so the
+                // doctor's "month report" and the admin's are the same object.
+                // Bars here are this doctor's EARNED share; the Full/Revisit
+                // split the flat bar drops is preserved in the tooltip.
+                $pcBuckets = [];
+                foreach ($bucketKeys as $bk) {
+                    $b = $curSeries[$bk] ?? [];
+                    $pcBuckets[$bk] = (float) ($b['full'] ?? 0) + (float) ($b['revisit'] ?? 0);
                 }
-                // Round the axis top to a friendly step.
-                $step = $maxVal > 0 ? pow(10, floor(log10($maxVal))) : 1;
-                $axisMax = $maxVal > 0 ? ceil($maxVal / $step) * $step : 100;
-                if ($axisMax / $step <= 2) { $axisMax = ceil($maxVal / ($step / 2)) * ($step / 2); }
-
-                $slotW = $plotW / max(1, count($bucketKeys));
-                $barW = $compare ? max(4, min(16, ($slotW - 8) / 2)) : max(6, min(22, $slotW - 8));
-                $yFor = fn(float $v) => $padT + $plotH - ($axisMax > 0 ? ($v / $axisMax) * $plotH : 0);
-
-                $gridLines = 4;
+                $pcKeys      = $bucketKeys;
+                $pcLabels    = $chartLabels;
+                $pcGran      = $gran;
+                $pcPeriodLbl = $periodLabel;
+                $pcSeriesLbl = 'Earnings';
+                $pcUnit      = 'PKR';
+                $pcPrevUrl   = $navPrev !== null ? qs_view('revenue', ['gran' => $gran, 'period' => $navPrev, 'compare' => $compare ? '1' : '0']) : null;
+                $pcNextUrl   = $navNext !== null ? qs_view('revenue', ['gran' => $gran, 'period' => $navNext, 'compare' => $compare ? '1' : '0']) : null;
+                $pcTabUrl    = function (string $g) { return qs_view('revenue', ['gran' => $g]); };
+                $pcTipFmt    = function (string $lab, float $v) use ($curSeries, $bucketKeys, $chartLabels) {
+                    $i = array_search($lab, $chartLabels, true);
+                    $b = ($i !== false && isset($bucketKeys[$i])) ? ($curSeries[$bucketKeys[$i]] ?? []) : [];
+                    return $lab . ' — ' . number_format($v) . ' PKR (Full '
+                         . number_format((float) ($b['full'] ?? 0)) . ' · Revisits '
+                         . number_format((float) ($b['revisit'] ?? 0)) . ')';
+                };
+                require __DIR__ . '/partials/period_chart.php';
                 ?>
-                <div class="chart-wrap">
-                <svg viewBox="0 0 <?= $W ?> <?= $H ?>" role="img" aria-label="Stacked revenue by period: full consultations and revisits">
-                    <g stroke="var(--border)" stroke-width="1">
-                        <?php for ($g = 0; $g <= $gridLines; $g++):
-                            $gy = $padT + $plotH * $g / $gridLines; ?>
-                        <line x1="<?= $padL ?>" y1="<?= $gy ?>" x2="<?= $W - $padR ?>" y2="<?= $gy ?>" <?= $g === $gridLines ? 'stroke="var(--border-strong)"' : '' ?>/>
-                        <?php endfor; ?>
-                    </g>
-                    <g class="axis-lab" text-anchor="end">
-                        <?php for ($g = 0; $g <= $gridLines; $g++):
-                            $gy = $padT + $plotH * $g / $gridLines;
-                            $gv = $axisMax * (1 - $g / $gridLines); ?>
-                        <text x="<?= $padL - 6 ?>" y="<?= $gy + 3 ?>"><?= $gv >= 1000 ? round($gv / 1000, 1) . 'k' : (int) $gv ?></text>
-                        <?php endfor; ?>
-                    </g>
-                    <?php foreach ($bucketKeys as $i => $bk):
-                        $key = ($gran === 'year') ? $bk : ($i + 1);
-                        $slotX = $padL + $slotW * $i;
-                        $c = $curSeries[$key] ?? [];
-                        $cf = (float)($c['full'] ?? 0); $cr = (float)($c['revisit'] ?? 0);
-                        $ctot = $cf + $cr;
-                        $x = $compare ? $slotX + ($slotW - 2 * $barW - 3) / 2 : $slotX + ($slotW - $barW) / 2;
-                        $lab = ($gran === 'month') ? date('M', mktime(0, 0, 0, $bk, 1)) : (string) $bk;
-                        $tip = htmlspecialchars("$lab — Full: " . fmt_amt($cf) . " · Revisits: " . fmt_amt($cr) . " · Total: " . fmt_amt($ctot) . " PKR");
-                    ?>
-                    <g class="bar-g">
-                        <title><?= $tip ?></title>
-                        <?php if ($ctot > 0):
-                            $y0 = $yFor(0); $y1 = $yFor($cf); $y2 = $yFor($ctot); ?>
-                        <?php if ($cf > 0): ?><rect x="<?= round($x,1) ?>" y="<?= round($y1,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y0 - $y1,1) ?>" fill="var(--primary)" rx="1.5"/><?php endif; ?>
-                        <?php if ($cr > 0): ?><rect x="<?= round($x,1) ?>" y="<?= round($y2,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y1 - $y2,1) ?>" fill="#0891B2" rx="1.5"/><?php endif; ?>
-                        <?php endif; ?>
-                        <?php if ($compare):
-                            $p = $prevSeries[$key] ?? [];
-                            $pf = (float)($p['full'] ?? 0); $pr = (float)($p['revisit'] ?? 0);
-                            $ptot = $pf + $pr;
-                            $px = $x + $barW + 3;
-                            if ($ptot > 0):
-                                $y0 = $yFor(0); $y1 = $yFor($pf); $y2 = $yFor($ptot); ?>
-                        <?php if ($pf > 0): ?><rect x="<?= round($px,1) ?>" y="<?= round($y1,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y0 - $y1,1) ?>" fill="#A7D8D7" rx="1.5"/><?php endif; ?>
-                        <?php if ($pr > 0): ?><rect x="<?= round($px,1) ?>" y="<?= round($y2,1) ?>" width="<?= round($barW,1) ?>" height="<?= round($y1 - $y2,1) ?>" fill="#A5E5F0" rx="1.5"/><?php endif; ?>
-                        <?php endif; endif; ?>
-                        <text class="axis-lab" text-anchor="middle" x="<?= round($slotX + $slotW / 2, 1) ?>" y="<?= $H - $padB + 16 ?>"><?= htmlspecialchars($lab) ?></text>
-                    </g>
-                    <?php endforeach; ?>
-                </svg>
+
+                <?php if ($compare): ?>
+                <div class="cmp-line">
+                    <span>vs <?= htmlspecialchars($prevLabel) ?>: <b class="tnum"><?= fmt_amt($prevAll) ?> PKR</b>
+                    <?php if ($prevAll > 0): $delta = ($totAll - $prevAll) / $prevAll * 100; ?>
+                        <b class="<?= $delta >= 0 ? 'up' : 'down' ?>"><?= $delta >= 0 ? '+' : '' ?><?= number_format($delta, 1) ?>%</b>
+                    <?php endif; ?></span>
+                    <a class="btn secondary small" href="<?= qs_view('revenue', ['gran' => $gran, 'period' => $period, 'compare' => '0']) ?>">Hide comparison</a>
                 </div>
+                <?php elseif (in_array($gran, ['month', 'year'], true)): ?>
+                <div class="cmp-line">
+                    <span class="muted">Comparison hidden</span>
+                    <a class="btn secondary small" href="<?= qs_view('revenue', ['gran' => $gran, 'period' => $period, 'compare' => '1']) ?>">Compare vs <?= htmlspecialchars($prevLabel) ?></a>
+                </div>
+                <?php endif; ?>
 
                 <div class="sum-grid" style="margin-top:20px">
                     <div class="sum">
