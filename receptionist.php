@@ -114,9 +114,11 @@ $todayRows = $pdo->query("
            dct.label AS consult_label,
            b.id AS bill_id, b.grand_total, b.paid_amount, b.status AS bill_status,
            COALESCE(r.refunded, 0) AS refunded,
-           -- The stay is billed SEPARATELY ("A" series, admission_bills) and the
+           -- The stay is billed SEPARATELY (the 'A' series, admission_bills) and the
            -- consultation bill is often Rs 0 for a straight-to-admission patient,
            -- so the row must carry both or the money column reads a false zero.
+           -- NOTE: single quotes above are deliberate. This is a double-quoted PHP
+           -- string, so a double quote here closes it and breaks the file.
            ab.id AS adm_bill_id, ab.status AS adm_bill_status,
            COALESCE(ab.paid_amount, 0) AS adm_paid_amount
     FROM visits v
