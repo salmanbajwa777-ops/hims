@@ -310,9 +310,6 @@ a.kpi-cell:hover { background: var(--primary-light); }
 /* Holds a code ("SB-1"), not a bare number, so width grows with the text off a
    min-width instead of being a fixed square — "HS-12" must not clip. */
 .q-token { min-width: 48px; padding: 0 8px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; white-space: nowrap; background: var(--primary-light); color: var(--primary-dark); }
-.q-token-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-/* Only rendered for session 2 — the morning run needs no qualifier. */
-.q-token-session { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 .q-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .q-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 1px 7px; border-radius: 6px; background: rgba(26,127,126,.12); color: var(--primary); }
 /* Free follow-up: green, reads as "no fee" not "unpaid, chase it". */
@@ -457,15 +454,7 @@ require __DIR__ . '/partials/head.php';
                         <div class="empty-state">No patients registered for you today yet.<br>New registrations for you will appear here.</div>
                     <?php else: foreach ($visits as $v): $age = doc_age($v); $st = $v['consult_status']; ?>
                     <div class="q-item<?= $st === 'IN_CONSULT' ? ' serving' : '' ?>">
-                        <?php
-                        // Numbers restart each session, so the same code can appear twice in a
-                        // day — the session caption is what keeps the two runs apart.
-                        $vSession = (int) ($v['token_session'] ?? 1);
-                        ?>
-                        <div class="q-token-cell">
-                            <div class="q-token tnum"><?= htmlspecialchars($myTokenPrefix) ?>-<?= (int) $v['token_no'] ?></div>
-                            <?php if ($vSession >= 2): ?><div class="q-token-session"><?= htmlspecialchars(token_session_label($vSession)) ?></div><?php endif; ?>
-                        </div>
+                        <div class="q-token tnum"><?= htmlspecialchars($myTokenPrefix) ?>-<?= (int) $v['token_no'] ?></div>
                         <div>
                             <div class="q-name"><?= htmlspecialchars($v['patient_name']) ?>
                                 <?php if ($st === 'IN_CONSULT'): ?><span class="pulse"></span><span class="status-pill in-consult">Now serving</span><?php endif; ?>

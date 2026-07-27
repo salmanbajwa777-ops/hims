@@ -3,8 +3,11 @@
 //
 // A token is a per-doctor, per-SESSION running number shown with the doctor's initials.
 // Session 1 is the doctor's first sitting of the day, session 2 the second (evening
-// clinic); each restarts at 1, so two patients can both hold "SB-1" on one date and the
-// session is what tells them apart. Every queue screen therefore shows the session too.
+// clinic); each restarts at 1, so two patients can both hold "SB-1" on one date.
+//
+// The session is NOT displayed — staff read a restart as the next session beginning.
+// It is stored on the visit because it still drives the counter reset and the queue
+// ordering, but it never reaches a screen, a slip, or an email.
 //
 // All four places that create a visit (registration, follow-up, ER admit, IPD admit)
 // issue tokens through issue_token() so the session logic and the race-safe counter
@@ -175,9 +178,10 @@ function derive_token_prefix(string $name): string
 /**
  * The token as shown to humans: "SB-1".
  *
- * Session is NOT part of the string — the user asked for the number to restart at 1
- * each session under the same prefix. Screens that can show two sessions at once pair
- * this with token_session_label() so the repeat is never ambiguous.
+ * Session is deliberately NOT shown anywhere. The number restarts at 1 for each of the
+ * doctor's sittings, so "SB-1" can occur twice in a day — staff read the restart as
+ * the start of the next session, and a session caption was judged noise. token_session
+ * still exists on the row: it drives the counter reset and the queue ordering.
  */
 function token_code(?string $prefix, ?string $doctorName, $tokenNo): string
 {
@@ -198,10 +202,4 @@ function normalize_token_prefix(?string $typed, string $doctorName): string
         return derive_token_prefix($doctorName);
     }
     return substr($clean, 0, 6);
-}
-
-/** "Morning" / "Evening" for a session number — queue headers and token captions. */
-function token_session_label(int $session): string
-{
-    return $session >= 2 ? 'Evening' : 'Morning';
 }

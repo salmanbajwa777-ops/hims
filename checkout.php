@@ -199,7 +199,7 @@ if (isset($_GET['print']) && isset($_GET['bill_id'])) {
     }
 
     $stmt = $pdo->prepare("
-        SELECT b.*, v.fee, v.discount_pct, v.token_no, v.token_session,
+        SELECT b.*, v.fee, v.discount_pct, v.token_no,
                p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
                d.name AS doctor_name, d.specialty AS doctor_specialty, d.token_prefix,
                $paperCol AS invoice_paper_size
@@ -237,7 +237,7 @@ if (isset($_GET['voided'])) { $success = 'Invoice voided. The number is kept for
 if (isset($_GET['bill_id'])) {
     $billId = (int) $_GET['bill_id'];
     $stmt = $pdo->prepare('
-        SELECT b.*, v.token_no, v.token_session, v.doctor_id, p.name AS patient_name, p.mrn,
+        SELECT b.*, v.token_no, v.doctor_id, p.name AS patient_name, p.mrn,
                dr.name AS doctor_name, dr.token_prefix
         FROM bills b
         JOIN visits v ON v.id = b.visit_id
@@ -262,7 +262,7 @@ if (isset($_GET['bill_id'])) {
 // 'paid' and 'waived' are both settled and excluded.
 $pendingBills = $pdo->query("
     SELECT b.id, b.invoice_number, b.status, b.grand_total,
-           v.token_no, v.token_session, p.name AS patient_name, p.mrn, dr.name AS doctor_name,
+           v.token_no, p.name AS patient_name, p.mrn, dr.name AS doctor_name,
            dr.token_prefix, dct.label AS consult_label
     FROM bills b
     JOIN visits v ON v.id = b.visit_id

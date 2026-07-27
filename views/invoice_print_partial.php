@@ -240,11 +240,8 @@ $pageSize = $isA4 ? 'A4' : 'A5';
                     <?php
                     // Coded token ("SB-1"). token_prefix is absent on the admission-invoice
                     // caller, where doctor_token_prefix() falls back to the doctor's initials.
-                    // Session 2 is spelled out — the number restarts, so the slip the patient
-                    // carries must say which sitting it belongs to.
-                    $slipSession = (int) ($bill['token_session'] ?? 1);
                     ?>
-                    <tr><td class="k">Token</td><td class="v"><?= htmlspecialchars(token_code($bill['token_prefix'] ?? null, $bill['doctor_name'] ?? '', $bill['token_no'])) ?><?= $slipSession >= 2 ? ' (' . htmlspecialchars(token_session_label($slipSession)) . ')' : '' ?></td></tr>
+                    <tr><td class="k">Token</td><td class="v"><?= htmlspecialchars(token_code($bill['token_prefix'] ?? null, $bill['doctor_name'] ?? '', $bill['token_no'])) ?></td></tr>
                     <tr><td class="k">Doctor</td><td class="v"><?= htmlspecialchars(mb_strtoupper($bill['doctor_name'], 'UTF-8')) ?></td></tr>
                 </table>
             </div>

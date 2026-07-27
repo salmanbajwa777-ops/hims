@@ -14,7 +14,7 @@ require_once __DIR__ . '/tokens.php';
 function notify_invoice_raised(PDO $pdo, int $billId): void {
     try {
         $stmt = $pdo->prepare('
-            SELECT b.invoice_number, b.grand_total, v.token_no, v.token_session, v.doctor_id,
+            SELECT b.invoice_number, b.grand_total, v.token_no, v.doctor_id,
                    p.name AS patient_name, p.mrn, du.name AS doctor_name, du.token_prefix,
                    v.consultation_fee_type
             FROM bills b
@@ -34,11 +34,9 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
             'FULL' => 'Full consultation', 'FREE_FOLLOWUP' => 'Free follow-up',
             'HALF_FOLLOWUP' => '50% follow-up', 'THREE_QUARTER_FOLLOWUP' => '75% follow-up',
         ];
-        // Coded token ("SB-1"). Numbers restart each session, so an evening token is
-        // qualified — an unadorned "SB-1" in an inbox could otherwise mean either sitting.
-        $tokenSession = (int) ($r['token_session'] ?? 1);
-        $tokenText = token_code($r['token_prefix'] ?? null, $r['doctor_name'] ?? '', $r['token_no'])
-            . ($tokenSession >= 2 ? ' (' . token_session_label($tokenSession) . ' session)' : '');
+        // Coded token ("SB-1"). The email carries its own timestamp, so the number
+        // restarting each session needs no extra qualifier here.
+        $tokenText = token_code($r['token_prefix'] ?? null, $r['doctor_name'] ?? '', $r['token_no']);
 
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been registered under your name and their invoice has been raised.</p>'
             . mail_kv([

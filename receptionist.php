@@ -553,13 +553,9 @@ require __DIR__ . '/partials/sidebar.php';
                         ?>
                         <div class="qrow">
                             <div class="c-token">
-                                <?php
-                                // Reception sees every doctor's queue at once, so each row carries
-                                // its own prefix. Session 2 is captioned — numbers restart at 1.
-                                $rowSession = (int) ($row['token_session'] ?? 1);
-                                ?>
+                                <?php // Reception sees every doctor's queue at once, so each row carries its own prefix. ?>
                                 <div class="qtoken"><?= htmlspecialchars(token_code($row['doctor_token_prefix'] ?? null, $row['doctor_name'] ?? '', $row['token_no'])) ?></div>
-                                <div class="qtime"><?= date('H:i', strtotime($row['created_at'])) ?><?= $rowSession >= 2 ? ' · ' . htmlspecialchars(token_session_label($rowSession)) : '' ?></div>
+                                <div class="qtime"><?= date('H:i', strtotime($row['created_at'])) ?></div>
                             </div>
                             <div class="c-patient">
                                 <div class="qname"><?= htmlspecialchars($row['patient_name']) ?></div>

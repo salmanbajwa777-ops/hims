@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
 
 $stmt = $pdo->prepare("
     SELECT ab.*, a.admission_type, a.admitted_at, a.discharged_at,
-           v.token_no, v.token_session, p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
+           v.token_no, p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
            COALESCE(du.name, a.admitting_doctor_manual) AS doctor_name,
            du.specialty AS doctor_specialty, du.token_prefix
     FROM admission_bills ab

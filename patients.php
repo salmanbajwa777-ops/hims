@@ -66,8 +66,15 @@ $ipdWards = $ipdDoctors = [];
 if ($canIpdAdmitHere) {
     $ipdWards = $pdo->query('SELECT ward, per_day_rate, consultant_visit_fee FROM ipd_ward_rates WHERE is_enabled = 1 ORDER BY ward')->fetchAll();
     $ipdDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name")->fetchAll();
-    $ipdAdmitFormAction = 'patients.php';
 }
+// In-Door renders as the third option inside the shared admit modal (one dialog,
+// one picker). Both routes POST back to this page; the modal swaps the action.
+$admitShowIpd = $canIpdAdmitHere;
+$admitFormAction = 'patients.php';
+
+// Procedure billing (procedure_bill.php) — the row button links straight there
+// with the patient pre-selected. Doctors never bill, so it's off for them.
+$canRaiseProcedure = !$isDoctorReadonly && has_permission('RECEPTION_RAISE_PROCEDURE_BILL');
 
 // ---------------- AJAX: quick-add area (used from the registration panel) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_add_area') {
@@ -287,7 +294,7 @@ function pending_booking_guard(PDO $pdo, string $phone, int $patientId = 0): arr
 function same_day_visit(PDO $pdo, int $patientId, int $doctorId): ?array {
     if ($patientId <= 0 || $doctorId <= 0) { return null; }
     $stmt = $pdo->prepare("
-        SELECT id, token_no, token_session, created_at
+        SELECT id, token_no, created_at
         FROM visits
         WHERE patient_id = ? AND doctor_id = ? AND visit_date = CURDATE()
         ORDER BY id DESC
@@ -589,11 +596,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
         $dupDoc = $pdo->prepare('SELECT name, token_prefix FROM users WHERE id = ?');
         $dupDoc->execute([$doctorId]);
         $dupDocRow = $dupDoc->fetch() ?: [];
-        $dupSession = (int) ($dupVisit['token_session'] ?? 1);
+        // The registration time below already pins down which sitting this was, so the
+        // token needs no session qualifier of its own.
         $error = 'Already registered today: ' . $patient['name']
             . ' (' . $patient['mrn'] . ') has token '
             . token_code($dupDocRow['token_prefix'] ?? null, $dupDocRow['name'] ?? '', $dupVisit['token_no'])
-            . ($dupSession >= 2 ? ' (' . token_session_label($dupSession) . ' session)' : '')
             . ' with this doctor at ' . date('h:i A', strtotime($dupVisit['created_at']))
             . '. Open that visit, or choose "Register anyway" for a separate consultation.';
     } elseif (pending_booking_guard($pdo, '', $patientId) !== []) {
@@ -914,7 +921,9 @@ $headExtra = <<<CSS
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .row-acts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
-.qa { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 8px;
+/* Both <button> and <a> wear .qa (Procedure is a link) — inline-flex centres the
+   anchor's text on the same baseline box as the buttons beside it. */
+.qa { display: inline-flex; align-items: center; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 8px;
       padding: 5px 11px; font: 600 12px inherit; font-family: inherit; cursor: pointer; white-space: nowrap;
       text-decoration: none; }
 .qa:hover { border-color: var(--primary); color: var(--primary-dark); }
@@ -1205,17 +1214,20 @@ require __DIR__ . '/partials/sidebar.php';
                             <td>
                                 <div class="row-acts">
                                     <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>, <?= (int) ($p['last_doctor_id'] ?? 0) ?>)">New invoice</button>
-                                    <?php if (has_permission('ADMISSION_ADMIT_PATIENT')): ?>
+                                    <?php if ($canAdmitHere || $canIpdAdmitHere): ?>
                                     <!-- Admit from the all-patients list: the shared handler reuses today's
-                                         visit or creates a shell (byPatient=true). -->
+                                         visit or creates a shell (byPatient=true). In-Door is now the third
+                                         option INSIDE this modal, so there is no separate button — the
+                                         picker only offers the routes this user is permitted to use. -->
                                     <button type="button" class="qa" onclick="openAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, 0, '', true)">Admit</button>
                                     <?php endif; ?>
-                                    <?php if ($canIpdAdmitHere): ?>
-                                    <!-- In-Door (IPD) admit — separate module/handler (byPatient=true). -->
-                                    <button type="button" class="qa" onclick="openIpdAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, 0, '', true)">In-Door</button>
+                                    <?php if ($canRaiseProcedure): ?>
+                                    <!-- Procedure billing (e.g. ear piercing) — a separate prepaid, one-time
+                                         flow, like the ER bill. Carries the last treating doctor across as a
+                                         hint; procedure_bill.php ignores it unless that doctor actually has
+                                         procedures assigned. -->
+                                    <a class="qa" href="procedure_bill.php?patient_id=<?= (int) $p['id'] ?><?= ($p['last_doctor_id'] ?? 0) ? '&doctor_id=' . (int) $p['last_doctor_id'] : '' ?>">Procedure</a>
                                     <?php endif; ?>
-                                    <!-- Procedure billing (e.g. ear piercing) is a separate, one-time flow — placeholder for a later phase. -->
-                                    <button class="qa" disabled title="Procedure billing is coming in a later phase">Procedure</button>
                                 </div>
                             </td>
                             <?php endif; ?>
@@ -1773,7 +1785,7 @@ if ($followupVisit && !$successVisit) { $successVisit = $followupVisit; }
         </div>
         <div class="card queue-token" style="margin-top:20px;">
             <div class="num"><?= htmlspecialchars($successVisit['token_code']) ?></div>
-            <div class="label">Queue Token<?= (int) ($successVisit['token_session'] ?? 1) >= 2 ? ' · ' . htmlspecialchars(token_session_label((int) $successVisit['token_session'])) . ' Session' : '' ?></div>
+            <div class="label">Queue Token</div>
         </div>
         <div class="form-footer" style="justify-content:center; gap:10px; box-shadow:none; border-top:none; background:transparent;">
             <a href="patients.php" class="btn secondary">Back to Patients</a>
@@ -2089,8 +2101,8 @@ phoneInput.addEventListener('change', regBookingCheck);
 <?php endif; ?>
 </script>
 <?php endif; ?>
-<?php if ($canAdmitHere) { require __DIR__ . '/partials/admit_modal.php'; } ?>
-<?php if ($canIpdAdmitHere) { require __DIR__ . '/partials/ipd_admit_modal.php'; } ?>
+<?php // One merged modal: In-Door is a route inside it, not a second dialog. ?>
+<?php if ($canAdmitHere || $canIpdAdmitHere) { require __DIR__ . '/partials/admit_modal.php'; } ?>
 <?php if ($admitError): ?>
 <script>window.addEventListener('load', function () { alert(<?= json_encode($admitError) ?>); });</script>
 <?php endif; ?>
