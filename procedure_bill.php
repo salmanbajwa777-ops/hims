@@ -17,6 +17,11 @@
  * Requires sql/add_procedure_bills.sql to be applied.
  */
 
+// TEMPORARY DIAGNOSTIC — remove once the 500 on this page is identified.
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
+
 require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
