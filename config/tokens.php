@@ -122,12 +122,24 @@ function doctor_token_prefix(?string $storedPrefix, ?string $doctorName): string
 }
 
 /**
- * Initials from a name: first letter of the first two words ("SALMAN BAJWA" -> SB),
- * or the first two letters of a single-word name ("ASAD" -> AS).
+ * Initials from a name: first letter of the FIRST and LAST name parts.
  *
- * Honorifics are dropped before taking initials — "Dr. Asad Mahmood" must give AM, not
- * DA. Names here are usually stored bare (see the ALL-CAPS convention), but reception
- * does sometimes type the title in, and DA would be wrong for every such doctor.
+ *   SALMAN BAJWA      -> SB
+ *   HIJAB SHAHEEN     -> HS
+ *   RIAZ KHAN         -> RK
+ *   BASHIR UR REHMAN  -> BR
+ *
+ * First-and-last, not first-two-words. "BASHIR UR REHMAN" must give BR: "ur" is a
+ * connector particle in the surname, not a middle name, so first-two-words would give
+ * the wrong BU. Same reasoning covers "ud din", "bin", "al" and the like — they are
+ * skipped outright so a three-part name still initialises on its real surname.
+ *
+ * Honorifics are dropped first — "Dr. Asad Mahmood" must give AM, not DA. Names are
+ * usually stored bare (see the ALL-CAPS convention), but reception does sometimes type
+ * the title in.
+ *
+ * Anything this gets wrong is fixable: admin sets an explicit prefix on staff.php and
+ * the stored value always wins over this fallback.
  */
 function derive_token_prefix(string $name): string
 {
@@ -141,13 +153,22 @@ function derive_token_prefix(string $name): string
         array_shift($words);
     }
 
+    // Connector particles carry no initial of their own. Dropped only while other
+    // words survive, so a name made entirely of them still yields something.
+    $particles = ['UR', 'UD', 'UL', 'AL', 'BIN', 'BINT', 'IBN', 'DIN', 'E', 'VON', 'VAN', 'DE', 'DA', 'DEL'];
+    $core = array_values(array_filter($words, fn($w) => !in_array(strtoupper($w), $particles, true)));
+    if ($core) {
+        $words = $core;
+    }
+
     if (!$words) {
         return 'DR';
     }
     if (count($words) === 1) {
         return strtoupper(substr(str_pad($words[0], 2, 'X'), 0, 2));
     }
-    return strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
+    // First + LAST, so a middle name never displaces the surname.
+    return strtoupper(substr($words[0], 0, 1) . substr($words[count($words) - 1], 0, 1));
 }
 
 /**
