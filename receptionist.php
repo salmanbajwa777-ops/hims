@@ -90,6 +90,21 @@ function icon(string $name, int $size = 18): string {
 // Every visit registered today, newest first. Registration raises the bill and takes
 // payment up front (see patients.php), so there is no unpaid state here — the money
 // columns report what was collected, net of any refunds.
+// admission_bills.voided_at only exists once sql/run_now_void_columns.sql has been
+// applied. add_void_actions.sql was supposed to add it, but it wraps its ALTERs in a
+// stored procedure and this host denies CREATE ROUTINE (#1044) — so the migration
+// reported success while adding nothing, and the unknown column fatalled this page.
+// Probe once and drop the filter when it is absent, so reception keeps working either
+// way. A voided admission bill is rare and only slightly overstates a total until the
+// migration lands; a dead reception queue is not survivable.
+$admVoidCol = true;
+try {
+    $pdo->query('SELECT voided_at FROM admission_bills LIMIT 1');
+} catch (PDOException $e) {
+    $admVoidCol = false;
+}
+$abVoidFilter = $admVoidCol ? 'AND ab.voided_at IS NULL' : '';
+
 $todayRows = $pdo->query("
     SELECT v.id AS visit_id, v.token_no, v.token_session, v.consult_status, v.disposition, v.created_at,
            v.started_at, v.finished_at, v.doctor_id,
@@ -110,7 +125,7 @@ $todayRows = $pdo->query("
     JOIN doctor_consult_types dct ON dct.id = v.doctor_consult_type_id
     LEFT JOIN bills b ON b.visit_id = v.id AND b.voided_at IS NULL
     LEFT JOIN admissions adm ON adm.visit_id = v.id
-    LEFT JOIN admission_bills ab ON ab.admission_id = adm.id AND ab.voided_at IS NULL
+    LEFT JOIN admission_bills ab ON ab.admission_id = adm.id $abVoidFilter
     LEFT JOIN (
         SELECT bill_id, SUM(amount) AS refunded FROM refunds WHERE voided_at IS NULL GROUP BY bill_id
     ) r ON r.bill_id = b.id
