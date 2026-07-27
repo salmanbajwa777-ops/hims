@@ -225,6 +225,93 @@ function generate_er_invoice_number(PDO $pdo): string {
     return 'E' . $seq . $yymm;
 }
 
+// "P" series for procedure bills (sql/add_procedure_bills.sql). Same
+// GREATEST(stored counter, real max) guard as the A/E series — see the comment
+// on generate_admission_invoice_number() for why the counter alone isn't
+// trusted. Stored as "P{seq}{YY}{MM}", so the sequence is the middle: strip the
+// leading "P" and the trailing 4 chars.
+function generate_procedure_invoice_number(PDO $pdo): string {
+    $year = (int) date('Y');
+    $month = (int) date('n');
+    $yymm = substr((string) $year, 2, 2) . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
+
+    $stmt = $pdo->prepare("
+        SELECT GREATEST(
+            COALESCE((SELECT next_seq - 1 FROM procedure_invoice_counters WHERE yr = :y AND mo = :m), 0),
+            COALESCE((SELECT MAX(CAST(SUBSTRING(invoice_number, 2, CHAR_LENGTH(invoice_number) - 5) AS UNSIGNED))
+                      FROM procedure_bills WHERE invoice_number LIKE :pfx), 0)
+        ) + 1
+    ");
+    $stmt->execute([':y' => $year, ':m' => $month, ':pfx' => 'P%' . $yymm]);
+    $seq = (int) $stmt->fetchColumn();
+    if ($seq < 1) {
+        $seq = 1;
+    }
+
+    $pdo->prepare('
+        INSERT INTO procedure_invoice_counters (yr, mo, next_seq)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE next_seq = GREATEST(next_seq, VALUES(next_seq))
+    ')->execute([$year, $month, $seq + 1]);
+
+    return 'P' . $seq . $yymm;
+}
+
+// What a doctor earned from PROCEDURES in a date range, split tax-first.
+//
+// Procedures differ from consultations: the share is per-PROCEDURE, not one
+// rate per doctor, so this cannot go through doctor_split() on an aggregate.
+// Each line carries its own snapshot (doctor_share_pct / has_tax /
+// tax_percent), so the split is summed line-by-line in SQL via
+// doctor_split_sql() over the ITEM columns.
+//
+// Cash basis keyed off pb.paid_at, matching every other money figure. Voided
+// bills are excluded. $from / $toExcl are 'Y-m-d' bounds, upper exclusive.
+//
+// Returns ['gross','tax','doctor','clinic','bills','live'] — 'live' is false
+// when the tables don't exist yet (migration not run), which lets callers show
+// "not billed yet" instead of a misleading zero.
+function doctor_procedure_earnings(PDO $pdo, int $doctorId, string $from, string $toExcl): array {
+    $zero = ['gross' => 0.0, 'tax' => 0.0, 'doctor' => 0.0, 'clinic' => 0.0, 'bills' => 0, 'live' => false];
+    if ($doctorId <= 0) {
+        return $zero;
+    }
+
+    $doc    = doctor_split_sql('i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'doctor');
+    $tax    = doctor_split_sql('i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'tax');
+    $clinic = doctor_split_sql('i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'clinic');
+
+    try {
+        $q = $pdo->prepare("
+            SELECT COUNT(DISTINCT pb.id)         AS bills,
+                   COALESCE(SUM(i.amount), 0)    AS gross,
+                   COALESCE(SUM($tax), 0)        AS tax,
+                   COALESCE(SUM($doc), 0)        AS doctor,
+                   COALESCE(SUM($clinic), 0)     AS clinic
+            FROM procedure_bill_items i
+            JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
+            WHERE pb.doctor_id = ?
+              AND pb.voided_at IS NULL
+              AND pb.paid_at >= ? AND pb.paid_at < ?
+        ");
+        $q->execute([$doctorId, $from, $toExcl]);
+        $r = $q->fetch();
+    } catch (PDOException $e) {
+        // Tables absent = migration not run. Not an error worth failing a whole
+        // statement page over.
+        return $zero;
+    }
+
+    return [
+        'gross'  => (float) ($r['gross'] ?? 0),
+        'tax'    => (float) ($r['tax'] ?? 0),
+        'doctor' => (float) ($r['doctor'] ?? 0),
+        'clinic' => (float) ($r['clinic'] ?? 0),
+        'bills'  => (int) ($r['bills'] ?? 0),
+        'live'   => true,
+    ];
+}
+
 // Billed stay-hours from a raw minute count.
 //   0–44 completed minutes  -> 0.5 hour (flat half hour)
 //   45 minutes and above    -> round DOWN to the previous quarter-hour
@@ -1003,6 +1090,52 @@ function void_er_bill(PDO $pdo, int $erBillId, int $userId, string $reason): arr
         return [false, 'Could not void the ER bill. Please try again.'];
     }
     return [true, "ER bill {$eb['invoice_number']} voided. The number is kept for the record."];
+}
+
+// Void a procedure bill — same contract and day-lock rule as void_er_bill().
+// The invoice number is retained (never reissued) so the series stays auditable.
+function void_procedure_bill(PDO $pdo, int $procBillId, int $userId, string $reason): array {
+    $reason = trim($reason);
+    if ($reason === '') {
+        return [false, 'A void needs a reason.'];
+    }
+    $stmt = $pdo->prepare('SELECT id, invoice_number, status, paid_at, paid_by_id, created_by_id, voided_at
+                           FROM procedure_bills WHERE id = ?');
+    $stmt->execute([$procBillId]);
+    $pb = $stmt->fetch();
+    if (!$pb) {
+        return [false, 'Procedure bill not found.'];
+    }
+    if ($pb['voided_at'] !== null) {
+        return [false, 'This procedure bill is already voided.'];
+    }
+    // Voiding a settled bill changes a day's cash position — blocked once that
+    // cashier's day is closed and signed.
+    if ($pb['status'] === 'paid' && $pb['paid_at']) {
+        $lockDate = date('Y-m-d', strtotime($pb['paid_at']));
+        $lockUser = (int) ($pb['paid_by_id'] ?: $pb['created_by_id']);
+        $dayLock = require_day_open($pdo, $lockDate, $lockUser);
+        if ($dayLock) {
+            return [false, $dayLock . ' Voiding this procedure bill would change that day\'s signed tally.'];
+        }
+    }
+    $pdo->beginTransaction();
+    try {
+        $upd = $pdo->prepare("UPDATE procedure_bills SET status = 'voided', voided_at = NOW(), voided_by_id = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL");
+        $upd->execute([$userId, $reason, $procBillId]);
+        if ($upd->rowCount() !== 1) {
+            $pdo->rollBack();
+            return [false, 'Could not void the procedure bill (already voided?).'];
+        }
+        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+            ->execute([$userId, 'procedure_bill_voided', "Voided procedure bill {$pb['invoice_number']} (#$procBillId) — $reason"]);
+        $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('[void_procedure_bill] ' . $e->getMessage());
+        return [false, 'Could not void the procedure bill. Please try again.'];
+    }
+    return [true, "Procedure bill {$pb['invoice_number']} voided. The number is kept for the record."];
 }
 
 // ============================================================================

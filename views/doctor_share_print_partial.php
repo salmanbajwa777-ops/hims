@@ -156,7 +156,17 @@ $n2 = fn(float $v) => number_format($v, 2);
             <?php else: ?>
             <tr class="none"><td>No paid ward rounds in this period</td><td class="text-right">&mdash;</td><td class="text-right">&mdash;</td></tr>
             <?php endif; ?>
+            <?php if (!$procLive): ?>
             <tr class="none"><td>Procedures &mdash; billing not live yet</td><td class="text-right">&mdash;</td><td class="text-right">&mdash;</td></tr>
+            <?php elseif ($procCount > 0): ?>
+            <tr>
+                <td>Procedures performed</td>
+                <td class="text-right"><?= number_format($procCount) ?></td>
+                <td class="text-right"><?= $n2($procGross) ?></td>
+            </tr>
+            <?php else: ?>
+            <tr class="none"><td>No procedures billed in this period</td><td class="text-right">&mdash;</td><td class="text-right">&mdash;</td></tr>
+            <?php endif; ?>
         </table>
 
         <div class="section-title">SETTLEMENT</div>
@@ -166,10 +176,23 @@ $n2 = fn(float $v) => number_format($v, 2);
             <tr><td>Less: refunds issued (<?= number_format($refundCount) ?>)</td><td class="text-right">(<?= $n2($refundAmt) ?>)</td></tr>
             <tr class="sub"><td>Net collected</td><td class="text-right"><?= $n2($netCollected) ?></td></tr>
             <?php endif; ?>
-            <tr><td>Less: tax withheld <?= $hasTax ? '(' . number_format($taxPct, 0) . '% of gross)' : '(doctor self-deposits)' ?></td><td class="text-right">(<?= $n2($split['tax']) ?>)</td></tr>
-            <tr class="sub"><td>Divisible amount</td><td class="text-right"><?= $n2($netCollected - $split['tax']) ?></td></tr>
-            <tr><td>Clinic share (<?= number_format(100 - $sharePct, 0) ?>%)</td><td class="text-right"><?= $n2($split['clinic']) ?></td></tr>
-            <tr class="sub"><td>Doctor share (<?= number_format($sharePct, 0) ?>%)</td><td class="text-right"><?= $n2($split['doctor']) ?></td></tr>
+            <?php
+            // With procedures in the mix the split is no longer ONE percentage:
+            // each procedure line carries its own share/tax rate, so the labels
+            // drop the "(x%)" suffix rather than print a figure that doesn't
+            // reconcile. Divisible amount is derived from the split itself
+            // (doctor + clinic) instead of netCollected, which excludes
+            // procedure money entirely.
+            $mixedRates = $procLive && $procCount > 0;
+            $divisible  = $split['doctor'] + $split['clinic'];
+            ?>
+            <tr><td>Less: tax withheld <?= $mixedRates ? '' : ($hasTax ? '(' . number_format($taxPct, 0) . '% of gross)' : '(doctor self-deposits)') ?></td><td class="text-right">(<?= $n2($split['tax']) ?>)</td></tr>
+            <tr class="sub"><td>Divisible amount</td><td class="text-right"><?= $n2($divisible) ?></td></tr>
+            <tr><td>Clinic share<?= $mixedRates ? '' : ' (' . number_format(100 - $sharePct, 0) . '%)' ?></td><td class="text-right"><?= $n2($split['clinic']) ?></td></tr>
+            <tr class="sub"><td>Doctor share<?= $mixedRates ? '' : ' (' . number_format($sharePct, 0) . '%)' ?></td><td class="text-right"><?= $n2($split['doctor']) ?></td></tr>
+            <?php if ($mixedRates): ?>
+            <tr class="none"><td colspan="2" style="font-size:8px;">Consultations and procedures carry their own share and tax rates; each is split at its own rate and totalled above.</td></tr>
+            <?php endif; ?>
             <?php if ($paidOut > 0): ?>
             <tr><td>Less: already disbursed</td><td class="text-right">(<?= $n2($paidOut) ?>)</td></tr>
             <?php endif; ?>

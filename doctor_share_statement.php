@@ -168,19 +168,34 @@ if ($doc) {
 }
 
 // ---- Procedures ------------------------------------------------------------
-// doctor_procedures holds rates and shares, but NOTHING has ever written a
-// procedure transaction — the per-visit table named in HMIS-PHP-PLAN.md does
-// not exist yet. The row is rendered as "not billed yet" rather than silently
-// omitted, so nobody reads a missing line as a zero-earning month.
-$procCount = 0; $procGross = 0.0; $procLive = false;
+// Live since sql/add_procedure_bills.sql. Procedures do NOT go through
+// doctor_split() below: the share is per-PROCEDURE (each line snapshots its own
+// doctor_share_pct / tax_percent from doctor_procedures), not the doctor's one
+// consultation rate. doctor_procedure_earnings() therefore returns an already
+// split figure, which is added to the consultation split afterwards.
+// 'live' = false means the migration hasn't been run — the row still reads
+// "not billed yet" rather than a misleading zero.
+$procEarn  = doctor_procedure_earnings($pdo, $doctorId, $from, $toExcl);
+$procLive  = $procEarn['live'];
+$procCount = $procEarn['bills'];
+$procGross = $procEarn['gross'];
 
 // ===========================================================================
 // The split. Net collected = OPD + IPD - refunds, then tax off the top, then
 // the share. doctor_split() is the single source of truth for that order.
+// Procedures are split per line and folded in after.
 // ===========================================================================
 $grossCollected = $opdGross + $ipdGross;
 $netCollected   = max(0.0, $grossCollected - $refundAmt);
 $split = doctor_split($netCollected, $sharePct, $hasTax, $taxPct);
+
+// Fold the per-procedure split into the totals so the ladder (gross -> tax ->
+// doctor/clinic) still re-sums with procedures included.
+$grossCollected += $procGross;
+$split['gross']  += $procEarn['gross'];
+$split['tax']    += $procEarn['tax'];
+$split['doctor'] += $procEarn['doctor'];
+$split['clinic'] += $procEarn['clinic'];
 
 // ---- Already disbursed in this range (posted Doctor Shares expenses) -------
 $paidOut = 0.0;
@@ -441,8 +456,18 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
 
                     <!-- Procedures -->
                     <tr class="sect"><td colspan="3">Procedures</td></tr>
+                    <?php if (!$procLive): ?>
                     <tr><td colspan="2" class="muted">Procedure billing is not live yet &mdash; nothing to include</td>
                         <td class="n">&mdash;</td></tr>
+                    <?php elseif ($procCount > 0): ?>
+                    <tr>
+                        <td>Procedures performed</td>
+                        <td class="qty"><?= number_format($procCount) ?></td>
+                        <td class="n"><?= $m($procGross) ?></td>
+                    </tr>
+                    <?php else: ?>
+                    <tr><td colspan="2" class="muted">No procedures billed in this period</td><td class="n">&mdash;</td></tr>
+                    <?php endif; ?>
 
                     <tr class="sum">
                         <td colspan="2">Gross collected</td>
@@ -463,13 +488,25 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     <div class="step neg"><span>Refunds issued (<?= number_format($refundCount) ?>)</span><span class="n">&minus;<?= $m($refundAmt) ?></span></div>
                     <div class="step"><span>Net collected</span><span class="n"><?= $m($netCollected) ?></span></div>
                     <?php endif; ?>
+                    <?php
+                    // Procedures carry per-line share/tax rates, so once any are
+                    // present a single "(x%)" label would not reconcile with the
+                    // figures beside it — drop the suffix and derive the divisible
+                    // amount from the split itself rather than from netCollected
+                    // (which excludes procedure money).
+                    $mixedRates = $procLive && $procCount > 0;
+                    $divisible  = $split['doctor'] + $split['clinic'];
+                    ?>
                     <div class="step neg">
-                        <span>Tax withheld <?= $hasTax ? '(' . number_format($taxPct, 0) . '%)' : '(self-deposited)' ?></span>
+                        <span>Tax withheld <?= $mixedRates ? '' : ($hasTax ? '(' . number_format($taxPct, 0) . '%)' : '(self-deposited)') ?></span>
                         <span class="n"><?= $split['tax'] > 0 ? '&minus;' . $m($split['tax']) : 'Rs 0' ?></span>
                     </div>
-                    <div class="step"><span>Divisible amount</span><span class="n"><?= $m($netCollected - $split['tax']) ?></span></div>
-                    <div class="step muted"><span>Clinic share (<?= number_format(100 - $sharePct, 0) ?>%)</span><span class="n"><?= $m($split['clinic']) ?></span></div>
-                    <div class="step"><span>Doctor share (<?= number_format($sharePct, 0) ?>%)</span><span class="n"><?= $m($split['doctor']) ?></span></div>
+                    <div class="step"><span>Divisible amount</span><span class="n"><?= $m($divisible) ?></span></div>
+                    <div class="step muted"><span>Clinic share<?= $mixedRates ? '' : ' (' . number_format(100 - $sharePct, 0) . '%)' ?></span><span class="n"><?= $m($split['clinic']) ?></span></div>
+                    <div class="step"><span>Doctor share<?= $mixedRates ? '' : ' (' . number_format($sharePct, 0) . '%)' ?></span><span class="n"><?= $m($split['doctor']) ?></span></div>
+                    <?php if ($mixedRates): ?>
+                    <div class="step muted" style="font-size:11px;"><span>Consultations and procedures are each split at their own rate.</span></div>
+                    <?php endif; ?>
                     <?php if ($paidOut > 0): ?>
                     <div class="step neg"><span>Already disbursed</span><span class="n">&minus;<?= $m($paidOut) ?></span></div>
                     <?php endif; ?>

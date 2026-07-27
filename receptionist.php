@@ -498,6 +498,7 @@ require __DIR__ . '/partials/sidebar.php';
                             // "···" menu. Refund NEVER sits in the row; it lives in
                             // the menu, coloured clay, and keeps its confirm step.
                             $canER     = has_permission('RECEPTION_RAISE_ER_BILL');
+                            $canProc   = has_permission('RECEPTION_RAISE_PROCEDURE_BILL');
                             $canAdmit  = has_permission('ADMISSION_ADMIT_PATIENT');
                             $canRefund = $row['bill_id'] && $row['bill_status'] === 'paid'
                                          && $refunded < $paidAmount
@@ -552,6 +553,12 @@ require __DIR__ . '/partials/sidebar.php';
                             $used = array_filter([$primary[0] ?? null, $secondary[0] ?? null]);
                             if ($canER) {
                                 $overflow[] = ['ER service', 'href="er_bill.php?patient_id=' . (int) $row['patient_id'] . '"', true, false];
+                            }
+                            if ($canProc) {
+                                // Carry the queue row's doctor across as the performing-doctor
+                                // hint; procedure_bill.php drops it if they have none assigned.
+                                $overflow[] = ['Procedure', 'href="procedure_bill.php?patient_id=' . (int) $row['patient_id']
+                                    . ((int) ($row['doctor_id'] ?? 0) ? '&doctor_id=' . (int) $row['doctor_id'] : '') . '"', true, false];
                             }
                             if (!in_array('Admit', $used, true) && !$isAdmitted && $canAdmit) {
                                 $overflow[] = ['Admit', $admitAttrs, false, false];
