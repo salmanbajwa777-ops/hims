@@ -98,3 +98,27 @@ WHERE p.`key` IN (
     'RECEPTION_PROCESS_PAYMENTS','RECEPTION_PRINT_CONSENT','RECEPTION_UPLOAD_CONSENT','RECEPTION_GENERATE_INVOICES'
 )
 AND NOT EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.base_role = 'RECEPTIONIST' AND rp.permission_id = p.id);
+
+-- ---- Finances + Analytics reports stay ADMIN-ONLY ---------------------------
+-- Confirmed policy 2026-07-27: no role but ADMIN holds these by default; anyone
+-- else gets them only through an explicit per-user grant.
+--
+-- This trailing DELETE is the backstop. The MANAGER/ACCOUNTANT grants above are
+-- legacy (those roles were removed by collapse_roles_to_staff.sql), but that
+-- file folded the UNION of the legacy roles' grants into STAFF — which is
+-- precisely how every receptionist silently ended up able to open Profit & Loss
+-- and the Doctor Share Statement. Re-running this seed must never recreate
+-- that, so whatever the blocks above granted, everything except ADMIN is
+-- stripped back off here.
+--
+-- user_permission_overrides is deliberately untouched: that table IS the
+-- "admin granted it to this person" path.
+DELETE rp FROM role_permissions rp
+  JOIN permissions p ON p.id = rp.permission_id
+ WHERE p.`key` IN (
+        'FINANCIAL_VIEW_ALL_COMMISSIONS',
+        'FINANCIAL_VIEW_DAILY_PL',
+        'FINANCIAL_VIEW_CLINIC_REPORTS',
+        'FINANCIAL_RUN_PAYOUT'
+       )
+   AND rp.base_role <> 'ADMIN';

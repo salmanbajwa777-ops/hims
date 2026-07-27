@@ -63,10 +63,13 @@ WHERE p.`key` IN (
     -- Financial corrections / oversight.
     'FINANCIAL_VOID_BILL',
     'ADMISSION_APPROVE_WRITEOFF',
-    -- Oversight views (seeded but not yet wired in code — forward-looking, harmless).
-    'FINANCIAL_VIEW_CLINIC_REPORTS',
-    'FINANCIAL_VIEW_ALL_COMMISSIONS',
-    'FINANCIAL_VIEW_DAILY_PL',
+    -- NB: the three FINANCIAL_VIEW_* report keys used to be granted here as
+    -- "forward-looking, harmless". They are neither any more — they now open
+    -- Profit & Loss, Doctor Share Statement, Tax Register, Income Report and
+    -- Expense Report. Confirmed policy 2026-07-27 is ADMIN-ONLY by default
+    -- (see sql/lock_finance_reports_to_admin.sql), so they are removed from
+    -- this bundle. A manager who genuinely needs them gets an explicit per-user
+    -- grant from the admin.
     -- Day-control / cash oversight.
     'ADMIN_RECEIVE_HANDOVER',
     'RECEPTION_CLOSE_DAY'
