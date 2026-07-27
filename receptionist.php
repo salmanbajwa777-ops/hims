@@ -1,4 +1,8 @@
 <?php
+// TEMPORARY DIAGNOSTIC — remove once the 500 on this page is identified.
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
 require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
@@ -99,7 +103,7 @@ $todayRows = $pdo->query("
            dct.label AS consult_label,
            b.id AS bill_id, b.grand_total, b.paid_amount, b.status AS bill_status,
            COALESCE(r.refunded, 0) AS refunded,
-           -- The stay is billed SEPARATELY ("A" series, admission_bills) and the
+           -- The stay is billed SEPARATELY (the \"A\" series, admission_bills) and the
            -- consultation bill is often Rs 0 for a straight-to-admission patient,
            -- so the row must carry both or the money column reads a false zero.
            ab.id AS adm_bill_id, ab.status AS adm_bill_status,
@@ -481,6 +485,7 @@ require __DIR__ . '/partials/sidebar.php';
                             // "···" menu. Refund NEVER sits in the row; it lives in
                             // the menu, coloured clay, and keeps its confirm step.
                             $canER     = has_permission('RECEPTION_RAISE_ER_BILL');
+                            $canProc   = has_permission('RECEPTION_RAISE_PROCEDURE_BILL');
                             $canAdmit  = has_permission('ADMISSION_ADMIT_PATIENT');
                             $canRefund = $row['bill_id'] && $row['bill_status'] === 'paid'
                                          && $refunded < $paidAmount
@@ -535,6 +540,12 @@ require __DIR__ . '/partials/sidebar.php';
                             $used = array_filter([$primary[0] ?? null, $secondary[0] ?? null]);
                             if ($canER) {
                                 $overflow[] = ['ER service', 'href="er_bill.php?patient_id=' . (int) $row['patient_id'] . '"', true, false];
+                            }
+                            if ($canProc) {
+                                // Carry the queue row's doctor across as the performing-doctor
+                                // hint; procedure_bill.php drops it if they have none assigned.
+                                $overflow[] = ['Procedure', 'href="procedure_bill.php?patient_id=' . (int) $row['patient_id']
+                                    . ((int) ($row['doctor_id'] ?? 0) ? '&doctor_id=' . (int) $row['doctor_id'] : '') . '"', true, false];
                             }
                             if (!in_array('Admit', $used, true) && !$isAdmitted && $canAdmit) {
                                 $overflow[] = ['Admit', $admitAttrs, false, false];
