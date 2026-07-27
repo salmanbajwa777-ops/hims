@@ -2,6 +2,7 @@
 require_once __DIR__ . '/config/guard_admin.php';
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/notify.php';
+require_once __DIR__ . '/config/tokens.php';
 
 // Three base roles: pick the identity, then grant capabilities on the
 // Permissions tab / per-person overrides. STAFF covers every desk/ward worker.
@@ -59,6 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
     // Per-doctor invoice paper size (A5 default; only meaningful for doctors, but
     // harmless on other roles since their visits never raise a consultation slip).
     $invoicePaperSize = in_array($_POST['invoice_paper_size'] ?? '', INVOICE_PAPER_OPTIONS, true) ? $_POST['invoice_paper_size'] : 'A5';
+    // Queue token prefix ("SB" -> tokens SB-1, SB-2). Left blank, it's derived from the
+    // name; typed in, it's an admin override so two doctors sharing initials stay apart.
+    $tokenPrefix = normalize_token_prefix($_POST['token_prefix'] ?? '', $name);
     // Consultation revenue share (doctors only; zeroed for other roles).
     // Rule: tax comes off the FULL fee first, then the share % splits the net —
     // see sql/add_consult_revenue_share.sql. Non-taxable doctors split the full fee.
@@ -174,6 +178,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                         ->execute([$invoicePaperSize, $newUserId]);
                 } catch (PDOException $e) { /* column not migrated yet */ }
 
+                // Same pattern for the token prefix — no-op until add_token_codes.sql runs.
+                try {
+                    $pdo->prepare('UPDATE users SET token_prefix = ? WHERE id = ?')
+                        ->execute([$tokenPrefix, $newUserId]);
+                } catch (PDOException $e) { /* column not migrated yet */ }
+
                 $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
 
                 foreach ($pendingDocs as $doc) {
@@ -221,6 +231,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $specialty = in_array($_POST['specialty'] ?? '', SPECIALTY_OPTIONS, true) ? $_POST['specialty'] : 'GENERAL';
     // Per-doctor invoice paper size (A5 default). See add_staff for the rationale.
     $invoicePaperSize = in_array($_POST['invoice_paper_size'] ?? '', INVOICE_PAPER_OPTIONS, true) ? $_POST['invoice_paper_size'] : 'A5';
+    // Queue token prefix — same rules as add_staff (blank re-derives from the name).
+    $tokenPrefix = normalize_token_prefix($_POST['token_prefix'] ?? '', $name);
     // Consultation revenue share — same rules as add_staff (tax off the full fee
     // first, then the share split; zeroed for non-doctor roles).
     $consultSharePct = trim($_POST['consult_share_pct'] ?? '') !== '' ? (float) $_POST['consult_share_pct'] : 0;
@@ -359,6 +371,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                 try {
                     $pdo->prepare('UPDATE users SET invoice_paper_size = ? WHERE id = ?')
                         ->execute([$invoicePaperSize, $editId]);
+                } catch (PDOException $e) { /* column not migrated yet */ }
+
+                try {
+                    $pdo->prepare('UPDATE users SET token_prefix = ? WHERE id = ?')
+                        ->execute([$tokenPrefix, $editId]);
                 } catch (PDOException $e) { /* column not migrated yet */ }
 
                 $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
@@ -572,8 +589,19 @@ try {
         $paperSizes[(int) $r['id']] = $r['invoice_paper_size'] ?: 'A5';
     }
 } catch (PDOException $e) { /* column not migrated yet */ }
+
+// Token prefixes, loaded the same guarded way. A doctor with no stored prefix falls
+// back to initials derived from their name, so the field is never blank in the UI.
+$tokenPrefixes = [];
+try {
+    foreach ($pdo->query('SELECT id, token_prefix FROM users')->fetchAll() as $r) {
+        $tokenPrefixes[(int) $r['id']] = $r['token_prefix'];
+    }
+} catch (PDOException $e) { /* column not migrated yet */ }
+
 foreach ($staff as &$s) {
     $s['invoice_paper_size'] = $paperSizes[(int) $s['id']] ?? 'A5';
+    $s['token_prefix'] = doctor_token_prefix($tokenPrefixes[(int) $s['id']] ?? null, $s['name']);
 }
 unset($s);
 
@@ -848,6 +876,7 @@ require __DIR__ . '/partials/sidebar.php';
                                    data-discount="<?= htmlspecialchars((string) $s['max_discount_pct'], ENT_QUOTES) ?>"
                                    data-specialty="<?= htmlspecialchars($s['specialty'], ENT_QUOTES) ?>"
                                    data-papersize="<?= htmlspecialchars($s['invoice_paper_size'], ENT_QUOTES) ?>"
+                                   data-tokenprefix="<?= htmlspecialchars($s['token_prefix'], ENT_QUOTES) ?>"
                                    data-sharepct="<?= htmlspecialchars((string) $s['consult_share_pct'], ENT_QUOTES) ?>"
                                    data-hastax="<?= (int) $s['consult_has_tax'] ?>"
                                    data-taxpct="<?= htmlspecialchars((string) $s['consult_tax_pct'], ENT_QUOTES) ?>"
@@ -985,6 +1014,10 @@ require __DIR__ . '/partials/sidebar.php';
                                 <option value="A5">A5 (compact receipt)</option>
                                 <option value="A4">A4 (full page)</option>
                             </select>
+                        </div>
+                        <div class="field" id="tokenPrefixField" style="display:none;">
+                            <label for="token_prefix">Queue Token Prefix <span class="opt">(their queue reads SB-1, SB-2 …; leave blank to use their initials, change it only if two doctors share initials)</span></label>
+                            <input type="text" id="token_prefix" name="token_prefix" maxlength="6" placeholder="SB" style="text-transform:uppercase; max-width:140px;">
                         </div>
                         <div class="field" id="consultShareField" style="display:none;">
                             <label for="consult_share_pct">Consultation Revenue Share <span class="opt">(doctor's % of each consultation fee; clinic keeps the rest)</span></label>
@@ -1171,6 +1204,7 @@ const passwordField = document.getElementById('passwordField');
 const tempPasswordField = document.getElementById('tempPasswordField');
 const specialtyField = document.getElementById('specialtyField');
 const invoicePaperField = document.getElementById('invoicePaperField');
+const tokenPrefixField = document.getElementById('tokenPrefixField');
 const baseRoleSelect = document.getElementById('base_role');
 const consultShareField = document.getElementById('consultShareField');
 const consultTaxField = document.getElementById('consultTaxField');
@@ -1184,6 +1218,8 @@ function updateSpecialtyVisibility() {
     const isDoctor = baseRoleSelect.value === 'DOCTOR';
     specialtyField.style.display = isDoctor ? '' : 'none';
     invoicePaperField.style.display = isDoctor ? '' : 'none';
+    // Only doctors hold a queue, so only they need a token prefix.
+    tokenPrefixField.style.display = isDoctor ? '' : 'none';
     consultShareField.style.display = isDoctor ? '' : 'none';
     consultTaxField.style.display = isDoctor ? '' : 'none';
 }
@@ -1226,6 +1262,8 @@ function resetToAddMode() {
     document.getElementById('existingDocsWrap').style.display = 'none';
     document.getElementById('specialty').value = 'GENERAL';
     document.getElementById('invoice_paper_size').value = 'A5';
+    // Blank on a new doctor: the server derives the prefix from their name on save.
+    document.getElementById('token_prefix').value = '';
     consultShareInput.value = '0';
     consultHasTaxCb.checked = false;
     consultTaxPctInput.value = '';
@@ -1244,6 +1282,7 @@ function openEditPanel(data) {
     document.getElementById('max_discount_pct').value = data.discount || '0';
     document.getElementById('specialty').value = data.specialty || 'GENERAL';
     document.getElementById('invoice_paper_size').value = data.papersize || 'A5';
+    document.getElementById('token_prefix').value = data.tokenprefix || '';
     consultShareInput.value = data.sharepct || '0';
     consultHasTaxCb.checked = data.hastax === '1';
     consultTaxPctInput.value = consultHasTaxCb.checked ? (data.taxpct || '') : '';

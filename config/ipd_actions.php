@@ -26,6 +26,10 @@
  * Returns ['ok' => bool, 'error' => string, 'admission_id' => int|null].
  */
 
+// Required here, not left to callers: IPD admits arrive from three pages and the
+// shell visit needs a session-aware token from every one of them.
+require_once __DIR__ . '/tokens.php';
+
 function handle_ipd_admit(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
 
@@ -118,20 +122,16 @@ function handle_ipd_admit(PDO $pdo): array {
                     throw new RuntimeException('no_consult_type');
                 }
 
-                // Race-safe token, same upsert as registration / ER admit.
-                $pdo->prepare('
-                    INSERT INTO visit_queue_counters (doctor_id, visit_date, next_token)
-                    VALUES (?, CURDATE(), 2)
-                    ON DUPLICATE KEY UPDATE next_token = LAST_INSERT_ID(next_token) + 1
-                ')->execute([$shellDoctorId]);
-                $lastId = (int) $pdo->lastInsertId();
-                $tokenNo = $lastId > 0 ? $lastId : 1;
+                // Race-safe, session-aware token — same helper as registration / ER admit.
+                $token = issue_token($pdo, $shellDoctorId);
+                $tokenNo = $token['no'];
+                $tokenSession = $token['session'];
 
                 $pdo->prepare('
-                    INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, payment_mode, visit_date, created_by_id, consultation_fee_type, consult_status, disposition)
-                    VALUES (?, ?, ?, ?, ?, 0, ?, CURDATE(), ?, ?, ?, ?)
+                    INSERT INTO visits (token_no, token_session, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, payment_mode, visit_date, created_by_id, consultation_fee_type, consult_status, disposition)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, ?, CURDATE(), ?, ?, ?, ?)
                 ')->execute([
-                    $tokenNo, $patientId, $shellDoctorId, (int) $ct['id'], (float) $ct['fee'],
+                    $tokenNo, $tokenSession, $patientId, $shellDoctorId, (int) $ct['id'], (float) $ct['fee'],
                     'CASH', $uid, 'FULL', 'DONE', 'IN_DOOR',
                 ]);
                 $visitId = (int) $pdo->lastInsertId();

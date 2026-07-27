@@ -12,6 +12,7 @@ $currentUser = $currentUser->fetch();
 
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/sheets.php';
+require_once __DIR__ . '/config/tokens.php';
 
 $error = '';
 $success = '';
@@ -198,9 +199,9 @@ if (isset($_GET['print']) && isset($_GET['bill_id'])) {
     }
 
     $stmt = $pdo->prepare("
-        SELECT b.*, v.fee, v.discount_pct, v.token_no,
+        SELECT b.*, v.fee, v.discount_pct, v.token_no, v.token_session,
                p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
-               d.name AS doctor_name, d.specialty AS doctor_specialty,
+               d.name AS doctor_name, d.specialty AS doctor_specialty, d.token_prefix,
                $paperCol AS invoice_paper_size
         FROM bills b
         JOIN visits v ON v.id = b.visit_id
@@ -236,7 +237,8 @@ if (isset($_GET['voided'])) { $success = 'Invoice voided. The number is kept for
 if (isset($_GET['bill_id'])) {
     $billId = (int) $_GET['bill_id'];
     $stmt = $pdo->prepare('
-        SELECT b.*, v.token_no, v.doctor_id, p.name AS patient_name, p.mrn, dr.name AS doctor_name
+        SELECT b.*, v.token_no, v.token_session, v.doctor_id, p.name AS patient_name, p.mrn,
+               dr.name AS doctor_name, dr.token_prefix
         FROM bills b
         JOIN visits v ON v.id = b.visit_id
         JOIN patients p ON p.id = v.patient_id
@@ -260,7 +262,8 @@ if (isset($_GET['bill_id'])) {
 // 'paid' and 'waived' are both settled and excluded.
 $pendingBills = $pdo->query("
     SELECT b.id, b.invoice_number, b.status, b.grand_total,
-           v.token_no, p.name AS patient_name, p.mrn, dr.name AS doctor_name, dct.label AS consult_label
+           v.token_no, v.token_session, p.name AS patient_name, p.mrn, dr.name AS doctor_name,
+           dr.token_prefix, dct.label AS consult_label
     FROM bills b
     JOIN visits v ON v.id = b.visit_id
     JOIN patients p ON p.id = v.patient_id
@@ -330,7 +333,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="visit-pick-row">
                         <div>
                             <strong><?= htmlspecialchars($b['patient_name']) ?></strong>
-                            <span class="muted"> &middot; MRN <?= htmlspecialchars($b['mrn']) ?> &middot; Token #<?= (int) $b['token_no'] ?></span>
+                            <span class="muted"> &middot; MRN <?= htmlspecialchars($b['mrn']) ?> &middot; Token <?= htmlspecialchars(token_code($b['token_prefix'] ?? null, $b['doctor_name'] ?? '', $b['token_no'])) ?></span>
                             <div class="muted">Invoice <?= htmlspecialchars($b['invoice_number']) ?> &middot; <?= htmlspecialchars($b['doctor_name']) ?> &middot; <?= htmlspecialchars($b['consult_label']) ?> &middot; Rs <?= number_format((float) $b['grand_total'], 2) ?></div>
                         </div>
                         <div style="display:flex; align-items:center; gap:10px;">
@@ -347,7 +350,7 @@ require __DIR__ . '/partials/sidebar.php';
                 <div class="page-head">
                     <div>
                         <div class="section-title"><?= htmlspecialchars($activeBill['patient_name']) ?> &middot; MRN <?= htmlspecialchars($activeBill['mrn']) ?></div>
-                        <div class="section-sub">Invoice <?= htmlspecialchars($activeBill['invoice_number']) ?> &middot; <?= htmlspecialchars($activeBill['doctor_name']) ?> &middot; Token #<?= (int) $activeBill['token_no'] ?></div>
+                        <div class="section-sub">Invoice <?= htmlspecialchars($activeBill['invoice_number']) ?> &middot; <?= htmlspecialchars($activeBill['doctor_name']) ?> &middot; Token <?= htmlspecialchars(token_code($activeBill['token_prefix'] ?? null, $activeBill['doctor_name'] ?? '', $activeBill['token_no'])) ?></div>
                     </div>
                     <span class="status-pill <?= htmlspecialchars($activeBill['status']) ?>"><?= htmlspecialchars($activeBill['status']) ?></span>
                 </div>

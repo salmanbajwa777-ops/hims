@@ -8,13 +8,14 @@
 // must never sit inside an open transaction or roll back a saved record.
 
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/tokens.php';
 
 /** New consultation invoice raised → the visit's doctor. */
 function notify_invoice_raised(PDO $pdo, int $billId): void {
     try {
         $stmt = $pdo->prepare('
-            SELECT b.invoice_number, b.grand_total, v.token_no, v.doctor_id,
-                   p.name AS patient_name, p.mrn, du.name AS doctor_name,
+            SELECT b.invoice_number, b.grand_total, v.token_no, v.token_session, v.doctor_id,
+                   p.name AS patient_name, p.mrn, du.name AS doctor_name, du.token_prefix,
                    v.consultation_fee_type
             FROM bills b
             JOIN visits v ON v.id = b.visit_id
@@ -33,17 +34,23 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
             'FULL' => 'Full consultation', 'FREE_FOLLOWUP' => 'Free follow-up',
             'HALF_FOLLOWUP' => '50% follow-up', 'THREE_QUARTER_FOLLOWUP' => '75% follow-up',
         ];
+        // Coded token ("SB-1"). Numbers restart each session, so an evening token is
+        // qualified — an unadorned "SB-1" in an inbox could otherwise mean either sitting.
+        $tokenSession = (int) ($r['token_session'] ?? 1);
+        $tokenText = token_code($r['token_prefix'] ?? null, $r['doctor_name'] ?? '', $r['token_no'])
+            . ($tokenSession >= 2 ? ' (' . token_session_label($tokenSession) . ' session)' : '');
+
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been registered under your name and their invoice has been raised.</p>'
             . mail_kv([
                 'Patient'       => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
-                'Token'         => '#' . $r['token_no'],
+                'Token'         => $tokenText,
                 'Invoice'       => $r['invoice_number'],
                 'Type'          => $feeLabels[$r['consultation_fee_type']] ?? 'Consultation',
                 'Amount'        => 'Rs ' . number_format((float) $r['grand_total'], 2),
                 'Time'          => date('d/m/Y, h:i A'),
             ]);
         send_mail($pdo, $docEmail,
-            'New patient — ' . $r['patient_name'] . ' (Token #' . $r['token_no'] . ')',
+            'New patient — ' . $r['patient_name'] . ' (Token ' . $tokenText . ')',
             mail_template('New Patient in Your Queue', $body),
             'invoice:' . $r['invoice_number']);
     } catch (Throwable $e) { /* never break the page for a notification */ }

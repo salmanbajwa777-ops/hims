@@ -6,6 +6,7 @@ require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/sheets.php';
+require_once __DIR__ . '/config/tokens.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_REGISTER_PATIENTS');
 
@@ -286,7 +287,7 @@ function pending_booking_guard(PDO $pdo, string $phone, int $patientId = 0): arr
 function same_day_visit(PDO $pdo, int $patientId, int $doctorId): ?array {
     if ($patientId <= 0 || $doctorId <= 0) { return null; }
     $stmt = $pdo->prepare("
-        SELECT id, token_no, created_at
+        SELECT id, token_no, token_session, created_at
         FROM visits
         WHERE patient_id = ? AND doctor_id = ? AND visit_date = CURDATE()
         ORDER BY id DESC
@@ -472,17 +473,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                     . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
                 $pdo->prepare('UPDATE patients SET mrn = ? WHERE id = ?')->execute([$mrn, $patientId]);
 
-                $pdo->prepare('
-                    INSERT INTO visit_queue_counters (doctor_id, visit_date, next_token)
-                    VALUES (?, CURDATE(), 2)
-                    ON DUPLICATE KEY UPDATE next_token = LAST_INSERT_ID(next_token) + 1
-                ')->execute([$doctorId]);
-                // First registration for this doctor today: fresh row inserts next_token=2
-                // directly (no LAST_INSERT_ID() call on that branch, so PHP falls back to token 1
-                // below). Subsequent ones: LAST_INSERT_ID(next_token) captures the PRE-increment
-                // value as the issued token, then stores next_token + 1 for the following call.
-                $lastId = (int) $pdo->lastInsertId();
-                $tokenNo = $lastId > 0 ? $lastId : 1;
+                // Coded token (SB-1) that restarts at 1 for each of the doctor's sittings
+                // that day — see config/tokens.php for the session split and the race-safe
+                // counter upsert.
+                $token = issue_token($pdo, $doctorId);
+                $tokenNo = $token['no'];
+                $tokenSession = $token['session'];
 
                 $discountBy = $discountPct > 0 ? $_SESSION['user_id'] : null;
 
@@ -491,11 +487,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 $feeType = $discountPct > 0 ? null : 'FULL';
 
                 $insertVisit = $pdo->prepare('
-                    INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)
+                    INSERT INTO visits (token_no, token_session, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)
                 ');
                 $insertVisit->execute([
-                    $tokenNo, $patientId, $doctorId, $consultTypeId, $fee, $discountPct, $discountBy, $paymentMode, $_SESSION['user_id'], $feeType,
+                    $tokenNo, $tokenSession, $patientId, $doctorId, $consultTypeId, $fee, $discountPct, $discountBy, $paymentMode, $_SESSION['user_id'], $feeType,
                 ]);
                 $visitId = (int) $pdo->lastInsertId();
 
@@ -534,9 +530,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 // Log the invoice to the yearly Google Sheet (best-effort, after commit).
                 sheet_push($pdo, 'INVOICE', $billId, (int) $_SESSION['user_id']);
 
-                $doctorStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+                $doctorStmt = $pdo->prepare('SELECT name, token_prefix FROM users WHERE id = ?');
                 $doctorStmt->execute([$doctorId]);
-                $doctorName = $doctorStmt->fetch()['name'] ?? '';
+                $doctorRow = $doctorStmt->fetch() ?: [];
+                $doctorName = $doctorRow['name'] ?? '';
 
                 $successVisit = [
                     'bill_id' => $billId,
@@ -547,6 +544,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                     'doctor_name' => $doctorName,
                     'type_label' => $typeLabel,
                     'token_no' => $tokenNo,
+                    'token_code' => token_code($doctorRow['token_prefix'] ?? null, $doctorName, $tokenNo),
+                    'token_session' => $tokenSession,
                 ];
             } catch (Exception $e) {
                 $pdo->rollBack();
@@ -585,8 +584,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
         // the receptionist can still force it with the "Register anyway" button
         // (it re-posts with force_revisit=1).
         $duplicateVisit = $dupVisit; // consumed by the follow-up form re-render
+        // Quote the coded token so it matches what reception sees in the queue when
+        // they go to open that visit.
+        $dupDoc = $pdo->prepare('SELECT name, token_prefix FROM users WHERE id = ?');
+        $dupDoc->execute([$doctorId]);
+        $dupDocRow = $dupDoc->fetch() ?: [];
+        $dupSession = (int) ($dupVisit['token_session'] ?? 1);
         $error = 'Already registered today: ' . $patient['name']
-            . ' (' . $patient['mrn'] . ') has visit #' . (int) $dupVisit['token_no']
+            . ' (' . $patient['mrn'] . ') has token '
+            . token_code($dupDocRow['token_prefix'] ?? null, $dupDocRow['name'] ?? '', $dupVisit['token_no'])
+            . ($dupSession >= 2 ? ' (' . token_session_label($dupSession) . ' session)' : '')
             . ' with this doctor at ' . date('h:i A', strtotime($dupVisit['created_at']))
             . '. Open that visit, or choose "Register anyway" for a separate consultation.';
     } elseif (pending_booking_guard($pdo, '', $patientId) !== []) {
@@ -634,23 +641,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
         try {
             $pdo->beginTransaction();
 
-            $pdo->prepare('
-                INSERT INTO visit_queue_counters (doctor_id, visit_date, next_token)
-                VALUES (?, CURDATE(), 2)
-                ON DUPLICATE KEY UPDATE next_token = LAST_INSERT_ID(next_token) + 1
-            ')->execute([$doctorId]);
-            $lastId = (int) $pdo->lastInsertId();
-            $tokenNo = $lastId > 0 ? $lastId : 1;
+            $token = issue_token($pdo, $doctorId);
+            $tokenNo = $token['no'];
+            $tokenSession = $token['session'];
 
             $discountPct = (float) $quote['discount_pct'];
             $discountBy = $discountPct > 0 ? $_SESSION['user_id'] : null;
 
             $insertVisit = $pdo->prepare('
-                INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type, revisit_of_visit_id, fee_overridden, discount_category_id, category_discount_pct, category_discount_amount)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO visits (token_no, token_session, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, discount_applied_by_id, payment_mode, visit_date, created_by_id, consultation_fee_type, revisit_of_visit_id, fee_overridden, discount_category_id, category_discount_pct, category_discount_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?)
             ');
             $insertVisit->execute([
-                $tokenNo, $patientId, $doctorId, $consultTypeId, $fullFee, $discountPct, $discountBy,
+                $tokenNo, $tokenSession, $patientId, $doctorId, $consultTypeId, $fullFee, $discountPct, $discountBy,
                 $paymentMode, $_SESSION['user_id'], $quote['fee_type'], $quote['anchor_visit_id'] ?? null, $override ? 1 : 0,
                 $categoryPct > 0 ? $categoryId : null, $categoryPct, $categoryAmount,
             ]);
@@ -675,12 +678,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
             // Log the invoice to the yearly Google Sheet (best-effort, after commit).
             sheet_push($pdo, 'INVOICE', $billId, (int) $_SESSION['user_id']);
 
-            $dStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+            $dStmt = $pdo->prepare('SELECT name, token_prefix FROM users WHERE id = ?');
             $dStmt->execute([$doctorId]);
+            $dRow = $dStmt->fetch() ?: [];
             $followupVisit = [
                 'bill_id' => $billId, 'mrn' => $patient['mrn'], 'patient_name' => $patient['name'],
-                'doctor_name' => $dStmt->fetch()['name'] ?? '', 'type_label' => $ctRow['label'],
-                'token_no' => $tokenNo, 'fee_type' => $quote['fee_type'], 'reason' => $quote['reason'],
+                'doctor_name' => $dRow['name'] ?? '', 'type_label' => $ctRow['label'],
+                'token_no' => $tokenNo,
+                'token_code' => token_code($dRow['token_prefix'] ?? null, $dRow['name'] ?? '', $tokenNo),
+                'token_session' => $tokenSession,
+                'fee_type' => $quote['fee_type'], 'reason' => $quote['reason'],
                 'fee' => $quote['fee'],
             ];
         } catch (Exception $e) {
@@ -1765,8 +1772,8 @@ if ($followupVisit && !$successVisit) { $successVisit = $followupVisit; }
             </div>
         </div>
         <div class="card queue-token" style="margin-top:20px;">
-            <div class="num"><?= (int) $successVisit['token_no'] ?></div>
-            <div class="label">Queue Token</div>
+            <div class="num"><?= htmlspecialchars($successVisit['token_code']) ?></div>
+            <div class="label">Queue Token<?= (int) ($successVisit['token_session'] ?? 1) >= 2 ? ' · ' . htmlspecialchars(token_session_label((int) $successVisit['token_session'])) . ' Session' : '' ?></div>
         </div>
         <div class="form-footer" style="justify-content:center; gap:10px; box-shadow:none; border-top:none; background:transparent;">
             <a href="patients.php" class="btn secondary">Back to Patients</a>

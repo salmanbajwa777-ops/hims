@@ -10,6 +10,7 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+require_once __DIR__ . '/config/tokens.php';
 refresh_session_permissions($pdo);
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
@@ -41,10 +42,15 @@ $rows = $pdo->query("
            v.token_no,
            p.mrn, p.name AS full_name, p.phone,
            COALESCE(du.name, a.admitting_doctor_manual) AS doctor_name,
+           -- Prefix comes from the VISIT's doctor (vd), not the admitting consultant
+           -- (du) — the token was issued against that doctor's queue and the two are
+           -- often different people on an admission.
+           vd.name AS token_doctor_name, vd.token_prefix,
            nu.name AS nurse_name
     FROM admissions a
     JOIN visits v ON v.id = a.visit_id
     JOIN patients p ON p.id = v.patient_id
+    LEFT JOIN users vd ON vd.id = v.doctor_id
     LEFT JOIN users du ON du.id = a.admitting_doctor_id
     LEFT JOIN users nu ON nu.id = a.assigned_nurse_id
     WHERE a.status <> 'DISCHARGED' OR a.discharge_finalized_at >= CURDATE()
@@ -134,7 +140,7 @@ require __DIR__ . '/partials/sidebar.php';
                 foreach ($rows as $r):
                     [$cls, $lbl] = $stApill[$r['status']] ?? ['done', $r['status']]; ?>
                     <tr>
-                        <td class="mrn">#<?= htmlspecialchars((string) $r['token_no']) ?></td>
+                        <td class="mrn"><?= htmlspecialchars(token_code($r['token_prefix'] ?? null, $r['token_doctor_name'] ?? '', $r['token_no'])) ?></td>
                         <td>
                             <div class="name"><?= htmlspecialchars($r['full_name']) ?></div>
                             <div class="mrn"><?= htmlspecialchars($r['mrn']) ?></div>

@@ -11,6 +11,7 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+require_once __DIR__ . '/config/tokens.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -27,10 +28,13 @@ function load_ipd_admission(PDO $pdo, int $id): ?array {
     $stmt = $pdo->prepare("
         SELECT a.*, v.token_no, v.visit_date,
                p.id AS patient_id, p.mrn, p.name AS patient_name, p.phone, p.dob, p.gender,
-               COALESCE(du.name, a.admitting_consultant_manual) AS consultant_name
+               COALESCE(du.name, a.admitting_consultant_manual) AS consultant_name,
+               -- Prefix from the VISIT's doctor, not the consultant — see admissions.php.
+               vd.name AS token_doctor_name, vd.token_prefix
         FROM ipd_admissions a
         JOIN visits v ON v.id = a.visit_id
         JOIN patients p ON p.id = v.patient_id
+        LEFT JOIN users vd ON vd.id = v.doctor_id
         LEFT JOIN users du ON du.id = a.admitting_consultant_id
         WHERE a.id = ?
     ");
@@ -247,7 +251,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="section-title" style="font-size:18px;"><?= htmlspecialchars($adm['patient_name']) ?></div>
                         <div class="section-sub">
                             <span class="mono"><?= htmlspecialchars($adm['mrn']) ?></span> &middot;
-                            <?= htmlspecialchars($adm['phone'] ?: '—') ?> &middot; Token #<?= (int) $adm['token_no'] ?>
+                            <?= htmlspecialchars($adm['phone'] ?: '—') ?> &middot; Token <?= htmlspecialchars(token_code($adm['token_prefix'] ?? null, $adm['token_doctor_name'] ?? '', $adm['token_no'])) ?>
                         </div>
                     </div>
                     <span class="a-status <?= $adm['status'] ?>"><?= $statusLabels[$adm['status']] ?? $adm['status'] ?></span>

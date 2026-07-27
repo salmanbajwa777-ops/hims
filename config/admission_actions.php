@@ -23,6 +23,8 @@
 // (receptionist.php, doctor.php, patients.php) and only one of them loaded this
 // library, so a sheet row silently went missing from the other two.
 require_once __DIR__ . '/sheets.php';
+// Same reasoning: the shell-visit token must be issued the same way from all three.
+require_once __DIR__ . '/tokens.php';
 
 function handle_admit_patient(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
@@ -96,14 +98,10 @@ function handle_admit_patient(PDO $pdo): array {
                     throw new RuntimeException('no_consult_type');
                 }
 
-                // Race-safe token, same upsert as registration.
-                $pdo->prepare('
-                    INSERT INTO visit_queue_counters (doctor_id, visit_date, next_token)
-                    VALUES (?, CURDATE(), 2)
-                    ON DUPLICATE KEY UPDATE next_token = LAST_INSERT_ID(next_token) + 1
-                ')->execute([$shellDoctorId]);
-                $lastId = (int) $pdo->lastInsertId();
-                $tokenNo = $lastId > 0 ? $lastId : 1;
+                // Race-safe, session-aware token — same helper as registration.
+                $token = issue_token($pdo, $shellDoctorId);
+                $tokenNo = $token['no'];
+                $tokenSession = $token['session'];
 
                 // Shell visit: anchors the admission only. It carries NO consultation
                 // bill, so its fee never reaches any tally. consult_status = 'DONE' keeps
@@ -111,10 +109,10 @@ function handle_admit_patient(PDO $pdo): array {
                 // waiting for an OPD consult). payment_mode is NOT NULL in the schema, so a
                 // neutral 'CASH' is stored even though nothing is billed here.
                 $pdo->prepare('
-                    INSERT INTO visits (token_no, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, payment_mode, visit_date, created_by_id, consultation_fee_type, consult_status, disposition)
-                    VALUES (?, ?, ?, ?, ?, 0, ?, CURDATE(), ?, ?, ?, ?)
+                    INSERT INTO visits (token_no, token_session, patient_id, doctor_id, doctor_consult_type_id, fee, discount_pct, payment_mode, visit_date, created_by_id, consultation_fee_type, consult_status, disposition)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, ?, CURDATE(), ?, ?, ?, ?)
                 ')->execute([
-                    $tokenNo, $patientId, $shellDoctorId, (int) $ct['id'], (float) $ct['fee'],
+                    $tokenNo, $tokenSession, $patientId, $shellDoctorId, (int) $ct['id'], (float) $ct['fee'],
                     'CASH', $uid, 'FULL', 'DONE', 'SHORT_STAY',
                 ]);
                 $visitId = (int) $pdo->lastInsertId();

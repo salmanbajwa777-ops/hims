@@ -5,6 +5,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/admission_actions.php';
+require_once __DIR__ . '/config/tokens.php';
 refresh_session_permissions($pdo);
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
@@ -96,7 +97,7 @@ $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good
 // consultation and those still waiting float to the top (by status), then newest
 // registration first within each group (highest token = latest arrival on top).
 $queueStmt = $pdo->prepare("
-    SELECT v.id AS visit_id, v.token_no, v.consult_status, v.started_at, v.created_at,
+    SELECT v.id AS visit_id, v.token_no, v.token_session, v.consult_status, v.started_at, v.created_at,
            p.name AS patient_name, p.gender, p.dob, p.mrn,
            t.label AS type_label, v.consultation_fee_type,
            a.id AS admission_id, a.admission_type, a.status AS admission_status,
@@ -107,9 +108,14 @@ $queueStmt = $pdo->prepare("
     LEFT JOIN admissions a ON a.visit_id = v.id
     LEFT JOIN bills b ON b.visit_id = v.id
     WHERE v.doctor_id = ? AND v.visit_date = CURDATE()
-    ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_no DESC
+    ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_session DESC, v.token_no DESC
 ");
 $queueStmt->execute([$doctorId]);
+
+// This doctor's token prefix, resolved once for every row in their queue.
+$myPrefixStmt = $pdo->prepare('SELECT token_prefix FROM users WHERE id = ?');
+$myPrefixStmt->execute([$doctorId]);
+$myTokenPrefix = doctor_token_prefix($myPrefixStmt->fetchColumn() ?: null, $user['name'] ?? '');
 
 // Admit-modal data for the doctor console (doctors can admit from their queue).
 $canDoctorAdmit = has_permission('ADMISSION_ADMIT_PATIENT');
@@ -255,7 +261,7 @@ $headExtra = <<<CSS
 .tnum { font-variant-numeric: tabular-nums; }
 
 /* Header — carries the greeting now (Option B: no hero banner below) */
-.header { height: 64px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.82); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
+.header { height: 64px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: var(--card); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
 .header-greet .greet-line { font-size: 12px; color: var(--text-muted); }
 .header-greet .greet-name { font-size: 15.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
 .search-box { flex: 1; max-width: 420px; margin: 0 32px; position: relative; }
@@ -301,7 +307,12 @@ a.kpi-cell:hover { background: var(--primary-light); }
 /* "Now serving" as a highlighted first row instead of a separate side panel */
 .q-item.serving { background: linear-gradient(90deg, var(--primary-light), transparent); border-left: 3px solid var(--primary); padding-left: 17px; }
 .q-item.serving .q-token { background: var(--primary); color: #fff; }
-.q-token { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; background: var(--primary-light); color: var(--primary-dark); }
+/* Holds a code ("SB-1"), not a bare number, so width grows with the text off a
+   min-width instead of being a fixed square — "HS-12" must not clip. */
+.q-token { min-width: 48px; padding: 0 8px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; white-space: nowrap; background: var(--primary-light); color: var(--primary-dark); }
+.q-token-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+/* Only rendered for session 2 — the morning run needs no qualifier. */
+.q-token-session { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 .q-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .q-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 1px 7px; border-radius: 6px; background: rgba(26,127,126,.12); color: var(--primary); }
 /* Free follow-up: green, reads as "no fee" not "unpaid, chase it". */
@@ -446,7 +457,15 @@ require __DIR__ . '/partials/head.php';
                         <div class="empty-state">No patients registered for you today yet.<br>New registrations for you will appear here.</div>
                     <?php else: foreach ($visits as $v): $age = doc_age($v); $st = $v['consult_status']; ?>
                     <div class="q-item<?= $st === 'IN_CONSULT' ? ' serving' : '' ?>">
-                        <div class="q-token tnum"><?= (int) $v['token_no'] ?></div>
+                        <?php
+                        // Numbers restart each session, so the same code can appear twice in a
+                        // day — the session caption is what keeps the two runs apart.
+                        $vSession = (int) ($v['token_session'] ?? 1);
+                        ?>
+                        <div class="q-token-cell">
+                            <div class="q-token tnum"><?= htmlspecialchars($myTokenPrefix) ?>-<?= (int) $v['token_no'] ?></div>
+                            <?php if ($vSession >= 2): ?><div class="q-token-session"><?= htmlspecialchars(token_session_label($vSession)) ?></div><?php endif; ?>
+                        </div>
                         <div>
                             <div class="q-name"><?= htmlspecialchars($v['patient_name']) ?>
                                 <?php if ($st === 'IN_CONSULT'): ?><span class="pulse"></span><span class="status-pill in-consult">Now serving</span><?php endif; ?>

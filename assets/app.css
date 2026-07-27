@@ -513,7 +513,8 @@ td { padding: 12px 10px; border-top: 1px solid var(--row-line); font-size: var(-
 .qrow:last-child { border-bottom: 0; }
 .qrow:hover { background: var(--card-alt); }
 
-.qtoken { font-size: var(--fs-token); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+/* Holds a coded token ("SB-1"), which must never break across two lines. */
+.qtoken { font-size: var(--fs-token); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .qtime, .qmeta { font-size: var(--fs-micro); color: var(--text-muted); }
 .qname { font-size: var(--fs-cell); font-weight: 600; color: var(--text); }
 .qdoc  { font-size: var(--fs-cell); color: var(--text-secondary); }

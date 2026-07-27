@@ -5,6 +5,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/billing.php';
+require_once __DIR__ . '/config/tokens.php';
 refresh_session_permissions($pdo);
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
@@ -90,10 +91,10 @@ function icon(string $name, int $size = 18): string {
 // payment up front (see patients.php), so there is no unpaid state here — the money
 // columns report what was collected, net of any refunds.
 $todayRows = $pdo->query("
-    SELECT v.id AS visit_id, v.token_no, v.consult_status, v.disposition, v.created_at,
+    SELECT v.id AS visit_id, v.token_no, v.token_session, v.consult_status, v.disposition, v.created_at,
            v.started_at, v.finished_at, v.doctor_id,
            p.id AS patient_id, p.mrn, p.name AS patient_name, p.dob, p.phone,
-           dr.name AS doctor_name,
+           dr.name AS doctor_name, dr.token_prefix AS doctor_token_prefix,
            adm.id AS admission_id, adm.status AS admission_status,
            dct.label AS consult_label,
            b.id AS bill_id, b.grand_total, b.paid_amount, b.status AS bill_status,
@@ -522,8 +523,13 @@ require __DIR__ . '/partials/sidebar.php';
                         ?>
                         <div class="qrow">
                             <div class="c-token">
-                                <div class="qtoken"><?= (int) $row['token_no'] ?></div>
-                                <div class="qtime"><?= date('H:i', strtotime($row['created_at'])) ?></div>
+                                <?php
+                                // Reception sees every doctor's queue at once, so each row carries
+                                // its own prefix. Session 2 is captioned — numbers restart at 1.
+                                $rowSession = (int) ($row['token_session'] ?? 1);
+                                ?>
+                                <div class="qtoken"><?= htmlspecialchars(token_code($row['doctor_token_prefix'] ?? null, $row['doctor_name'] ?? '', $row['token_no'])) ?></div>
+                                <div class="qtime"><?= date('H:i', strtotime($row['created_at'])) ?><?= $rowSession >= 2 ? ' · ' . htmlspecialchars(token_session_label($rowSession)) : '' ?></div>
                             </div>
                             <div class="c-patient">
                                 <div class="qname"><?= htmlspecialchars($row['patient_name']) ?></div>
