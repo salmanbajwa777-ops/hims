@@ -223,8 +223,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
         // Partial → needs write-off approval before the stay closes. Record the
         // paid amount + finalize, but leave the admission DISCHARGE_IN_PROGRESS
         // and the bill 'finalized' (not yet 'paid') until approved.
-        $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, finalized_by_id = ? WHERE id = ?')
-            ->execute([$method, $paid, $uid, $bill['id']]);
+        //
+        // paid_at + paid_by_id ARE stamped here even though the status stays
+        // 'finalized': the cash is physically in the drawer now, so it has to
+        // land on THIS shift's tally. Without them the money was invisible to
+        // day_cash_tally() until an admin approved the write-off — which could
+        // be days later — leaving the collector over at every close in between
+        // with no line explaining it. See day_cash_tally()'s 'finalized' branch.
+        try {
+            $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ?, paid_by_id = ? WHERE id = ?')
+                ->execute([$method, $paid, $uid, $uid, $bill['id']]);
+        } catch (PDOException $e) {
+            // paid_by_id absent (pre-migration) — same fallback as the full-payment
+            // path below.
+            $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ? WHERE id = ?')
+                ->execute([$method, $paid, $uid, $bill['id']]);
+        }
         header('Location: admission_discharge.php?id=' . $admissionId . '&pending_writeoff=1'); exit;
     }
 
@@ -277,11 +291,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
             // Collector = whoever took the partial payment at discharge, not the
             // approving admin — their shift owns the cash. Fallback pattern: see
             // checkout.php record_payment.
+            //
+            // COALESCE on paid_at, NOT NOW(): the partial payment already stamped
+            // the moment the cash was taken, and the tally has very likely counted
+            // it on that shift. Overwriting with the approval time would move the
+            // money to a second day — short on the day it was collected, over on
+            // the day it was approved. NOW() only applies to a legacy row that
+            // never got a stamp.
             try {
-                $pdo->prepare('UPDATE admission_bills SET status = \'paid\', write_off_amount = ?, paid_at = NOW(), paid_by_id = COALESCE(finalized_by_id, ?) WHERE id = ?')
+                $pdo->prepare('UPDATE admission_bills SET status = \'paid\', write_off_amount = ?, paid_at = COALESCE(paid_at, NOW()), paid_by_id = COALESCE(paid_by_id, finalized_by_id, ?) WHERE id = ?')
                     ->execute([$short, $uid, $bill['id']]);
             } catch (PDOException $e) {
-                $pdo->prepare('UPDATE admission_bills SET status = \'paid\', write_off_amount = ?, paid_at = NOW() WHERE id = ?')
+                $pdo->prepare('UPDATE admission_bills SET status = \'paid\', write_off_amount = ?, paid_at = COALESCE(paid_at, NOW()) WHERE id = ?')
                     ->execute([$short, $bill['id']]);
             }
             $pdo->prepare('INSERT INTO admission_writeoffs (admission_id, admission_bill_id, patient_id, amount_written_off, approved_by_id, approved_by_role, reason, shift_tally_date) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE())')

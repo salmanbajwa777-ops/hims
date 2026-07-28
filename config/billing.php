@@ -652,6 +652,10 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         'online_admission_total' => 0.0, 'online_admission_count' => 0,
         'cash_er_total' => 0.0, 'cash_er_count' => 0,
         'online_er_total' => 0.0, 'online_er_count' => 0,
+        'cash_procedure_total' => 0.0, 'cash_procedure_count' => 0,
+        'online_procedure_total' => 0.0, 'online_procedure_count' => 0,
+        'cash_dental_total' => 0.0, 'cash_dental_count' => 0,
+        'online_dental_total' => 0.0, 'online_dental_count' => 0,
         'cash_refund_total' => 0.0, 'cash_refund_count' => 0,
         'expense_total' => 0.0, 'expense_count' => 0,
     ];
@@ -670,11 +674,22 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         $t[$k . '_count'] = (int) $r['n'];
     }
 
+    // status IN ('paid','finalized'), not just 'paid'.
+    //
+    // A partial discharge payment sits at 'finalized' until an admin approves
+    // the write-off, but the cash reached the drawer the moment it was taken —
+    // so it belongs on the collector's shift NOW, not on whatever day approval
+    // happens to land. SUM(paid_amount) is what makes this safe: a 'finalized'
+    // row contributes only what was actually handed over, never grand_total.
+    // Rows with paid_amount = 0 add nothing, so unpaid finalized bills are
+    // naturally excluded.
     $stmt = $pdo->prepare("
         SELECT (payment_method = 'cash') AS is_cash,
                COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
         FROM admission_bills
-        WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+        WHERE status IN ('paid', 'finalized') AND voided_at IS NULL
+          AND paid_amount > 0
+          AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
         GROUP BY is_cash
     ");
     $stmt->execute([$winStart, $winEnd, $userId]);
@@ -734,6 +749,72 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         // er_bills not migrated yet — leave ER buckets at zero.
     }
 
+    // Procedure bills ("P" series).
+    //
+    // THIS WAS MISSING UNTIL 2026-07-28 and it was a real hole: procedure
+    // billing went live 2026-07-27 and was wired into the P&L (clinic_revenue,
+    // clinic_income_buckets) the same day, but NOT into this function. So a
+    // receptionist who took procedure cash was short in "expected in hand" by
+    // exactly that amount at close, with no line explaining the variance.
+    //
+    // NOTE for the first close after this deploys: expected_cash now includes
+    // procedure cash for any day not yet closed. Days already signed off are
+    // snapshotted in shift_closings and are unaffected.
+    try {
+        $stmt = $pdo->prepare("
+            SELECT (payment_method = 'cash') AS is_cash,
+                   COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
+            FROM procedure_bills
+            WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+            GROUP BY is_cash
+        ");
+        $stmt->execute([$winStart, $winEnd, $userId]);
+        foreach ($stmt->fetchAll() as $r) {
+            $isCash = (int) $r['is_cash'];
+            $k = $isCash ? 'cash_procedure' : 'online_procedure';
+            $t[$k . '_total'] = (float) $r['total'];
+            $t[$k . '_count'] = (int) $r['n'];
+            // Folded into the admission buckets for the same reason ER is: the
+            // stored closing columns and the printed A5 slip pick it up with no
+            // schema change.
+            $admKey = $isCash ? 'cash_admission' : 'online_admission';
+            $t[$admKey . '_total'] += (float) $r['total'];
+            $t[$admKey . '_count'] += (int) $r['n'];
+        }
+    } catch (Throwable $e) {
+        // procedure_bills not migrated yet — leave procedure buckets at zero.
+    }
+
+    // Dental package payments ("DP" series, sql/add_dental_module.sql).
+    //
+    // The SHAPE DIFFERS from every *_bills table above and the difference
+    // matters: there is no paid_amount column, because a payment row IS the
+    // money (an account is paid down over many receipts, so there is no single
+    // bill total to settle). Hence SUM(amount). status is 'paid'|'voided' only
+    // — there is no 'waived' payment; waiving happens by voiding ITEMS, which
+    // lowers what is owed rather than recording a zero payment.
+    try {
+        $stmt = $pdo->prepare("
+            SELECT (payment_method = 'cash') AS is_cash,
+                   COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
+            FROM dental_procedure_payments
+            WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+            GROUP BY is_cash
+        ");
+        $stmt->execute([$winStart, $winEnd, $userId]);
+        foreach ($stmt->fetchAll() as $r) {
+            $isCash = (int) $r['is_cash'];
+            $k = $isCash ? 'cash_dental' : 'online_dental';
+            $t[$k . '_total'] = (float) $r['total'];
+            $t[$k . '_count'] = (int) $r['n'];
+            $admKey = $isCash ? 'cash_admission' : 'online_admission';
+            $t[$admKey . '_total'] += (float) $r['total'];
+            $t[$admKey . '_count'] += (int) $r['n'];
+        }
+    } catch (Throwable $e) {
+        // dental module not migrated yet — leave dental buckets at zero.
+    }
+
     // Cash refunds are attributed to the DRAWER they came out of (paid_out_by_id)
     // — normally the receptionist who took the original payment — not whoever
     // clicked "Refund" (generated_by_id could be a doctor/admin with no drawer).
@@ -771,9 +852,10 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         // expenses module not migrated — treat as zero
     }
 
-    // ER is already folded into the admission buckets above, so it is NOT added
-    // again here (that would double-count). cash_er_/online_er_ remain available
-    // for the live page to show ER split out from admissions.
+    // ER, procedures and dental packages are already folded into the admission
+    // buckets above, so none is added again here (that would double-count).
+    // Their own cash_*_/online_*_ keys remain available for the live page to
+    // show each stream split out from admissions.
     $t['cash_total']   = round($t['cash_consult_total'] + $t['cash_admission_total'], 2);
     $t['cash_count']   = $t['cash_consult_count'] + $t['cash_admission_count'];
     $t['online_total'] = round($t['online_consult_total'] + $t['online_admission_total'], 2);
@@ -1533,6 +1615,38 @@ function clinic_revenue(PDO $pdo, string $start, string $end): array {
         $out['bills']  += $row['bills'];
     }
 
+    // Dental packages cannot join the loop above: that query assumes a *_bills
+    // shape (paid_amount, status='paid'), and a package has neither — it is paid
+    // down over N receipts, so the money lives on the PAYMENT rows and the
+    // column is `amount`. Same window, same cash basis, its own query.
+    // "bills" counts receipts, which is the comparable unit (one transaction).
+    $row = ['label' => 'Dental Packages', 'gross' => 0.0, 'bills' => 0, 'cash' => 0.0, 'online' => 0.0];
+    try {
+        $q = $pdo->prepare("
+            SELECT COUNT(*)                   AS n,
+                   COALESCE(SUM(amount), 0)   AS gross,
+                   COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN amount ELSE 0 END), 0) AS cash,
+                   COALESCE(SUM(CASE WHEN payment_method <> 'cash' THEN amount ELSE 0 END), 0) AS online
+            FROM dental_procedure_payments
+            WHERE status = 'paid' AND voided_at IS NULL
+              AND paid_at >= ? AND paid_at < ?
+        ");
+        $q->execute([$from, $to]);
+        if ($r = $q->fetch()) {
+            $row['gross']  = (float) $r['gross'];
+            $row['bills']  = (int) $r['n'];
+            $row['cash']   = (float) $r['cash'];
+            $row['online'] = (float) $r['online'];
+        }
+    } catch (PDOException $e) {
+        // Dental module not migrated on this database — leave the row at zero.
+    }
+    $out['streams']['dental'] = $row;
+    $out['gross']  += $row['gross'];
+    $out['cash']   += $row['cash'];
+    $out['online'] += $row['online'];
+    $out['bills']  += $row['bills'];
+
     // Refunds are OPD-only today (refunds.bill_id -> bills). Keyed off the
     // refund's own date, so one issued in a later month reduces THAT month.
     try {
@@ -1707,6 +1821,20 @@ function clinic_income_buckets(PDO $pdo, string $start, string $end, string $buc
         } catch (PDOException $e) { /* stream not installed on this database */ }
     }
 
+    // Dental packages are a sixth stream but cannot join the loop: the money is
+    // on the PAYMENT rows (column `amount`, no paid_amount), because a package
+    // is paid down over many receipts. See clinic_revenue() for the same split.
+    try {
+        $q = $pdo->prepare("
+            SELECT " . sprintf($expr, 'paid_at') . " AS b, COALESCE(SUM(amount), 0) AS amt
+            FROM dental_procedure_payments
+            WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ?
+            GROUP BY b
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) { $add($gross, $r['b'], $r['amt']); }
+    } catch (PDOException $e) { /* dental module not installed on this database */ }
+
     // ---- Refunds (OPD-only today), keyed off the refund's own date ----
     try {
         $q = $pdo->prepare("
@@ -1774,6 +1902,38 @@ function clinic_income_buckets(PDO $pdo, string $start, string $end, string $buc
         $q->execute([$from, $to]);
         foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
     } catch (PDOException $e) { /* procedure billing tables not installed */ }
+
+    // ---- Doctor share + withheld tax: dental packages ----
+    // Bucketed on the PAYMENT's date, matching the gross block above, and
+    // apportioned across live items so only the share on money ACTUALLY
+    // COLLECTED is deducted — a package quoted in July but paid in September
+    // must not deduct a September share from a July bucket.
+    // lab_charge is NOT passed as disposables: the lab is billed to the patient
+    // on top, so the fee is already whole and the dentist earns only on the fee.
+    // See doctor_dental_earnings() in config/dental.php for the full reasoning.
+    try {
+        $ratio = 'p.amount / NULLIF(t.live_total, 0)';
+        $amt   = "(i.amount * $ratio)";
+        $d = doctor_split_sql($amt, 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'doctor');
+        $t = doctor_split_sql($amt, 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent', 'tax');
+        $q = $pdo->prepare("
+            SELECT " . sprintf($expr, 'p.paid_at') . " AS b, COALESCE(SUM($d), 0) + COALESCE(SUM($t), 0) AS amt
+            FROM dental_procedure_payments p
+            JOIN dental_procedure_account_items i
+                  ON i.account_id = p.account_id AND i.voided_at IS NULL
+            JOIN (
+                  SELECT account_id, SUM(amount + lab_charge) AS live_total
+                    FROM dental_procedure_account_items
+                   WHERE voided_at IS NULL
+                   GROUP BY account_id
+                 ) t ON t.account_id = p.account_id
+            WHERE p.status = 'paid' AND p.voided_at IS NULL
+              AND p.paid_at >= ? AND p.paid_at < ?
+            GROUP BY b
+        ");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
+    } catch (PDOException $e) { /* dental module not installed */ }
 
     $out = [];
     foreach ($gross as $k => $g) {

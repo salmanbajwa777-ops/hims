@@ -83,7 +83,8 @@ try {
                    SUM(CASE WHEN payment_method <> 'cash' THEN paid_amount ELSE 0 END),
                    COUNT(*), 0, 0
             FROM admission_bills
-            WHERE status = 'paid' AND voided_at IS NULL
+            WHERE status IN ('paid', 'finalized') AND voided_at IS NULL
+              AND paid_amount > 0
               AND DATE(paid_at) = CURDATE() AND paid_by_id IS NOT NULL
             GROUP BY paid_by_id
             UNION ALL
