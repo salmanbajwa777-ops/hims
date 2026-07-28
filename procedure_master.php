@@ -33,6 +33,14 @@ $procHasDisposables = procedure_disposables_flag($pdo);
 // every dental picker filters on; the other three arrive in the same migration.
 $procHasDental = column_exists($pdo, 'procedure_master', 'is_dental');
 
+// Has add_procedure_consent.sql been run? Same degradation rule again. This sits
+// UP HERE, beside its two siblings, and not further down with the display code
+// that also needs it: the add_procedure POST handler below reads it, and a flag
+// defined after the handler is simply undefined inside it — the consent wording
+// would be dropped on every save with nothing to show for it.
+require_once __DIR__ . '/config/consent.php';
+$procHasConsentTpl = consent_column_live($pdo);
+
 // The dental fields are normalised in ONE place rather than at each call site:
 // unticking Dental clears the lab fields, and an un-ticked lab clears its
 // charge. Returns [isDental, hasLab, defaultLabCharge].
@@ -84,6 +92,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
                                        'has_lab_component = VALUES(has_lab_component)',
                                        'default_lab_charge = VALUES(default_lab_charge)']);
         }
+        // Consent wording typed on the add form. Only stored when the box is
+        // ticked: wording left behind in a hidden textarea after the admin
+        // unticked the box is not what they asked to save.
+        //
+        // NULL, never '', for "no consent form" — consent_template_for() treats
+        // an empty string and NULL alike, but the column's own convention is
+        // NULL (see sql/add_procedure_consent.sql), and keeping to it means a
+        // cleared template cannot be mistaken for wording someone blanked.
+        //
+        // NOT on the $upd arm on purpose. Re-adding an existing procedure name
+        // updates its rate; silently overwriting the consent wording of a live
+        // procedure from a form the admin was using to fix a price is a much
+        // bigger surprise than it looks. Editing wording stays an explicit act
+        // on the template page.
+        if ($procHasConsentTpl) {
+            $tpl = $consent ? trim((string) ($_POST['consent_template'] ?? '')) : '';
+            $cols[] = 'consent_template';
+            $vals[] = $tpl !== '' ? $tpl : null;
+        }
+
         $cols[] = 'created_by_id'; $vals[] = $_SESSION['user_id'];
 
         $pdo->prepare(
@@ -265,11 +293,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 // ---- Page data ----
 $procedures = $pdo->query('SELECT * FROM procedure_master ORDER BY name')->fetchAll();
 
-// Has add_procedure_consent.sql been run? Same degradation rule as the two
-// migrations above: without the column the catalogue is exactly the pre-consent
-// page, and the link to the wording editor is simply absent.
-require_once __DIR__ . '/config/consent.php';
-$procHasConsentTpl = consent_column_live($pdo);
+// $procHasConsentTpl is set near the top, beside the disposables and dental
+// flags — the add_procedure handler needs it before this point.
 
 $doctors = $pdo->query('SELECT id, name, specialty FROM users WHERE base_role = "DOCTOR" ORDER BY name')->fetchAll();
 
@@ -398,8 +423,8 @@ require __DIR__ . '/partials/sidebar.php';
                             <label>Rate (Rs)</label>
                             <input type="number" step="0.01" min="0" name="fee" value="0">
                         </div>
-                        <label class="consent-check" title="If ticked, this procedure cannot be billed without a consent. Give it wording on the consent-template page and the form prints with the receipt; leave it without wording and the consent must be captured on the dental consent page instead.">
-                            <input type="checkbox" name="mandatory_consent" value="1">
+                        <label class="consent-check" title="If ticked, this procedure prints a consent form with its receipt. Write the wording in the box that appears; leave the wording empty and the consent must be captured on the dental consent page instead.">
+                            <input type="checkbox" name="mandatory_consent" value="1" id="addNeedsConsent">
                             Requires consent form
                         </label>
                         <?php if ($procHasDisposables): ?>
@@ -416,6 +441,43 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endif; ?>
                         <button type="submit" class="btn">Add</button>
                     </div>
+                    <?php if ($procHasConsentTpl): ?>
+                    <!-- Consent wording, inline. Hidden until "Requires consent form"
+                         is ticked, same rule as the dental row below.
+
+                         WHY IT IS HERE AND NOT ONLY ON THE TEMPLATE PAGE. Ticking the
+                         box alone does NOT make a consent print — only wording does.
+                         Adding a procedure, ticking the box, and walking away used to
+                         produce a procedure flagged as needing consent that silently
+                         printed nothing, with the fix on a second page the admin had
+                         no reason to visit. Offering the box at the moment the flag is
+                         set closes that gap. Still optional: left empty, behaviour is
+                         exactly as before (the dental capture page owns the consent).
+                         The full editor on procedure_consent_template.php remains for
+                         later edits. -->
+                    <div id="addConsentRow" style="display:none; margin-top:12px;">
+                        <label for="addConsentTpl" style="display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:6px;">
+                            Consent wording
+                        </label>
+                        <textarea name="consent_template" id="addConsentTpl" rows="6"
+                                  style="width:100%;font:inherit;font-size:13.5px;line-height:1.6;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-input);resize:vertical;"
+                                  placeholder="Leave empty to flag the procedure without printing a form."></textarea>
+                        <p style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:10px 0 0;">
+                            Placeholders <span style="font-weight:400;text-transform:none;letter-spacing:0;">&mdash; click to insert</span>
+                        </p>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+                            <?php foreach (CONSENT_PLACEHOLDERS as $ph => $desc): ?>
+                            <code class="add-ph" data-ph="<?= htmlspecialchars($ph) ?>"
+                                  title="<?= htmlspecialchars($desc) ?>"
+                                  style="cursor:pointer;font-size:12px;background:var(--primary-light);color:var(--primary-dark);padding:3px 7px;border-radius:6px;"><?= htmlspecialchars($ph) ?></code>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="hint" style="margin-top:8px;">
+                            Wording can be edited later from <b>Form &check;</b> on the catalogue below.
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
                     <?php if ($procHasDental): ?>
                     <!-- Dental-only fields. Hidden until Dental is ticked: on a
                          mixed catalogue most procedures are not dental, and
@@ -763,6 +825,33 @@ if (addIsDental && addDentalRow) {
         addDentalRow.style.display = addIsDental.checked ? '' : 'none';
     });
 }
+<?php endif; ?>
+
+<?php if ($procHasConsentTpl): ?>
+// Consent wording follows its checkbox. Untick does NOT clear the textarea —
+// a mis-click would otherwise destroy a paragraph the admin just typed, with
+// no undo. The server ignores the value when the box is unticked.
+const addNeedsConsent = document.getElementById('addNeedsConsent');
+const addConsentRow = document.getElementById('addConsentRow');
+if (addNeedsConsent && addConsentRow) {
+    addNeedsConsent.addEventListener('change', () => {
+        addConsentRow.style.display = addNeedsConsent.checked ? '' : 'none';
+        if (addNeedsConsent.checked) { document.getElementById('addConsentTpl').focus(); }
+    });
+}
+// Click a placeholder to drop it at the cursor, same as the template page —
+// retyping {{signer_relation}} by hand is where a silent typo comes from.
+document.querySelectorAll('.add-ph').forEach(function (el) {
+    el.addEventListener('click', function () {
+        const area = document.getElementById('addConsentTpl');
+        if (!area) { return; }
+        const ph = el.getAttribute('data-ph');
+        const s = area.selectionStart, e = area.selectionEnd;
+        area.value = area.value.slice(0, s) + ph + area.value.slice(e);
+        area.focus();
+        area.selectionStart = area.selectionEnd = s + ph.length;
+    });
+});
 <?php endif; ?>
 
 <?php if ($postedDoctorId > 0): ?>

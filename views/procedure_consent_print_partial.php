@@ -93,13 +93,14 @@
             <?php endif; ?>
         </div>
 
-        <div class="sect">Declaration</div>
-        <div class="body-text">
-            <p>I confirm that the procedure has been explained to me in a language I understand, and that I
-            have had the opportunity to ask questions and have them answered to my satisfaction. I confirm
-            that I am legally entitled to give consent on behalf of the patient.</p>
-        </div>
-
+        <?php
+        // The Declaration section that used to sit here was removed: it restated
+        // "explained to me in a language I understand" and the entitlement to
+        // consent, both of which the body paragraph above already carries. Two
+        // blocks saying the same thing made the sheet longer without making it
+        // say more. The .foot below stays — that is the filing audit trail
+        // (consent ref, invoice, timestamp), not wording.
+        ?>
         <div class="sigblock">
             <div class="sigbox2">
                 <div class="sigline2">Consent given by</div>

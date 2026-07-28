@@ -104,15 +104,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
     $quantities  = $_POST['quantity'] ?? [];
     $disposables = $_POST['disposables'] ?? [];
 
-    // Who is signing the consent. Both optional: left empty the printed sheet
+    // Who is signing the consent. All optional: left empty the printed sheet
     // carries a blank rule for the parent to fill in by hand, which is how the
-    // paper form has always worked. Relation is validated against the fixed
-    // list so the column cannot fill up with "father"/"Father"/"walid".
+    // paper form has always worked.
+    //
+    // RELATION IS FREE TEXT, deliberately. It used to be validated against
+    // consent_relations() and silently blanked when it did not match — which
+    // meant a real answer the list did not anticipate ("UNCLE", "GRANDFATHER")
+    // vanished without a word and the sheet printed an empty rule instead. The
+    // clinic asked to type it. The cost is that the column now accepts
+    // "father"/"Father"/"walid" as separate spellings; consent_create_for_bill()
+    // applies mb_strtoupper() on the way in, which absorbs case but not
+    // synonyms. Truncated to the column width so a paste cannot be cut off
+    // mid-word by MySQL in a way nobody sees until the sheet prints.
     $signerName     = trim((string) ($_POST['consent_signer_name'] ?? ''));
-    $signerRelation = trim((string) ($_POST['consent_signer_relation'] ?? ''));
-    if ($signerRelation !== '' && !in_array($signerRelation, consent_relations(), true)) {
-        $signerRelation = '';
-    }
+    $signerRelation = mb_substr(trim((string) ($_POST['consent_signer_relation'] ?? '')), 0, 60);
+    // CNIC is normalised to 00000-0000000-0 so the column holds one spelling.
+    // A partial entry is kept as typed rather than discarded — see
+    // consent_format_cnic(). Optional like the two above.
+    $signerCnic = consent_format_cnic((string) ($_POST['consent_signer_cnic'] ?? ''));
 
     // Settling a bill moves money — refuse once the cashier's shift is closed.
     $dayLock = require_day_open($pdo);
@@ -298,13 +308,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
             $consentsCreated = consent_create_for_bill(
                 $pdo, $procBillId, $patientId, $doctorId, $lines,
                 $patient, (string) $doctor['name'], (int) $_SESSION['user_id'],
-                $signerName, $signerRelation
+                $signerName, $signerRelation, $signerCnic
             );
 
             audit_log($pdo, 'procedure_bill_raised', "Procedure bill $invoiceNumber for patient #$patientId by {$doctor['name']}: Rs " . number_format($grandTotal, 2) . ' (' . count($lines) . ' procedure' . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)", (int) $_SESSION['user_id']);
 
             if ($consentsCreated > 0) {
-                audit_log($pdo, 'procedure_consent_created', "$consentsCreated consent form(s) generated for procedure bill $invoiceNumber (patient #$patientId)" . ($signerName !== '' ? ", signer: $signerName" . ($signerRelation !== '' ? " ($signerRelation)" : '') : ', signer to be filled by hand'), (int) $_SESSION['user_id']);
+                // The CNIC itself is deliberately NOT written to the audit trail:
+                // it already lives on the consent row, and the audit log is read
+                // far more widely than the consent register. Recording only
+                // whether one was captured keeps the trail useful without
+                // copying an identifying number into a second place.
+                audit_log($pdo, 'procedure_consent_created', "$consentsCreated consent form(s) generated for procedure bill $invoiceNumber (patient #$patientId)" . ($signerName !== '' ? ", signer: $signerName" . ($signerRelation !== '' ? " ($signerRelation)" : '') . ($signerCnic !== '' ? ', CNIC on file' : '') : ', signer to be filled by hand'), (int) $_SESSION['user_id']);
             }
 
             $pdo->commit();
@@ -590,7 +605,7 @@ require __DIR__ . '/partials/sidebar.php';
                                  rule for the parent to complete by hand, which is how the paper
                                  form has always worked. -->
                             <div id="signerBox" class="signer-box" style="display:none;">
-                                <div class="signer-head">Consent will print with the slip &mdash; 2 copies (clinic &amp; patient)</div>
+                                <div class="signer-head">Consent form will print with the slip &mdash; sign it and keep it in the file</div>
                                 <div class="signer-row">
                                     <div class="fld">
                                         <label for="signerName">Consent signed by <span class="opt">(optional)</span></label>
@@ -598,16 +613,24 @@ require __DIR__ . '/partials/sidebar.php';
                                                maxlength="150" placeholder="e.g. HAMZA TARIQ" class="uc">
                                     </div>
                                     <div class="fld">
-                                        <label for="signerRelation">Relation to patient</label>
-                                        <select name="consent_signer_relation" id="signerRelation">
-                                            <option value="">&mdash; leave blank &mdash;</option>
-                                            <?php foreach (consent_relations() as $rel): ?>
-                                            <option value="<?= htmlspecialchars($rel) ?>"><?= htmlspecialchars($rel) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
+                                        <label for="signerRelation">Relation to patient <span class="opt">(optional)</span></label>
+                                        <!-- Free text, not a dropdown: the fixed list could not cover
+                                             every real answer and silently discarded the ones it missed.
+                                             maxlength matches dental_consents.signed_relation VARCHAR(60). -->
+                                        <input type="text" name="consent_signer_relation" id="signerRelation"
+                                               maxlength="60" placeholder="e.g. FATHER" class="uc">
+                                    </div>
+                                    <div class="fld">
+                                        <label for="signerCnic">CNIC <span class="opt">(optional)</span></label>
+                                        <!-- inputmode numeric, not type=number: a CNIC is punctuated and
+                                             a spinner on an identity number is nonsense. The dashes are
+                                             inserted as the cashier types; the server re-normalises. -->
+                                        <input type="text" name="consent_signer_cnic" id="signerCnic"
+                                               maxlength="15" inputmode="numeric" autocomplete="off"
+                                               placeholder="00000-0000000-0">
                                     </div>
                                 </div>
-                                <p class="signer-hint">Leave both empty to print blank lines for the parent to fill in and sign.</p>
+                                <p class="signer-hint">Leave any of these empty to print a blank line for the parent to fill in by hand.</p>
                             </div>
                             <?php endif; ?>
 
@@ -857,6 +880,21 @@ require __DIR__ . '/partials/sidebar.php';
     }
 
     docPick.addEventListener('change', loadProcedures);
+
+    // CNIC dashes as the cashier types: 00000-0000000-0. Digits are the only
+    // input kept, so pasting an already-punctuated number re-formats rather
+    // than doubling its dashes. Purely a typing aid — consent_format_cnic()
+    // normalises again on the server, which is the authority.
+    var cnicIn = document.getElementById('signerCnic');
+    if (cnicIn) {
+        cnicIn.addEventListener('input', function () {
+            var d = cnicIn.value.replace(/\D/g, '').slice(0, 13);
+            var out = d.slice(0, 5);
+            if (d.length > 5)  { out += '-' + d.slice(5, 12); }
+            if (d.length > 12) { out += '-' + d.slice(12); }
+            cnicIn.value = out;
+        });
+    }
 
     addBtn.addEventListener('click', function () {
         var opt = pick.options[pick.selectedIndex];
