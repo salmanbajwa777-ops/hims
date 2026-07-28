@@ -288,6 +288,9 @@ try {
     die('Shift-closing tables missing or outdated — run sql/add_per_user_closings.sql.');
 }
 
+// Individual vouchers behind the expense total, for the expandable detail row.
+$expenseRows = day_expense_rows($pdo, $today, $uid);
+
 $adminsStmt = $pdo->query("SELECT id, name FROM users WHERE base_role = 'ADMIN' ORDER BY name");
 $admins = $adminsStmt->fetchAll();
 
@@ -342,6 +345,27 @@ require __DIR__ . '/partials/sidebar.php';
 .ltab td.sub { color: var(--text-muted); font-size: 11.5px; }
 .ltab tr.total td { font-weight: 700; font-size: 14px; border-top: 1.5px solid var(--border-strong); border-bottom: none; padding-top: 7px; }
 .ltab tr:last-child td { border-bottom: none; }
+
+/* Cash / Online group headers with their four indented stream rows. */
+.ltab tr.grp td { font-weight: 700; background: var(--bg); border-bottom: 1px solid var(--border); }
+.ltab tr.kid td:first-child { padding-left: 16px; color: var(--text-secondary); }
+.ltab tr.kid.zero td { color: var(--text-muted); }
+.cpill { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 9px; background: var(--primary-light); color: var(--primary-dark); font-size: 10.5px; font-weight: 700; text-align: center; }
+.cpill.z { background: #eef0ef; color: var(--text-muted); }
+
+/* Expandable per-voucher expense detail. */
+.exp-toggle { background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: var(--primary-dark); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.caret { display: inline-block; transition: transform .15s; font-size: 9px; }
+.caret.open { transform: rotate(90deg); }
+.exp-detail td { background: var(--bg); font-size: 11.5px; padding: 0 !important; }
+.exp-inner { padding: 8px 10px; }
+.exp-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dotted var(--border); }
+.exp-row:last-child { border-bottom: none; }
+.exp-l { min-width: 0; }
+.exp-vno { font-weight: 600; color: var(--text); }
+.exp-desc { color: var(--text-secondary); }
+.exp-to { color: var(--text-muted); }
+.exp-amt { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
 
 .expect { display: flex; justify-content: space-between; align-items: baseline; background: var(--primary-dark); color: #fff; border-radius: var(--radius-input); padding: 12px 15px; margin-bottom: 14px; }
 .expect .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #9BD4CF; }
@@ -446,13 +470,6 @@ require __DIR__ . '/partials/sidebar.php';
     <?php endif; ?>
 
     <?php if ($showForm): ?>
-    <?php
-    // ER is folded into the admission buckets; split it out on the line so the
-    // cashier can see walk-in service cash for their own reconciliation.
-    $cashEr = (int) ($tally['cash_er_count'] ?? 0);
-    $onlineEr = (int) ($tally['online_er_count'] ?? 0);
-    ?>
-
     <form method="POST" action="shift_closing.php" id="closeForm">
     <input type="hidden" name="action" value="<?= $editMode ? 'edit_closing' : 'close_day' ?>">
     <input type="hidden" name="closing_date" value="<?= htmlspecialchars($today) ?>">
@@ -470,26 +487,85 @@ require __DIR__ . '/partials/sidebar.php';
             <div>
                 <p class="blk">My collections — system figures</p>
                 <table class="ltab">
-                    <tr>
-                        <td>Cash <?= $tally['cash_count'] ?></td>
-                        <td class="sub">consult <?= $tally['cash_consult_count'] ?> · adm <?= $tally['cash_admission_count'] - $cashEr ?><?= $cashEr ? ' · ER ' . $cashEr : '' ?></td>
-                        <td class="num"><?= number_format($tally['cash_total'], 2) ?></td>
+                    <?php
+                    // Cash and Online each break into the same four streams, always
+                    // in the same order and always shown — a stream with no activity
+                    // reads "0.00", which tells the cashier "nothing today" rather
+                    // than leaving them to wonder whether it was counted at all.
+                    // A fixed row order is what makes this scannable day to day.
+                    //
+                    // ER and Procedures share a row (both are walk-in, pay-then-treat).
+                    // Admissions uses the *_admission_only_* figure — the raw
+                    // admission bucket has ER/procedure/dental folded into it, so
+                    // showing it here would present the same money twice.
+                    $streamRows = [
+                        ['Consultation',            'consult'],
+                        ['ER Services &amp; Procedures', 'erproc'],
+                        ['Admissions / Discharges',  'admission_only'],
+                        ['Dental',                   'dental'],
+                    ];
+                    foreach ([['Cash', 'cash'], ['Online', 'online']] as [$modeLabel, $mode]):
+                    ?>
+                    <tr class="grp">
+                        <td><?= $modeLabel ?></td>
+                        <td class="num"><span class="cpill<?= $tally[$mode . '_count'] ? '' : ' z' ?>"><?= $tally[$mode . '_count'] ?></span></td>
+                        <td class="num"><?= number_format($tally[$mode . '_total'], 2) ?></td>
                     </tr>
+                        <?php foreach ($streamRows as [$label, $key]):
+                            if ($key === 'erproc') {
+                                $amt = $tally[$mode . '_er_total'] + $tally[$mode . '_procedure_total'];
+                                $cnt = $tally[$mode . '_er_count'] + $tally[$mode . '_procedure_count'];
+                            } else {
+                                $amt = $tally[$mode . '_' . $key . '_total'] ?? 0;
+                                $cnt = $tally[$mode . '_' . $key . '_count'] ?? 0;
+                            }
+                        ?>
+                        <tr class="kid<?= $cnt ? '' : ' zero' ?>">
+                            <td><?= $label ?></td>
+                            <td class="num"><span class="cpill<?= $cnt ? '' : ' z' ?>"><?= $cnt ?></span></td>
+                            <td class="num"><?= number_format($amt, 2) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    <?php endforeach; ?>
+
                     <tr>
-                        <td>Online <?= $tally['online_count'] ?></td>
-                        <td class="sub">consult <?= $tally['online_consult_count'] ?> · adm <?= $tally['online_admission_count'] - $onlineEr ?><?= $onlineEr ? ' · ER ' . $onlineEr : '' ?></td>
-                        <td class="num"><?= number_format($tally['online_total'], 2) ?></td>
-                    </tr>
-                    <tr>
-                        <td>Refunds — cash <?= $tally['cash_refund_count'] ?></td>
-                        <td class="sub">issued by me</td>
+                        <td>Refunds — cash</td>
+                        <td class="num"><span class="cpill<?= $tally['cash_refund_count'] ? '' : ' z' ?>"><?= $tally['cash_refund_count'] ?></span></td>
                         <td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td>
                     </tr>
+
                     <tr>
-                        <td>Expenses — EXP <?= $tally['expense_count'] ?></td>
-                        <td class="sub"><?= $tally['expense_count'] ? '<a href="expenses.php" style="color:var(--primary-dark);text-decoration:underline;">vouchers</a>' : '—' ?></td>
+                        <td>
+                            <?php if ($expenseRows): ?>
+                                <button type="button" class="exp-toggle" onclick="toggleExpenses(this)" aria-expanded="false">
+                                    <span class="caret" aria-hidden="true">&#9654;</span> Expenses
+                                </button>
+                            <?php else: ?>
+                                Expenses
+                            <?php endif; ?>
+                        </td>
+                        <td class="num"><span class="cpill<?= $tally['expense_count'] ? '' : ' z' ?>"><?= $tally['expense_count'] ?></span></td>
                         <td class="num neg"><?= $tally['expense_total'] > 0 ? '− ' . number_format($tally['expense_total'], 2) : '0.00' ?></td>
                     </tr>
+                    <?php if ($expenseRows): ?>
+                    <tr class="exp-detail" hidden>
+                        <td colspan="3">
+                            <div class="exp-inner">
+                                <?php foreach ($expenseRows as $e): ?>
+                                <div class="exp-row">
+                                    <span class="exp-l">
+                                        <span class="exp-vno"><?= htmlspecialchars($e['expense_number']) ?></span>
+                                        · <span class="exp-desc"><?= htmlspecialchars($e['description']) ?></span>
+                                        <br><span class="exp-to"><?= htmlspecialchars($e['category_name']) ?><?= $e['paid_to'] ? ' → ' . htmlspecialchars($e['paid_to']) : '' ?><?= $e['created_at'] ? ' · ' . date('h:i A', strtotime($e['created_at'])) : '' ?></span>
+                                    </span>
+                                    <span class="exp-amt">− <?= number_format((float) $e['amount'], 2) ?></span>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+
                     <tr class="total">
                         <td colspan="2">Net collected</td>
                         <td class="num">Rs <?= number_format($tally['net_collected'], 2) ?></td>
@@ -581,6 +657,17 @@ require __DIR__ . '/partials/sidebar.php';
 </div></div><!-- .main + .app -->
 
 <script>
+// Expand the per-voucher breakdown behind the expense total.
+function toggleExpenses(btn) {
+    var row = btn.closest('tr').nextElementSibling;
+    if (!row || !row.classList.contains('exp-detail')) { return; }
+    var caret = btn.querySelector('.caret');
+    var open = !row.hasAttribute('hidden');
+    if (open) { row.setAttribute('hidden', ''); caret.classList.remove('open'); }
+    else { row.removeAttribute('hidden'); caret.classList.add('open'); }
+    btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+}
+
 // Live variance from the single counted-cash total. Server revalidates.
 (function () {
     var expected = <?= json_encode(round($formExpected, 2)) ?>;

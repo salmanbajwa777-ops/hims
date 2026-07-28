@@ -867,7 +867,46 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         $t['cash_total'] - $t['cash_refund_total'] - $t['expense_total'], 2
     );
 
+    // Admissions/discharges ALONE — the admission bucket with the streams that
+    // were folded into it taken back out. The closing sheet lists each stream on
+    // its own row, so it needs the un-folded figure; showing $cash_admission_total
+    // beside ER/procedure/dental rows would present the same money twice.
+    // Clamped at 0: rounding on three folded streams can push this a hair
+    // negative, and a negative admissions line reads as a bug to the cashier.
+    foreach (['cash', 'online'] as $mode) {
+        $t[$mode . '_admission_only_total'] = round(max(0, $t[$mode . '_admission_total']
+            - $t[$mode . '_er_total'] - $t[$mode . '_procedure_total'] - $t[$mode . '_dental_total']), 2);
+        $t[$mode . '_admission_only_count'] = max(0, $t[$mode . '_admission_count']
+            - $t[$mode . '_er_count'] - $t[$mode . '_procedure_count'] - $t[$mode . '_dental_count']);
+    }
+
     return $t;
+}
+
+/**
+ * The individual counter-expense vouchers behind day_cash_tally()'s
+ * expense_total, for the expandable detail on the closing sheet.
+ *
+ * Same WHERE clause as the tally's expense query — if these two ever diverge the
+ * detail rows would not sum to the total they expand, which is worse than having
+ * no detail at all.
+ */
+function day_expense_rows(PDO $pdo, string $date, int $userId): array {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT e.expense_number, e.amount, e.description, e.paid_to,
+                   e.created_at, ec.name AS category_name
+            FROM expenses e
+            JOIN expense_categories ec ON ec.id = e.category_id
+            WHERE e.source = 'CASH_COUNTER' AND e.expense_date = ? AND e.posted_by_id = ?
+              AND e.voided_at IS NULL
+            ORDER BY e.id
+        ");
+        $stmt->execute([$date, $userId]);
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        return [];   // expenses module not migrated — the total will be 0 too
+    }
 }
 
 // Cheap schema probe so code tolerates a migration not being run yet. Cached per
