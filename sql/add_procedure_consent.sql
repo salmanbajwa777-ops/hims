@@ -142,15 +142,19 @@ SELECT 'idx_dc_procedure_bill',
  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dental_consents'
    AND INDEX_NAME = 'idx_dc_procedure_bill'
 UNION ALL
+-- The app tables below MUST be schema-qualified. The branches above select from
+-- information_schema, and in a UNION that stays the active database for every
+-- later branch — a bare "FROM permissions" resolves to
+-- information_schema.permissions and dies with #1109 Unknown table.
 SELECT 'permission RECEPTION_MANAGE_CONSENT',
        CASE WHEN COUNT(*) = 1 THEN 'OK' ELSE 'MISSING' END
-  FROM permissions
+  FROM u402528120_hmis.permissions
  WHERE `key` = 'RECEPTION_MANAGE_CONSENT'
 UNION ALL
 SELECT 'RECEPTION_MANAGE_CONSENT granted to >=1 role',
        CASE WHEN COUNT(*) >= 1 THEN 'OK' ELSE 'MISSING' END
-  FROM role_permissions rp
-  JOIN permissions p ON p.id = rp.permission_id
+  FROM u402528120_hmis.role_permissions rp
+  JOIN u402528120_hmis.permissions p ON p.id = rp.permission_id
  WHERE p.`key` = 'RECEPTION_MANAGE_CONSENT'
 UNION ALL
 -- Informational, not a failure: the seed only fires if the catalogue already
@@ -158,5 +162,5 @@ UNION ALL
 SELECT 'Circumcision template seeded (informational)',
        CASE WHEN COUNT(*) >= 1 THEN 'OK'
             ELSE 'NOT SEEDED - no procedure named Circumcision, add the template on the catalogue page' END
-  FROM procedure_master
+  FROM u402528120_hmis.procedure_master
  WHERE name = 'Circumcision' AND consent_template IS NOT NULL AND consent_template <> '';
