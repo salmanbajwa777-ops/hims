@@ -16,6 +16,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/ipd_billing.php';
+require_once __DIR__ . '/config/ipd_advances.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -122,7 +123,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
     $method = in_array($_POST['payment_method'] ?? '', ['cash','card','bank_transfer','cheque'], true) ? $_POST['payment_method'] : 'cash';
     $paid = max(0, (float) ($_POST['paid_amount'] ?? 0));
     $grand = (float) $bill['grand_total'];
-    $shortfall = round($grand - $paid, 2);
+
+    // Advances already held settle the bill first; only the remainder is
+    // collected now. Re-read the balance here rather than trusting a POSTed
+    // figure — the ledger is the authority, and it may have changed since the
+    // page rendered.
+    $advHeld = ipd_advance_balance($pdo, $admissionId);
+    [$advApplied, $advRefundDue] = ipd_settle_advance($grand, $advHeld);
+    $balanceDue = round($grand - $advApplied, 2);
+
+    // The shortfall is measured against what is still OWED after advances, not
+    // the grand total — otherwise a bill fully covered by an advance would look
+    // like a 100% write-off.
+    $shortfall = round($balanceDue - $paid, 2);
+
+    // How much of the excess to hand back. Only meaningful when advances cover
+    // the whole bill; clamped to what is actually held.
+    $returnAmt = 0.0;
+    if ($advRefundDue > 0.009) {
+        $returnAmt = round(min((float) ($_POST['return_amount'] ?? $advRefundDue), $advRefundDue), 2);
+        $returnMethod = in_array($_POST['return_method'] ?? '', ['cash','card','bank_transfer','cheque'], true)
+            ? $_POST['return_method'] : 'cash';
+    }
 
     if ($shortfall > 0.009 && !$canApproveWriteoff) {
         $err = 'Short payment needs an admin to approve the write-off.';
@@ -130,18 +152,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
         $writeOff = $shortfall > 0.009 ? $shortfall : 0;
         $pdo->beginTransaction();
         try {
+            // paid_amount is the TOTAL settled against the bill — cash taken now
+            // plus advance applied — so the invoice and every revenue read see
+            // the full amount the patient paid for this stay.
+            $totalSettled = round($paid + $advApplied, 2);
             $pdo->prepare("
                 UPDATE ipd_bills
                 SET status = 'paid', payment_method = ?, paid_amount = ?, write_off_amount = ?, paid_at = NOW(), paid_by_id = ?, finalized_by_id = COALESCE(finalized_by_id, ?)
                 WHERE id = ?
-            ")->execute([$method, $paid, $writeOff, $uid, $uid, $bill['id']]);
+            ")->execute([$method, $totalSettled, $writeOff, $uid, $uid, $bill['id']]);
+
+            // Snapshot what the advance covered, so the invoice can show it
+            // without re-deriving a sum that later voids would change.
+            try {
+                $pdo->prepare('UPDATE ipd_bills SET advance_applied = ?, advance_refunded = ? WHERE id = ?')
+                    ->execute([$advApplied, $returnAmt, $bill['id']]);
+            } catch (PDOException $e) { /* columns not migrated yet */ }
 
             $pdo->prepare("UPDATE ipd_admissions SET status = 'DISCHARGED', discharge_finalized_by_id = ?, discharge_finalized_at = NOW(), discharged_at = COALESCE(discharged_at, NOW()) WHERE id = ?")
                 ->execute([$uid, $admissionId]);
 
             $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$uid, 'ipd_bill_settled', "IPD bill {$bill['invoice_number']} settled: paid $paid, write-off $writeOff"]);
+                ->execute([$uid, 'ipd_bill_settled', "IPD bill {$bill['invoice_number']} settled: collected $paid, advance applied $advApplied, write-off $writeOff"]);
             $pdo->commit();
+
+            // Return the excess AFTER the bill commits: the refund is its own
+            // ledger row, and a failure here must not roll back a settled
+            // discharge. Reported if it fails rather than silently swallowed.
+            if ($returnAmt > 0.009) {
+                [$rOk, $rRes] = ipd_refund_excess_advance($pdo, $admissionId, $returnAmt, $returnMethod, $uid);
+                if (!$rOk) {
+                    header('Location: ipd_discharge.php?id=' . $admissionId . '&settled=1&return_failed=' . urlencode($rRes));
+                    exit;
+                }
+            }
             header('Location: ipd_discharge.php?id=' . $admissionId . '&settled=1');
             exit;
         } catch (Throwable $e) {
@@ -183,6 +227,12 @@ $headExtra = <<<CSS
 .svc-add select, .svc-add input, .mini input, .mini select { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:10px; font:inherit; font-size:13.5px; background:var(--bg); }
 .tot-row { display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0; }
 .tot-row.grand { border-top:1px solid var(--border); margin-top:6px; padding-top:10px; font-weight:700; font-size:16px; }
+.tot-row.credit span:last-child { color:var(--primary-dark); font-weight:600; }
+.tot-row.due { font-weight:700; font-size:15.5px; background:var(--bg); margin:6px -8px 0; padding:9px 8px; border-radius:8px; }
+.tot-row.due.ret span { color:var(--red-text); }
+.adv-chip { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:20px; background:var(--primary-light); color:var(--primary-dark); margin-left:4px; }
+.adv-banner { background:#FFF7E8; border:1px solid #FBCFB0; color:#8a5a00; border-radius:8px; padding:11px 13px; font-size:12.5px; margin-bottom:14px; }
+.adv-banner b { display:block; margin-bottom:2px; font-size:13px; }
 CSS;
 $headExtra .= "\n</style>";
 require __DIR__ . '/partials/head.php';
@@ -198,6 +248,9 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
 
             <?php if (isset($_GET['settled'])): ?><div class="alert success">Bill settled and patient discharged.</div><?php endif; ?>
+            <?php if (($rf = trim($_GET['return_failed'] ?? '')) !== ''): ?>
+            <div class="alert error">The bill was settled and the patient discharged, but the advance return could NOT be recorded: <?= htmlspecialchars($rf) ?> Hand the money back and record it manually, or ask an admin.</div>
+            <?php endif; ?>
             <?php if ($flash): ?><div class="alert success"><?= htmlspecialchars($flash) ?></div><?php endif; ?>
             <?php if ($err): ?><div class="alert error"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
@@ -237,6 +290,21 @@ require __DIR__ . '/partials/sidebar.php';
                     </table>
                     <?php
                     $discountShown = (float) $bill['grand_total'] < (float) $bill['subtotal'];
+                    // Advances held against this stay. On an already-settled bill
+                    // read the SNAPSHOT, not the live ledger — the ledger has the
+                    // return row subtracted and would understate what was applied.
+                    $advSettled = $bill['status'] === 'paid';
+                    $advApplied = $advSettled
+                        ? (float) ($bill['advance_applied'] ?? 0)
+                        : 0.0;
+                    $advRefunded = (float) ($bill['advance_refunded'] ?? 0);
+                    if (!$advSettled) {
+                        $advHeldNow = ipd_advance_balance($pdo, $admissionId);
+                        [$advApplied, $advReturnDue] = ipd_settle_advance((float) $bill['grand_total'], $advHeldNow);
+                        $advBalanceDue = round((float) $bill['grand_total'] - $advApplied, 2);
+                    }
+                    $advCount = count(array_filter(ipd_advance_rows($pdo, $admissionId),
+                        fn($r) => empty($r['voided_at']) && $r['direction'] === 'PAYMENT'));
                     ?>
                     <div style="margin-top:12px;">
                         <div class="tot-row"><span>Subtotal</span><span>Rs <?= number_format((float) $bill['subtotal']) ?></span></div>
@@ -244,8 +312,25 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="tot-row"><span>Discount</span><span>&minus; Rs <?= number_format((float) $bill['subtotal'] - (float) $bill['grand_total']) ?></span></div>
                         <?php endif; ?>
                         <div class="tot-row grand"><span>Grand total</span><span>Rs <?= number_format((float) $bill['grand_total']) ?></span></div>
-                        <?php if ($bill['status'] === 'paid'): ?>
+
+                        <?php if ($advApplied > 0.009): ?>
+                        <div class="tot-row credit">
+                            <span>Less advances paid<?= $advCount ? ' <span class="adv-chip">' . $advCount . ' receipt' . ($advCount > 1 ? 's' : '') . '</span>' : '' ?></span>
+                            <span>&minus; Rs <?= number_format($advApplied) ?></span>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if (!$advSettled && $advApplied > 0.009): ?>
+                            <?php if ($advReturnDue > 0.009): ?>
+                            <div class="tot-row due ret"><span>To return to patient</span><span>Rs <?= number_format($advReturnDue) ?></span></div>
+                            <?php else: ?>
+                            <div class="tot-row due"><span>Balance payable now</span><span>Rs <?= number_format($advBalanceDue) ?></span></div>
+                            <?php endif; ?>
+                        <?php endif; ?>
+
+                        <?php if ($advSettled): ?>
                         <div class="tot-row"><span>Paid (<?= htmlspecialchars($bill['payment_method']) ?>)</span><span>Rs <?= number_format((float) $bill['paid_amount']) ?></span></div>
+                        <?php if ($advRefunded > 0.009): ?><div class="tot-row"><span>Advance returned</span><span>Rs <?= number_format($advRefunded) ?></span></div><?php endif; ?>
                         <?php if ((float) $bill['write_off_amount'] > 0): ?><div class="tot-row"><span>Written off</span><span>Rs <?= number_format((float) $bill['write_off_amount']) ?></span></div><?php endif; ?>
                         <?php endif; ?>
                     </div>
@@ -304,17 +389,57 @@ require __DIR__ . '/partials/sidebar.php';
                         </form>
                     </div>
 
+                    <?php
+                    // Recomputed here (this block renders after the totals above,
+                    // but the two must never disagree about what is owed).
+                    $sHeld = ipd_advance_balance($pdo, $admissionId);
+                    [$sApplied, $sReturnDue] = ipd_settle_advance((float) $bill['grand_total'], $sHeld);
+                    $sBalance = round((float) $bill['grand_total'] - $sApplied, 2);
+                    $sIsReturn = $sReturnDue > 0.009;
+                    ?>
                     <div class="card" style="margin-top:20px;">
+                        <?php if ($sIsReturn): ?>
+                        <div class="adv-banner">
+                            <b>Advance exceeds the bill by Rs <?= number_format($sReturnDue) ?></b>
+                            Return this to the patient from the drawer. It is recorded as an advance
+                            return and appears on your shift closing under Paid out.
+                        </div>
+                        <div class="section-title">Return excess &amp; discharge</div>
+                        <div class="section-sub">The bill settles fully from the advance held; nothing further is collected.</div>
+                        <form method="POST" action="ipd_discharge.php?id=<?= $admissionId ?>" class="mini" style="margin-top:10px;display:flex;flex-direction:column;gap:10px;" onsubmit="return confirm('Return Rs <?= number_format($sReturnDue) ?> and discharge the patient?');" data-lock-submit>
+                            <input type="hidden" name="action" value="settle">
+                            <input type="hidden" name="payment_method" value="cash">
+                            <input type="hidden" name="paid_amount" value="0">
+                            <div><label>Returned as</label>
+                                <select name="return_method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select>
+                            </div>
+                            <div><label>Amount returned</label>
+                                <input type="number" step="0.01" min="0" max="<?= number_format($sReturnDue, 2, '.', '') ?>"
+                                       name="return_amount" value="<?= number_format($sReturnDue, 2, '.', '') ?>"
+                                       style="font-weight:700;font-variant-numeric:tabular-nums;">
+                            </div>
+                            <button type="submit" class="btn">Return Rs <?= number_format($sReturnDue) ?> &amp; discharge</button>
+                            <div class="muted" style="font-size:11.5px;">Prints an ADV return receipt alongside the discharge invoice.</div>
+                        </form>
+                        <?php else: ?>
                         <div class="section-title">Settle &amp; discharge</div>
-                        <form method="POST" action="ipd_discharge.php?id=<?= $admissionId ?>" class="mini" style="margin-top:10px;display:flex;flex-direction:column;gap:10px;" onsubmit="return confirm('Settle this bill and discharge the patient?');">
+                        <?php if ($sApplied > 0.009): ?>
+                        <div class="section-sub">Rs <?= number_format($sApplied) ?> already held as advance — collect the balance below.</div>
+                        <?php endif; ?>
+                        <form method="POST" action="ipd_discharge.php?id=<?= $admissionId ?>" class="mini" style="margin-top:10px;display:flex;flex-direction:column;gap:10px;" onsubmit="return confirm('Settle this bill and discharge the patient?');" data-lock-submit>
                             <input type="hidden" name="action" value="settle">
                             <div><label>Payment method</label>
                                 <select name="payment_method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select>
                             </div>
-                            <div><label>Amount received</label><input type="number" step="0.01" min="0" name="paid_amount" value="<?= number_format((float) $bill['grand_total'], 2, '.', '') ?>"></div>
+                            <div><label>Amount received</label>
+                                <input type="number" step="0.01" min="0" name="paid_amount"
+                                       value="<?= number_format($sBalance, 2, '.', '') ?>">
+                            </div>
                             <button type="submit" class="btn">Settle &amp; discharge</button>
+                            <?php if ($sApplied > 0.009): ?><div class="muted" style="font-size:11.5px;">Pre-filled with the balance after advances.</div><?php endif; ?>
                             <?php if (!$canApproveWriteoff): ?><div class="muted" style="font-size:11.5px;">A short payment needs an admin to approve the write-off.</div><?php endif; ?>
                         </form>
+                        <?php endif; ?>
                     </div>
                     <?php elseif ($bill && $bill['status'] === 'paid'): ?>
                     <div class="card" style="margin-top:20px;">

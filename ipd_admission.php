@@ -12,6 +12,8 @@ require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/tokens.php';
+require_once __DIR__ . '/config/billing.php';        // require_day_open()
+require_once __DIR__ . '/config/ipd_advances.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -119,6 +121,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_h
     }
 }
 
+// ---- Advance payments (money taken before the stay is billed) ----
+// Reception-only: doctors never handle cash, so the whole panel is gated on the
+// permission AND on $hideMoney below.
+$canTakeAdvance = !$hideMoney && has_permission('RECEPTION_TAKE_IPD_ADVANCE');
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'take_advance' && $canTakeAdvance) {
+    // A closed day accepts no more cash — the tally for it has been signed.
+    $dayLock = require_day_open($pdo);
+    if ($dayLock) {
+        $err = $dayLock;
+    } else {
+        [$ok, $res] = ipd_take_advance(
+            $pdo, $admissionId,
+            (float) ($_POST['amount'] ?? 0),
+            (string) ($_POST['payment_method'] ?? 'cash'),
+            trim((string) ($_POST['note'] ?? '')) ?: null,
+            $uid
+        );
+        if ($ok) {
+            // PRG so a refresh cannot take the same advance twice.
+            header('Location: ipd_admission.php?id=' . $admissionId . '&adv=' . urlencode($res));
+            exit;
+        }
+        $err = $res;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_advance' && $baseRole === 'ADMIN') {
+    [$ok, $res] = ipd_void_advance($pdo, (int) ($_POST['advance_id'] ?? 0), (string) ($_POST['reason'] ?? ''), $uid);
+    if ($ok) {
+        header('Location: ipd_admission.php?id=' . $admissionId . '&voided=' . urlencode($res));
+        exit;
+    }
+    $err = $res;
+}
+
+if (($newAdv = trim($_GET['adv'] ?? '')) !== '') {
+    $flash = 'Advance received — receipt ' . $newAdv . '.';
+}
+if (($vAdv = trim($_GET['voided'] ?? '')) !== '') {
+    $flash = 'Receipt ' . $vAdv . ' voided.';
+}
+
 // Reload after any mutation so panels reflect the latest state.
 $adm = load_ipd_admission($pdo, $admissionId);
 
@@ -199,6 +244,28 @@ $careTypeLabels = [
 $pageTitle = 'In-Door — ' . $adm['patient_name'];
 $headExtra = <<<CSS
 <style>
+/* ---- Advance payments panel ---- */
+.adv-held { display: flex; justify-content: space-between; align-items: baseline; background: var(--primary-dark); color: #fff; border-radius: var(--radius-input); padding: 12px 15px; margin-bottom: 14px; }
+.adv-held .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #9BD4CF; }
+.adv-held .v { font-size: 23px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.adv-form label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
+.adv-form input, .adv-form select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); box-sizing: border-box; }
+.adv-form input:focus, .adv-form select:focus { outline: none; border-color: var(--primary); background: #fff; }
+.adv-grid { display: grid; grid-template-columns: 1.2fr 1fr auto; gap: 12px; align-items: end; }
+@media (max-width: 620px) { .adv-grid { grid-template-columns: 1fr; } }
+.adv-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; }
+.adv-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px dotted var(--border); font-size: 13px; }
+.adv-row:last-child { border-bottom: none; }
+.adv-main { flex: 1; min-width: 0; }
+.adv-no { font-weight: 600; font-variant-numeric: tabular-nums; }
+.adv-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
+.adv-amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adv-link { font-size: 12px; color: var(--primary-dark); white-space: nowrap; }
+.adv-row.void { opacity: .75; }
+.adv-row.void .adv-no, .adv-row.void .adv-amt { text-decoration: line-through; color: var(--text-muted); }
+.adv-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); margin-left: 5px; }
+.adv-tag.void, .adv-tag.ret { background: #fdeaea; color: var(--red-text); }
+
 .a-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .a-status { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
 .a-status.ACTIVE { background: var(--green-bg); color: var(--green-text); }
@@ -273,6 +340,89 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
                 <?php endif; ?>
             </div>
+
+            <?php
+            // ---- Advance payments ----
+            // Hidden entirely from doctors ($hideMoney) and from anyone without
+            // the permission. Also hidden once discharged: the stay has settled
+            // against this ledger, so taking more would have nothing to apply to.
+            $advReady = ipd_advances_ready($pdo);
+            $showAdvances = !$hideMoney && $advReady
+                            && ($canTakeAdvance || ipd_advance_balance($pdo, $admissionId) > 0);
+            if ($showAdvances):
+                $advHeld = ipd_advance_balance($pdo, $admissionId);
+                $advRows = ipd_advance_rows($pdo, $admissionId);
+                $advOpen = $adm['status'] !== 'DISCHARGED';
+            ?>
+            <div class="card">
+                <div class="section-title">Advance payments</div>
+                <div class="section-sub">Money taken before the stay is billed. Deducted from the final bill at discharge.</div>
+
+                <div class="adv-held">
+                    <span class="k">Advance held</span>
+                    <span class="v">Rs <?= number_format($advHeld, 0) ?></span>
+                </div>
+
+                <?php if ($canTakeAdvance && $advOpen): ?>
+                <form method="POST" action="ipd_admission.php?id=<?= $admissionId ?>" class="adv-form" data-lock-submit>
+                    <input type="hidden" name="action" value="take_advance">
+                    <div class="adv-grid">
+                        <div>
+                            <label for="adv_amt">Amount (Rs)</label>
+                            <input id="adv_amt" name="amount" type="number" min="1" step="1" required
+                                   placeholder="0" inputmode="numeric"
+                                   style="font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;">
+                        </div>
+                        <div>
+                            <label for="adv_pm">Received as</label>
+                            <select id="adv_pm" name="payment_method">
+                                <option value="cash">Cash</option>
+                                <option value="card">Card</option>
+                                <option value="bank_transfer">Bank transfer</option>
+                                <option value="cheque">Cheque</option>
+                            </select>
+                        </div>
+                        <div><button type="submit" class="btn">Take advance</button></div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <label for="adv_note">Note (optional)</label>
+                        <input id="adv_note" name="note" type="text" maxlength="255" placeholder="e.g. second instalment">
+                    </div>
+                    <div class="adv-hint">Lands on your shift's cash tally immediately and prints an ADV receipt.</div>
+                </form>
+                <?php elseif (!$advOpen): ?>
+                <div class="adv-hint" style="margin-top:0;">This stay is discharged — the advance above was settled against the final bill.</div>
+                <?php endif; ?>
+
+                <?php if ($advRows): ?>
+                <div style="margin-top:18px;">
+                    <div class="section-title" style="font-size:13px;">Receipts</div>
+                    <div style="margin-top:6px;">
+                        <?php foreach ($advRows as $a):
+                            $isVoid = !empty($a['voided_at']);
+                            $isRet  = $a['direction'] === 'REFUND';
+                        ?>
+                        <div class="adv-row<?= $isVoid ? ' void' : '' ?>">
+                            <div class="adv-main">
+                                <span class="adv-no"><?= htmlspecialchars($a['receipt_number']) ?></span>
+                                <?php if ($isVoid): ?><span class="adv-tag void">VOID</span><?php endif; ?>
+                                <?php if ($isRet): ?><span class="adv-tag ret">RETURNED</span><?php endif; ?>
+                                <div class="adv-meta">
+                                    <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $a['payment_method']))) ?>
+                                    &middot; <?= date('d/m/Y, h:i A', strtotime($a['created_at'])) ?>
+                                    &middot; <?= htmlspecialchars($a['received_by_name'] ?: '—') ?>
+                                    <?= $a['note'] ? ' &middot; ' . htmlspecialchars($a['note']) : '' ?>
+                                </div>
+                            </div>
+                            <span class="adv-amt"><?= $isRet ? '&minus; ' : '' ?>Rs <?= number_format((float) $a['amount'], 2) ?></span>
+                            <a class="adv-link" href="ipd_advance_receipt.php?id=<?= (int) $a['id'] ?>" target="_blank">Receipt</a>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
 
             <div class="two-col">
                 <!-- Left: vitals + care flow-sheet -->

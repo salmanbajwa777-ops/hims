@@ -707,10 +707,24 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     // signed shift close covers IPD cash without a new UI field. Additive and
     // guarded — an unmigrated ipd_bills table degrades to "no IPD cash", never a
     // fatal. (This is the one deliberate IPD touch of billing.php.)
+    //
+    // paid_amount MINUS advance_applied, and the difference is not cosmetic.
+    // ipd_bills.paid_amount is the FULL settlement — cash collected at discharge
+    // PLUS whatever the advance covered — because the invoice must show what the
+    // patient paid in total. But the advance already entered the drawer on the
+    // day it was taken and is counted from ipd_advances. Summing both would count
+    // it twice: a 23,000 bill settled with a 15,000 advance and 8,000 cash would
+    // read 38,000 against a drawer that only ever saw 23,000.
+    //
+    // COALESCE keeps this working before add_ipd_advances.sql adds the column;
+    // the whole SELECT is retried without it if the column is absent.
+    $ipdAdvCol = column_exists($pdo, 'ipd_bills', 'advance_applied')
+        ? 'COALESCE(paid_amount, 0) - COALESCE(advance_applied, 0)'
+        : 'COALESCE(paid_amount, 0)';
     try {
         $stmt = $pdo->prepare("
             SELECT (payment_method = 'cash') AS is_cash,
-                   COUNT(*) AS n, COALESCE(SUM(paid_amount), 0) AS total
+                   COUNT(*) AS n, COALESCE(SUM($ipdAdvCol), 0) AS total
             FROM ipd_bills
             WHERE status = 'paid' AND voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
             GROUP BY is_cash
