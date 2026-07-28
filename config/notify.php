@@ -9,6 +9,9 @@
 
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/tokens.php';
+// Each function below also writes an in-app notification for the same audience,
+// so the header bell mirrors what went to the inbox. See config/notifications.php.
+require_once __DIR__ . '/notifications.php';
 
 /** New consultation invoice raised → the visit's doctor. */
 function notify_invoice_raised(PDO $pdo, int $billId): void {
@@ -26,6 +29,13 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
         $stmt->execute([$billId]);
         $r = $stmt->fetch();
         if (!$r) { return; }
+
+        // In-app first: the doctor sees this in the bell whether or not they
+        // have an email on file, which the mail path below requires.
+        notify_users($pdo, [(int) $r['doctor_id']], 'invoice_raised',
+            'New patient in your queue',
+            $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') — Rs ' . number_format((float) $r['grand_total'], 0),
+            'doctor.php', $r['invoice_number']);
 
         $docEmail = user_email($pdo, (int) $r['doctor_id']);
         if (!$docEmail) { return; }
@@ -73,6 +83,11 @@ function notify_refund_issued(PDO $pdo, int $refundId): void {
         $r = $stmt->fetch();
         if (!$r) { return; }
 
+        notify_users($pdo, array_merge(notif_admin_ids($pdo), [(int) $r['approved_by_id']]), 'refund_issued',
+            'Refund issued — Rs ' . number_format((float) $r['amount'], 0),
+            $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') against ' . $r['invoice_number'],
+            'refund.php', $r['refund_number']);
+
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $r['approved_by_id'])]);
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A refund voucher has been issued.</p>'
             . mail_kv([
@@ -118,6 +133,11 @@ function notify_patient_admitted(PDO $pdo, int $admissionId): void {
             'Admitted at'      => date('d/m/Y, h:i A', strtotime($r['admitted_at'])),
         ];
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted.</p>' . mail_kv($rows);
+
+        notify_users($pdo, array_merge(notif_admin_ids($pdo), [(int) $r['admitting_doctor_id']]), 'patient_admitted',
+            'Patient admitted — ' . ($typeLabels[$r['admission_type']] ?? $r['admission_type']),
+            $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') under ' . $r['doctor_name'],
+            'admissions.php', 'Admission #' . $admissionId);
 
         // Admin always; doctor additionally if they're a registered user with an email.
         send_mail($pdo, admin_alert_email(),
@@ -171,6 +191,12 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been discharged'
               . ($writeOff > 0.001 ? ' <strong style="color:#b3261e;">with an approved write-off</strong>' : '')
               . '.</p>' . mail_kv($rows);
+        notify_users($pdo, notif_admin_ids($pdo), 'patient_discharged',
+            ($writeOff > 0.001 ? 'Discharge with WRITE-OFF' : 'Patient discharged'),
+            $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') — bill Rs ' . number_format((float) ($r['grand_total'] ?? 0), 0)
+                . ($writeOff > 0.001 ? ', written off Rs ' . number_format($writeOff, 0) : ''),
+            'admissions.php', $r['invoice_number'] ?? ('Admission #' . $admissionId));
+
         send_mail($pdo, admin_alert_email(),
             ($writeOff > 0.001 ? 'Discharge + WRITE-OFF — ' : 'Discharge — ') . $r['patient_name'],
             mail_template('Patient Discharged', $body),
@@ -227,12 +253,18 @@ function notify_booking_created(PDO $pdo, int $bookingId): void {
         $r = $stmt->fetch();
         if (!$r) { return; }
 
-        $docEmail = user_email($pdo, (int) $r['doctor_id']);
-        if (!$docEmail) { return; }
-
         $who = $r['patient_name']
             ? $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')'
             : $r['person_name'] . ' (new caller)';
+
+        notify_users($pdo, [(int) $r['doctor_id']], 'booking_created',
+            'New booking — ' . date('d/m', strtotime($r['booking_date'])),
+            $who . ' · ' . $r['purpose'] . ($r['preferred_time'] ? ' at ' . $r['preferred_time'] : ''),
+            'bookings.php', 'Booking #' . $bookingId);
+
+        $docEmail = user_email($pdo, (int) $r['doctor_id']);
+        if (!$docEmail) { return; }
+
         $kv = [
             'Patient'  => $who,
             'Purpose'  => $r['purpose'],
@@ -270,12 +302,18 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
         $r = $stmt->fetch();
         if (!$r) { return; }
 
-        $docEmail = user_email($pdo, (int) $r['doctor_id']);
-        if (!$docEmail) { return; }
-
         $who = $r['patient_name']
             ? $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')'
             : $r['person_name'];
+
+        notify_users($pdo, [(int) $r['doctor_id']], 'booking_cancelled',
+            'Booking cancelled — ' . date('d/m', strtotime($r['booking_date'])),
+            $who . ' · ' . $r['purpose'] . ($r['cancel_reason'] ? ' — ' . $r['cancel_reason'] : ''),
+            'bookings.php', 'Booking #' . $bookingId);
+
+        $docEmail = user_email($pdo, (int) $r['doctor_id']);
+        if (!$docEmail) { return; }
+
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">An appointment booked under your name has been cancelled.</p>'
             . mail_kv([
                 'Patient'      => $who,
@@ -342,6 +380,16 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
         // Role-agnostic now that MANAGER is folded into STAFF — the audience is
         // defined by the FINANCIAL_APPROVE_EXPENSES permission (effective =
         // role grant minus user revoke, plus user grant), matching load_permissions().
+        // Same audience as the email below, resolved as ids: everyone holding
+        // FINANCIAL_APPROVE_EXPENSES, plus every admin.
+        notify_users($pdo,
+            array_merge(notif_admin_ids($pdo), notif_users_with_permission($pdo, 'FINANCIAL_APPROVE_EXPENSES')),
+            $isOver ? 'expense_approval_over_limit' : 'expense_approval',
+            ($isOver ? 'OVER-LIMIT expense needs approval' : 'Expense awaiting approval')
+                . ' — Rs ' . number_format((float) $r['amount'], 0),
+            $r['category_name'] . ' · ' . $r['description'] . ' — posted by ' . $r['posted_by_name'],
+            'expenses.php', $r['expense_number']);
+
         $to = [admin_alert_email()];
         $mgr = $pdo->query("
             SELECT u.email FROM users u
@@ -411,7 +459,7 @@ function notify_expense_decided(PDO $pdo, int $expenseId): void {
         $stmt = $pdo->prepare('
             SELECT e.expense_number, e.amount, e.description, e.approval_status,
                    e.rejection_reason, ec.name AS category_name,
-                   pu.name AS posted_by_name, pu.email AS posted_by_email,
+                   e.posted_by_id, pu.name AS posted_by_name, pu.email AS posted_by_email,
                    au.name AS approver_name
             FROM expenses e
             JOIN expense_categories ec ON ec.id = e.category_id
@@ -424,6 +472,17 @@ function notify_expense_decided(PDO $pdo, int $expenseId): void {
         if (!$r || $r['approval_status'] === 'PENDING') { return; }
 
         $approved = $r['approval_status'] === 'APPROVED';
+
+        // The poster needs this one most — a rejection means cash goes back in
+        // the drawer — and they may well have no email on file.
+        notify_users($pdo, [(int) $r['posted_by_id']],
+            $approved ? 'expense_approved' : 'expense_rejected',
+            'Expense ' . ($approved ? 'approved' : 'REJECTED') . ' — Rs ' . number_format((float) $r['amount'], 0),
+            $r['category_name'] . ' · ' . $r['description']
+                . (!$approved && $r['rejection_reason'] ? ' — ' . $r['rejection_reason'] : '')
+                . ' · by ' . ($r['approver_name'] ?? '—'),
+            'expenses.php', $r['expense_number']);
+
         $to = array_values(array_filter(array_unique([
             admin_alert_email(),
             ($r['posted_by_email'] && filter_var($r['posted_by_email'], FILTER_VALIDATE_EMAIL)) ? $r['posted_by_email'] : null,
@@ -473,6 +532,11 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
 
         $netCollected = (float) $c['cash_consult_total'] + (float) $c['cash_admission_total']
                       + (float) $c['online_total'] - (float) $c['cash_refund_total'];
+
+        notify_users($pdo, array_merge(notif_admin_ids($pdo), [(int) $c['handover_to_id']]), 'day_closed',
+            'Shift closed — handover Rs ' . number_format((float) $c['handover_declared'], 0) . ' pending',
+            $c['cashier_name'] . ' · ' . date('D d/m/Y', strtotime($c['closing_date'])) . ' · ' . $varianceText,
+            'admin_handovers.php', $c['closing_number']);
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
@@ -546,6 +610,12 @@ function notify_closing_edited(PDO $pdo, int $closingId, int $round): void {
         }
         $kv['Now declares'] = 'Rs ' . number_format((float) $c['handover_declared'], 2)
                             . ' (counted Rs ' . number_format((float) $c['counted_cash'], 2) . ')';
+
+        notify_users($pdo, array_merge(notif_admin_ids($pdo), [(int) $c['handover_to_id']]), 'closing_edited',
+            'Closed shift EDITED — review required',
+            $c['cashier_name'] . ' changed their figures (round ' . $round . ') · now declares Rs '
+                . number_format((float) $c['handover_declared'], 0),
+            'admin_handovers.php', $c['closing_number']);
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
         $body = '<p style="font-size:14px;color:#B45309;font-weight:bold;margin:0 0 14px;">'

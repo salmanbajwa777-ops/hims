@@ -413,7 +413,7 @@ require __DIR__ . '/partials/head.php';
                 <input type="text" name="q" placeholder="Search a patient by name, phone or MRN…">
             </form>
             <div class="header-right">
-                <button class="icon-btn" type="button"><?= icon('bell', 17) ?></button>
+                <?php $nbClass = 'icon-btn'; require __DIR__ . '/partials/notification_bell.php'; ?>
                 <span class="header-date tnum"><?= date('D, d/m/Y') ?></span>
                 <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= htmlspecialchars(strtoupper(substr($user['name'], 0, 1))) ?></a>
                 <a class="logout-link" href="logout.php">Logout</a>

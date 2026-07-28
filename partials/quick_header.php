@@ -60,10 +60,7 @@ $qhInitial = $qhName !== '' ? strtoupper(substr(trim($qhName), 0, 1)) : '?';
     <span class="appbar-spacer"></span>
     <span class="appbar-date"><?= date('D, d/m/Y') ?></span>
 
-    <button type="button" class="appbar-icon" aria-label="Notifications">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-        <span class="dot"></span>
-    </button>
+    <?php $nbClass = 'appbar-icon'; require __DIR__ . '/notification_bell.php'; ?>
     <a class="appbar-avatar" href="profile.php" title="My Profile" aria-label="My Profile"><?= htmlspecialchars($qhInitial) ?></a>
     <a class="appbar-logout" href="logout.php">Logout</a>
 </header>

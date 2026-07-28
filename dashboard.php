@@ -611,8 +611,7 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
 
             <div class="header-right">
-                <button class="icon-btn"><?= icon('bell', 17) ?><span class="dot"></span></button>
-                <button class="icon-btn"><?= icon('mail', 17) ?></button>
+                <?php $nbClass = 'icon-btn'; require __DIR__ . '/partials/notification_bell.php'; ?>
                 <span class="header-date"><?= date('D, d/m/Y') ?></span>
                 <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= strtoupper(substr($firstName, 0, 1)) ?></a>
                 <a class="logout-link" href="logout.php">Logout</a>
