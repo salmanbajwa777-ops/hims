@@ -280,7 +280,11 @@ function imp_stop(PDO $pdo): string
                 $adminId);
         } catch (Throwable $e) { /* never block the exit */ }
         $_SESSION = [];
-        session_destroy();
+        // Guarded: session_destroy() warns on an unstarted session, and a
+        // warning rendered before the redirect header would break it.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_destroy();
+        }
         return '';
     }
 

@@ -6,14 +6,12 @@
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
-// imp_stop() calls session_destroy() on the demoted/deactivated path. In the real
-// app config/auth.php has always called session_start() first, so that is valid;
-// under CLI there is no session, and PHP warns. Suppress just that warning so the
-// suite output stays readable — the behaviour under test is the return value and
-// the cleared $_SESSION, both asserted below.
-set_error_handler(function ($no, $str) {
-    return str_contains($str, 'session_destroy') || str_contains($str, 'session_start');
-}, E_ALL);
+// NOTE: imp_stop()'s demoted/deactivated path calls session_destroy() only when
+// session_status() is PHP_SESSION_ACTIVE, so this suite runs warning-free under
+// CLI where no session exists. If a bare session_destroy() ever reappears there,
+// this file will start emitting warnings — that is a real bug, not harness
+// noise: a warning printed before imp_stop()'s caller sends its Location header
+// would break the redirect.
 
 $HIMS = dirname(__DIR__, 2);
 
