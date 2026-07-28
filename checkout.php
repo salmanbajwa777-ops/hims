@@ -226,7 +226,16 @@ if (isset($_GET['print']) && isset($_GET['bill_id'])) {
     $itemsStmt->execute([$billId]);
     $items = $itemsStmt->fetchAll();
 
-    $pdo->prepare('UPDATE bills SET printed_by_id = ?, printed_at = NOW() WHERE id = ?')
+    // Stamp only the FIRST print. This used to overwrite printed_at on every
+    // print, which meant a reprint silently rewrote the slip's own footer date —
+    // the original and the duplicate then disagreed about when the invoice was
+    // issued. COALESCE freezes both columns to the first print (see
+    // config/reprint.php), and $bill was read above, so the partial still sees
+    // the pre-stamp row and renders this first print as an original.
+    $pdo->prepare('UPDATE bills
+                      SET printed_by_id = COALESCE(printed_by_id, ?),
+                          printed_at    = COALESCE(printed_at, NOW())
+                    WHERE id = ?')
         ->execute([$_SESSION['user_id'], $billId]);
 
     include __DIR__ . '/views/invoice_print_partial.php';

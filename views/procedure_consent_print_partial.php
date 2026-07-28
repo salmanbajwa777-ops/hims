@@ -22,6 +22,15 @@
 // THE WORDING IS NOT RENDERED FROM THE CATALOGUE. consent_text was frozen onto
 // the row when the bill was raised; this reprints it verbatim. An admin editing
 // the template must not retroactively change what a patient already signed.
+//
+// NO DUPLICATE WATERMARK HERE — for the same reason there is no copy tag. A
+// reprinted RECEIPT is marked DUPLICATE so it can't be presented as proof of a
+// second payment (config/reprint.php), but a consent is not a payment record:
+// it is a form that gets signed, and every copy of it is meant to be signable.
+// Stamping DUPLICATE across one would cast doubt on a signature the clinic
+// needs to rely on. This is why the receipt uses reprint_watermark_scoped()
+// anchored inside its own .sheet rather than the page-fixed variant, which
+// would otherwise repeat on every page of this appended set.
 ?>
 <?php foreach ($consents as $consent): ?>
     <div class="sheet consent-sheet">

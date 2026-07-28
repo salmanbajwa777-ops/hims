@@ -17,7 +17,11 @@ $clinicWebsite = $b['website'];
 $logoFile = brand_logo($refund['doctor_specialty'] ?? null);
 
 $patientDobDisplay = $refund['dob'] ? date('d/m/Y', strtotime($refund['dob'])) : '—';
-$printTimestamp = date('Y-m-d H:i:s');
+// Frozen at the first print so a reprinted voucher repeats the original's footer
+// date rather than today's — see config/reprint.php. refunds carries printed_at
+// but no printed_by_id, so only the timestamp is frozen here.
+require_once __DIR__ . '/../config/reprint.php';
+$printTimestamp = print_stamp($refund);
 $refundModeLabel = ucfirst(str_replace('_', ' ', $refund['refund_mode']));
 
 // Names print in ALL CAPS regardless of stored casing. mb_strtoupper keeps
@@ -80,6 +84,7 @@ $generatedByUpper = $uc($refund['generated_by_name']);
     </style>
 </head>
 <body>
+    <?= reprint_watermark($refund) ?>
     <div class="invoice-container">
 
         <div class="header">

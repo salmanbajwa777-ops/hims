@@ -77,7 +77,15 @@ if (isset($_GET['print']) && isset($_GET['procedure_bill_id'])) {
     // signed copy gets lost, and the patient copy walks out of the building.
     $consents = consent_for_bill($pdo, $procBillId);
 
-    $pdo->prepare('UPDATE procedure_bills SET printed_at = NOW(), printed_by_id = COALESCE(printed_by_id, ?) WHERE id = ?')
+    // First print only — printed_at is COALESCE'd like printed_by_id beside it, so
+    // a reprint keeps the original's timestamp instead of advancing it to today
+    // (config/reprint.php). $bill is read above, so this first print still renders
+    // without the DUPLICATE mark. The appended consent sheets are unaffected: they
+    // reprint in full, deliberately, as noted above.
+    $pdo->prepare('UPDATE procedure_bills
+                      SET printed_at    = COALESCE(printed_at, NOW()),
+                          printed_by_id = COALESCE(printed_by_id, ?)
+                    WHERE id = ?')
         ->execute([(int) $_SESSION['user_id'], $procBillId]);
 
     include __DIR__ . '/views/procedure_invoice_print_partial.php';

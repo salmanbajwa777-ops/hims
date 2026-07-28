@@ -35,8 +35,12 @@ $clinicWebsite = $b['website'];
 $logoFile = brand_logo($payment['doctor_specialty'] ?? null);
 
 $patientDobDisplay = $payment['dob'] ? date('d/m/Y', strtotime($payment['dob'])) : '';
-$printTimestamp = date('Y-m-d H:i:s');
-$printedBy = $payment['received_by_name'] ?? 'Front Desk';
+// Frozen at the first print so a duplicate repeats the original's footer rather
+// than today's date â€” see config/reprint.php. The receiving cashier stays the
+// fallback for rows that have never been printed.
+require_once __DIR__ . '/../config/reprint.php';
+$printTimestamp = print_stamp($payment);
+$printedBy = print_stamp_by($pdo, $payment, $payment['received_by_name'] ?? 'Front Desk');
 
 $patientNameUpper = mb_strtoupper($payment['patient_name'], 'UTF-8');
 $fatherNameUpper = $payment['father_name'] ? mb_strtoupper($payment['father_name'], 'UTF-8') : '';
@@ -113,6 +117,7 @@ $paymentModeDisplay = $paymentModeLabels[$payment['payment_method'] ?? ''] ?? 'â
     </style>
 </head>
 <body>
+    <?= reprint_watermark($payment) ?>
     <div class="sheet">
 
         <div class="head-box">

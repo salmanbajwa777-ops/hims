@@ -24,8 +24,12 @@ $clinicWebsite = $b['website'];
 $logoFile = 'logo-general.png';
 
 $patientDobDisplay = $bill['dob'] ? date('d/m/Y', strtotime($bill['dob'])) : '';
-$printTimestamp = date('Y-m-d H:i:s');
-$printedBy = $bill['generated_by_name'] ?? 'Front Desk';
+// Frozen at the first print so a duplicate repeats the original's footer rather
+// than today's date — see config/reprint.php. The generating user stays the
+// fallback for rows that have never been printed.
+require_once __DIR__ . '/../config/reprint.php';
+$printTimestamp = print_stamp($bill);
+$printedBy = print_stamp_by($pdo, $bill, $bill['generated_by_name'] ?? 'Front Desk');
 
 $patientNameUpper = mb_strtoupper($bill['patient_name'], 'UTF-8');
 // Attending doctor (a system user or a typed name). Blank on bills raised before
@@ -101,6 +105,7 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
     </style>
 </head>
 <body>
+    <?= reprint_watermark($bill) ?>
     <div class="sheet">
 
         <div class="head-box">

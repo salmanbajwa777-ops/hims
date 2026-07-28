@@ -33,8 +33,12 @@ $logoFile = brand_logo($bill['doctor_specialty'] ?? null);
 $isDentalDoc = ($bill['doctor_specialty'] ?? '') === 'DENTAL';
 
 $patientDobDisplay = $bill['dob'] ? date('d/m/Y', strtotime($bill['dob'])) : '';
-$printTimestamp = date('Y-m-d H:i:s');
-$printedBy = $bill['generated_by_name'] ?? 'Front Desk';
+// Frozen at the first print so a duplicate repeats the original's footer rather
+// than today's date — see config/reprint.php. The generating user stays the
+// fallback for rows that have never been printed.
+require_once __DIR__ . '/../config/reprint.php';
+$printTimestamp = print_stamp($bill);
+$printedBy = print_stamp_by($pdo, $bill, $bill['generated_by_name'] ?? 'Front Desk');
 
 $patientNameUpper = mb_strtoupper($bill['patient_name'], 'UTF-8');
 $fatherNameUpper = $bill['father_name'] ? mb_strtoupper($bill['father_name'], 'UTF-8') : '';
@@ -67,7 +71,9 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; margin: 0; padding: 0; }
         body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #000; background: #fff; }
-        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
+        /* position:relative anchors the reprint DUPLICATE mark to this sheet, so it
+           stays on the receipt page and off the consent sheets that follow it. */
+        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; position: relative; }
 
         .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
         .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
@@ -152,6 +158,7 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
 </head>
 <body>
     <div class="sheet">
+        <?= reprint_watermark_scoped($bill) ?>
 
         <div class="head-box">
             <div class="head-left">

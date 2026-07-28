@@ -24,10 +24,21 @@ $clinicWebsite = $b['website'];
 $logoFile = brand_logo($bill['doctor_specialty'] ?? null);
 
 $patientDobDisplay = $bill['dob'] ? date('d/m/Y', strtotime($bill['dob'])) : '';
-$printTimestamp = date('Y-m-d H:i:s');
-$printedByStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
-$printedByStmt->execute([$_SESSION['user_id']]);
-$printedBy = $printedByStmt->fetch()['name'] ?? 'Front Desk';
+
+// Both footer values are frozen at the FIRST print, so a duplicate is a true
+// facsimile: it repeats the original's timestamp and the original's cashier
+// rather than today's date and whoever happened to hit reprint. They used to be
+// date() and $_SESSION['user_id'], which meant every reprint contradicted the
+// copy already in the patient's hand. See config/reprint.php.
+// The fallback is the logged-in user, which is the correct answer for the one
+// render where printed_by_id is still null: the first print, stamped by the
+// caller immediately after it reads $bill. On every later print the stored
+// printed_by_id wins, so the duplicate credits the original cashier.
+require_once __DIR__ . '/../config/reprint.php';
+$printTimestamp = print_stamp($bill);
+$sessionUserStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+$sessionUserStmt->execute([$_SESSION['user_id']]);
+$printedBy = print_stamp_by($pdo, $bill, $sessionUserStmt->fetch()['name'] ?? 'Front Desk');
 
 // Names print in caps regardless of how reception typed them. mb_strtoupper (not
 // strtoupper) so non-ASCII characters aren't mangled.
@@ -218,6 +229,7 @@ $pageSize = $isA4 ? 'A4' : 'A5';
     </style>
 </head>
 <body>
+    <?= reprint_watermark($bill) ?>
     <div class="sheet">
 
         <div class="head-box">

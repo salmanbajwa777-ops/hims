@@ -65,7 +65,11 @@ if (isset($_GET['print']) && isset($_GET['refund_id'])) {
     $priorStmt->execute([$refund['bill_id'], $refundId]);
     $priorRefunded = (float) $priorStmt->fetch()['t'];
 
-    $pdo->prepare('UPDATE refunds SET printed_at = NOW() WHERE id = ?')->execute([$refundId]);
+    // First print only, so a reprinted voucher keeps the original's footer date
+    // rather than advancing it to today (config/reprint.php). $refund is read
+    // above, so this first print still renders without the DUPLICATE mark.
+    $pdo->prepare('UPDATE refunds SET printed_at = COALESCE(printed_at, NOW()) WHERE id = ?')
+        ->execute([$refundId]);
 
     include __DIR__ . '/views/refund_print_partial.php';
     exit;

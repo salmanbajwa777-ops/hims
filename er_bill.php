@@ -50,7 +50,14 @@ if (isset($_GET['print']) && isset($_GET['er_bill_id'])) {
     $itemsStmt->execute([$erBillId]);
     $items = $itemsStmt->fetchAll();
 
-    $pdo->prepare('UPDATE er_bills SET printed_at = NOW(), printed_by_id = COALESCE(printed_by_id, ?) WHERE id = ?')
+    // First print only — printed_at is COALESCE'd like printed_by_id beside it, so
+    // a reprint keeps the original's timestamp instead of advancing it to today
+    // (config/reprint.php). $bill is read above, so this first print still renders
+    // without the DUPLICATE mark.
+    $pdo->prepare('UPDATE er_bills
+                      SET printed_at    = COALESCE(printed_at, NOW()),
+                          printed_by_id = COALESCE(printed_by_id, ?)
+                    WHERE id = ?')
         ->execute([(int) $_SESSION['user_id'], $erBillId]);
 
     include __DIR__ . '/views/er_invoice_print_partial.php';
