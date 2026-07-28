@@ -20,6 +20,47 @@ $impAdmin  = htmlspecialchars(imp_admin_name(), ENT_QUOTES);
 <style>
   :root { --imp-bar-h: 40px; }
   body { padding-top: var(--imp-bar-h) !important; }
+
+  /* The bar is position:fixed, so body padding alone is NOT enough — it moves
+     the document down but every piece of chrome that pins itself to the
+     VIEWPORT keeps using top:0 and ends up underneath this bar (z-index 9999).
+     Measured in Chrome at 1440x900: scrolled down, .appbar sat at top:0 with
+     the bar's bottom at 40 — search, date, bell, avatar and Logout were fully
+     covered the moment the page moved. And .sidebar's height:100vh, once
+     pushed down 40px, overflowed the viewport by exactly that much, cutting
+     the Auto/Desktop/Mobile toggle off below the fold.
+     So every fixed/sticky offset the shell uses is re-based on the bar here.
+     Scoped to this partial: it emits nothing outside impersonation, so the
+     normal layout is untouched. */
+
+  /* Sticky chrome — stick BELOW the bar, not under it. !important for the same
+     specificity reason as .sidebar: the html[data-view="mobile"] rules re-set
+     top:0 on .mobile-bar/.doc-mobile-bar from a stronger selector. */
+  .appbar,
+  .mobile-bar,
+  .doc-mobile-bar { top: var(--imp-bar-h) !important; }
+
+  /* Sticky full-height sidebar: offset it, then take the bar's height back
+     out of 100vh so its footer (the view toggle) stays on screen.
+     !important because app.css sets top/height on the SAME element from more
+     specific selectors — `html[data-view="mobile"] .sidebar` (0,2,1) and the
+     @media drawer rule both beat a bare `.sidebar` (0,1,0). Without it the
+     forced-mobile drawer would silently win and re-clip the toggle. */
+  .sidebar {
+      top: var(--imp-bar-h) !important;
+      height: calc(100vh - var(--imp-bar-h)) !important;
+  }
+
+  /* The off-canvas drawer is position:fixed, so body padding never reaches it
+     at all. It is declared TWICE in app.css — once under @media (max-width:900px)
+     and again under html[data-view="mobile"], which forces the drawer at ANY
+     width (the view toggle). Both need the offset, and the data-view rule has
+     to be matched at full desktop width too, so this is not nested in a media
+     query. The doctor console reuses these same .sidebar/.sidebar-overlay
+     classes, so it is covered by the same rules.
+     .sidebar's offset is already set above; the overlay is the addition here. */
+  .sidebar-overlay { top: var(--imp-bar-h) !important; }
+
   .imp-bar {
       position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
       height: var(--imp-bar-h);
@@ -42,7 +83,15 @@ $impAdmin  = htmlspecialchars(imp_admin_name(), ENT_QUOTES);
       cursor: pointer; white-space: nowrap;
   }
   .imp-bar button:hover { background: #FFEDD5; }
-  @media print { .imp-bar { display: none !important; } body { padding-top: 0 !important; } }
+  /* Print: zero the TOKEN rather than each rule, so the padding and all four
+     derived offsets above collapse together. A5 slips are printed constantly
+     from checkout/refund, and a 40px push on every one of them would be a
+     visible regression. */
+  @media print {
+      :root { --imp-bar-h: 0px; }
+      .imp-bar { display: none !important; }
+      body { padding-top: 0 !important; }
+  }
   @media (max-width: 600px) {
       :root { --imp-bar-h: 36px; }
       /* The exit button must ALWAYS be fully reachable, so it is pinned right
