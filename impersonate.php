@@ -21,11 +21,21 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// Both start and stop are token-checked: a forged stop is less damaging than a
+// forged start, but yanking an admin out mid-task is still someone else driving
+// their session.
+if (!imp_csrf_valid($_POST['imp_csrf'] ?? null)) {
+    http_response_code(400);
+    exit('Invalid request — please go back and try again.');
+}
+
 $action = $_POST['action'] ?? '';
 
 if ($action === 'stop') {
     $landing = imp_stop($pdo);
-    header('Location: ' . $landing);
+    // '' means imp_stop() destroyed the session because the admin is no longer
+    // entitled to it (demoted / deactivated / deleted mid-impersonation).
+    header('Location: ' . ($landing !== '' ? $landing : '/index.php?ended=1'));
     exit;
 }
 

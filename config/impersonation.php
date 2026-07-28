@@ -58,6 +58,33 @@ function is_impersonating(): bool
     return !empty($_SESSION['imp_admin_id']);
 }
 
+/**
+ * Per-session CSRF token for the impersonation forms.
+ *
+ * This app has no CSRF protection anywhere, which is pre-existing debt across
+ * every POST. It is fixed HERE first because this is the one endpoint where a
+ * forged request changes WHO YOU ARE rather than what you did: a malicious page
+ * could auto-submit action=start and silently drop a signed-in admin into a
+ * staff identity, after which their own legitimate clicks write under that
+ * person's name. Deliberately scoped to this endpoint — app-wide CSRF is its
+ * own piece of work.
+ */
+function imp_csrf_token(): string
+{
+    if (empty($_SESSION['imp_csrf'])) {
+        $_SESSION['imp_csrf'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['imp_csrf'];
+}
+
+/** Constant-time check of a submitted token. */
+function imp_csrf_valid(?string $token): bool
+{
+    return !empty($_SESSION['imp_csrf'])
+        && is_string($token)
+        && hash_equals($_SESSION['imp_csrf'], $token);
+}
+
 /** The real admin's user id, whether or not impersonation is active. */
 function real_user_id(): int
 {
@@ -74,6 +101,56 @@ function imp_admin_name(): string
 function imp_target_name(): string
 {
     return (string) ($_SESSION['imp_target_name'] ?? '');
+}
+
+/**
+ * Server-side brake on a high-risk money action while viewing as someone else.
+ *
+ * Returns an error string to show, or '' to let the action proceed.
+ *
+ * The banner and the audit suffix are both AFTER the fact: they tell you who
+ * did it, not that it shouldn't happen. The failure mode that actually costs
+ * money is an admin forgetting whose account they are in and taking a real
+ * payment, and a coloured bar is thin protection against that. So the four
+ * irreversible cash actions (refund, void, close-day, take-payment) require the
+ * caller to re-affirm, in the request itself, that they mean to act AS the
+ * impersonated person.
+ *
+ * Server-side deliberately: the "View as" confirm dialog in staff.php is a JS
+ * confirm() and is shown once, at the start of a session that may run for an
+ * hour. This is checked on the request that moves the money.
+ *
+ * Normal (non-impersonated) sessions are never affected — the function returns
+ * '' immediately, so call sites need no is_impersonating() branch of their own.
+ */
+function imp_block_money_action(string $whatItIs): string
+{
+    if (!is_impersonating()) {
+        return '';
+    }
+    if (!empty($_POST['imp_confirm'])) {
+        return '';   // explicitly re-affirmed on this request
+    }
+    return 'You are viewing HIMS as ' . imp_target_name() . '. ' . $whatItIs
+         . ' would be recorded under their name and against their cash drawer. '
+         . 'Tick the confirmation to go ahead, or stop viewing as them first.';
+}
+
+/**
+ * The re-affirmation checkbox for a high-risk form. Emits nothing in a normal
+ * session, so it can be dropped into any money form unconditionally.
+ */
+function imp_confirm_field(string $whatItIs): string
+{
+    if (!is_impersonating()) {
+        return '';
+    }
+    return '<label style="display:flex;gap:8px;align-items:flex-start;background:#FFF7E8;'
+         . 'border:1px solid #FBCFB0;border-radius:8px;padding:10px 12px;margin:10px 0;'
+         . 'font-size:12.5px;color:#8a5a00;font-weight:600;cursor:pointer;">'
+         . '<input type="checkbox" name="imp_confirm" value="1" required style="margin-top:2px;flex:none;">'
+         . '<span>' . htmlspecialchars($whatItIs) . ' as <b>' . htmlspecialchars(imp_target_name())
+         . '</b> — this is their cash drawer, not yours.</span></label>';
 }
 
 /**
@@ -156,7 +233,10 @@ function imp_start(PDO $pdo, int $targetId): string
 
 /**
  * End impersonation and restore the admin's own session. Safe to call when not
- * impersonating (no-op). Returns the admin's landing page.
+ * impersonating (no-op).
+ *
+ * Returns the admin's landing page, or '' if the session was destroyed because
+ * the admin is no longer entitled to it — the caller must send them to /index.php.
  */
 function imp_stop(PDO $pdo): string
 {
@@ -168,17 +248,53 @@ function imp_stop(PDO $pdo): string
 
     $adminId   = (int) $_SESSION['imp_admin_id'];
     $adminName = (string) $_SESSION['imp_admin_name'];
-    $adminRole = (string) ($_SESSION['imp_admin_role'] ?? 'ADMIN');
     $targetId  = (int) $_SESSION['user_id'];
     $targetNm  = imp_target_name();
     $started   = (int) ($_SESSION['imp_started_at'] ?? 0);
     $mins      = $started ? max(0, (int) round((time() - $started) / 60)) : 0;
 
+    // Re-authorise against the DB, exactly as imp_start() does — the parked
+    // base_role is a memory of what was true when this began, not a fact.
+    //
+    // Without this, an admin demoted (staff.php's edit form) or deactivated
+    // (its toggle_active) DURING an impersonation would be handed a full ADMIN
+    // session back: the old code restored $_SESSION['imp_admin_role'], falling
+    // back to the literal 'ADMIN', and load_permissions() grants whatever role
+    // it is told without checking the user still holds it. is_active is verified
+    // only at login (index.php), so nothing downstream would have caught it.
+    $stmt = $pdo->prepare('SELECT id, name, base_role, is_active, must_change_password FROM users WHERE id = ?');
+    $stmt->execute([$adminId]);
+    $admin = $stmt->fetch();
+
+    $stillAdmin = $admin
+        && $admin['base_role'] === 'ADMIN'
+        && (int) ($admin['is_active'] ?? 1) === 1;
+
+    if (!$stillAdmin) {
+        // Deleted, demoted or deactivated mid-impersonation. Do not restore
+        // anything — end the session and make them sign in again, which is the
+        // only path that re-checks entitlement from scratch.
+        try {
+            audit_log($pdo, 'impersonation_stop_denied',
+                "Session ended: ADMIN #$adminId was demoted, deactivated or removed while viewing as $targetNm #$targetId",
+                $adminId);
+        } catch (Throwable $e) { /* never block the exit */ }
+        $_SESSION = [];
+        session_destroy();
+        return '';
+    }
+
+    $adminRole = (string) $admin['base_role'];
+
     // Restore the admin BEFORE logging, so a failed insert can't strand the
     // session in the target's identity.
     $_SESSION['user_id']   = $adminId;
     $_SESSION['base_role'] = $adminRole;
-    $_SESSION['must_change_password'] = false;
+    // Their own forced-password-change state is a DB fact, not something the
+    // impersonation may clear — imp_start() set this false for the TARGET's
+    // benefit, and restoring a hardcoded false here would let an admin skip a
+    // reset that another admin had just required of them.
+    $_SESSION['must_change_password'] = !empty($admin['must_change_password']);
     unset(
         $_SESSION['imp_admin_id'],
         $_SESSION['imp_admin_name'],

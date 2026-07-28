@@ -31,7 +31,17 @@ $error = '';
 $success = '';
 
 // ---- Save details (name / email / phone) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_details') {
+// Blocked while viewing as someone else: email and phone ARE the login
+// credentials (see index.php), so an admin editing them here would be changing
+// how that person signs in, from inside their account, with no second factor.
+// Diagnosing a screen never requires this. The password form below is already
+// safe — it verifies the target's current password, which the admin won't know.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_details'
+    && is_impersonating()) {
+    $error = 'You are viewing HIMS as ' . imp_target_name()
+           . '. Their name, email and phone are their login credentials and cannot be changed from here — '
+           . 'stop viewing as them and edit the account in Staff & Doctors instead.';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_details') {
     // Names are stored in ALL CAPS so they read uniformly everywhere they appear.
     $name = mb_strtoupper(trim($_POST['name'] ?? ''), 'UTF-8');
     $email = trim($_POST['email'] ?? '');

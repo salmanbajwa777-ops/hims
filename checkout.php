@@ -124,15 +124,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
         http_response_code(403);
         exit('You do not have permission to void an invoice.');
     }
-    $billId = (int) ($_POST['bill_id'] ?? 0);
-    [$ok, $msg] = void_bill($pdo, $billId, (int) $_SESSION['user_id'], $_POST['void_reason'] ?? '');
-    if ($ok) { $success = $msg; } else { $error = $msg; }
-    header('Location: checkout.php?bill_id=' . $billId . ($ok ? '&voided=1' : ''));
-    exit;
+    if (($impBlock = imp_block_money_action('Voiding this invoice')) !== '') {
+        $error = $impBlock;
+    } else {
+        $billId = (int) ($_POST['bill_id'] ?? 0);
+        [$ok, $msg] = void_bill($pdo, $billId, (int) $_SESSION['user_id'], $_POST['void_reason'] ?? '');
+        if ($ok) { $success = $msg; } else { $error = $msg; }
+        header('Location: checkout.php?bill_id=' . $billId . ($ok ? '&voided=1' : ''));
+        exit;
+    }
 }
 
 // ---------------- Record payment ----------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'record_payment') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'record_payment'
+    && ($impBlock = imp_block_money_action('Taking this payment')) !== '') {
+    // Money into someone else's drawer, on someone else's shift tally.
+    $error = $impBlock;
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'record_payment') {
     require_permission('RECEPTION_PROCESS_PAYMENTS');
     $billId = (int) ($_POST['bill_id'] ?? 0);
     $paymentMethod = $_POST['payment_method'] ?? '';
@@ -416,6 +424,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php if (has_permission('RECEPTION_PROCESS_PAYMENTS')): ?>
                         <form method="POST" action="checkout.php" style="display:flex; gap:8px; align-items:center;">
                             <input type="hidden" name="action" value="record_payment">
+                            <?= imp_confirm_field('Take this payment') ?>
                             <input type="hidden" name="bill_id" value="<?= (int) $activeBill['id'] ?>">
                             <select name="payment_method" required style="padding:9px 11px; border:1px solid var(--border); border-radius:var(--radius-input); font-family:inherit;">
                                 <option value="">Payment method...</option>

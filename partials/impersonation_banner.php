@@ -62,6 +62,7 @@ $impAdmin  = htmlspecialchars(imp_admin_name(), ENT_QUOTES);
   <span class="imp-txt imp-admin">Signed in as <?= $impAdmin ?> · changes save under <?= $impTarget ?>'s name</span>
   <form method="POST" action="/impersonate.php">
     <input type="hidden" name="action" value="stop">
+    <input type="hidden" name="imp_csrf" value="<?= htmlspecialchars(imp_csrf_token()) ?>">
     <button type="submit">Return to my account</button>
   </form>
 </div>

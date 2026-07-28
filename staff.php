@@ -783,6 +783,7 @@ require __DIR__ . '/partials/sidebar.php';
                                 <form method="POST" action="impersonate.php" style="display:inline;" onsubmit="return confirm('Open HIMS as <?= htmlspecialchars(addslashes($s['name'])) ?>?\n\nYou will see their screens and their permissions only. Anything you save is recorded under their name (the audit log notes it was you).');">
                                     <input type="hidden" name="action" value="start">
                                     <input type="hidden" name="user_id" value="<?= (int) $s['id'] ?>">
+                                    <input type="hidden" name="imp_csrf" value="<?= htmlspecialchars(imp_csrf_token()) ?>">
                                     <button type="submit" class="edit-link" style="background:none;border:none;padding:0;font:inherit;cursor:pointer;color:var(--primary);">View as</button>
                                 </form>
                                 <?php endif; ?>

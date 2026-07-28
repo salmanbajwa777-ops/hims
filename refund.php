@@ -72,7 +72,10 @@ if (isset($_GET['print']) && isset($_GET['refund_id'])) {
 }
 
 // ---------------- Issue refund ----------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue_refund') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue_refund'
+    && ($impBlock = imp_block_money_action('Issuing this refund')) !== '') {
+    $error = $impBlock;
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue_refund') {
     $billId = (int) ($_POST['bill_id'] ?? 0);
     $amount = round((float) str_replace(',', '', $_POST['amount'] ?? '0'), 2);
     $reason = trim($_POST['reason'] ?? '');
@@ -171,9 +174,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
         http_response_code(403);
         exit('You do not have permission to void a refund.');
     }
-    $rid = (int) ($_POST['refund_id'] ?? 0);
-    [$ok, $msg] = void_refund($pdo, $rid, (int) $_SESSION['user_id'], $_POST['void_reason'] ?? '');
-    if ($ok) { $success = $msg; } else { $error = $msg; }
+    if (($impBlock = imp_block_money_action('Voiding this refund')) !== '') {
+        $error = $impBlock;
+    } else {
+        $rid = (int) ($_POST['refund_id'] ?? 0);
+        [$ok, $msg] = void_refund($pdo, $rid, (int) $_SESSION['user_id'], $_POST['void_reason'] ?? '');
+        if ($ok) { $success = $msg; } else { $error = $msg; }
+    }
 }
 
 // ---------------- Page data ----------------
@@ -272,6 +279,12 @@ td { padding: 9px 10px; border-top: 1px solid var(--border); font-size: 13px; }
 </style>
 </head>
 <body>
+<?php
+// This page builds its own document instead of using partials/head.php, so the
+// "viewing as" bar has to be emitted here explicitly — without it, refunds
+// would be the one interactive money screen showing no warning at all.
+require __DIR__ . '/partials/impersonation_banner.php';
+?>
 <div class="shell">
 
     <div>
@@ -302,6 +315,7 @@ td { padding: 9px 10px; border-top: 1px solid var(--border); font-size: 13px; }
 
     <form method="POST" action="refund.php" class="card" id="refundForm">
         <input type="hidden" name="action" value="issue_refund">
+        <?= imp_confirm_field('Issue this refund') ?>
         <input type="hidden" name="bill_id" value="<?= (int) $bill['id'] ?>">
         <input type="hidden" name="approved_by_id" value="<?= (int) $bill['doctor_id'] ?>">
 

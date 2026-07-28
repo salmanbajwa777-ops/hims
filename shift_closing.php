@@ -107,6 +107,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 }
 
 // ---------------- Submit closing ----------------
+// Closing someone else's shift signs off THEIR cash count and locks THEIR day.
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && in_array($_POST['action'] ?? '', ['close_day', 'edit_closing'], true)
+    && $error === '') {
+    $error = imp_block_money_action('Closing this shift');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_day' && $error === '') {
     $handoverToId = (int) ($_POST['handover_to_id'] ?? 0);
     $handoverDeclared = round((float) str_replace(',', '', $_POST['handover_declared'] ?? '0'), 2);
@@ -463,6 +470,7 @@ require __DIR__ . '/partials/sidebar.php';
     <form method="POST" action="shift_closing.php" id="closeForm">
     <input type="hidden" name="action" value="<?= $editMode ? 'edit_closing' : 'close_day' ?>">
     <input type="hidden" name="closing_date" value="<?= htmlspecialchars($today) ?>">
+    <?= imp_confirm_field($editMode ? 'Edit this closing' : 'Close this shift') ?>
 
     <div class="sheet">
 
