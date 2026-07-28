@@ -46,7 +46,9 @@ $generatedByUpper = $uc($refund['generated_by_name']);
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; height: 210mm; margin: 0; padding: 0; }
         body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
-        .invoice-container { width: 100%; height: 100%; padding: 8mm; overflow: hidden; display: flex; flex-direction: column; }
+        /* position:relative anchors the reprint DUPLICATE mark to the sheet rather
+           than the browser window — see config/reprint.php. */
+        .invoice-container { width: 100%; height: 100%; padding: 8mm; overflow: hidden; display: flex; flex-direction: column; position: relative; }
         .header { text-align: center; margin-bottom: 6px; }
         /* Explicit white ground: the PNGs carry real transparency, and without it the
            print pipeline composites them against a shaded backdrop and a grey box
@@ -84,8 +86,8 @@ $generatedByUpper = $uc($refund['generated_by_name']);
     </style>
 </head>
 <body>
-    <?= reprint_watermark($refund) ?>
     <div class="invoice-container">
+        <?= reprint_watermark($refund) ?>
 
         <div class="header">
             <h1 class="clinic-name">

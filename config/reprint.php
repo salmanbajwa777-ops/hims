@@ -82,13 +82,17 @@ function print_stamp_by(PDO $pdo, array $row, string $fallback = 'Front Desk'): 
  * would have to be edited into all five anyway — inlining keeps the change to one
  * line per file.
  *
+ * MUST be emitted INSIDE the document's sheet element (.sheet, or
+ * .invoice-container on the refund voucher), and that element needs
+ * position:relative. The mark is anchored to the sheet, not the page, which is
+ * what keeps it centred on the paper at any window size — and, on the procedure
+ * receipt, what keeps it off the consent sheets appended behind it.
+ *
  * Design constraints:
- *  - position:fixed and a print-colour-adjust override, because every one of these
- *    documents is a fixed-size print sheet and browsers drop backgrounds/colours in
- *    print by default.
- *  - Behind the content (z-index -1, on a body that establishes no stacking
- *    context) and light grey, so it never obscures a figure. Legibility of the
- *    amounts beats prominence of the mark.
+ *  - A print-colour-adjust override, because browsers drop backgrounds and
+ *    colours in print by default and the mark would vanish on paper.
+ *  - Behind the content and light grey, so it never obscures a figure.
+ *    Legibility of the amounts beats prominence of the mark.
  *  - Sized in mm, not a viewport unit, so the word fits the printed sheet itself
  *    on both the A5 and the A4 slip (see the rule below).
  */
@@ -99,19 +103,25 @@ function reprint_watermark(array $row): string
     }
     return <<<'HTML'
 <style>
-    /* Sized so the whole word fits inside an A5 sheet's diagonal — at 26vmin it
-       overflowed the page and only the middle letters showed, which reads as a
-       smudge rather than as the word DUPLICATE. Fixed mm (not a viewport unit)
-       because these sheets are fixed-size print documents; the A4 slip is wider
-       still, so the same value stays comfortably inside it. */
+    /* Anchored to the SHEET, not the viewport.
+       This was position:fixed and centred with top/left:50%, which pins the mark
+       to the browser WINDOW. On screen that dropped it far below the content into
+       the blank handwriting area — it only looked right in a window whose height
+       happened to equal the sheet's. Absolute + a positioned .sheet centres it on
+       the paper at any window size, and print output is unchanged either way.
+
+       Sized in mm, not a viewport unit: these are fixed-size print documents, and
+       22mm keeps the whole word inside an A5 diagonal (at 26vmin it overflowed and
+       only the middle letters showed, reading as a smudge). The A4 slip is wider
+       still, so the same value sits comfortably inside it. */
     .dup-watermark {
-        position: fixed; top: 50%; left: 50%;
+        position: absolute; top: 50%; left: 50%;
         transform: translate(-50%, -50%) rotate(-32deg);
         font-family: Arial, Helvetica, sans-serif;
         font-size: 22mm; font-weight: bold; letter-spacing: .06em;
         color: rgba(0, 0, 0, .11);
         white-space: nowrap; pointer-events: none; user-select: none;
-        z-index: -1;
+        z-index: 0;
     }
     @media print {
         .dup-watermark {
@@ -125,41 +135,16 @@ HTML;
 }
 
 /**
- * DUPLICATE watermark confined to ONE page of a multi-page document.
+ * Alias kept for the procedure receipt's call site.
  *
- * The procedure receipt prints its signed consent sheets as further pages of the
- * same document. A position:fixed mark repeats on every printed page, which would
- * stamp DUPLICATE across those consent forms — they are signed records in their
- * own right and say nothing about whether the receipt has been printed before.
- * So this variant is absolutely positioned and must be placed INSIDE the receipt's
- * own .sheet (which needs position:relative), keeping the mark on page one.
- *
- * @param array $row  the bill row
+ * There were briefly two variants: a page-fixed one for single-sheet documents
+ * and this sheet-scoped one for the procedure receipt, whose consent sheets are
+ * further pages of the same document. The fixed variant turned out to be wrong
+ * everywhere — it pinned the mark to the browser window rather than the paper —
+ * so reprint_watermark() adopted the scoped behaviour and the two collapsed into
+ * one. This name simply forwards.
  */
 function reprint_watermark_scoped(array $row): string
 {
-    if (!is_reprint($row)) {
-        return '';
-    }
-    return <<<'HTML'
-<style>
-    /* The receipt .sheet must be position:relative for this to anchor to page one. */
-    .dup-watermark-scoped {
-        position: absolute; top: 50%; left: 50%;
-        transform: translate(-50%, -50%) rotate(-32deg);
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 22mm; font-weight: bold; letter-spacing: .06em;
-        color: rgba(0, 0, 0, .11);
-        white-space: nowrap; pointer-events: none; user-select: none;
-        z-index: 0;
-    }
-    @media print {
-        .dup-watermark-scoped {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-    }
-</style>
-<div class="dup-watermark-scoped">DUPLICATE</div>
-HTML;
+    return reprint_watermark($row);
 }

@@ -66,7 +66,9 @@ $paymentModeDisplay = $paymentModeLabels[$payment['payment_method'] ?? ''] ?? 'â
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; margin: 0; padding: 0; }
         body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #000; background: #fff; }
-        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
+        /* position:relative anchors the reprint DUPLICATE mark to the sheet rather
+           than the browser window â€” see config/reprint.php. */
+        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; position: relative; }
 
         .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
         .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
@@ -117,8 +119,8 @@ $paymentModeDisplay = $paymentModeLabels[$payment['payment_method'] ?? ''] ?? 'â
     </style>
 </head>
 <body>
-    <?= reprint_watermark($payment) ?>
     <div class="sheet">
+        <?= reprint_watermark($payment) ?>
 
         <div class="head-box">
             <div class="head-left">

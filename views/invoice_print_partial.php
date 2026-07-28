@@ -96,7 +96,9 @@ $pageSize = $isA4 ? 'A4' : 'A5';
             font-family: 'Lora', Georgia, 'Times New Roman', serif;
             font-size: 9.5px; line-height: 1.3; color: #000; background: #fff;
         }
-        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: <?= $pageH ?>; }
+        /* position:relative anchors the reprint DUPLICATE mark to the sheet rather
+           than the browser window — see config/reprint.php. */
+        .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: <?= $pageH ?>; position: relative; }
 
         /* ---------- Header box ---------- */
         /* Bottom padding is ~1.4mm so the tables sit hard against the box edge and the
@@ -229,8 +231,8 @@ $pageSize = $isA4 ? 'A4' : 'A5';
     </style>
 </head>
 <body>
-    <?= reprint_watermark($bill) ?>
     <div class="sheet">
+        <?= reprint_watermark($bill) ?>
 
         <div class="head-box">
             <div class="head-left">
