@@ -14,7 +14,7 @@
 // financial_snapshot exists as a column instead of being derived on the fly.
 
 require_once __DIR__ . '/../config/brand.php';
-$b = brand();
+$b = brand($consent['doctor_specialty'] ?? null);
 $clinicName = $b['name'];
 $clinicTagline = $b['tagline'];
 $clinicEmail = $b['email'];

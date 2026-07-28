@@ -4,7 +4,7 @@
 // $priorRefunded (sum of earlier refunds on the same bill) in scope.
 
 require_once __DIR__ . '/../config/brand.php';
-$b = brand();
+$b = brand($refund['doctor_specialty'] ?? null);
 $clinicName = $b['name'];
 $clinicTagline = $b['tagline'];
 $clinicAddress = $b['address'];

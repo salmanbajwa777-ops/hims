@@ -27,12 +27,31 @@
  * session/DB bootstrap, so it must stay require-able from anywhere.
  */
 
-// Contact details are unchanged from the Baby Medics era; only the name and
-// tagline moved. When the new domain/number lands, this array is the only edit.
-function brand(): array {
+// TWO BRANDS, CHOSEN BY THE TREATING DOCTOR.
+//
+// The clinic trades as BABY MEDICS; SMILE RESORT is its dental identity. Which
+// one a document prints follows the DOCTOR on it, exactly as brand_logo() below
+// already chose the logo — a dental doctor's slip is a Smile Resort slip, every
+// other slip is a Baby Medics slip.
+//
+// This used to return SMILE RESORT unconditionally, so a paediatric visit printed
+// the dental name over the baby-face logo: the wordmark and the mark disagreed on
+// the same sheet. The f29fd01 rebrand noted the logo half of that mismatch as an
+// open item; the real fix was that the NAME had to vary too, not that the artwork
+// was wrong. Both marks are correct as they stand.
+//
+// Contact details are shared — one reception desk, one address, one phone — so
+// only the name and tagline differ between the two.
+//
+// Callers pass users.specialty straight in, same as brand_logo(). A NULL
+// specialty (an ER bill, a day-closing slip, a doctor share statement — anything
+// with no single treating doctor) takes the house brand, which is the clinic's
+// own name and the right default for an administrative document.
+function brand(?string $specialty = null): array {
+    $isDental = $specialty === 'DENTAL';
     return [
-        'name'          => 'SMILE RESORT',
-        'tagline'       => 'Smile Without the Stress',
+        'name'          => $isDental ? 'SMILE RESORT' : 'BABY MEDICS',
+        'tagline'       => $isDental ? 'Smile Without the Stress' : 'Premium Healthcare | Vaccines',
         'email'         => 'info@babymedics.com',
         'phone'         => '+92 51 5735006',
         // Hand letter-spaced rather than styled with CSS letter-spacing: the

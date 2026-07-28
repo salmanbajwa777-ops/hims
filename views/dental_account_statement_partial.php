@@ -19,7 +19,7 @@
 // which is why the sheet has no fixed min-height here.
 
 require_once __DIR__ . '/../config/brand.php';
-$b = brand();
+$b = brand($account['doctor_specialty'] ?? null);
 $clinicName = $b['name'];
 $clinicTagline = $b['tagline'];
 $clinicEmail = $b['email'];

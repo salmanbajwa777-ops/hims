@@ -22,7 +22,7 @@
 // A5 only, and no tax, matching every other slip in the system.
 
 require_once __DIR__ . '/../config/brand.php';
-$b = brand();
+$b = brand($payment['doctor_specialty'] ?? null);
 $clinicName = $b['name'];
 $clinicTagline = $b['tagline'];
 $clinicEmail = $b['email'];

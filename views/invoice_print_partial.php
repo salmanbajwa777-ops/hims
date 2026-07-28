@@ -14,7 +14,7 @@
 require_once __DIR__ . '/../config/tokens.php';
 
 require_once __DIR__ . '/../config/brand.php';
-$b = brand();
+$b = brand($bill['doctor_specialty'] ?? null);
 $clinicName = $b['name'];
 $clinicTagline = $b['tagline'];
 $clinicEmail = $b['email'];
