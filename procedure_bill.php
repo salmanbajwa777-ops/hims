@@ -24,6 +24,10 @@ require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/sheets.php';
+// For dental_consent_satisfied() — the mandatory_consent gate below. Loading it
+// here is what makes the gate active; without it the function_exists() guard
+// falls through and this page warns rather than blocks, exactly as before.
+require_once __DIR__ . '/config/dental.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_RAISE_PROCEDURE_BILL');
 
@@ -44,7 +48,8 @@ if (isset($_GET['print']) && isset($_GET['procedure_bill_id'])) {
 
     $stmt = $pdo->prepare('
         SELECT pb.*, p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
-               doc.name AS doctor_name, gen.name AS generated_by_name
+               doc.name AS doctor_name, doc.specialty AS doctor_specialty,
+               gen.name AS generated_by_name
         FROM procedure_bills pb
         JOIN patients p ON p.id = pb.patient_id
         JOIN users doc  ON doc.id = pb.doctor_id
@@ -109,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
             // the doctor it is actually assigned to. COALESCE: a NULL override
             // means "charge the master's current rate".
             $rowStmt = $pdo->prepare("
-                SELECT dp.id, dp.procedure_master_id, pm.name,
+                SELECT dp.id, dp.procedure_master_id, pm.name, pm.mandatory_consent,
                        COALESCE(dp.fee, pm.fee) AS fee,
                        dp.doctor_share_pct, dp.has_tax, dp.tax_percent" . ($procHasDisposables ? ",
                        pm.has_disposables" : '') . "
@@ -140,10 +145,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
                 'rate'       => $rate,
                 'amount'     => $amount,
                 'disp'       => $dispCost,
+                'consent'    => (int) ($row['mandatory_consent'] ?? 0),
                 'share_pct'  => (float) $row['doctor_share_pct'],
                 'has_tax'    => (int) $row['has_tax'],
                 'tax_pct'    => (float) $row['tax_percent'],
             ];
+        }
+    }
+
+    // CONSENT GATE. procedure_master.mandatory_consent has existed since the
+    // catalogue was built, but until the dental module there was no consent
+    // FORM to point at, so this page only warned. Now a flagged procedure
+    // genuinely cannot be billed without a signed consent on file.
+    //
+    // function_exists() guard: on a database where the dental module has not
+    // been installed there is nowhere to capture a consent, so blocking every
+    // flagged procedure would break billing that worked yesterday. Absent the
+    // module, behaviour is exactly as before.
+    if (!$error && function_exists('dental_consent_satisfied')) {
+        foreach ($lines as $ln) {
+            if (!empty($ln['consent']) && !dental_consent_satisfied($pdo, $patientId, $ln['master_id'])) {
+                $error = '“' . $ln['name'] . '” requires a signed consent before it can be billed. '
+                       . 'Capture it on the Consent page, then bill this again.';
+                break;
+            }
         }
     }
 
@@ -155,7 +180,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
     $docStmt->execute([$doctorId]);
     $doctor = $docStmt->fetch();
 
-    if ($dayLock) {
+    // $error may already be set by the consent gate above — this chain must not
+    // overwrite it, or a consent-blocked bill would fall through and be raised.
+    if ($error) {
+        // keep it
+    } elseif ($dayLock) {
         $error = $dayLock;
     } elseif (!$patient) {
         $error = 'Select a registered patient first.';
@@ -625,6 +654,8 @@ require __DIR__ . '/partials/sidebar.php';
     var discEl = document.getElementById('discAmt');
     var raiseBtn = document.getElementById('raiseBtn');
     var consentNote = document.getElementById('consentNote');
+    // Carries the selected patient through to the consent page's deep link.
+    var consentPatientId = <?= (int) $selectedId ?>;
     var lines = [];
 
     function fmt(n) { return 'Rs ' + n.toLocaleString('en-PK', {maximumFractionDigits: 0}); }
@@ -692,12 +723,19 @@ require __DIR__ . '/partials/sidebar.php';
         totalEl.textContent = fmt(total);
         raiseBtn.disabled = lines.length === 0;
 
-        // Surface the consent flag — the form itself is a later phase, so this
-        // is a reminder to take it on paper, not a generated document.
+        // Surface the consent flag. This is no longer only a reminder: the
+        // server BLOCKS a flagged procedure without a signed consent on file,
+        // so the note links straight to where one is captured. Kept as a
+        // warning rather than a disabled button because the consent may already
+        // exist from an earlier visit — only the server can know.
         var needsConsent = lines.filter(function (l) { return l.consent; });
         if (needsConsent.length) {
             consentNote.style.display = '';
-            consentNote.textContent = 'Consent required for: ' + needsConsent.map(function (l) { return l.name; }).join(', ') + '. Take written consent before performing.';
+            consentNote.innerHTML = 'Consent required for: <b>'
+                + needsConsent.map(function (l) { return l.name; }).join(', ')
+                + '</b>. This bill will be refused unless a signed consent is on file. '
+                + '<a href="dental_consent.php' + (consentPatientId ? '?patient_id=' + consentPatientId : '')
+                + '" target="_blank" style="text-decoration:underline;">Capture consent</a>.';
         } else {
             consentNote.style.display = 'none';
         }

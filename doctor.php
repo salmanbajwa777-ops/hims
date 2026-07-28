@@ -222,6 +222,33 @@ foreach ($activeAdms as &$aa) {
 }
 unset($aa);
 
+// Open dental package accounts owned by this dentist, with what is still owed.
+// Try-wrapped and empty for everyone else: a paediatrician has no accounts, and
+// a database without the dental migration must not fatal the whole console.
+// The balance is derived here exactly as dental_account_totals() defines it —
+// one grouped query rather than a call per row.
+$dentalAccounts = [];
+try {
+    $dq = $pdo->prepare("
+        SELECT a.id, a.account_number, a.title, p.name AS patient_name, p.mrn,
+               (COALESCE(i.charged, 0) + COALESCE(i.lab, 0) - COALESCE(pm.paid, 0)) AS balance
+          FROM dental_procedure_accounts a
+          JOIN patients p ON p.id = a.patient_id
+          LEFT JOIN (SELECT account_id, SUM(amount) AS charged, SUM(lab_charge) AS lab
+                       FROM dental_procedure_account_items WHERE voided_at IS NULL
+                      GROUP BY account_id) i ON i.account_id = a.id
+          LEFT JOIN (SELECT account_id, SUM(amount) AS paid
+                       FROM dental_procedure_payments WHERE status = 'paid' AND voided_at IS NULL
+                      GROUP BY account_id) pm ON pm.account_id = a.id
+         WHERE a.doctor_id = ? AND a.status = 'OPEN'
+         ORDER BY a.opened_at DESC LIMIT 10
+    ");
+    $dq->execute([$doctorId]);
+    $dentalAccounts = $dq->fetchAll();
+} catch (PDOException $e) {
+    // Dental module not migrated on this database.
+}
+
 function doc_age(array $v): ?int {
     if (!empty($v['dob'])) {
         return (new DateTime($v['dob']))->diff(new DateTime())->y;
@@ -589,6 +616,39 @@ require __DIR__ . '/partials/head.php';
                     </div>
                 </div>
             </div>
+
+            <?php if ($dentalAccounts): ?>
+            <div class="card">
+                <div class="section-head">
+                    <div>
+                        <div class="section-title">Open dental packages (<?= count($dentalAccounts) ?>)</div>
+                        <div class="section-sub">Multi-visit treatment you are still working through</div>
+                    </div>
+                    <a class="card-link" href="dental_accounts.php">All accounts &rarr;</a>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+                    <?php foreach ($dentalAccounts as $da): $bal = (float) $da['balance']; ?>
+                    <a href="dental_account.php?id=<?= (int) $da['id'] ?>"
+                       style="display:flex;align-items:center;justify-content:space-between;gap:12px;
+                              padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-btn);
+                              text-decoration:none;color:inherit;">
+                        <div>
+                            <div style="font-weight:600;"><?= htmlspecialchars($da['patient_name']) ?></div>
+                            <div style="font-size:var(--fs-meta);color:var(--text-muted);">
+                                <?= htmlspecialchars($da['account_number']) ?> · <?= htmlspecialchars($da['title']) ?>
+                            </div>
+                        </div>
+                        <div style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;
+                                    color:<?= $bal > 0.004 ? 'var(--warn)' : ($bal < -0.004 ? 'var(--danger)' : 'var(--ok)') ?>;">
+                            <?php if ($bal > 0.004): ?>Rs <?= number_format($bal, 0) ?>
+                            <?php elseif ($bal < -0.004): ?>Rs <?= number_format(-$bal, 0) ?> refund
+                            <?php else: ?>Clear<?php endif; ?>
+                        </div>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <?php if ($activeAdms): ?>
             <div class="card">

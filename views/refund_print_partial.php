@@ -3,14 +3,18 @@
 // Expects $refund (refunds row joined to bill/patient/doctor/staff) and
 // $priorRefunded (sum of earlier refunds on the same bill) in scope.
 
-$clinicName = 'BABY MEDICS';
-$clinicTagline = 'Premium Healthcare | Vaccines';
-$clinicAddress = 'Polymedics, 2165-F, NPF, PWD Double Road, Islamabad, Pakistan.';
-$clinicEmail = 'info@babymedics.com';
-$clinicPhone = '+92 51 5735006';
-$clinicWebsite = 'b a b y m e d i c s . c o m';
+require_once __DIR__ . '/../config/brand.php';
+$b = brand();
+$clinicName = $b['name'];
+$clinicTagline = $b['tagline'];
+$clinicAddress = $b['address'];
+$clinicEmail = $b['email'];
+$clinicPhone = $b['phone'];
+$clinicWebsite = $b['website'];
 
-$logoFile = $refund['doctor_specialty'] === 'DENTAL' ? 'logo-dental.png' : 'logo-general.png';
+// ?? guard: refund.php has two separate queries feeding this view and only one
+// of them joins the doctor, so doctor_specialty is not always present.
+$logoFile = brand_logo($refund['doctor_specialty'] ?? null);
 
 $patientDobDisplay = $refund['dob'] ? date('d/m/Y', strtotime($refund['dob'])) : '—';
 $printTimestamp = date('Y-m-d H:i:s');

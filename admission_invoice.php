@@ -53,12 +53,14 @@ if (!$bill['printed_at'] && $bill['status'] !== 'draft') {
         ->execute([(int) $_SESSION['user_id'], (int) $bill['id']]);
 }
 
-$clinicName = 'BABY MEDICS';
-$clinicTagline = 'Premium Healthcare | Vaccines';
-$clinicEmail = 'info@babymedics.com';
-$clinicPhone = '+92 51 5735006';
-$clinicWebsite = 'b a b y m e d i c s . c o m';
-$logoFile = ($bill['doctor_specialty'] ?? '') === 'DENTAL' ? 'logo-dental.png' : 'logo-general.png';
+require_once __DIR__ . '/config/brand.php';
+$b = brand();
+$clinicName = $b['name'];
+$clinicTagline = $b['tagline'];
+$clinicEmail = $b['email'];
+$clinicPhone = $b['phone'];
+$clinicWebsite = $b['website'];
+$logoFile = brand_logo($bill['doctor_specialty'] ?? null);
 
 $patientNameUpper = mb_strtoupper($bill['patient_name'], 'UTF-8');
 $fatherNameUpper = $bill['father_name'] ? mb_strtoupper($bill['father_name'], 'UTF-8') : '';
@@ -179,7 +181,7 @@ $paymentModeNote = $bill['status'] !== 'draft'
                         <span class="website"><?= $clinicWebsite ?></span>
                     </span>
                 </div>
-                <div class="addr"><b>Polymedics,</b> 2165-F, NPF, PWD Double Road<br>Islamabad, Pakistan.</div>
+                <div class="addr"><b><?= htmlspecialchars($b['address_lead']) ?></b> <?= htmlspecialchars($b['address_line1']) ?><br><?= htmlspecialchars($b['address_line2']) ?></div>
                 <table class="ids">
                     <tr><td class="k">MR #</td><td class="v"><?= htmlspecialchars($bill['mrn']) ?></td></tr>
                     <tr><td class="k">Invoice #</td><td class="v"><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>

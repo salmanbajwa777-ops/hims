@@ -25,6 +25,35 @@ $success = '';
 require_once __DIR__ . '/config/billing.php';
 $procHasDisposables = procedure_disposables_flag($pdo);
 
+// Has add_dental_procedure_fields.sql been run? Same degradation rule as
+// disposables above: without the columns the page is exactly the pre-dental
+// catalogue rather than a fatal. Checked on is_dental because that is the flag
+// every dental picker filters on; the other three arrive in the same migration.
+$procHasDental = column_exists($pdo, 'procedure_master', 'is_dental');
+
+// DENTAL_CAT_LABELS (the category ENUM's display names) is shared from
+// config/dental.php so this page, the treatment picker and the account picker
+// cannot drift apart on wording.
+require_once __DIR__ . '/config/dental.php';
+
+// is_dental and category are redundant by design (see the migration header), so
+// they are normalised together in ONE place rather than at each call site:
+// unticking Dental clears the category and the lab fields; picking a category
+// implies Dental. Returns [isDental, category, hasLab, defaultLabCharge].
+function dental_fields_from_post($isDental, $category, $hasLab, $labCharge): array {
+    $isDental = $isDental ? 1 : 0;
+    $category = ($category !== '' && isset(DENTAL_CAT_LABELS[$category])) ? $category : null;
+    if ($category !== null) {
+        $isDental = 1;                 // a category implies dental
+    }
+    if (!$isDental) {
+        // Not dental: nothing dental-shaped may survive on the row.
+        return [0, null, 0, 0.0];
+    }
+    $hasLab = $hasLab ? 1 : 0;
+    return [$isDental, $category, $hasLab, $hasLab ? max(0.0, (float) $labCharge) : 0.0];
+}
+
 // ---- Add a procedure to the master catalogue ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_procedure') {
     $name = trim($_POST['name'] ?? '');
@@ -35,25 +64,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
     if ($name === '' || $fee < 0) {
         $error = 'A procedure needs a name and a non-negative rate.';
     } else {
+        // Build the column list from what the database actually has. Two
+        // optional migrations (disposables, dental) would otherwise mean four
+        // hand-written INSERT variants; this stays one statement however many
+        // land later.
+        $cols = ['name', 'fee', 'mandatory_consent'];
+        $vals = [$name, $fee, $consent];
+        // Re-stated on the UPDATE arm so an existing row is brought in line
+        // rather than keeping stale flags.
+        $upd  = ['fee = VALUES(fee)', 'mandatory_consent = VALUES(mandatory_consent)', 'is_active = 1'];
+
         if ($procHasDisposables) {
-            $stmt = $pdo->prepare('
-                INSERT INTO procedure_master (name, fee, mandatory_consent, has_disposables, created_by_id)
-                VALUES (?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE fee = VALUES(fee), mandatory_consent = VALUES(mandatory_consent),
-                                        has_disposables = VALUES(has_disposables), is_active = 1
-            ');
-            $stmt->execute([$name, $fee, $consent, $hasDisp, $_SESSION['user_id']]);
-        } else {
-            $stmt = $pdo->prepare('
-                INSERT INTO procedure_master (name, fee, mandatory_consent, created_by_id)
-                VALUES (?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE fee = VALUES(fee), mandatory_consent = VALUES(mandatory_consent), is_active = 1
-            ');
-            $stmt->execute([$name, $fee, $consent, $_SESSION['user_id']]);
+            $cols[] = 'has_disposables'; $vals[] = $hasDisp;
+            $upd[]  = 'has_disposables = VALUES(has_disposables)';
         }
+        if ($procHasDental) {
+            [$isDental, $category, $hasLab, $labCharge] = dental_fields_from_post(
+                isset($_POST['is_dental']), $_POST['category'] ?? '',
+                isset($_POST['has_lab_component']), $_POST['default_lab_charge'] ?? 0
+            );
+            $cols = array_merge($cols, ['is_dental', 'category', 'has_lab_component', 'default_lab_charge']);
+            $vals = array_merge($vals, [$isDental, $category, $hasLab, $labCharge]);
+            $upd  = array_merge($upd, ['is_dental = VALUES(is_dental)', 'category = VALUES(category)',
+                                       'has_lab_component = VALUES(has_lab_component)',
+                                       'default_lab_charge = VALUES(default_lab_charge)']);
+        }
+        $cols[] = 'created_by_id'; $vals[] = $_SESSION['user_id'];
+
+        $pdo->prepare(
+            'INSERT INTO procedure_master (' . implode(', ', $cols) . ') VALUES ('
+            . implode(', ', array_fill(0, count($cols), '?')) . ') '
+            . 'ON DUPLICATE KEY UPDATE ' . implode(', ', $upd)
+        )->execute($vals);
+
         $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
             ->execute([$_SESSION['user_id'], 'procedure_added', "Added/updated procedure \"$name\" @ Rs $fee"
-                . ($consent ? ' (consent required)' : '') . ($hasDisp ? ' (has disposables)' : '')]);
+                . ($consent ? ' (consent required)' : '') . ($hasDisp ? ' (has disposables)' : '')
+                . (!empty($isDental) ? ' (dental' . ($category ? ': ' . DENTAL_CAT_LABELS[$category] : '') . ')' : '')]);
         $success = "Procedure \"$name\" saved.";
     }
 }
@@ -67,11 +114,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     $consent = $_POST['mandatory_consent'] ?? [];
     $disp    = $_POST['has_disposables'] ?? [];
     $active  = $_POST['is_active'] ?? [];
-    // has_disposables arrived after this page did; keep saving without it when
-    // add_procedure_disposables.sql hasn't been run rather than fataling.
-    $upd = $procHasDisposables
-        ? $pdo->prepare('UPDATE procedure_master SET name = ?, fee = ?, mandatory_consent = ?, has_disposables = ?, is_active = ? WHERE id = ?')
-        : $pdo->prepare('UPDATE procedure_master SET name = ?, fee = ?, mandatory_consent = ?, is_active = ? WHERE id = ?');
+    $dental   = $_POST['is_dental'] ?? [];
+    $cats     = $_POST['category'] ?? [];
+    $labFlags = $_POST['has_lab_component'] ?? [];
+    $labFees  = $_POST['default_lab_charge'] ?? [];
+
+    // Both disposables and dental arrived after this page did. Rather than one
+    // prepared statement per combination of optional migrations, build the SET
+    // clause from the columns that actually exist — an un-migrated database
+    // simply saves fewer columns instead of fataling.
+    $setCols = ['name = ?', 'fee = ?', 'mandatory_consent = ?'];
+    if ($procHasDisposables) { $setCols[] = 'has_disposables = ?'; }
+    if ($procHasDental) {
+        $setCols[] = 'is_dental = ?';
+        $setCols[] = 'category = ?';
+        $setCols[] = 'has_lab_component = ?';
+        $setCols[] = 'default_lab_charge = ?';
+    }
+    $setCols[] = 'is_active = ?';
+    $upd = $pdo->prepare('UPDATE procedure_master SET ' . implode(', ', $setCols) . ' WHERE id = ?');
+
     $saved = 0; $bad = false; $dupe = false;
     foreach ($names as $id => $rawName) {
         $id = (int) $id;
@@ -80,8 +142,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         if ($id <= 0) { continue; }
         if ($name === '' || $fee < 0) { $bad = true; continue; }
         try {
+            // Params are appended in exactly the order $setCols was built.
             $params = [$name, $fee, isset($consent[$id]) ? 1 : 0];
             if ($procHasDisposables) { $params[] = isset($disp[$id]) ? 1 : 0; }
+            if ($procHasDental) {
+                [$isD, $cat, $hasLab, $labFee] = dental_fields_from_post(
+                    isset($dental[$id]), $cats[$id] ?? '',
+                    isset($labFlags[$id]), $labFees[$id] ?? 0
+                );
+                array_push($params, $isD, $cat, $hasLab, $labFee);
+            }
             $params[] = isset($active[$id]) ? 1 : 0;
             $params[] = $id;
             $upd->execute($params);
@@ -346,8 +416,39 @@ require __DIR__ . '/partials/sidebar.php';
                             Has disposables
                         </label>
                         <?php endif; ?>
+                        <?php if ($procHasDental): ?>
+                        <label class="consent-check" title="Dental procedures appear in the dental treatment record and package accounts. The ordinary procedure biller still sees every procedure.">
+                            <input type="checkbox" name="is_dental" value="1" id="addIsDental">
+                            Dental
+                        </label>
+                        <?php endif; ?>
                         <button type="submit" class="btn">Add</button>
                     </div>
+                    <?php if ($procHasDental): ?>
+                    <!-- Dental-only fields. Hidden until Dental is ticked: on a
+                         mixed catalogue most procedures are not dental, and three
+                         permanently-greyed inputs on every add is noise. -->
+                    <div class="add-row" id="addDentalRow" style="display:none; margin-top:10px;">
+                        <div>
+                            <label>Category</label>
+                            <select name="category">
+                                <option value="">— none —</option>
+                                <?php foreach (DENTAL_CAT_LABELS as $cv => $cl): ?>
+                                <option value="<?= $cv ?>"><?= htmlspecialchars($cl) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <label class="consent-check" title="Crowns, dentures and bridges go out to an outside lab. Ticking this offers the lab tracker (vendor, sent/received/fitted) for this procedure.">
+                            <input type="checkbox" name="has_lab_component" value="1">
+                            Sends work to a lab
+                        </label>
+                        <div>
+                            <label>Usual lab charge (Rs)</label>
+                            <input type="number" step="0.01" min="0" name="default_lab_charge" value="0">
+                            <div class="hint">A prefill only — the actual charge is entered per case.</div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </form>
             </div>
 
@@ -360,11 +461,11 @@ require __DIR__ . '/partials/sidebar.php';
                 <div style="overflow-x:auto;">
                 <table>
                     <thead>
-                        <tr><th>Procedure</th><th style="width:130px;">Rate (Rs)</th><th style="width:150px;">Consent form</th><?php if ($procHasDisposables): ?><th style="width:150px;">Disposables</th><?php endif; ?><th style="width:90px;">Active</th></tr>
+                        <tr><th>Procedure</th><th style="width:130px;">Rate (Rs)</th><th style="width:150px;">Consent form</th><?php if ($procHasDisposables): ?><th style="width:150px;">Disposables</th><?php endif; ?><?php if ($procHasDental): ?><th style="width:230px;">Dental</th><th style="width:170px;">Lab</th><?php endif; ?><th style="width:90px;">Active</th></tr>
                     </thead>
                     <tbody>
                         <?php if (!$procedures): ?>
-                        <tr><td colspan="<?= $procHasDisposables ? 5 : 4 ?>" class="muted" style="padding:20px 10px;">No procedures yet — add one above.</td></tr>
+                        <tr><td colspan="<?= 4 + ($procHasDisposables ? 1 : 0) + ($procHasDental ? 2 : 0) ?>" class="muted" style="padding:20px 10px;">No procedures yet — add one above.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($procedures as $p): $pid = (int) $p['id']; ?>
                         <tr class="<?= (int) $p['is_active'] === 1 ? '' : 'row-inactive' ?>">
@@ -389,6 +490,32 @@ require __DIR__ . '/partials/sidebar.php';
                                     <input type="checkbox" name="has_disposables[<?= $pid ?>]" value="1" <?= (int) ($p['has_disposables'] ?? 0) === 1 ? 'checked' : '' ?>>
                                     Has disposables
                                 </label>
+                            </td>
+                            <?php endif; ?>
+                            <?php if ($procHasDental): ?>
+                            <td>
+                                <!-- The category select IS the dental flag in the UI: picking one
+                                     ticks Dental server-side (dental_fields_from_post), and
+                                     unticking Dental clears the category and both lab fields. That
+                                     normalisation lives in one function so the two save handlers
+                                     cannot drift apart. -->
+                                <label class="consent-check" style="padding:0;">
+                                    <input type="checkbox" name="is_dental[<?= $pid ?>]" value="1" class="dental-flag" data-pid="<?= $pid ?>" <?= (int) ($p['is_dental'] ?? 0) === 1 ? 'checked' : '' ?>>
+                                    Dental
+                                </label>
+                                <select name="category[<?= $pid ?>]" class="row-inp dental-cat" data-pid="<?= $pid ?>" style="width:100%;margin-top:6px;" <?= (int) ($p['is_dental'] ?? 0) === 1 ? '' : 'disabled' ?>>
+                                    <option value="">— category —</option>
+                                    <?php foreach (DENTAL_CAT_LABELS as $cv => $cl): ?>
+                                    <option value="<?= $cv ?>" <?= ($p['category'] ?? '') === $cv ? 'selected' : '' ?>><?= htmlspecialchars($cl) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <label class="consent-check" style="padding:0;" title="Crowns, dentures and bridges go out to an outside lab. Ticking this offers the lab tracker for this procedure.">
+                                    <input type="checkbox" name="has_lab_component[<?= $pid ?>]" value="1" class="dental-lab" data-pid="<?= $pid ?>" <?= (int) ($p['has_lab_component'] ?? 0) === 1 ? 'checked' : '' ?> <?= (int) ($p['is_dental'] ?? 0) === 1 ? '' : 'disabled' ?>>
+                                    Lab work
+                                </label>
+                                <input type="number" step="0.01" min="0" name="default_lab_charge[<?= $pid ?>]" class="row-inp dental-labfee" data-pid="<?= $pid ?>" style="width:100px;margin-top:6px;" value="<?= htmlspecialchars((string) ($p['default_lab_charge'] ?? 0)) ?>" <?= (int) ($p['has_lab_component'] ?? 0) === 1 ? '' : 'disabled' ?> title="Usual vendor charge — a prefill, not a fixed price">
                             </td>
                             <?php endif; ?>
                             <td><label class="active-toggle"><input type="checkbox" name="is_active[<?= $pid ?>]" value="1" <?= (int) $p['is_active'] === 1 ? 'checked' : '' ?>><span></span></label></td>
@@ -621,6 +748,47 @@ assignForm.addEventListener('submit', () => {
         if (rowEl._taxCb) { rowEl._taxCb.name = 'dp_has_tax[' + idx + ']'; }
     });
 });
+
+<?php if ($procHasDental): ?>
+// Dental dependent fields. A disabled input does not submit, which is exactly
+// what we want: an un-ticked row posts no category and no lab charge, and
+// dental_fields_from_post() then normalises the row to a clean non-dental
+// state. The server repeats this rule — the JS is convenience, not the guard.
+document.querySelectorAll('.dental-flag').forEach(cb => {
+    cb.addEventListener('change', () => {
+        const pid = cb.dataset.pid;
+        const cat = document.querySelector('.dental-cat[data-pid="' + pid + '"]');
+        const lab = document.querySelector('.dental-lab[data-pid="' + pid + '"]');
+        const fee = document.querySelector('.dental-labfee[data-pid="' + pid + '"]');
+        if (cat) { cat.disabled = !cb.checked; if (!cb.checked) { cat.value = ''; } }
+        if (lab) { lab.disabled = !cb.checked; if (!cb.checked) { lab.checked = false; } }
+        if (fee) { fee.disabled = !cb.checked || !(lab && lab.checked); }
+    });
+});
+// Picking a category implies dental — mirror the server rule so the row's own
+// controls don't contradict what is about to be saved.
+document.querySelectorAll('.dental-cat').forEach(sel => {
+    sel.addEventListener('change', () => {
+        if (!sel.value) { return; }
+        const cb = document.querySelector('.dental-flag[data-pid="' + sel.dataset.pid + '"]');
+        if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+    });
+});
+document.querySelectorAll('.dental-lab').forEach(cb => {
+    cb.addEventListener('change', () => {
+        const fee = document.querySelector('.dental-labfee[data-pid="' + cb.dataset.pid + '"]');
+        if (fee) { fee.disabled = !cb.checked; }
+    });
+});
+// The add-form's dental fields, same rule, one row.
+const addIsDental = document.getElementById('addIsDental');
+const addDentalRow = document.getElementById('addDentalRow');
+if (addIsDental && addDentalRow) {
+    addIsDental.addEventListener('change', () => {
+        addDentalRow.style.display = addIsDental.checked ? '' : 'none';
+    });
+}
+<?php endif; ?>
 
 <?php if ($postedDoctorId > 0): ?>
 // Re-open the doctor whose assignments were just submitted.

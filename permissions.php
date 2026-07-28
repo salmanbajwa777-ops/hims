@@ -12,6 +12,10 @@ $categoryLabels = [
     'reception' => 'Front Desk & Reception',
     'nursing'   => 'Nursing & Ward',
     'clinical'  => 'Clinical',
+    // Added by sql/add_dental_permissions.sql. Without an entry here the nine
+    // dental keys still work, but render under a bare ucfirst('dental') heading
+    // appended after the known buckets instead of in clinical order.
+    'dental'    => 'Dental',
     'financial' => 'Money & Billing',
     'managerial' => 'Managerial & Oversight',
     'admin'     => 'System Administration',

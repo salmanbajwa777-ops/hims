@@ -75,6 +75,10 @@ $admitFormAction = 'patients.php';
 // Procedure billing (procedure_bill.php) — the row button links straight there
 // with the patient pre-selected. Doctors never bill, so it's off for them.
 $canRaiseProcedure = !$isDoctorReadonly && has_permission('RECEPTION_RAISE_PROCEDURE_BILL');
+// Dental charting is a clinical action, so unlike the billing buttons it stays
+// available to a doctor viewing this list — a dentist reaches the chair-side
+// record from here.
+$canRecordDental = has_permission('DENTAL_RECORD_TREATMENT');
 
 // ---------------- AJAX: quick-add area (used from the registration panel) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_add_area') {
@@ -1227,6 +1231,12 @@ require __DIR__ . '/partials/sidebar.php';
                                          hint; procedure_bill.php ignores it unless that doctor actually has
                                          procedures assigned. -->
                                     <a class="qa" href="procedure_bill.php?patient_id=<?= (int) $p['id'] ?><?= ($p['last_doctor_id'] ?? 0) ? '&doctor_id=' . (int) $p['last_doctor_id'] : '' ?>">Procedure</a>
+                                    <?php endif; ?>
+                                    <?php if ($canRecordDental): ?>
+                                    <!-- Dental goes to the CHAIR-SIDE record, not to a bill: dental work is
+                                         charted first (tooth-wise), and only then billed — same-visit on the
+                                         procedure bill, or added to a multi-visit package account. -->
+                                    <a class="qa" href="dental_treatment.php?patient_id=<?= (int) $p['id'] ?>">Dental</a>
                                     <?php endif; ?>
                                 </div>
                             </td>

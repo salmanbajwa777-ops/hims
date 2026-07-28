@@ -31,6 +31,9 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
 require_once __DIR__ . '/config/billing.php';
+// doctor_dental_earnings() — package work is a third earning stream alongside
+// consultations and procedures.
+require_once __DIR__ . '/config/dental.php';
 require_permission('FINANCIAL_VIEW_ALL_COMMISSIONS');
 
 // ---- Range: defaults to last month, the usual payout period ----------------
@@ -201,6 +204,24 @@ $split['disposables'] = ($split['disposables'] ?? 0) + $procDisp;
 $split['tax']         += $procEarn['tax'];
 $split['doctor']      += $procEarn['doctor'];
 $split['clinic']      += $procEarn['clinic'];
+
+// ---- Dental packages -------------------------------------------------------
+// Same per-LINE share model as procedures, with one extra wrinkle: a package is
+// quoted once and paid over months, so the share is recognised PROPORTIONALLY
+// as each payment arrives (cash basis, like everything else here). The lab
+// charge inside a package is a vendor pass-through — the clinic keeps all of
+// it and the dentist earns nothing on it — so it lands entirely on the clinic
+// side. See doctor_dental_earnings() in config/dental.php.
+$dentEarn  = doctor_dental_earnings($pdo, $doctorId, $from, $toExcl);
+$dentLive  = $dentEarn['live'];
+$dentCount = $dentEarn['accounts'];
+$dentGross = $dentEarn['gross'];
+
+$grossCollected       += $dentGross;
+$split['gross']       += $dentGross;
+$split['tax']         += $dentEarn['tax'];
+$split['doctor']      += $dentEarn['doctor'];
+$split['clinic']      += $dentEarn['clinic'];
 
 // ---- Already disbursed in this range (posted Doctor Shares expenses) -------
 $paidOut = 0.0;
@@ -474,6 +495,25 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     <tr><td colspan="2" class="muted">No procedures billed in this period</td><td class="n">&mdash;</td></tr>
                     <?php endif; ?>
 
+                    <!-- Dental packages. Recognised as instalments arrive, not
+                         when the package was quoted — so a Rs 90,000 plan agreed
+                         in July shows here only as it is actually paid down. -->
+                    <?php if ($dentLive && ($dentCount > 0 || $dentGross > 0)): ?>
+                    <tr class="sect"><td colspan="3">Dental packages</td></tr>
+                    <tr>
+                        <td>Package payments received<?= $dentEarn['lab'] > 0 ? ' (incl. lab charges)' : '' ?></td>
+                        <td class="qty"><?= number_format($dentCount) ?></td>
+                        <td class="n"><?= $m($dentGross) ?></td>
+                    </tr>
+                    <?php if ($dentEarn['lab'] > 0): ?>
+                    <tr>
+                        <td class="muted" style="padding-left:14px;">of which laboratory (clinic pass-through)</td>
+                        <td class="qty"></td>
+                        <td class="n muted"><?= $m($dentEarn['lab']) ?></td>
+                    </tr>
+                    <?php endif; ?>
+                    <?php endif; ?>
+
                     <tr class="sum">
                         <td colspan="2">Gross collected</td>
                         <td class="n"><?= $m($grossCollected) ?></td>
@@ -499,7 +539,9 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     // figures beside it — drop the suffix and derive the divisible
                     // amount from the split itself rather than from netCollected
                     // (which excludes procedure money).
-                    $mixedRates = $procLive && $procCount > 0;
+                    // Dental packages snapshot their rates per line too, so they
+                    // make the rates mixed for exactly the same reason.
+                    $mixedRates = ($procLive && $procCount > 0) || ($dentLive && $dentGross > 0);
                     // Divisible = what tax and the split were actually computed on.
                     // clinic INCLUDES the recovered supplies cost, so take it back
                     // out — that money was never in the divisible pool.

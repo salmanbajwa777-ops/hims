@@ -9,11 +9,13 @@
 // A5 only (no per-doctor A4 — that setting follows a visiting doctor, which an ER
 // bill has none of). No tax, matching every other slip in the system.
 
-$clinicName = 'BABY MEDICS';
-$clinicTagline = 'Premium Healthcare | Vaccines';
-$clinicEmail = 'info@babymedics.com';
-$clinicPhone = '+92 51 5735006';
-$clinicWebsite = 'b a b y m e d i c s . c o m';
+require_once __DIR__ . '/../config/brand.php';
+$b = brand();
+$clinicName = $b['name'];
+$clinicTagline = $b['tagline'];
+$clinicEmail = $b['email'];
+$clinicPhone = $b['phone'];
+$clinicWebsite = $b['website'];
 
 // ER has no specialty/doctor — always the general logo.
 $logoFile = 'logo-general.png';
@@ -107,8 +109,8 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
                     </div>
                 </div>
                 <div class="band-2 addr">
-                    <div><b>Polymedics,</b> 2165-F, NPF, PWD Double Road</div>
-                    <div>Islamabad, Pakistan.</div>
+                    <div><b><?= htmlspecialchars($b['address_lead']) ?></b> <?= htmlspecialchars($b['address_line1']) ?></div>
+                    <div><?= htmlspecialchars($b['address_line2']) ?></div>
                 </div>
                 <table class="ids">
                     <tr><td class="k">MR #</td><td class="v"><?= htmlspecialchars($bill['mrn']) ?></td></tr>

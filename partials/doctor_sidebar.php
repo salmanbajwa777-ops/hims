@@ -32,6 +32,8 @@ function ds_icon(string $name): string {
         'clock'   => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
         'user'    => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
         'bed'     => '<path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M3 16h18"/><path d="M7 10V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3"/>',
+        'tooth'   => '<path d="M12 5.5c-1.5-1.2-3-1.8-4.5-1.5C5.6 4.4 4.5 6 4.5 8.3c0 1.6.4 3 .8 4.4.5 1.9.7 3.6.9 5.3.1 1.2.6 2 1.5 2s1.3-.8 1.6-2l.8-3.4c.2-.8.5-1.2.9-1.2s.7.4.9 1.2l.8 3.4c.3 1.2.7 2 1.6 2s1.4-.8 1.5-2c.2-1.7.4-3.4.9-5.3.4-1.4.8-2.8.8-4.4 0-2.3-1.1-3.9-3-4.3-1.5-.3-3 .3-4.5 1.5Z"/>',
+        'receipt' => '<path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2Z"/><path d="M8 7h8M8 11h8M8 15h5"/>',
     ];
     // No width/height attributes: `.nav-icon svg` in assets/app.css sizes these,
     // exactly as it does for the shared sidebar's sb_icon(). Hardcoding 18px
@@ -63,6 +65,33 @@ function ds_icon(string $name): string {
         <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('stetho') ?></span> Consultations</a>
         <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('file') ?></span> Prescriptions</a>
     </div>
+
+    <?php
+    // Dental section, for DENTISTS only. Two conditions, both needed:
+    //   - the permission, so an admin can still revoke it per-user;
+    //   - specialty === 'DENTAL', because the DENTAL_* keys are DOCTOR-role
+    //     defaults and every other doctor holds them too. Without the specialty
+    //     check a paediatrician would see a tooth chart in their nav.
+    $dsIsDentist = ($dsSpecialty ?? '') === 'DENTAL';
+    $dsHasDental = $dsIsDentist && function_exists('has_permission') && (
+        has_permission('DENTAL_RECORD_TREATMENT') || has_permission('DENTAL_VIEW_ACCOUNTS')
+        || has_permission('DENTAL_MANAGE_LAB_WORK')
+    );
+    ?>
+    <?php if ($dsHasDental): ?>
+    <div class="nav-group">
+        <div class="nav-group-label">Dental</div>
+        <?php if (has_permission('DENTAL_RECORD_TREATMENT')): ?>
+        <a class="nav-item <?= $dsActive === 'dental_treatment' ? 'active' : '' ?>" href="dental_treatment.php"><span class="nav-icon"><?= ds_icon('tooth') ?></span> Treatment Records</a>
+        <?php endif; ?>
+        <?php if (has_permission('DENTAL_VIEW_ACCOUNTS')): ?>
+        <a class="nav-item <?= $dsActive === 'dental_accounts' ? 'active' : '' ?>" href="dental_accounts.php"><span class="nav-icon"><?= ds_icon('receipt') ?></span> Dental Accounts</a>
+        <?php endif; ?>
+        <?php if (has_permission('DENTAL_MANAGE_LAB_WORK')): ?>
+        <a class="nav-item <?= $dsActive === 'dental_lab' ? 'active' : '' ?>" href="dental_lab.php"><span class="nav-icon"><?= ds_icon('clock') ?></span> Lab Work</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 
     <div class="nav-group">
         <div class="nav-group-label">Records</div>

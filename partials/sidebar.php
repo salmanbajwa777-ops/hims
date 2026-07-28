@@ -47,11 +47,18 @@ $sbIsAdmin  = $sbBaseRole === 'ADMIN';
 if ($sbBaseRole === 'DOCTOR') {
     // Map the caller's reception slug onto the doctor nav's active states;
     // unmapped pages simply highlight nothing.
-    $dsActive = ['patients' => 'patients', 'profile' => 'profile', 'ipd' => 'ipd'][$navActive] ?? '';
+    $dsActive = ['patients' => 'patients', 'profile' => 'profile', 'ipd' => 'ipd',
+                 'dental_treatment' => 'dental_treatment', 'dental_accounts' => 'dental_accounts',
+                 'dental_lab' => 'dental_lab'][$navActive] ?? '';
     if (!isset($dsUserName)) {
-        $sbMe = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+        // specialty comes along so the doctor nav can hide the dental section
+        // from non-dentists: the DENTAL_* keys are DOCTOR-role defaults, so a
+        // paediatrician holds them too and would otherwise see a tooth chart.
+        $sbMe = $pdo->prepare('SELECT name, specialty FROM users WHERE id = ?');
         $sbMe->execute([$_SESSION['user_id']]);
-        $dsUserName = (string) $sbMe->fetchColumn();
+        $sbMeRow = $sbMe->fetch() ?: [];
+        $dsUserName = (string) ($sbMeRow['name'] ?? '');
+        $dsSpecialty = (string) ($sbMeRow['specialty'] ?? '');
     }
     echo '<div class="app">';
     require __DIR__ . '/doctor_sidebar.php';
@@ -88,6 +95,7 @@ if (!function_exists('sb_icon')) {
             'percent'  => '<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
             'user'     => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
             'clock'    => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+            'tooth'    => '<path d="M12 5.5c-1.5-1.2-3-1.8-4.5-1.5C5.6 4.4 4.5 6 4.5 8.3c0 1.6.4 3 .8 4.4.5 1.9.7 3.6.9 5.3.1 1.2.6 2 1.5 2s1.3-.8 1.6-2l.8-3.4c.2-.8.5-1.2.9-1.2s.7.4.9 1.2l.8 3.4c.3 1.2.7 2 1.6 2s1.4-.8 1.5-2c.2-1.7.4-3.4.9-5.3.4-1.4.8-2.8.8-4.4 0-2.3-1.1-3.9-3-4.3-1.5-.3-3 .3-4.5 1.5Z"/>',
             'wallet'   => '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
             'gear'     => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>',
         ];
@@ -147,6 +155,21 @@ $sbGroups = [
         ],
     ],
     [
+        // Dental. Its own group rather than three more Workspace rows: dental is
+        // a distinct workflow (chart -> quote -> pay down -> lab), and on a
+        // clinic that does no dentistry the whole group disappears — the
+        // renderer drops a group whose items all filter out on permission.
+        'label' => 'Dental',
+        'items' => [
+            ['slug' => 'dental_treatment', 'label' => 'Treatment Records', 'icon' => 'tooth',
+             'href' => 'dental_treatment.php', 'perm' => 'DENTAL_RECORD_TREATMENT'],
+            ['slug' => 'dental_accounts',  'label' => 'Dental Accounts',   'icon' => 'receipt',
+             'href' => 'dental_accounts.php', 'perm' => 'DENTAL_VIEW_ACCOUNTS'],
+            ['slug' => 'dental_lab',       'label' => 'Lab Work',          'icon' => 'clock',
+             'href' => 'dental_lab.php',      'perm' => 'DENTAL_MANAGE_LAB_WORK'],
+        ],
+    ],
+    [
         // Admin-only money group: everything that MOVES or SETTLES money —
         // post spending, close the till, receive the cash, pay the doctors,
         // close the books, file the tax. Analytics is for reading numbers; if a
@@ -191,7 +214,7 @@ $sbGroups = [
                 ['slug' => 'ipd_ward_rates', 'label' => 'In-Door Ward Rates','icon' => 'bed','href' => 'ipd_ward_rates.php'],
                 ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
                 ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
-                ['slug' => 'procedure_master', 'label' => 'Procedures',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
+                ['slug' => 'procedure_master', 'label' => 'Procedures & Dental Catalogue',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
             ]],
         ],
     ],

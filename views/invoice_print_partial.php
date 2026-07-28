@@ -13,13 +13,15 @@
 // and admission_invoice.php, and both print a coded token.
 require_once __DIR__ . '/../config/tokens.php';
 
-$clinicName = 'BABY MEDICS';
-$clinicTagline = 'Premium Healthcare | Vaccines';
-$clinicEmail = 'info@babymedics.com';
-$clinicPhone = '+92 51 5735006';
-$clinicWebsite = 'b a b y m e d i c s . c o m';
+require_once __DIR__ . '/../config/brand.php';
+$b = brand();
+$clinicName = $b['name'];
+$clinicTagline = $b['tagline'];
+$clinicEmail = $b['email'];
+$clinicPhone = $b['phone'];
+$clinicWebsite = $b['website'];
 
-$logoFile = $bill['doctor_specialty'] === 'DENTAL' ? 'logo-dental.png' : 'logo-general.png';
+$logoFile = brand_logo($bill['doctor_specialty'] ?? null);
 
 $patientDobDisplay = $bill['dob'] ? date('d/m/Y', strtotime($bill['dob'])) : '';
 $printTimestamp = date('Y-m-d H:i:s');
@@ -230,8 +232,8 @@ $pageSize = $isA4 ? 'A4' : 'A5';
                     </div>
                 </div>
                 <div class="band-2 addr">
-                    <div><b>Polymedics,</b> 2165-F, NPF, PWD Double Road</div>
-                    <div>Islamabad, Pakistan.</div>
+                    <div><b><?= htmlspecialchars($b['address_lead']) ?></b> <?= htmlspecialchars($b['address_line1']) ?></div>
+                    <div><?= htmlspecialchars($b['address_line2']) ?></div>
                 </div>
                 <!-- Bottom-pinned; rows line up with the patient table opposite. -->
                 <table class="ids">

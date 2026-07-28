@@ -14,14 +14,20 @@
 //
 // A5 only, and no tax, matching every other slip in the system.
 
-$clinicName = 'BABY MEDICS';
-$clinicTagline = 'Premium Healthcare | Vaccines';
-$clinicEmail = 'info@babymedics.com';
-$clinicPhone = '+92 51 5735006';
-$clinicWebsite = 'b a b y m e d i c s . c o m';
+require_once __DIR__ . '/../config/brand.php';
+$b = brand();
+$clinicName = $b['name'];
+$clinicTagline = $b['tagline'];
+$clinicEmail = $b['email'];
+$clinicPhone = $b['phone'];
+$clinicWebsite = $b['website'];
 
-// The general logo: procedures aren't tied to the dental/specialty icon swap.
-$logoFile = 'logo-general.png';
+// This used to hardcode logo-general.png ("procedures aren't tied to the
+// dental/specialty icon swap"), which was wrong once dental went live: a crown
+// billed by a dentist printed the paediatric logo. A procedure DOES have a
+// performing doctor, so it follows the same rule as the consultation slip.
+$logoFile = brand_logo($bill['doctor_specialty'] ?? null);
+$isDentalDoc = ($bill['doctor_specialty'] ?? '') === 'DENTAL';
 
 $patientDobDisplay = $bill['dob'] ? date('d/m/Y', strtotime($bill['dob'])) : '';
 $printTimestamp = date('Y-m-d H:i:s');
@@ -127,14 +133,14 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
                     </div>
                 </div>
                 <div class="band-2 addr">
-                    <div><b>Polymedics,</b> 2165-F, NPF, PWD Double Road</div>
-                    <div>Islamabad, Pakistan.</div>
+                    <div><b><?= htmlspecialchars($b['address_lead']) ?></b> <?= htmlspecialchars($b['address_line1']) ?></div>
+                    <div><?= htmlspecialchars($b['address_line2']) ?></div>
                 </div>
                 <table class="ids">
                     <tr><td class="k">MR #</td><td class="v"><?= htmlspecialchars($bill['mrn']) ?></td></tr>
                     <tr><td class="k">Invoice #</td><td class="v"><?= htmlspecialchars($bill['invoice_number']) ?></td></tr>
                     <tr><td class="k">Date</td><td class="v"><?= date('d/m/Y H:i', strtotime($bill['created_at'])) ?></td></tr>
-                    <tr><td class="k">Type</td><td class="v">Procedure</td></tr>
+                    <tr><td class="k">Type</td><td class="v"><?= $isDentalDoc ? 'Dental Procedure' : 'Procedure' ?></td></tr>
                 </table>
             </div>
 
@@ -155,7 +161,7 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
             </div>
         </div>
 
-        <div class="doctype">PROCEDURE RECEIPT</div>
+        <div class="doctype"><?= $isDentalDoc ? 'DENTAL PROCEDURE RECEIPT' : 'PROCEDURE RECEIPT' ?></div>
         <?php if ($isVoided): ?>
         <div class="voidmark">VOID &mdash; this bill has been reversed</div>
         <?php endif; ?>

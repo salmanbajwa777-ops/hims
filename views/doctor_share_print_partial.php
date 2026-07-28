@@ -10,12 +10,14 @@
 // $grossCollected, $netCollected, $split, $paidOut, $netPayable, $sharePct,
 // $hasTax, $taxPct, $feeLabels.
 
-$clinicName = 'BABY MEDICS';
-$clinicTagline = 'Premium Healthcare | Vaccines';
-$clinicAddress = 'Polymedics, 2165-F, NPF, PWD Double Road, Islamabad, Pakistan.';
-$clinicEmail = 'info@babymedics.com';
-$clinicPhone = '+92 51 5735006';
-$clinicWebsite = 'b a b y m e d i c s . c o m';
+require_once __DIR__ . '/../config/brand.php';
+$b = brand();
+$clinicName = $b['name'];
+$clinicTagline = $b['tagline'];
+$clinicAddress = $b['address'];
+$clinicEmail = $b['email'];
+$clinicPhone = $b['phone'];
+$clinicWebsite = $b['website'];
 
 $printTimestamp = date('Y-m-d H:i:s');
 $docNameUpper = mb_strtoupper($doc['name'] ?? '', 'UTF-8');
