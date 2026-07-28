@@ -345,14 +345,42 @@ function admitSyncRoute() {
     var ipdOther = document.getElementById('admitIpdDoctorManual');
     if (opdOther) { opdOther.required = !isIpd && document.getElementById('admitDoctor').value === '__OTHER__'; }
     if (ipdOther) { ipdOther.required = isIpd && document.getElementById('admitIpdDoctor').value === '__OTHER__'; }
+
+    // Both routes carry a select called `assigned_nurse_id`. `hidden` does NOT
+    // stop a field from being submitted, so without this the inactive route's
+    // EMPTY nurse select posts a second assigned_nurse_id and PHP keeps the LAST
+    // one — silently discarding the nurse the user picked and failing the
+    // mandatory-nurse guard with "Assign a primary nurse to admit this patient."
+    // Disabling is what actually removes a control from the submission.
+    admitSetRouteDisabled(opd, isIpd);   // OPD fields off when IPD is active
+    admitSetRouteDisabled(ipd, !isIpd);  // and vice versa
+}
+
+// Disables/enables every control inside an inactive route container. Skips the
+// route radios themselves — they live outside these containers, and disabling
+// the checked one would drop admission_type from the POST entirely.
+function admitSetRouteDisabled(box, off) {
+    if (!box) { return; }
+    var f = box.querySelectorAll('input, select, textarea');
+    for (var i = 0; i < f.length; i++) {
+        if (f[i].name === 'admission_type') { continue; }
+        f[i].disabled = off;
+    }
 }
 document.addEventListener('change', function (e) {
     if (e.target && e.target.name === 'admission_type') { admitSyncRoute(); }
 });
-// Strip the sentinel value before it reaches the IPD handler.
+// Strip the sentinel value before it reaches the IPD handler, and re-assert the
+// route disabling. admitSyncRoute() already did this on `change`, but repeating
+// it at submit time means a stray re-enable (autofill, an extension, a future
+// handler) can never let the inactive route's duplicate `assigned_nurse_id`
+// reach the server and blank out the chosen nurse.
 document.getElementById('admitForm').addEventListener('submit', function () {
     var ipdRadio = document.getElementById('admitTypeIpd');
-    if (ipdRadio && ipdRadio.checked) { ipdRadio.disabled = true; }
+    var isIpd = !!(ipdRadio && ipdRadio.checked);
+    admitSetRouteDisabled(document.getElementById('admitOpdFields'), isIpd);
+    admitSetRouteDisabled(document.getElementById('admitIpdFields'), !isIpd);
+    if (isIpd) { ipdRadio.disabled = true; }
 });
 admitSyncRoute();
 <?php endif; ?>
