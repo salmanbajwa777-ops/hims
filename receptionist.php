@@ -870,15 +870,18 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                 </div>
 
+                <!-- Admitting doctor — mandatory. Defaults to the visit's doctor;
+                     "Other" reveals the box for a visiting/locum doctor. -->
                 <div class="admit-field">
-                    <label>Admitting doctor</label>
-                    <select name="admitting_doctor_id" id="admitDoctor">
-                        <option value="">— manual entry below —</option>
+                    <label>Admitting doctor <span style="color:var(--red,#dc2626);">*</span></label>
+                    <select name="admitting_doctor_id" id="admitDoctor" required>
+                        <option value="">Select doctor&hellip;</option>
                         <?php foreach ($admDoctors as $d): ?>
                         <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
                         <?php endforeach; ?>
+                        <option value="__OTHER__">Other (type a name)&hellip;</option>
                     </select>
-                    <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" class="uc" placeholder="Or type the doctor's name" style="margin-top:8px;">
+                    <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" class="uc" placeholder="Doctor's name" style="margin-top:8px;" hidden>
                 </div>
 
                 <!-- Primary nurse — mandatory (handle_admit_patient() rejects an admit
@@ -910,14 +913,47 @@ require __DIR__ . '/partials/sidebar.php';
 function openAdmit(visitId, patientName, doctorId, doctorName) {
     document.getElementById('admitVisitId').value = visitId;
     document.getElementById('admitTitle').textContent = patientName || 'Patient';
-    // Preselect the visit's doctor as the admitting doctor when it's a system user.
+    // Preselect the visit's doctor (the one who just saw the patient) as the
+    // admitting doctor. If they aren't a selectable system user but we know the
+    // name, fall back to "Other" prefilled so the mandatory field starts valid.
     var sel = document.getElementById('admitDoctor');
+    var manual = document.getElementById('admitDoctorManual');
     if (doctorId && sel.querySelector('option[value="' + doctorId + '"]')) {
         sel.value = String(doctorId);
-        document.getElementById('admitDoctorManual').value = '';
+        manual.value = '';
+    } else if (doctorName) {
+        sel.value = '__OTHER__';
+        manual.value = doctorName;
+    } else {
+        sel.value = '';
+        manual.value = '';
     }
+    admitSyncOther();
     document.getElementById('admitOverlay').classList.add('open');
 }
+// Show/require the free-text box only while "Other" is selected.
+function admitSyncOther() {
+    var sel = document.getElementById('admitDoctor');
+    var manual = document.getElementById('admitDoctorManual');
+    if (!sel || !manual) { return; }
+    var isOther = sel.value === '__OTHER__';
+    manual.hidden = !isOther;
+    manual.required = isOther;
+    if (!isOther) { manual.value = ''; }
+}
+document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'admitDoctor') { admitSyncOther(); }
+});
+// "__OTHER__" is a UI sentinel, never a doctor id — drop it before it posts, so
+// the handler sees an empty id and stores the typed name instead.
+(function () {
+    var sel = document.getElementById('admitDoctor');
+    if (sel && sel.form) {
+        sel.form.addEventListener('submit', function () {
+            if (sel.value === '__OTHER__') { sel.disabled = true; }
+        });
+    }
+})();
 function closeAdmit() { document.getElementById('admitOverlay').classList.remove('open'); }
 function openTimings() { var o = document.getElementById('timOverlay'); if (o) o.classList.add('open'); }
 function openBookingsPopup() { var o = document.getElementById('bkpOverlay'); if (o) o.classList.add('open'); }

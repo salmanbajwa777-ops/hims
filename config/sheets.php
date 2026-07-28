@@ -425,18 +425,23 @@ function sheet_row_for_admission_bill(PDO $pdo, int $admissionBillId, ?int $acto
 }
 
 /**
- * ER walk-in service row (Receipt = "ER Service"). No doctor, no visit — a direct
- * patient charge for one or more ER services, listed in "Other Procedures".
+ * ER walk-in service row (Receipt = "ER Service"). No visit — a direct patient
+ * charge for one or more ER services, listed in "Other Procedures". The attending
+ * doctor IS recorded (mandatory since sql/add_er_bill_doctor.sql), so the Doctor
+ * column is populated like every other receipt type; it stays blank only on bills
+ * raised before that requirement.
  */
 function sheet_row_for_er_bill(PDO $pdo, int $erBillId, ?int $actorId): ?array {
     $stmt = $pdo->prepare('
         SELECT e.id, e.invoice_number, e.subtotal, e.grand_total, e.status,
                e.payment_method, e.paid_at, e.created_at, e.created_by_id,
+               COALESCE(du.name, e.doctor_manual, \'\') AS doctor_name,
                p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
                ' . sheet_email_select($pdo) . ',
                c.name AS city_name, a.name AS area_name
         FROM er_bills e
         JOIN patients p ON p.id = e.patient_id
+        LEFT JOIN users du ON du.id = e.doctor_id
         LEFT JOIN cities c ON c.id = p.city_id
         LEFT JOIN areas a ON a.id = p.area_id
         WHERE e.id = ?
@@ -474,6 +479,7 @@ function sheet_row_for_er_bill(PDO $pdo, int $erBillId, ?int $actorId): ?array {
         'Email'               => $r['email'],
         'Phone/Mobile'        => $r['phone'],
         'Checkup Type'        => 'ER Service',
+        'Doctor'              => $r['doctor_name'],
         'City'                => $r['city_name'],
         'Area/Address'        => $r['area_name'],
         'Payment Method'      => $payment,

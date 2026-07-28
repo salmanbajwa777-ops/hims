@@ -15,6 +15,8 @@ require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/sheets.php';
+// Attending doctor is mandatory on an ER bill — shared resolver + last-seen default.
+require_once __DIR__ . '/config/doctors.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_RAISE_ER_BILL');
 
@@ -27,10 +29,13 @@ if (isset($_GET['print']) && isset($_GET['er_bill_id'])) {
 
     $stmt = $pdo->prepare('
         SELECT e.*, p.mrn, p.name AS patient_name, p.father_name, p.dob, p.phone,
-               gen.name AS generated_by_name
+               gen.name AS generated_by_name,
+               -- Attending doctor: a system user, else the typed name.
+               COALESCE(du.name, e.doctor_manual) AS doctor_name
         FROM er_bills e
         JOIN patients p ON p.id = e.patient_id
         JOIN users gen ON gen.id = e.created_by_id
+        LEFT JOIN users du ON du.id = e.doctor_id
         WHERE e.id = ?
     ');
     $stmt->execute([$erBillId]);
@@ -69,6 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
     $paymentMode = $_POST['payment_mode'] ?? '';       // CASH | DIGITAL
     $serviceIds = $_POST['service_id'] ?? [];          // parallel arrays
     $quantities = $_POST['quantity'] ?? [];
+    // A system doctor, or a typed name when "Other" was picked. Mandatory: an ER
+    // bill that can't say which doctor the service was given under is unauditable.
+    [$erDocId, $erDocManual] = resolve_doctor_pick($pdo, $_POST['doctor_id'] ?? 0, $_POST['doctor_manual'] ?? '');
 
     // Settling a bill moves money — refuse once the cashier's shift is closed.
     $dayLock = require_day_open($pdo);
@@ -110,6 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
         $error = $dayLock;
     } elseif (!$patient) {
         $error = 'Select a registered patient first.';
+    } elseif (!$erDocId && !$erDocManual) {
+        $error = 'Select the doctor for this ER service — pick "Other" to type a name.';
     } elseif (!$paymentMethod) {
         $error = 'Choose how the patient is paying (Cash or Online).';
     } elseif (!$lines) {
@@ -130,11 +140,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
 
             $pdo->prepare('
                 INSERT INTO er_bills
-                    (invoice_number, patient_id, subtotal, grand_total, status,
+                    (invoice_number, patient_id, doctor_id, doctor_manual, subtotal, grand_total, status,
                      payment_method, paid_amount, paid_at, paid_by_id, created_by_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
             ')->execute([
-                $invoiceNumber, $patientId, $subtotal, $grandTotal, $status,
+                $invoiceNumber, $patientId, $erDocId, $erDocManual, $subtotal, $grandTotal, $status,
                 $paymentMethod, $grandTotal, (int) $_SESSION['user_id'], (int) $_SESSION['user_id'],
             ]);
             $erBillId = (int) $pdo->lastInsertId();
@@ -202,6 +212,16 @@ $selectedCat = ($selectedPatient) ? patient_discount_category($pdo, $selectedId)
 $services = $pdo->query("SELECT id, service_name, service_type, charge_type, base_charge
                          FROM er_services_master WHERE status = 'ACTIVE'
                          ORDER BY service_type, service_name")->fetchAll();
+
+// Doctor picker: mandatory, defaulting to the doctor who last saw this patient.
+// On a failed POST keep what the cashier had chosen rather than resetting to the
+// default, so their correction isn't silently undone.
+$erDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name")->fetchAll();
+$erSelDoctorId = (int) ($_POST['doctor_id'] ?? 0);
+$erSelDoctorManual = trim((string) ($_POST['doctor_manual'] ?? ''));
+if (!$erSelDoctorId && $erSelDoctorManual === '' && $selectedPatient) {
+    $erSelDoctorId = (int) (last_seen_doctor_id($pdo, $selectedId) ?? 0);
+}
 
 // Recent ER bills for context (voidable inline for admins).
 $canVoid = has_permission('FINANCIAL_VOID_BILL');
@@ -339,8 +359,29 @@ require __DIR__ . '/partials/sidebar.php';
                     <input type="hidden" name="action" value="raise_er_bill">
                     <input type="hidden" name="patient_id" value="<?= (int) $selectedPatient['id'] ?>">
 
+                    <!-- Attending doctor — mandatory, defaulted to the doctor who
+                         last saw this patient. "Other" reveals the free-text box
+                         for a visiting/locum doctor who isn't a system user. -->
                     <div class="card">
-                        <h2>2 &middot; Add services</h2>
+                        <h2>2 &middot; Doctor</h2>
+                        <p class="sub">Who is this ER service being given under? Defaults to the patient's last-seen doctor.</p>
+                        <div class="fld">
+                            <label for="erDoctor">Doctor <span style="color:var(--red,#dc2626);">*</span></label>
+                            <select id="erDoctor" name="doctor_id" required>
+                                <option value="">Select doctor&hellip;</option>
+                                <?php foreach ($erDoctors as $d): ?>
+                                <option value="<?= (int) $d['id'] ?>" <?= $erSelDoctorId === (int) $d['id'] ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
+                                <?php endforeach; ?>
+                                <option value="__OTHER__" <?= ($erSelDoctorManual !== '' && !$erSelDoctorId) ? 'selected' : '' ?>>Other (type a name)&hellip;</option>
+                            </select>
+                            <input type="text" id="erDoctorManual" name="doctor_manual" class="uc" placeholder="Doctor's name"
+                                   value="<?= htmlspecialchars($erSelDoctorManual) ?>" style="margin-top:8px;"
+                                   <?= ($erSelDoctorManual !== '' && !$erSelDoctorId) ? '' : 'hidden' ?>>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2>3 &middot; Add services</h2>
                         <p class="sub">Pick a service and quantity, then Add. Repeat for more than one.</p>
                         <div class="svc-add">
                             <div class="fld">
@@ -378,7 +419,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
 
                     <div class="card">
-                        <h2>3 &middot; Payment</h2>
+                        <h2>4 &middot; Payment</h2>
                         <p class="sub">Collected now, before treatment.</p>
                         <div class="paymodes">
                             <div class="paymode">
@@ -504,6 +545,32 @@ require __DIR__ . '/partials/sidebar.php';
     });
 
     render();
+})();
+
+/* ---------------------------------------------------------------------
+   Attending doctor: "Other" reveals the free-text box. The sentinel value
+   is stripped on submit so the handler sees an empty id and stores the
+   typed name instead (mirrors the admit modal).
+   ------------------------------------------------------------------- */
+(function () {
+    var sel = document.getElementById('erDoctor');
+    var manual = document.getElementById('erDoctorManual');
+    if (!sel || !manual) { return; }
+
+    function sync() {
+        var isOther = sel.value === '__OTHER__';
+        manual.hidden = !isOther;
+        manual.required = isOther;
+        if (!isOther) { manual.value = ''; }
+    }
+    sel.addEventListener('change', sync);
+    sync();
+
+    if (sel.form) {
+        sel.form.addEventListener('submit', function () {
+            if (sel.value === '__OTHER__') { sel.disabled = true; }
+        });
+    }
 })();
 </script>
 </body>

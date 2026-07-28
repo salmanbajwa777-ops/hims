@@ -3,11 +3,14 @@
 // Expects $bill (row from er_bills joined to patients) and $items (er_bill_items)
 // in scope. Forked from views/invoice_print_partial.php: same clinic header box,
 // same row grid and footer, but this slip ITERATES the line items (an ER bill can
-// carry several services) and drops the doctor + vitals rows — there is no doctor
-// and no clinical exam on a walk-in service charge.
+// carry several services) and drops the vitals rows — there is no clinical exam
+// on a walk-in service charge. The attending doctor IS shown: naming one is now
+// mandatory when raising the bill, so the slip says who the service was given
+// under. Bills predating that requirement have none, and the row is omitted.
 //
-// A5 only (no per-doctor A4 — that setting follows a visiting doctor, which an ER
-// bill has none of). No tax, matching every other slip in the system.
+// A5 only: the per-doctor A4 preference deliberately does NOT apply here — an ER
+// walk-in is a front-desk document, not that doctor's consultation slip. No tax,
+// matching every other slip in the system.
 
 require_once __DIR__ . '/../config/brand.php';
 $b = brand();
@@ -25,6 +28,9 @@ $printTimestamp = date('Y-m-d H:i:s');
 $printedBy = $bill['generated_by_name'] ?? 'Front Desk';
 
 $patientNameUpper = mb_strtoupper($bill['patient_name'], 'UTF-8');
+// Attending doctor (a system user or a typed name). Blank on bills raised before
+// the doctor became mandatory — the row is omitted rather than printing a dash.
+$doctorNameUpper = ($bill['doctor_name'] ?? '') !== '' ? mb_strtoupper($bill['doctor_name'], 'UTF-8') : '';
 $fatherNameUpper = $bill['father_name'] ? mb_strtoupper($bill['father_name'], 'UTF-8') : '';
 
 $grandTotal = (float) $bill['grand_total'];
@@ -133,6 +139,9 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
                     <tr><td class="k">S/D/W Of:</td><td class="v"><?= htmlspecialchars($fatherNameUpper) ?></td></tr>
                     <tr><td class="k">DOB:</td><td><?= $patientDobDisplay ?></td></tr>
                     <tr><td class="k">Phone:</td><td><?= htmlspecialchars($bill['phone']) ?></td></tr>
+                    <?php if ($doctorNameUpper !== ''): ?>
+                    <tr><td class="k">Doctor:</td><td class="v"><?= htmlspecialchars($doctorNameUpper) ?></td></tr>
+                    <?php endif; ?>
                 </table>
             </div>
         </div>

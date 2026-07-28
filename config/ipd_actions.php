@@ -33,6 +33,7 @@ require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/tokens.php';
 // Primary nurse is mandatory at admit — shared roster/validator with the ER handler.
 require_once __DIR__ . '/nurses.php';
+require_once __DIR__ . '/doctors.php';   // last_seen_doctor_id() for the shell visit
 
 function handle_ipd_admit(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
@@ -121,12 +122,9 @@ function handle_ipd_admit(PDO $pdo): array {
                 // so it needs a doctor + consult type. Use the admitting consultant if a
                 // system user; else the patient's most recent doctor. The shell carries
                 // NO consultation bill.
-                $shellDoctorId = $consultId;
-                if (!$shellDoctorId) {
-                    $lastDoc = $pdo->prepare('SELECT doctor_id FROM visits WHERE patient_id = ? ORDER BY id DESC LIMIT 1');
-                    $lastDoc->execute([$patientId]);
-                    $shellDoctorId = (int) ($lastDoc->fetchColumn() ?: 0) ?: null;
-                }
+                // The consultant when they're a system user; otherwise the doctor
+                // who last saw this patient (shared definition with the picker).
+                $shellDoctorId = $consultId ?: last_seen_doctor_id($pdo, $patientId);
                 if (!$shellDoctorId) {
                     throw new RuntimeException('no_doctor');
                 }

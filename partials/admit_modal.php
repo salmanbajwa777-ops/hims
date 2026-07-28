@@ -135,15 +135,19 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
 
                 <!-- ---- Hourly/room admission fields ---- -->
                 <div id="admitOpdFields">
+                    <!-- Admitting doctor — mandatory. Defaults to the doctor who last
+                         saw this patient (set by openAdmit); "Other" reveals the
+                         free-text box for a visiting/locum doctor. -->
                     <div class="admit-field">
-                        <label>Admitting doctor</label>
-                        <select name="admitting_doctor_id" id="admitDoctor">
-                            <option value="">— manual entry below —</option>
+                        <label>Admitting doctor <span style="color:var(--red,#dc2626);">*</span></label>
+                        <select name="admitting_doctor_id" id="admitDoctor" data-opd-required>
+                            <option value="">Select doctor&hellip;</option>
                             <?php foreach ($admDoctors as $d): ?>
                             <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
                             <?php endforeach; ?>
+                            <option value="__OTHER__">Other (type a name)&hellip;</option>
                         </select>
-                        <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" class="uc" placeholder="Or type the doctor's name" style="margin-top:8px;">
+                        <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" class="uc" placeholder="Doctor's name" style="margin-top:8px;" hidden>
                     </div>
 
                     <!-- Primary nurse — mandatory. `required` is toggled by JS so a
@@ -195,14 +199,15 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                     </div>
 
                     <div class="admit-field" style="margin-top:16px;">
-                        <label>Admitting consultant</label>
-                        <select name="admitting_consultant_id" id="admitIpdDoctor">
-                            <option value="">&mdash; manual entry below &mdash;</option>
+                        <label>Admitting consultant <span style="color:var(--red,#dc2626);">*</span></label>
+                        <select name="admitting_consultant_id" id="admitIpdDoctor" data-ipd-required>
+                            <option value="">Select consultant&hellip;</option>
                             <?php foreach ($ipdDoctors as $d): ?>
                             <option value="<?= (int) $d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
                             <?php endforeach; ?>
+                            <option value="__OTHER__">Other (type a name)&hellip;</option>
                         </select>
-                        <input type="text" name="admitting_consultant_manual" id="admitIpdDoctorManual" class="uc" placeholder="Or type the consultant's name" style="margin-top:8px;">
+                        <input type="text" name="admitting_consultant_manual" id="admitIpdDoctorManual" class="uc" placeholder="Consultant's name" style="margin-top:8px;" hidden>
                     </div>
 
                     <div class="admit-field" style="margin-top:16px;">
@@ -244,29 +249,69 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
 //   byPatient=false (default): id is a VISIT id (queue context).
 //   byPatient=true:            id is a PATIENT id (all-patients context) — the handler
 //                              reuses today's visit or creates a shell.
+//   doctorId is the patient's LAST-SEEN doctor (or this visit's doctor) — the
+//   picker defaults to it, which is nearly always the doctor at the counter.
 function openAdmit(id, patientName, doctorId, doctorName, byPatient) {
     var vEl = document.getElementById('admitVisitId');
     var pEl = document.getElementById('admitPatientId');
     if (byPatient) { pEl.value = id; vEl.value = ''; }
     else { vEl.value = id; pEl.value = ''; }
     document.getElementById('admitTitle').textContent = patientName || 'Patient';
-    var sel = document.getElementById('admitDoctor');
-    if (doctorId && sel.querySelector('option[value="' + doctorId + '"]')) {
-        sel.value = String(doctorId);
-        document.getElementById('admitDoctorManual').value = '';
-    }
+    admitPreselectDoctor(document.getElementById('admitDoctor'), document.getElementById('admitDoctorManual'), doctorId, doctorName);
     <?php if ($admitShowIpd): ?>
     // Preselect the consultant too — the same doctor is the likely admitter on
     // either route, and the picker starts on whichever route is checked.
-    var isel = document.getElementById('admitIpdDoctor');
-    if (doctorId && isel && isel.querySelector('option[value="' + doctorId + '"]')) {
-        isel.value = String(doctorId);
-        document.getElementById('admitIpdDoctorManual').value = '';
-    }
+    admitPreselectDoctor(document.getElementById('admitIpdDoctor'), document.getElementById('admitIpdDoctorManual'), doctorId, doctorName);
     admitSyncRoute();
     <?php endif; ?>
     document.getElementById('admitOverlay').classList.add('open');
 }
+
+// Default a doctor picker to the last-seen doctor. When that doctor isn't a
+// selectable system user but we know their name, fall back to "Other" with the
+// name prefilled so the mandatory field still starts satisfied.
+function admitPreselectDoctor(sel, manual, doctorId, doctorName) {
+    if (!sel || !manual) { return; }
+    if (doctorId && sel.querySelector('option[value="' + doctorId + '"]')) {
+        sel.value = String(doctorId);
+        manual.value = '';
+    } else if (doctorName) {
+        sel.value = '__OTHER__';
+        manual.value = doctorName;
+    } else {
+        sel.value = '';
+        manual.value = '';
+    }
+    admitSyncOther(sel, manual);
+}
+
+// Show/require the free-text box only while "Other" is the selection.
+function admitSyncOther(sel, manual) {
+    if (!sel || !manual) { return; }
+    var isOther = sel.value === '__OTHER__';
+    manual.hidden = !isOther;
+    manual.required = isOther;
+    if (!isOther) { manual.value = ''; }
+    // Re-apply route state: on a two-route modal this must not leave the hidden
+    // route's box required (see admitSyncRoute).
+    if (typeof admitSyncRoute === 'function') { admitSyncRoute(); }
+}
+document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'admitDoctor') {
+        admitSyncOther(e.target, document.getElementById('admitDoctorManual'));
+    }
+    if (e.target && e.target.id === 'admitIpdDoctor') {
+        admitSyncOther(e.target, document.getElementById('admitIpdDoctorManual'));
+    }
+});
+// "__OTHER__" is a UI sentinel, never a doctor id — drop it before it posts.
+// The typed name in the companion field is what identifies the doctor.
+document.getElementById('admitForm').addEventListener('submit', function () {
+    ['admitDoctor', 'admitIpdDoctor'].forEach(function (idAttr) {
+        var s = document.getElementById(idAttr);
+        if (s && s.value === '__OTHER__') { s.disabled = true; }
+    });
+});
 function closeAdmit() { document.getElementById('admitOverlay').classList.remove('open'); }
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeAdmit(); } });
 <?php if ($admitShowIpd): ?>
@@ -292,6 +337,14 @@ function admitSyncRoute() {
     for (var i = 0; i < ipdReqs.length; i++) { ipdReqs[i].required = isIpd; }
     var opdReqs = document.querySelectorAll('#admitOpdFields [data-opd-required]');
     for (var j = 0; j < opdReqs.length; j++) { opdReqs[j].required = !isIpd; }
+
+    // The "Other" free-text boxes aren't in those sets, and a HIDDEN required
+    // field blocks submit with nothing focusable to fix — so the inactive
+    // route's box is always un-required, and the active one follows its select.
+    var opdOther = document.getElementById('admitDoctorManual');
+    var ipdOther = document.getElementById('admitIpdDoctorManual');
+    if (opdOther) { opdOther.required = !isIpd && document.getElementById('admitDoctor').value === '__OTHER__'; }
+    if (ipdOther) { ipdOther.required = isIpd && document.getElementById('admitIpdDoctor').value === '__OTHER__'; }
 }
 document.addEventListener('change', function (e) {
     if (e.target && e.target.name === 'admission_type') { admitSyncRoute(); }

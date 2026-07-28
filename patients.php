@@ -1209,7 +1209,7 @@ require __DIR__ . '/partials/sidebar.php';
                                          visit or creates a shell (byPatient=true). In-Door is now the third
                                          option INSIDE this modal, so there is no separate button — the
                                          picker only offers the routes this user is permitted to use. -->
-                                    <button type="button" class="qa" onclick="openAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, 0, '', true)">Admit</button>
+                                    <button type="button" class="qa" onclick="openAdmit(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= (int) ($p['last_doctor_id'] ?? 0) ?>, '', true)">Admit</button>
                                     <?php endif; ?>
                                     <?php if ($canRaiseProcedure): ?>
                                     <!-- Procedure billing (e.g. ear piercing) — a separate prepaid, one-time

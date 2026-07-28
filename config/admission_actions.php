@@ -30,6 +30,8 @@ require_once __DIR__ . '/tokens.php';
 // Primary nurse is mandatory at admit — the roster/validator is shared with the
 // IPD handler and the stay pages so they can never disagree on who qualifies.
 require_once __DIR__ . '/nurses.php';
+// Admitting doctor is mandatory too — shared resolver/validator.
+require_once __DIR__ . '/doctors.php';
 
 function handle_admit_patient(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
@@ -45,9 +47,17 @@ function handle_admit_patient(PDO $pdo): array {
     $visitId   = (int) ($_POST['visit_id'] ?? 0);
     $patientId = (int) ($_POST['patient_id'] ?? 0);   // used only when there's no visit
     $admType   = $_POST['admission_type'] ?? '';
-    $docId     = (int) ($_POST['admitting_doctor_id'] ?? 0) ?: null;
-    $docManual = mb_strtoupper(trim($_POST['admitting_doctor_manual'] ?? ''), 'UTF-8') ?: null;
+    // A system doctor, or a typed name when "Other" was picked. Exactly one of
+    // the pair comes back set; both null means nothing usable was submitted.
+    [$docId, $docManual] = resolve_doctor_pick($pdo, $_POST['admitting_doctor_id'] ?? 0, $_POST['admitting_doctor_manual'] ?? '');
     $nurseId   = (int) ($_POST['assigned_nurse_id'] ?? 0);
+
+    // Admitting doctor is REQUIRED. The admission bill and the clinical record
+    // both hang off it, and a stay showing "—" for doctor is unauditable later.
+    if (!$docId && !$docManual) {
+        $out['error'] = 'Select the admitting doctor — pick "Other" to type a name.';
+        return $out;
+    }
 
     // Primary nurse is REQUIRED — no stay may exist without someone accountable
     // for it. This only fixes ownership: any staff member with the relevant
@@ -99,12 +109,10 @@ function handle_admit_patient(PDO $pdo): array {
                 // type (visits columns are NOT NULL). Use the admitting doctor if given;
                 // otherwise the patient's most recent doctor; the consult type is that
                 // doctor's first available type. This shell carries NO consultation bill.
-                $shellDoctorId = $docId;
-                if (!$shellDoctorId) {
-                    $lastDoc = $pdo->prepare('SELECT doctor_id FROM visits WHERE patient_id = ? ORDER BY id DESC LIMIT 1');
-                    $lastDoc->execute([$patientId]);
-                    $shellDoctorId = (int) ($lastDoc->fetchColumn() ?: 0) ?: null;
-                }
+                // The admitting doctor when they're a system user; otherwise the
+                // doctor who last saw this patient (same definition the admit
+                // picker defaults to). A typed "Other" name can't anchor a visit.
+                $shellDoctorId = $docId ?: last_seen_doctor_id($pdo, $patientId);
                 if (!$shellDoctorId) {
                     throw new RuntimeException('no_doctor');
                 }
@@ -154,7 +162,7 @@ function handle_admit_patient(PDO $pdo): array {
             VALUES (?, ?, ?, ?, NOW(), ?, NOW(), ?, ?, \'ACTIVE\')
         ')->execute([
             $visitId, $admType, $uid, $admitRole,
-            $nurseId, $docId, $docId ? null : $docManual,
+            $nurseId, $docId, $docManual,
         ]);
         $admissionId = (int) $pdo->lastInsertId();
 
