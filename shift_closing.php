@@ -498,20 +498,30 @@ require __DIR__ . '/partials/sidebar.php';
                     // Admissions uses the *_admission_only_* figure — the raw
                     // admission bucket has ER/procedure/dental folded into it, so
                     // showing it here would present the same money twice.
+                    // "Advance payment" is CONDITIONAL — it only appears when one
+                    // was actually taken. The other four are fixed rows, because a
+                    // 0.00 consultation line still tells the cashier something;
+                    // an advance line on a day with no admitted patient does not.
                     $streamRows = [
-                        ['Consultation',            'consult'],
-                        ['ER Services &amp; Procedures', 'erproc'],
-                        ['Admissions / Discharges',  'admission_only'],
-                        ['Dental',                   'dental'],
+                        ['Consultation',            'consult',        false],
+                        ['ER Services &amp; Procedures', 'erproc',    false],
+                        ['Admissions / Discharges',  'admission_only', false],
+                        ['Dental',                   'dental',         false],
+                        ['Advance payment',          'advance',        true],
                     ];
                     foreach ([['Cash', 'cash'], ['Online', 'online']] as [$modeLabel, $mode]):
+                        // The group header must show what the rows below sum to:
+                        // an advance RETURN is folded into the mode total but is
+                        // listed as an outgoing further down, so add it back here.
+                        $groupTotal = $tally[$mode . '_total'] + $tally[$mode . '_advance_return_total'];
+                        $groupCount = $tally[$mode . '_count'] - $tally[$mode . '_advance_return_count'];
                     ?>
                     <tr class="grp">
                         <td><?= $modeLabel ?></td>
-                        <td class="num"><span class="cpill<?= $tally[$mode . '_count'] ? '' : ' z' ?>"><?= $tally[$mode . '_count'] ?></span></td>
-                        <td class="num"><?= number_format($tally[$mode . '_total'], 2) ?></td>
+                        <td class="num"><span class="cpill<?= $groupCount ? '' : ' z' ?>"><?= $groupCount ?></span></td>
+                        <td class="num"><?= number_format($groupTotal, 2) ?></td>
                     </tr>
-                        <?php foreach ($streamRows as [$label, $key]):
+                        <?php foreach ($streamRows as [$label, $key, $onlyIfAny]):
                             if ($key === 'erproc') {
                                 $amt = $tally[$mode . '_er_total'] + $tally[$mode . '_procedure_total'];
                                 $cnt = $tally[$mode . '_er_count'] + $tally[$mode . '_procedure_count'];
@@ -519,6 +529,7 @@ require __DIR__ . '/partials/sidebar.php';
                                 $amt = $tally[$mode . '_' . $key . '_total'] ?? 0;
                                 $cnt = $tally[$mode . '_' . $key . '_count'] ?? 0;
                             }
+                            if ($onlyIfAny && $cnt === 0) { continue; }
                         ?>
                         <tr class="kid<?= $cnt ? '' : ' zero' ?>">
                             <td><?= $label ?></td>
@@ -528,13 +539,28 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endforeach; ?>
                     <?php endforeach; ?>
 
-                    <tr>
+                    <tr class="grp"><td colspan="3">Paid out</td></tr>
+
+                    <tr class="kid<?= $tally['cash_refund_count'] ? '' : ' zero' ?>">
                         <td>Refunds — cash</td>
                         <td class="num"><span class="cpill<?= $tally['cash_refund_count'] ? '' : ' z' ?>"><?= $tally['cash_refund_count'] ?></span></td>
                         <td class="num neg"><?= $tally['cash_refund_total'] > 0 ? '− ' . number_format($tally['cash_refund_total'], 2) : '0.00' ?></td>
                     </tr>
 
-                    <tr>
+                    <?php
+                    // Advance returns are listed per payment mode, and ONLY when
+                    // one was actually made — same rule as the advance row above.
+                    foreach ([['Advance returned — cash', 'cash'], ['Advance returned — online', 'online']] as [$rLabel, $rMode]):
+                        if ((int) $tally[$rMode . '_advance_return_count'] === 0) { continue; }
+                    ?>
+                    <tr class="kid">
+                        <td><?= $rLabel ?></td>
+                        <td class="num"><span class="cpill"><?= $tally[$rMode . '_advance_return_count'] ?></span></td>
+                        <td class="num neg">− <?= number_format($tally[$rMode . '_advance_return_total'], 2) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+
+                    <tr class="kid<?= $tally['expense_count'] ? '' : ' zero' ?>">
                         <td>
                             <?php if ($expenseRows): ?>
                                 <button type="button" class="exp-toggle" onclick="toggleExpenses(this)" aria-expanded="false">

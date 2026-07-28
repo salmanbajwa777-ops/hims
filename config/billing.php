@@ -658,6 +658,8 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         'online_dental_total' => 0.0, 'online_dental_count' => 0,
         'cash_advance_total' => 0.0, 'cash_advance_count' => 0,
         'online_advance_total' => 0.0, 'online_advance_count' => 0,
+        'cash_advance_return_total' => 0.0, 'cash_advance_return_count' => 0,
+        'online_advance_return_total' => 0.0, 'online_advance_return_count' => 0,
         'cash_refund_total' => 0.0, 'cash_refund_count' => 0,
         'expense_total' => 0.0, 'expense_count' => 0,
     ];
@@ -799,21 +801,29 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     // A patient may pay several advances across one stay; each is its own row.
     try {
         $stmt = $pdo->prepare("
-            SELECT (payment_method = 'cash') AS is_cash,
-                   COUNT(*) AS n,
-                   COALESCE(SUM(CASE WHEN direction = 'REFUND' THEN -amount ELSE amount END), 0) AS total
+            SELECT (payment_method = 'cash') AS is_cash, direction,
+                   COUNT(*) AS n, COALESCE(SUM(amount), 0) AS total
             FROM ipd_advances
             WHERE voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
-            GROUP BY is_cash
+            GROUP BY is_cash, direction
         ");
         $stmt->execute([$winStart, $winEnd, $userId]);
         foreach ($stmt->fetchAll() as $r) {
             $isCash = (int) $r['is_cash'];
-            $k = $isCash ? 'cash_advance' : 'online_advance';
+            // Advances IN and returns OUT are kept apart, not netted: the closing
+            // sheet shows an advance as income and a return as an outgoing, so a
+            // day with both must show both rather than one small net figure.
+            $dir = $r['direction'] === 'REFUND' ? 'advance_return' : 'advance';
+            $k = ($isCash ? 'cash_' : 'online_') . $dir;
             $t[$k . '_total'] = (float) $r['total'];
             $t[$k . '_count'] = (int) $r['n'];
+
+            // Fold into the admission buckets so the stored closing columns and
+            // the A5 slip pick both up. A return is money leaving the drawer, so
+            // it folds in NEGATIVE — expected_cash derives from these buckets.
             $admKey = $isCash ? 'cash_admission' : 'online_admission';
-            $t[$admKey . '_total'] += (float) $r['total'];
+            $signed = $dir === 'advance_return' ? -(float) $r['total'] : (float) $r['total'];
+            $t[$admKey . '_total'] += $signed;
             $t[$admKey . '_count'] += (int) $r['n'];
         }
     } catch (Throwable $e) {
@@ -887,10 +897,15 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         // expenses module not migrated — treat as zero
     }
 
-    // ER, procedures and dental packages are already folded into the admission
-    // buckets above, so none is added again here (that would double-count).
-    // Their own cash_*_/online_*_ keys remain available for the live page to
-    // show each stream split out from admissions.
+    // ER, procedures, dental packages and IPD advances are already folded into
+    // the admission buckets above, so none is added again here (that would
+    // double-count). Their own cash_*_/online_*_ keys remain available for the
+    // live page to show each stream split out from admissions.
+    //
+    // An advance RETURN folded in negative, so it is already deducted from
+    // cash_total — and therefore from expected_cash — without a separate
+    // subtraction below. That is correct: returning an advance empties the
+    // drawer exactly like a refund does.
     $t['cash_total']   = round($t['cash_consult_total'] + $t['cash_admission_total'], 2);
     $t['cash_count']   = $t['cash_consult_count'] + $t['cash_admission_count'];
     $t['online_total'] = round($t['online_consult_total'] + $t['online_admission_total'], 2);
@@ -907,19 +922,20 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     // dental). Showing the raw bucket beside those rows would present the same
     // money twice.
     //
-    // IPD advances are deliberately NOT subtracted: they have no separate row
-    // and belong under Admissions/Discharges, which is where a cashier looks for
-    // "money taken for an admitted patient". Advance refunds carry a negative
-    // sign in that sum, so returning an excess correctly reduces the line.
+    // Advances get their OWN row on the sheet, so they come out here too. The
+    // return was folded in NEGATIVE, so removing it means adding it back —
+    // leaving this line as discharge-bill money alone, which is what a cashier
+    // reads "Admissions / Discharges" to mean.
     //
-    // Clamped at 0: rounding across the folded streams — or an advance refund
-    // larger than the day's other admission money — can push this negative, and
-    // a negative admissions line reads as a bug to the cashier.
+    // Clamped at 0: rounding across the folded streams can push it a hair
+    // negative, and a negative admissions line reads as a bug to the cashier.
     foreach (['cash', 'online'] as $mode) {
         $t[$mode . '_admission_only_total'] = round(max(0, $t[$mode . '_admission_total']
-            - $t[$mode . '_er_total'] - $t[$mode . '_procedure_total'] - $t[$mode . '_dental_total']), 2);
+            - $t[$mode . '_er_total'] - $t[$mode . '_procedure_total'] - $t[$mode . '_dental_total']
+            - $t[$mode . '_advance_total'] + $t[$mode . '_advance_return_total']), 2);
         $t[$mode . '_admission_only_count'] = max(0, $t[$mode . '_admission_count']
-            - $t[$mode . '_er_count'] - $t[$mode . '_procedure_count'] - $t[$mode . '_dental_count']);
+            - $t[$mode . '_er_count'] - $t[$mode . '_procedure_count'] - $t[$mode . '_dental_count']
+            - $t[$mode . '_advance_count'] - $t[$mode . '_advance_return_count']);
     }
 
     return $t;
