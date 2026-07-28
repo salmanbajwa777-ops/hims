@@ -18,20 +18,14 @@ require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/billing.php';
 
 
-// The dental taxonomy, mirroring the ENUM in add_dental_procedure_fields.sql.
-// Ordered roughly by clinical workflow (diagnose -> restore -> ... -> surgery)
-// rather than alphabetically, because that is how a dentist scans a list.
-// Shared here so the catalogue admin, the treatment picker and the account
-// picker cannot drift apart on wording.
-const DENTAL_CAT_LABELS = [
-    'DIAGNOSTIC'  => 'Diagnostic',
-    'RESTORATIVE' => 'Restorative',
-    'ENDODONTIC'  => 'Endodontic',
-    'EXTRACTION'  => 'Extraction',
-    'PROSTHETICS' => 'Prosthetics',
-    'ORTHO'       => 'Orthodontic',
-    'SURGERY'     => 'Surgery',
-];
+// NO DENTAL TAXONOMY. An earlier draft grouped the dental catalogue under a
+// seven-value category ENUM (Diagnostic / Restorative / Endodontic / ...). It is
+// gone at every level — the picker <optgroup>s, the catalogue admin's dropdown
+// and the procedure_master.category column itself (drop_dental_category.sql).
+//
+// A clinic's dental list is short enough to scan flat, and the taxonomy was
+// pure classification: nothing billed, gated, split or reported on it. Every
+// picker now sorts by name alone.
 
 
 // ============================================================================

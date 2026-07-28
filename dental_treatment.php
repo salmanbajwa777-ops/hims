@@ -149,12 +149,13 @@ $dentists = $pdo->query("
     ORDER BY name
 ")->fetchAll();
 
-// The dental catalogue, grouped by category for the picker.
+// The dental catalogue for the picker — a flat, name-ordered list. There is no
+// category taxonomy any more (see config/dental.php).
 $dentalProcs = $pdo->query("
-    SELECT id, name, fee, category, mandatory_consent, has_lab_component
+    SELECT id, name, fee, mandatory_consent, has_lab_component
     FROM procedure_master
     WHERE is_dental = 1 AND is_active = 1
-    ORDER BY category IS NULL, category, name
+    ORDER BY name
 ")->fetchAll();
 
 // This patient's history, newest first. Live and voided rows both shown.
@@ -300,22 +301,13 @@ require __DIR__ . '/partials/sidebar.php';
                             <label>Procedure</label>
                             <select name="procedure_master_id" id="procSel" required>
                                 <option value="">— select —</option>
-                                <?php
-                                $lastCat = '__none__';
-                                foreach ($dentalProcs as $p):
-                                    $cat = $p['category'] ?: 'Uncategorised';
-                                    if ($cat !== $lastCat) {
-                                        if ($lastCat !== '__none__') { echo '</optgroup>'; }
-                                        echo '<optgroup label="' . htmlspecialchars(DENTAL_CAT_LABELS[$p['category']] ?? 'Uncategorised') . '">';
-                                        $lastCat = $cat;
-                                    }
-                                ?>
+                                <?php foreach ($dentalProcs as $p): ?>
                                 <option value="<?= (int) $p['id'] ?>"
                                         data-consent="<?= (int) $p['mandatory_consent'] ?>"
                                         data-lab="<?= (int) $p['has_lab_component'] ?>">
                                     <?= htmlspecialchars($p['name']) ?> — Rs <?= number_format((float) $p['fee'], 2) ?>
                                 </option>
-                                <?php endforeach; if ($lastCat !== '__none__') { echo '</optgroup>'; } ?>
+                                <?php endforeach; ?>
                             </select>
                             <div class="hint" id="procHint"></div>
                         </div>

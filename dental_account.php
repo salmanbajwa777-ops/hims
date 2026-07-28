@@ -379,12 +379,12 @@ try {
 $pickable = [];
 if ($canEditItems && $isOpen) {
     $s = $pdo->prepare('
-        SELECT pm.id, pm.name, pm.category, pm.mandatory_consent, pm.has_lab_component,
+        SELECT pm.id, pm.name, pm.mandatory_consent, pm.has_lab_component,
                pm.default_lab_charge, COALESCE(dp.fee, pm.fee) AS fee
           FROM doctor_procedures dp
           JOIN procedure_master pm ON pm.id = dp.procedure_master_id
          WHERE dp.doctor_id = ? AND dp.is_active = 1 AND pm.is_active = 1 AND pm.is_dental = 1
-         ORDER BY pm.category IS NULL, pm.category, pm.name
+         ORDER BY pm.name
     ');
     $s->execute([(int) $account['doctor_id']]);
     $pickable = $s->fetchAll();
@@ -585,23 +585,14 @@ require __DIR__ . '/partials/sidebar.php';
                             <label>Procedure</label>
                             <select name="procedure_master_id" id="itemProc" required>
                                 <option value="">— select —</option>
-                                <?php
-                                $lastCat = '__none__';
-                                foreach ($pickable as $p):
-                                    $cat = $p['category'] ?: 'Uncategorised';
-                                    if ($cat !== $lastCat) {
-                                        if ($lastCat !== '__none__') { echo '</optgroup>'; }
-                                        echo '<optgroup label="' . htmlspecialchars(DENTAL_CAT_LABELS[$p['category']] ?? 'Uncategorised') . '">';
-                                        $lastCat = $cat;
-                                    }
-                                ?>
+                                <?php foreach ($pickable as $p): ?>
                                 <option value="<?= (int) $p['id'] ?>"
                                         data-lab="<?= (int) $p['has_lab_component'] ?>"
                                         data-labfee="<?= htmlspecialchars((string) $p['default_lab_charge']) ?>"
                                         data-consent="<?= (int) $p['mandatory_consent'] ?>">
                                     <?= htmlspecialchars($p['name']) ?> — Rs <?= number_format((float) $p['fee'], 2) ?>
                                 </option>
-                                <?php endforeach; if ($lastCat !== '__none__') { echo '</optgroup>'; } ?>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="field" style="margin:0;">

@@ -9,25 +9,24 @@
 -- duplicating that whole money plumbing for no gain, and would leave the admin
 -- maintaining two lists that look identical.
 --
--- So dental extends the one catalogue with four columns:
+-- So dental extends the one catalogue with three columns:
 --
 --   is_dental          The filter. Dental pickers show only these; the ordinary
 --                      procedure biller is unaffected and still sees everything.
---   category           The dental taxonomy (ENDODONTIC, PROSTHETICS, ...). NULL
---                      for non-dental rows, which is why it is nullable rather
---                      than DEFAULT'ed — a NULL category on a general procedure
---                      is meaningful ("not applicable"), a default would not be.
 --   has_lab_component  Does this send work to an outside lab (crown, denture,
 --                      bridge)? Drives whether the lab panel is offered.
 --   default_lab_charge The usual vendor charge, offered as a prefill. NOT a
 --                      binding price — the actual charge is typed per case,
 --                      because vendors quote per unit and shade.
 --
--- is_dental and category are deliberately redundant (a category implies dental).
--- Two columns rather than "category IS NOT NULL" because the flag is what the
--- UI filters on and an index on a TINYINT beats one on a nullable ENUM. The
--- application keeps them in sync BOTH ways: unticking Dental clears the
--- category, and picking a category ticks Dental.
+-- A FOURTH COLUMN, `category`, WAS REMOVED (2026-07-28). It held a seven-value
+-- dental taxonomy (ENDODONTIC, PROSTHETICS, ...) used only to group the picker.
+-- Nothing billed, gated or reported on it, so it was dropped at every level —
+-- see sql/drop_dental_category.sql. This file no longer creates it.
+--
+-- If you ran an earlier copy of this file, the column exists on your database;
+-- run drop_dental_category.sql to remove it. On a fresh install there is
+-- nothing to drop.
 --
 -- DEFAULT 0 / NULL everywhere means every existing procedure_master row stays
 -- exactly as it is — a non-dental catalogue behaves identically after this runs.
@@ -55,16 +54,14 @@
 ALTER TABLE procedure_master
     ADD COLUMN is_dental TINYINT NOT NULL DEFAULT 0 AFTER has_disposables;
 
--- 2. The dental taxonomy from the module spec. NULL on non-dental rows.
-ALTER TABLE procedure_master
-    ADD COLUMN category ENUM('DIAGNOSTIC','RESTORATIVE','ENDODONTIC','EXTRACTION',
-                             'PROSTHETICS','ORTHO','SURGERY') NULL AFTER is_dental;
+-- (The `category` taxonomy column used to be created here. Removed 2026-07-28 —
+--  see the header and sql/drop_dental_category.sql.)
 
--- 3. Does this procedure send work out to a dental lab?
+-- 2. Does this procedure send work out to a dental lab?
 ALTER TABLE procedure_master
-    ADD COLUMN has_lab_component TINYINT NOT NULL DEFAULT 0 AFTER category;
+    ADD COLUMN has_lab_component TINYINT NOT NULL DEFAULT 0 AFTER is_dental;
 
--- 4. Usual vendor charge — a prefill, not a fixed price.
+-- 3. Usual vendor charge — a prefill, not a fixed price.
 ALTER TABLE procedure_master
     ADD COLUMN default_lab_charge DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER has_lab_component;
 
@@ -82,10 +79,9 @@ ALTER TABLE procedure_master
 --     FROM information_schema.columns
 --    WHERE table_schema = 'u402528120_hmis'
 --      AND table_name   = 'procedure_master'
---      AND column_name IN ('is_dental','category','has_lab_component','default_lab_charge');
---   -- expect 4 rows:
+--      AND column_name IN ('is_dental','has_lab_component','default_lab_charge');
+--   -- expect 3 rows:
 --   --   is_dental          tinyint(4)   NO   0
---   --   category           enum(...)    YES  NULL
 --   --   has_lab_component  tinyint(4)   NO   0
 --   --   default_lab_charge decimal(10,2) NO  0.00
 --

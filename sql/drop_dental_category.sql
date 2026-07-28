@@ -1,0 +1,60 @@
+-- =============================================================================
+-- Drop the dental category taxonomy (2026-07-28)
+--
+-- add_dental_procedure_fields.sql gave procedure_master a seven-value `category`
+-- ENUM (DIAGNOSTIC / RESTORATIVE / ENDODONTIC / EXTRACTION / PROSTHETICS /
+-- ORTHO / SURGERY) to group the dental catalogue. It is removed at every level:
+-- the catalogue admin's dropdown, the <optgroup>s on the treatment and account
+-- pickers, DENTAL_CAT_LABELS in config/dental.php, and this column.
+--
+-- WHY: the taxonomy was pure classification. Nothing was billed, gated, split,
+-- taxed or reported on it — every money path keys off is_dental,
+-- has_lab_component and the per-doctor share, none of which this touches. A
+-- clinic's dental list is short enough to scan by name, so the category only
+-- added a field the admin had to fill in for no downstream effect.
+--
+-- SAFE TO RUN: no foreign key, no index and no other table references
+-- `category`. is_dental stays and is unaffected — it is the flag every dental
+-- picker filters on, and it was always the real filter. Rows whose Dental box
+-- is ticked stay ticked; only the grouping label is lost.
+--
+-- DEPLOY ORDER — CODE FIRST, THEN THIS.
+-- The code that reads and writes `category` must be live before the column
+-- goes, or every procedure_master save and both dental pickers fatal on a
+-- missing column. Push and verify the deploy is green, then run this.
+--
+-- Flat and idempotent-by-hand; no stored procedures (the Hostinger user is
+-- denied CREATE ROUTINE #1044). Run in phpMyAdmin against the hims database.
+--
+-- MySQL has no "DROP COLUMN IF EXISTS", so re-running this errors with #1091
+-- "Can't DROP 'category'". That error is harmless and simply means the column
+-- is already gone.
+-- =============================================================================
+
+ALTER TABLE procedure_master
+    DROP COLUMN category;
+
+-- =============================================================================
+-- Verify (fully qualified — querying information_schema switches phpMyAdmin's
+-- current-database context, which is what made an earlier verify block fail
+-- with "#1109 Unknown table 'permissions' in information_schema"):
+--
+--   SELECT column_name
+--     FROM information_schema.columns
+--    WHERE table_schema = 'u402528120_hmis'
+--      AND table_name   = 'procedure_master'
+--      AND column_name  = 'category';
+--   -- expect 0 rows.
+--
+-- The dental flag and the lab fields must all still be there:
+--
+--   SELECT column_name, column_type
+--     FROM information_schema.columns
+--    WHERE table_schema = 'u402528120_hmis'
+--      AND table_name   = 'procedure_master'
+--      AND column_name IN ('is_dental','has_lab_component','default_lab_charge');
+--   -- expect 3 rows.
+--
+-- And no dental procedure lost its flag:
+--   SELECT COUNT(*) FROM u402528120_hmis.procedure_master WHERE is_dental = 1;
+-- =============================================================================
