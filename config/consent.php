@@ -44,6 +44,7 @@ const CONSENT_PLACEHOLDERS = [
     '{{doctor_name}}'     => 'The doctor performing it, in capitals.',
     '{{signer_name}}'     => 'Who is signing. Prints a blank rule when not entered.',
     '{{signer_relation}}' => 'Their relation to the patient. Prints a blank rule when not entered.',
+    '{{signer_cnic}}'     => 'Their CNIC. Prints a blank rule when not entered.',
 ];
 
 /**
@@ -68,6 +69,10 @@ const CONSENT_PLACEHOLDERS = [
  * placeholder is left standing in the frozen text, and the print pass turns it
  * into the rule. A signer that WAS entered is frozen like any other fact.
  *
+ * This applies to all three signer fields — name, relation and CNIC. The CNIC
+ * is the one most often absent at billing time, since the cashier rarely has
+ * the card in hand when the bill is raised.
+ *
  * The frozen text otherwise carries no print markup on purpose: the row has to
  * stay readable in a database client, in an export, and in an audit trail, and
  * a stored blob of <span class="blank"> would be none of those.
@@ -75,7 +80,7 @@ const CONSENT_PLACEHOLDERS = [
 function consent_render(string $template, array $vars, bool $forPrint = false): string
 {
     // The only fields that can legitimately still be empty at print time.
-    $signerKeys = ['{{signer_name}}', '{{signer_relation}}'];
+    $signerKeys = ['{{signer_name}}', '{{signer_relation}}', '{{signer_cnic}}'];
 
     $out = $forPrint ? htmlspecialchars($template) : $template;
 
@@ -136,6 +141,56 @@ function consent_column_live(PDO $pdo): bool
 
 
 /**
+ * Is dental_consents.signed_cnic present?
+ *
+ * Same request-cached probe as consent_column_live(), for the same reason: this
+ * is asked once per consent row on the register and once per INSERT, and a
+ * probe query per row would be a needless cost.
+ *
+ * Requires sql/add_consent_signer_cnic.sql. Until that runs, every consent path
+ * behaves exactly as it did before CNIC existed.
+ */
+function consent_cnic_column_live(PDO $pdo): bool
+{
+    static $has = null;
+    if ($has !== null) {
+        return $has;
+    }
+    try {
+        $pdo->query('SELECT signed_cnic FROM dental_consents LIMIT 1')->fetchAll();
+        $has = true;
+    } catch (PDOException $e) {
+        $has = false;
+    }
+    return $has;
+}
+
+
+/**
+ * Normalise a CNIC to the conventional 00000-0000000-0 form.
+ *
+ * The cashier types it however the card reads or however they are used to —
+ * with dashes, without, with spaces. Storing it as typed would put four
+ * spellings of the same identifier in one column, and this value goes on a
+ * document the clinic keeps.
+ *
+ * A 13-digit input is punctuated. ANYTHING ELSE IS RETURNED UNTOUCHED rather
+ * than rejected or padded: a half-typed CNIC is the cashier's problem to fix,
+ * and silently mangling it into a well-formed but wrong number would be worse
+ * than storing what they actually typed. Validation belongs at the input, not
+ * in a formatter.
+ */
+function consent_format_cnic(string $raw): string
+{
+    $digits = preg_replace('/\D/', '', $raw);
+    if (strlen($digits) !== 13) {
+        return trim($raw);
+    }
+    return substr($digits, 0, 5) . '-' . substr($digits, 5, 7) . '-' . substr($digits, 12, 1);
+}
+
+
+/**
  * Does this procedure carry a consent form?
  *
  * The template is the switch, NOT mandatory_consent. A procedure can be flagged
@@ -188,16 +243,33 @@ function consent_create_for_bill(
     string $doctorName,
     int $capturedById,
     string $signerName = '',
-    string $signerRelation = ''
+    string $signerRelation = '',
+    string $signerCnic = ''
 ): int {
     $created = 0;
 
-    $ins = $pdo->prepare('
-        INSERT INTO dental_consents
-            (patient_id, doctor_id, procedure_master_id, procedure_bill_id,
-             procedure_ref, consent_text, status, signed_name, signed_relation, captured_by_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ');
+    // The CNIC column arrived after the consent table did (see
+    // sql/add_consent_signer_cnic.sql). On a database where that migration has
+    // not run, fall back to the pre-CNIC INSERT rather than fataling — the same
+    // fail-soft contract consent_column_live() gives the rest of this file. The
+    // sheet then prints its CNIC rule for the parent to fill by hand, which is
+    // exactly what it does when the value is simply unknown.
+    $hasCnic = consent_cnic_column_live($pdo);
+
+    $ins = $hasCnic
+        ? $pdo->prepare('
+            INSERT INTO dental_consents
+                (patient_id, doctor_id, procedure_master_id, procedure_bill_id,
+                 procedure_ref, consent_text, status, signed_name, signed_relation,
+                 signed_cnic, captured_by_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ')
+        : $pdo->prepare('
+            INSERT INTO dental_consents
+                (patient_id, doctor_id, procedure_master_id, procedure_bill_id,
+                 procedure_ref, consent_text, status, signed_name, signed_relation, captured_by_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ');
 
     foreach ($lines as $ln) {
         $template = consent_template_for($pdo, (int) $ln['master_id']);
@@ -216,9 +288,12 @@ function consent_create_for_bill(
             'doctor_name'     => mb_strtoupper($doctorName, 'UTF-8'),
             'signer_name'     => mb_strtoupper($signerName, 'UTF-8'),
             'signer_relation' => mb_strtoupper($signerRelation, 'UTF-8'),
+            // Not uppercased: a CNIC is digits and dashes, so case is a no-op
+            // and mb_strtoupper would only obscure that.
+            'signer_cnic'     => $signerCnic,
         ], false);
 
-        $ins->execute([
+        $params = [
             $patientId,
             $doctorId,
             (int) $ln['master_id'],
@@ -228,8 +303,13 @@ function consent_create_for_bill(
             'PENDING',
             $signerName !== '' ? mb_strtoupper($signerName, 'UTF-8') : null,
             $signerRelation !== '' ? mb_strtoupper($signerRelation, 'UTF-8') : null,
-            $capturedById,
-        ]);
+        ];
+        if ($hasCnic) {
+            $params[] = $signerCnic !== '' ? $signerCnic : null;
+        }
+        $params[] = $capturedById;
+
+        $ins->execute($params);
         $created++;
     }
 
@@ -249,7 +329,8 @@ function consent_for_bill(PDO $pdo, int $procedureBillId): array
     try {
         $stmt = $pdo->prepare('
             SELECT c.id, c.procedure_ref, c.consent_text, c.status,
-                   c.signed_name, c.signed_relation, c.created_at
+                   c.signed_name, c.signed_relation, c.created_at'
+            . (consent_cnic_column_live($pdo) ? ', c.signed_cnic' : '') . '
               FROM dental_consents c
              WHERE c.procedure_bill_id = ? AND c.voided_at IS NULL
              ORDER BY c.id

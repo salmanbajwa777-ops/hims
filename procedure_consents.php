@@ -81,6 +81,7 @@ $tableLive = true;
 try {
     $sql = "
         SELECT c.id, c.procedure_ref, c.status, c.signed_name, c.signed_relation,
+               " . (consent_cnic_column_live($pdo) ? "c.signed_cnic," : "") . "
                c.created_at, c.signed_at, c.scan_path,
                p.mrn, p.name AS patient_name,
                d.name AS doctor_name,
@@ -197,6 +198,9 @@ require __DIR__ . '/partials/sidebar.php';
                                     <?= htmlspecialchars($c['signed_name']) ?>
                                     <?php if (!empty($c['signed_relation'])): ?>
                                     <span class="sub"><?= htmlspecialchars($c['signed_relation']) ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($c['signed_cnic'])): ?>
+                                    <span class="sub"><?= htmlspecialchars($c['signed_cnic']) ?></span>
                                     <?php endif; ?>
                                 <?php else: ?>
                                     <span style="color:var(--text-muted);">Filled by hand</span>
