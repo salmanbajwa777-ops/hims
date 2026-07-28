@@ -116,7 +116,6 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
         /* ---- Consent sheets, appended after the receipt ------------------
            Only loaded into the same document; each consent copy is its own
            .sheet and starts on a new page (see .consent-sheet below). */
-        .copytag { text-align: center; font-size: 8px; font-weight: bold; letter-spacing: 2px; border: 1px solid #000; padding: 1px 8px; margin: 0 auto 2mm; width: fit-content; }
         .pt { width: 100%; border-collapse: collapse; font-size: 9px; margin-bottom: 2mm; }
         .pt td { border: 1px solid #C8C8C8; padding: 1px 5px; height: 18px; vertical-align: middle; }
         .pt td.k { background: #F4F4F4; font-weight: bold; width: 17%; }
@@ -249,7 +248,7 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
     </div>
 
     <?php
-    // Consent sheets, two copies each, appended as further pages of the SAME
+    // Consent sheet, one per consent, appended as a further page of the SAME
     // document so the whole set comes out of one print action. $consents is
     // empty for a procedure with no consent template, and this emits nothing.
     if (!empty($consents)) {

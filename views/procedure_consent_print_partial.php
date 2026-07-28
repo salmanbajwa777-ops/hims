@@ -7,10 +7,12 @@
 // receipt's .sheet has closed, so it emits only <div class="sheet"> blocks and
 // no document chrome of its own.
 //
-// TWO COPIES PER CONSENT, and that is the whole point of the document: the
-// clinic keeps one signed and the patient takes the other. They are identical
-// apart from the copy tag, so a dispute is settled by comparing two sheets that
-// say the same thing.
+// ONE COPY PER CONSENT. This printed two — a clinic copy and a patient copy —
+// until the clinic asked for one. The sheet that gets signed is the record, and
+// it stays in the file; the patient keeps the receipt, which already names the
+// procedure and what was paid. No copy tag is printed any more either: with a
+// single sheet there is nothing to tell apart, and a lone "CLINIC COPY" band
+// only invites someone to ask where the other one went.
 //
 // A5 to match the receipt. The original paper form was A4 with the invoice
 // printed above the consent, but the receipt is its own sheet here, which frees
@@ -20,14 +22,8 @@
 // THE WORDING IS NOT RENDERED FROM THE CATALOGUE. consent_text was frozen onto
 // the row when the bill was raised; this reprints it verbatim. An admin editing
 // the template must not retroactively change what a patient already signed.
-
-$copyTags = [
-    'CLINIC COPY — RETAIN IN RECORD',
-    'PATIENT COPY',
-];
 ?>
 <?php foreach ($consents as $consent): ?>
-<?php foreach ($copyTags as $copyTag): ?>
     <div class="sheet consent-sheet">
 
         <div class="head-box">
@@ -56,7 +52,6 @@ $copyTags = [
         </div>
 
         <div class="doctype">CONSENT FOR <?= htmlspecialchars(mb_strtoupper($consent['procedure_ref'], 'UTF-8')) ?> PROCEDURE</div>
-        <div class="copytag"><?= htmlspecialchars($copyTag) ?></div>
 
         <table class="pt">
             <tr>
@@ -88,6 +83,7 @@ $copyTags = [
                 [
                     'signer_name'     => (string) ($consent['signed_name'] ?? ''),
                     'signer_relation' => (string) ($consent['signed_relation'] ?? ''),
+                    'signer_cnic'     => (string) ($consent['signed_cnic'] ?? ''),
                 ],
                 true
             ) . '</p>';
@@ -109,6 +105,7 @@ $copyTags = [
                 <div class="sigline2">Consent given by</div>
                 <div class="sigsub">Name: <?= !empty($consent['signed_name']) ? htmlspecialchars($consent['signed_name']) : '____________________' ?></div>
                 <div class="sigsub">Relation: <?= !empty($consent['signed_relation']) ? htmlspecialchars($consent['signed_relation']) : '__________________' ?></div>
+                <div class="sigsub">CNIC: <?= !empty($consent['signed_cnic']) ? htmlspecialchars($consent['signed_cnic']) : '_______________________' ?></div>
                 <div class="sigsub">Signature: _________________</div>
                 <div class="sigsub">Date: _____________________</div>
             </div>
@@ -131,5 +128,4 @@ $copyTags = [
             <span><?= $clinicName ?> &middot; <?= $clinicPhone ?></span>
         </div>
     </div>
-<?php endforeach; ?>
 <?php endforeach; ?>
