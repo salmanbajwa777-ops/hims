@@ -9,8 +9,10 @@
  *   - the doctor/clinic share split (clinic = 100 - doctor %),
  *   - an optional tax %, withheld from the DOCTOR's share at commission time
  *     (patient invoices stay tax-free per clinic policy).
- * Billing procedures on visits, consent PDFs and commission payouts are later
- * phases — this page is the configuration source they will read.
+ * Consent wording is edited on procedure_consent_template.php, linked per row:
+ * a paragraph does not fit in this table. A procedure with wording prints its
+ * consent form with the receipt (procedure_bill.php); mandatory_consent alone
+ * only gates billing.
  */
 require_once __DIR__ . '/config/guard_admin.php';
 
@@ -272,6 +274,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 // ---- Page data ----
 $procedures = $pdo->query('SELECT * FROM procedure_master ORDER BY name')->fetchAll();
 
+// Has add_procedure_consent.sql been run? Same degradation rule as the two
+// migrations above: without the column the catalogue is exactly the pre-consent
+// page, and the link to the wording editor is simply absent.
+require_once __DIR__ . '/config/consent.php';
+$procHasConsentTpl = consent_column_live($pdo);
+
 $doctors = $pdo->query('SELECT id, name, specialty FROM users WHERE base_role = "DOCTOR" ORDER BY name')->fetchAll();
 
 $assignRows = $pdo->query('
@@ -320,6 +328,8 @@ $headExtra = <<<CSS
 .add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
 .consent-check { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; padding: 10px 0; }
 .consent-check input { width: 15px; height: 15px; accent-color: var(--primary); }
+.tpl-link { display: inline-block; margin-top: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; text-decoration: none; background: var(--surface-2, #eee); color: var(--text-muted); white-space: nowrap; }
+.tpl-link.has { background: var(--green-bg); color: var(--green-text); }
 
 .row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 100%; }
 .row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
@@ -397,7 +407,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <label>Rate (Rs)</label>
                             <input type="number" step="0.01" min="0" name="fee" value="0">
                         </div>
-                        <label class="consent-check" title="If ticked, adding this procedure to a visit will require generating a consent form (built in a later phase — the flag is captured now).">
+                        <label class="consent-check" title="If ticked, this procedure cannot be billed without a consent. Give it wording on the consent-template page and the form prints with the receipt; leave it without wording and the consent must be captured on the dental consent page instead.">
                             <input type="checkbox" name="mandatory_consent" value="1">
                             Requires consent form
                         </label>
@@ -471,6 +481,17 @@ require __DIR__ . '/partials/sidebar.php';
                                     <input type="checkbox" name="mandatory_consent[<?= $pid ?>]" value="1" <?= (int) $p['mandatory_consent'] === 1 ? 'checked' : '' ?>>
                                     Mandatory
                                 </label>
+                                <?php if ($procHasConsentTpl): ?>
+                                <?php $hasTpl = trim((string) ($p['consent_template'] ?? '')) !== ''; ?>
+                                <!-- The wording lives on its own page: a paragraph does not fit in a
+                                     table row. "Form" means this procedure prints a consent with its
+                                     receipt; "Mandatory" alone only gates billing. -->
+                                <a href="procedure_consent_template.php?id=<?= $pid ?>"
+                                   class="tpl-link <?= $hasTpl ? 'has' : '' ?>"
+                                   title="<?= $hasTpl ? 'Edit the consent wording printed for this procedure' : 'Write the consent wording so this procedure prints a consent form' ?>">
+                                    <?= $hasTpl ? 'Form &check;' : 'Add form' ?>
+                                </a>
+                                <?php endif; ?>
                             </td>
                             <?php if ($procHasDisposables): ?>
                             <td>

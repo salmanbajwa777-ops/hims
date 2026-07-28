@@ -60,19 +60,18 @@ ALTER TABLE dental_consents
 ALTER TABLE dental_consents
     ADD INDEX idx_dc_procedure_bill (procedure_bill_id);
 
--- The rendered sheet is frozen onto the row at print time, exactly as the
--- dental module freezes financial_snapshot. The template on the catalogue can
--- be edited tomorrow; what THIS patient signed must not move with it. This is
--- the single reason the text is stored per-consent instead of being re-rendered
--- from procedure_master.consent_template on every reprint.
---   (consent_text already exists on the table and is reused for exactly this.)
-
--- Who signed, captured optionally at billing time so the sheet can print
--- pre-filled. Left NULL the sheet prints a blank rule to be written by hand.
--- signed_name / signed_relation already exist on dental_consents; this only
--- widens relation to fit "Grandparent"/"Legal guardian" comfortably.
-ALTER TABLE dental_consents
-    MODIFY COLUMN signed_relation VARCHAR(60) NULL;
+-- NO OTHER COLUMNS ARE ADDED, and that is the point of reusing this table:
+--
+--   consent_text     — the rendered sheet, FROZEN at billing time. The template
+--                      on the catalogue can be edited tomorrow; what THIS
+--                      patient signed must not move with it. Already present
+--                      and used for exactly this by the dental module.
+--   signed_name      — who signed, captured optionally at billing so the sheet
+--   signed_relation    can print pre-filled. Left NULL, the sheet prints a rule
+--                      to write on. Both already present, both already the
+--                      right width (VARCHAR(150) / VARCHAR(60)).
+--   status           — PENDING until the signed scan is filed. Already present.
+--   scan_path        — the filed scan. Already present.
 
 
 -- ---------------------------------------------------------------------------

@@ -143,6 +143,11 @@ $sbGroups = [
              'perm' => 'IPD_VIEW_WARD'],
             ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php',
              'perm' => 'RECEPTION_MANAGE_BOOKINGS'],
+            // Consents printed with a procedure bill, and the signed scans filed
+            // back against them. Workspace rather than Settings: chasing the
+            // unsigned ones is front-desk work, not configuration.
+            ['slug' => 'procedure_consents', 'label' => 'Consents', 'icon' => 'receipt', 'href' => 'procedure_consents.php',
+             'perm' => 'RECEPTION_MANAGE_CONSENT'],
             // Money handling is the ADMIN's Finances group (below). For everyone
             // else these two stay right here in Workspace, because for a
             // receptionist posting an expense and closing the till IS the day's

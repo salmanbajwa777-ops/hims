@@ -11,6 +11,13 @@
  * the consent belongs to. A missing row and a forbidden row both return 404, so
  * this page cannot be used to probe which consent ids exist.
  *
+ * RECEPTION_MANAGE_CONSENT is accepted too, because dental_consents now also
+ * holds procedure consents (see sql/add_procedure_consent.sql) and the front
+ * desk that filed a circumcision consent will not hold a dental permission.
+ * Either key can open either kind: both are held by the same front desk, and
+ * splitting the check per consent type would mean the person who uploaded a
+ * scan could be unable to reopen it.
+ *
  * Modelled on document.php, the app's existing private-file server.
  */
 require_once __DIR__ . '/config/auth.php';
@@ -26,7 +33,8 @@ $stmt = $pdo->prepare('SELECT id, scan_path, scan_original_name FROM dental_cons
 $stmt->execute([$id]);
 $consent = $stmt->fetch();
 
-if (!$consent || !$consent['scan_path'] || !has_permission('DENTAL_VIEW_ACCOUNTS')) {
+if (!$consent || !$consent['scan_path']
+    || !(has_permission('DENTAL_VIEW_ACCOUNTS') || has_permission('RECEPTION_MANAGE_CONSENT'))) {
     http_response_code(404);
     exit('Consent scan not found.');
 }

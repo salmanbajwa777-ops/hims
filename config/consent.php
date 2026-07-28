@@ -54,37 +54,49 @@ const CONSENT_PLACEHOLDERS = [
  *   $forPrint = false — plain text, every placeholder replaced with its value
  *     or with '' when unknown. This is what gets FROZEN onto the consent row.
  *
- *   $forPrint = true — HTML. Values are escaped and emphasised, and the two
- *     signer placeholders become a ruled blank when they have no value, so the
- *     printed sheet has a line to write on. This is never what gets stored.
+ *   $forPrint = true — HTML. Values are escaped and emphasised, and an unfilled
+ *     signer placeholder becomes a ruled blank so the printed sheet has a line
+ *     to write on. This is never what gets stored.
  *
- * The frozen text is stored WITHOUT the print markup on purpose: the row has to
+ * AN UNFILLED SIGNER PLACEHOLDER SURVIVES THE FREEZE. This is the subtle part.
+ * The patient's name, the doctor, the procedure are all known when the bill is
+ * raised, so they are substituted and frozen. The signer often is NOT: the
+ * cashier leaves those fields empty and the parent writes their name on the
+ * paper. Substituting an empty signer to '' at freeze time would destroy the
+ * only marker of WHERE on the sheet that rule belongs, and the sheet would
+ * print "I, ,  of the child ..." with nothing to sign on. So an empty signer
+ * placeholder is left standing in the frozen text, and the print pass turns it
+ * into the rule. A signer that WAS entered is frozen like any other fact.
+ *
+ * The frozen text otherwise carries no print markup on purpose: the row has to
  * stay readable in a database client, in an export, and in an audit trail, and
  * a stored blob of <span class="blank"> would be none of those.
  */
 function consent_render(string $template, array $vars, bool $forPrint = false): string
 {
-    // Signer fields are the only ones that can legitimately be empty at print
-    // time — everything else is read from a row that must exist to get here.
+    // The only fields that can legitimately still be empty at print time.
     $signerKeys = ['{{signer_name}}', '{{signer_relation}}'];
 
     $out = $forPrint ? htmlspecialchars($template) : $template;
 
     foreach (CONSENT_PLACEHOLDERS as $key => $_desc) {
         $raw = trim((string) ($vars[trim($key, '{}')] ?? ''));
+        $isSigner = in_array($key, $signerKeys, true);
 
         if (!$forPrint) {
+            // Leave an unfilled signer placeholder standing (see above); every
+            // other unknown collapses to '' so no braces reach the stored text.
+            if ($isSigner && $raw === '') {
+                continue;
+            }
             $out = str_replace($key, $raw, $out);
             continue;
         }
 
         if ($raw === '') {
-            // An unfilled signer field becomes a rule to write on; any other
-            // unfilled field collapses to nothing rather than printing a
-            // stray line in the middle of a sentence.
-            $replacement = in_array($key, $signerKeys, true)
-                ? '<span class="blank">&nbsp;</span>'
-                : '';
+            // An unfilled signer becomes a rule to write on; any other unfilled
+            // field collapses rather than printing a stray line mid-sentence.
+            $replacement = $isSigner ? '<span class="blank">&nbsp;</span>' : '';
         } else {
             $replacement = '<b>' . htmlspecialchars($raw) . '</b>';
         }
