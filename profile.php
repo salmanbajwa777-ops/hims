@@ -7,12 +7,17 @@
  * both are uniqueness-checked against every other user (same dedupe rule as
  * staff.php) and at least one must remain set.
  *
- * Deliberately NOT editable here: base_role, max_discount_pct, specialty,
- * documents — those stay admin-only via staff.php so nobody can self-escalate.
+ * Users also upload their own documents (CNIC, degree, registration…). Those
+ * are append-only: staff can add and view, but only an admin can remove one
+ * from staff.php, so a record can't be quietly withdrawn after being filed.
+ *
+ * Deliberately NOT editable here: base_role, max_discount_pct, specialty —
+ * those stay admin-only via staff.php so nobody can self-escalate.
  */
 require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/staff_documents.php';
 
 $uid = (int) $_SESSION['user_id'];
 
@@ -84,10 +89,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
     }
 }
 
+// ---- Upload own documents ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'upload_docs') {
+    [$pendingDocs, $docError] = staff_docs_validate($_FILES['doc_file'] ?? null, $_POST['doc_type'] ?? []);
+
+    if ($docError !== '') {
+        $error = $docError;
+    } elseif (!$pendingDocs) {
+        $error = 'Choose at least one file to upload.';
+    } else {
+        // Uploader is the user themselves — that is what distinguishes a
+        // self-upload from an admin filing something on their behalf.
+        $stored = staff_docs_store($pdo, $pendingDocs, $uid, $uid);
+        if ($stored === 0) {
+            $error = 'The upload could not be saved. Please try again.';
+        } else {
+            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+                ->execute([$uid, 'document_uploaded', "Uploaded $stored document(s) to own profile"]);
+            $success = $stored === 1 ? 'Document uploaded.' : "$stored documents uploaded.";
+        }
+    }
+}
+
 // Fresh row for the form (after any save).
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$uid]);
 $user = $stmt->fetch();
+
+// Own documents, newest first. Guarded: the table arrives with
+// sql/add_staff_documents.sql and the page must still render without it.
+$myDocs = [];
+try {
+    $dStmt = $pdo->prepare('SELECT id, doc_type, original_name, file_size, uploaded_by_id, created_at FROM staff_documents WHERE user_id = ? ORDER BY created_at DESC, id DESC');
+    $dStmt->execute([$uid]);
+    $myDocs = $dStmt->fetchAll();
+} catch (PDOException $e) {
+    $myDocs = [];
+}
+$docTypeLabels = staff_doc_types();
 
 $roleLabels = [
     'ADMIN' => 'Administrator', 'DOCTOR' => 'Doctor', 'STAFF' => 'Staff',
@@ -128,6 +167,28 @@ $headExtra = <<<CSS
 .locked-list .k { color: var(--text-muted); }
 .locked-list .v { font-weight: 600; }
 .locked-note { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; }
+
+.doc-card { grid-column: 1 / -1; }
+.doc-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.doc-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); background: var(--bg); }
+.doc-row .doc-ico { width: 32px; height: 32px; border-radius: 8px; background: var(--primary-light); color: var(--primary-dark); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.doc-row .doc-ico svg { width: 17px; height: 17px; }
+.doc-row .doc-main { min-width: 0; flex: 1; }
+.doc-row .doc-name { font-size: 13.5px; font-weight: 600; }
+/* The stored filename is the long, unpredictable part — clip it rather than the
+   document type, which is what identifies the row at a glance. */
+.doc-row .doc-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
+.doc-row .doc-open { font-size: 12.5px; font-weight: 600; color: var(--primary); flex-shrink: 0; }
+.doc-empty { font-size: 13px; color: var(--text-muted); padding: 14px 0 18px; }
+
+.doc-up-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.doc-up-row select { padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); flex-shrink: 0; }
+.doc-up-row input[type="file"] { flex: 1; min-width: 0; font-size: 13px; }
+.doc-rm { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 6px; }
+.doc-rm:hover { color: #b3261e; }
+.doc-add { background: none; border: 1px dashed var(--border); color: var(--text-secondary); border-radius: var(--radius-input); padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.doc-add:hover { border-color: var(--primary); color: var(--primary); }
+@media (max-width: 620px) { .doc-up-row { flex-wrap: wrap; } .doc-up-row select { width: 100%; } }
 
 .pw-wrap { position: relative; }
 .pw-wrap input { padding-right: 42px; }
@@ -242,6 +303,52 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                     <div class="locked-note">Need a role or cap change? Ask an administrator<?= ($user['base_role'] === 'ADMIN') ? ' — or edit it yourself in Staff &amp; Doctors' : '' ?>.</div>
                 </div>
+
+                <!-- Documents -->
+                <div class="card doc-card">
+                    <div class="section-title">My Documents</div>
+                    <div class="section-sub">Your CNIC, degrees, registration and experience letters. PDF, JPG or PNG, up to 10MB each.</div>
+
+                    <?php if ($myDocs): ?>
+                        <div class="doc-list">
+                            <?php foreach ($myDocs as $d): ?>
+                                <div class="doc-row">
+                                    <span class="doc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+                                    <div class="doc-main">
+                                        <div class="doc-name"><?= htmlspecialchars($docTypeLabels[$d['doc_type']] ?? $d['doc_type']) ?></div>
+                                        <div class="doc-meta">
+                                            <?= htmlspecialchars($d['original_name']) ?> · <?= staff_doc_size((int) $d['file_size']) ?>
+                                            <?php if ($d['created_at']): ?> · <?= date('d/m/Y', strtotime($d['created_at'])) ?><?php endif; ?>
+                                            <?php if ((int) $d['uploaded_by_id'] !== $uid): ?> · added by administration<?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <a class="doc-open" href="document.php?id=<?= (int) $d['id'] ?>" target="_blank" rel="noopener">View</a>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="doc-empty">You haven't uploaded any documents yet.</div>
+                    <?php endif; ?>
+
+                    <form method="POST" action="profile.php" enctype="multipart/form-data">
+                        <input type="hidden" name="action" value="upload_docs">
+                        <div id="docRows">
+                            <div class="doc-up-row">
+                                <select name="doc_type[]">
+                                    <?php foreach ($docTypeLabels as $k => $label): ?>
+                                        <option value="<?= htmlspecialchars($k) ?>"><?= htmlspecialchars($label) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <input type="file" name="doc_file[]" accept=".pdf,.jpg,.jpeg,.png">
+                            </div>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:12px;flex-wrap:wrap;">
+                            <button type="button" class="doc-add" onclick="addDocRow()">+ Add another</button>
+                            <button type="submit" class="btn">Upload</button>
+                        </div>
+                        <div class="pf-hint" style="margin-top:10px;">Uploaded documents stay on your record — ask an administrator if something needs removing.</div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
@@ -251,6 +358,25 @@ function pwToggle(id, btn) {
     var i = document.getElementById(id);
     i.type = i.type === 'password' ? 'text' : 'password';
     btn.style.color = i.type === 'text' ? 'var(--primary)' : '';
+}
+
+// Repeatable upload rows. Cloning the first row keeps the <option> list in one
+// place (PHP) rather than duplicating the document types here in JS.
+function addDocRow() {
+    var rows = document.getElementById('docRows');
+    var clone = rows.firstElementChild.cloneNode(true);
+    clone.querySelector('input[type="file"]').value = '';
+    clone.querySelector('select').selectedIndex = 0;
+    if (!clone.querySelector('.doc-rm')) {
+        var rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'doc-rm';
+        rm.innerHTML = '&times;';
+        rm.setAttribute('aria-label', 'Remove this row');
+        rm.onclick = function () { clone.remove(); };
+        clone.appendChild(rm);
+    }
+    rows.appendChild(clone);
 }
 </script>
 </body>

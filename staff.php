@@ -3,6 +3,7 @@ require_once __DIR__ . '/config/guard_admin.php';
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/tokens.php';
+require_once __DIR__ . '/config/staff_documents.php';
 
 // Three base roles: pick the identity, then grant capabilities on the
 // Permissions tab / per-person overrides. STAFF covers every desk/ward worker.
@@ -23,16 +24,9 @@ $specialtyLabels = [
     'DENTAL' => 'Dental Surgeon',
     'PEDIATRIC_SURGEON' => 'Pediatric Surgeon',
 ];
-$docTypes = [
-    'CNIC' => 'CNIC',
-    'EDUCATIONAL_DEGREE' => 'Educational Degree',
-    'REGISTRATION' => 'Registration (PMDC / Nursing Council / etc.)',
-    'EXPERIENCE_LETTER' => 'Experience Letter',
-    'CV' => 'CV',
-    'OTHER' => 'Other',
-];
-$allowedExt = ['pdf', 'jpg', 'jpeg', 'png'];
-$maxFileSize = 10 * 1024 * 1024;
+// Document rules are shared with profile.php (self-service uploads) —
+// see config/staff_documents.php.
+$docTypes = staff_doc_types();
 
 // Every new staff account starts here. They are forced to change it on first sign-in.
 const DEFAULT_STAFF_PASSWORD = '123456';
@@ -40,10 +34,9 @@ const DEFAULT_STAFF_PASSWORD = '123456';
 $error = '';
 $success = '';
 
-$uploadDir = __DIR__ . '/uploads/staff_docs/';
-if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
-}
+// Ensures the upload directory and its deny-all .htaccess exist before any
+// upload is attempted (staff_docs_store resolves the path itself).
+staff_doc_dir();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_staff') {
     // Names are stored in ALL CAPS so they read uniformly everywhere they appear.
@@ -93,46 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
             $error = 'A user with this email or phone already exists.';
         } else {
             // Validate documents before touching the database
-            $pendingDocs = [];
-            $docError = '';
-
-            if ($docFiles) {
-                foreach ($docFiles['error'] as $i => $fileError) {
-                    if ($fileError === UPLOAD_ERR_NO_FILE) {
-                        continue;
-                    }
-                    if ($fileError !== UPLOAD_ERR_OK) {
-                        $docError = 'One of the documents failed to upload. Please try again.';
-                        break;
-                    }
-
-                    $docType = $docTypeInputs[$i] ?? '';
-                    if (!array_key_exists($docType, $docTypes)) {
-                        $docError = 'Invalid document type selected.';
-                        break;
-                    }
-
-                    $origName = $docFiles['name'][$i];
-                    $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
-
-                    if (!in_array($ext, $allowedExt, true)) {
-                        $docError = "\"$origName\" must be a PDF, JPG, or PNG file.";
-                        break;
-                    }
-                    if ($docFiles['size'][$i] > $maxFileSize) {
-                        $docError = "\"$origName\" is larger than 10MB.";
-                        break;
-                    }
-
-                    $pendingDocs[] = [
-                        'type' => $docType,
-                        'tmp' => $docFiles['tmp_name'][$i],
-                        'name' => $origName,
-                        'size' => $docFiles['size'][$i],
-                        'ext' => $ext,
-                    ];
-                }
-            }
+            [$pendingDocs, $docError] = staff_docs_validate($docFiles, $docTypeInputs);
 
             if ($docError !== '') {
                 $error = $docError;
@@ -184,21 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                         ->execute([$tokenPrefix, $newUserId]);
                 } catch (PDOException $e) { /* column not migrated yet */ }
 
-                $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
-
-                foreach ($pendingDocs as $doc) {
-                    $storedName = $newUserId . '_' . bin2hex(random_bytes(8)) . '.' . $doc['ext'];
-                    if (move_uploaded_file($doc['tmp'], $uploadDir . $storedName)) {
-                        $docInsert->execute([
-                            $newUserId,
-                            $doc['type'],
-                            $storedName,
-                            $doc['name'],
-                            $doc['size'],
-                            $_SESSION['user_id'],
-                        ]);
-                    }
-                }
+                staff_docs_store($pdo, $pendingDocs, (int) $newUserId, (int) $_SESSION['user_id']);
 
                 $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
                 $log->execute([
@@ -261,46 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         if ($stmt->fetch() || staff_phone_in_use($pdo, $phone, $editId)) {
             $error = 'Another user with this email or phone already exists.';
         } else {
-            $pendingDocs = [];
-            $docError = '';
-
-            if ($docFiles) {
-                foreach ($docFiles['error'] as $i => $fileError) {
-                    if ($fileError === UPLOAD_ERR_NO_FILE) {
-                        continue;
-                    }
-                    if ($fileError !== UPLOAD_ERR_OK) {
-                        $docError = 'One of the documents failed to upload. Please try again.';
-                        break;
-                    }
-
-                    $docType = $docTypeInputs[$i] ?? '';
-                    if (!array_key_exists($docType, $docTypes)) {
-                        $docError = 'Invalid document type selected.';
-                        break;
-                    }
-
-                    $origName = $docFiles['name'][$i];
-                    $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
-
-                    if (!in_array($ext, $allowedExt, true)) {
-                        $docError = "\"$origName\" must be a PDF, JPG, or PNG file.";
-                        break;
-                    }
-                    if ($docFiles['size'][$i] > $maxFileSize) {
-                        $docError = "\"$origName\" is larger than 10MB.";
-                        break;
-                    }
-
-                    $pendingDocs[] = [
-                        'type' => $docType,
-                        'tmp' => $docFiles['tmp_name'][$i],
-                        'name' => $origName,
-                        'size' => $docFiles['size'][$i],
-                        'ext' => $ext,
-                    ];
-                }
-            }
+            [$pendingDocs, $docError] = staff_docs_validate($docFiles, $docTypeInputs);
 
             if ($docError !== '') {
                 $error = $docError;
@@ -378,21 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                         ->execute([$tokenPrefix, $editId]);
                 } catch (PDOException $e) { /* column not migrated yet */ }
 
-                $docInsert = $pdo->prepare('INSERT INTO staff_documents (user_id, doc_type, file_path, original_name, file_size, uploaded_by_id) VALUES (?, ?, ?, ?, ?, ?)');
-
-                foreach ($pendingDocs as $doc) {
-                    $storedName = $editId . '_' . bin2hex(random_bytes(8)) . '.' . $doc['ext'];
-                    if (move_uploaded_file($doc['tmp'], $uploadDir . $storedName)) {
-                        $docInsert->execute([
-                            $editId,
-                            $doc['type'],
-                            $storedName,
-                            $doc['name'],
-                            $doc['size'],
-                            $_SESSION['user_id'],
-                        ]);
-                    }
-                }
+                staff_docs_store($pdo, $pendingDocs, (int) $editId, (int) $_SESSION['user_id']);
 
                 $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
                 $log->execute([
