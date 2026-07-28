@@ -65,10 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'log_l
                          $tooth !== '' ? $tooth : null, $shade !== '' ? $shade : null,
                          $charge, $sent, $expected !== '' ? $expected : null,
                          $notes !== '' ? $notes : null, $userId]);
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$userId, 'dental_lab_logged',
-                           "Sent \"$desc\" to $vendor for patient #$patientId"
-                           . ($tooth !== '' ? " (tooth $tooth)" : '')]);
+            audit_log($pdo, 'dental_lab_logged', "Sent \"$desc\" to $vendor for patient #$patientId" . ($tooth !== '' ? " (tooth $tooth)" : ''), $userId);
             $success = 'Lab work logged as SENT.';
         } catch (PDOException $e) {
             error_log('[dental_lab log] ' . $e->getMessage());
@@ -100,9 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'advan
                           SET status = ?, $dateCol = CURDATE(), updated_by_id = ?, updated_at = NOW()
                         WHERE id = ? AND voided_at IS NULL")
             ->execute([$to, $userId, $labId]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'dental_lab_status_changed',
-                       "\"{$lab['work_description']}\" ({$lab['vendor_name']}) → $to"]);
+        audit_log($pdo, 'dental_lab_status_changed', "\"{$lab['work_description']}\" ({$lab['vendor_name']}) → $to", $userId);
         $success = 'Marked ' . strtolower($to) . '.';
     }
 }

@@ -90,10 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canClose) {
                     $s, $rev['gross'], $rev['refunds'], $shr['tax'], $shr['doctor'],
                     $income, $exp['operating'], $profit, $detail, $userId,
                 ]);
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$userId, 'month_closed',
-                        'Closed the books for ' . date('F Y', strtotime($s))
-                        . ' — net profit Rs ' . number_format($profit, 2)]);
+                audit_log($pdo, 'month_closed', 'Closed the books for ' . date('F Y', strtotime($s)) . ' — net profit Rs ' . number_format($profit, 2), $userId);
                 $success = date('F Y', strtotime($s)) . ' is closed. Its figures are now frozen.';
                 $month = $target; $monthStart = $s; $monthEnd = $e;
                 $monthLabel = date('F Y', strtotime($s));
@@ -115,9 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canClose) {
                 ');
                 $upd->execute([$userId, $reason, $target . '-01']);
                 if ($upd->rowCount() === 1) {
-                    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                        ->execute([$userId, 'month_reopened',
-                            'Reopened ' . date('F Y', strtotime($target . '-01')) . ' — ' . $reason]);
+                    audit_log($pdo, 'month_reopened', 'Reopened ' . date('F Y', strtotime($target . '-01')) . ' — ' . $reason, $userId);
                     $success = date('F Y', strtotime($target . '-01')) . ' is open again. Its figures are live once more.';
                 } else {
                     $error = 'That month was not closed.';

@@ -68,8 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$locked) {
                         $status === 'finalized' ? date('Y-m-d H:i:s') : null,
                     ]);
             }
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$uid, 'ipd_discharge_summary_' . $status, "IPD summary $status for admission #$admissionId"]);
+            audit_log($pdo, 'ipd_discharge_summary_' . $status, "IPD summary $status for admission #$admissionId", $uid);
             header('Location: ipd_discharge_summary.php?id=' . $admissionId . '&saved=1');
             exit;
         }

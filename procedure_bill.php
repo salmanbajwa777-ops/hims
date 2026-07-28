@@ -250,14 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
                 $itemIns->execute($params);
             }
 
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([
-                (int) $_SESSION['user_id'],
-                'procedure_bill_raised',
-                "Procedure bill $invoiceNumber for patient #$patientId by {$doctor['name']}: Rs "
-                . number_format($grandTotal, 2) . ' (' . count($lines) . ' procedure'
-                . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)",
-            ]);
+            audit_log($pdo, 'procedure_bill_raised', "Procedure bill $invoiceNumber for patient #$patientId by {$doctor['name']}: Rs " . number_format($grandTotal, 2) . ' (' . count($lines) . ' procedure' . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)", (int) $_SESSION['user_id']);
 
             $pdo->commit();
 

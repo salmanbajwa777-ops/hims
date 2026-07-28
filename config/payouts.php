@@ -17,6 +17,8 @@
 /** DP-YYYY-NNNN. Same race-safe GREATEST pattern as expense/refund numbers:
  *  never trust a stored counter alone, take the max of it and what is actually
  *  in the table, so a restore or manual insert cannot re-issue a number. */
+
+require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 function generate_payout_number(PDO $pdo): string {
     $year = (int) date('Y');
     $stmt = $pdo->prepare("
@@ -333,9 +335,7 @@ function create_payout(PDO $pdo, int $doctorId, string $start, string $end, int 
                            'CLAWBACK', $l['clawback_of_payout_id'], $l['clawback_reason']]);
         }
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'payout_created',
-                "Draft payout $number for {$doc['name']} ($start to $end) — net Rs " . number_format($netPaid, 2)]);
+        audit_log($pdo, 'payout_created', "Draft payout $number for {$doc['name']} ($start to $end) — net Rs " . number_format($netPaid, 2), $userId);
         $pdo->commit();
         return [$payoutId, null];
     } catch (PDOException $e) {
@@ -428,10 +428,7 @@ function settle_payout(PDO $pdo, int $payoutId, int $userId, string $source = 'B
         $pdo->prepare("UPDATE doctor_payouts SET status = 'paid', paid_at = NOW(), expense_id = ? WHERE id = ? AND status = 'draft'")
             ->execute([$expenseId, $payoutId]);
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'payout_settled',
-                "Settled {$p['payout_number']} for {$p['doctor_name']} — Rs " . number_format($net, 2)
-                . ((float) $p['carried_out'] > 0 ? ' (Rs ' . number_format((float) $p['carried_out'], 2) . ' carried forward)' : '')]);
+        audit_log($pdo, 'payout_settled', "Settled {$p['payout_number']} for {$p['doctor_name']} — Rs " . number_format($net, 2) . ((float) $p['carried_out'] > 0 ? ' (Rs ' . number_format((float) $p['carried_out'], 2) . ' carried forward)' : ''), $userId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }

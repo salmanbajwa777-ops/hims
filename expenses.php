@@ -278,8 +278,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                 $expenseNumber, number_format($amount, 2), $category['name'], $description);
             if ($isAdmin) { $auditNote .= ' (admin: limits bypassed, auto-approved)'; }
             elseif ($overLimit) { $auditNote .= ' [OVER LIMIT — ' . $limitNote . ']'; }
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$userId, 'expense_posted', $auditNote]);
+            audit_log($pdo, 'expense_posted', $auditNote, $userId);
 
             $pdo->commit();
 
@@ -329,8 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
         ');
         $upd->execute([$userId, $reason, $id]);
         if ($upd->rowCount() === 1) {
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$userId, 'expense_voided', "Voided expense #$id — $reason"]);
+            audit_log($pdo, 'expense_voided', "Voided expense #$id — $reason", $userId);
             $success = 'Expense voided. The voucher number is retained for the record.';
         }
     } else {

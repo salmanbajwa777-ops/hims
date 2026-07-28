@@ -172,3 +172,12 @@ $headExtra = $headExtra ?? '';
     </script>
 </head>
 <body>
+<?php
+/* "Viewing as <staff>" bar. Included here so it covers every logged-in page
+   without editing any of them; it renders nothing unless impersonation is
+   active. Guarded because a handful of standalone pages include this partial
+   without config/impersonation.php in scope. */
+if (function_exists('is_impersonating')) {
+    require __DIR__ . '/impersonation_banner.php';
+}
+?>

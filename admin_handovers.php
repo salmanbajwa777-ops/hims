@@ -57,8 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
                         : ' — matches declared')
                     . ($wasEdited ? '; cashier edits (×' . (int) $closing['edit_count'] . ') APPROVED' : '')
                     . '; signed slip filed.';
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'handover_received', $detail]);
+            audit_log($pdo, 'handover_received', $detail, $_SESSION['user_id']);
 
             $pdo->commit();
 
@@ -152,12 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin
             ]);
             $closingId = (int) $pdo->lastInsertId();
 
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'shift_closed_on_behalf',
-                    "Admin closed stranded shift $closingNumber for cashier #$cashierId on $validDate: "
-                    . 'counted Rs ' . number_format($counted, 2) . ' vs expected Rs '
-                    . number_format($tally['expected_cash'], 2) . ' (variance ' . number_format($variance, 2)
-                    . "); note: $note"]);
+            audit_log($pdo, 'shift_closed_on_behalf', "Admin closed stranded shift $closingNumber for cashier #$cashierId on $validDate: " . 'counted Rs ' . number_format($counted, 2) . ' vs expected Rs ' . number_format($tally['expected_cash'], 2) . ' (variance ' . number_format($variance, 2) . "); note: $note", $_SESSION['user_id']);
 
             $pdo->commit();
 

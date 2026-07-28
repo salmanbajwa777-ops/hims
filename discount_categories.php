@@ -39,8 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
             dc_pct($_POST['procedures_pct'] ?? 0),
             $_SESSION['user_id'],
         ]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'discount_category_saved', "Saved discount category \"$name\""]);
+        audit_log($pdo, 'discount_category_saved', "Saved discount category \"$name\"", $_SESSION['user_id']);
         $success = "Category \"$name\" saved.";
     }
 }
@@ -72,8 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $saved++;
     }
     if ($saved > 0) {
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'discount_categories_saved', "Bulk-saved $saved discount categor" . ($saved === 1 ? 'y' : 'ies')]);
+        audit_log($pdo, 'discount_categories_saved', "Bulk-saved $saved discount categor" . ($saved === 1 ? 'y' : 'ies'), $_SESSION['user_id']);
     }
     $success = "Saved $saved categor" . ($saved === 1 ? 'y' : 'ies') . '. New rates apply to future invoices only.'
         . ($blank ? ' (Rows with a blank name were skipped.)' : '');

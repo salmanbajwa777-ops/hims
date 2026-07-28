@@ -6,6 +6,12 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// "View as staff" helpers. Loaded here — the one file every logged-in page
+// already requires — so is_impersonating() is always in scope for the banner in
+// partials/head.php and for audit tagging, without editing 48 pages. This file
+// only declares functions and reads $_SESSION; it opens no DB connection.
+require_once __DIR__ . '/impersonation.php';
+
 function require_login() {
     if (empty($_SESSION['user_id'])) {
         header('Location: /index.php');

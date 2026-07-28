@@ -150,9 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
                 ]);
                 $bookingId = (int) $pdo->lastInsertId();
 
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$_SESSION['user_id'], 'booking_created',
-                        "Booking #$bookingId for $personName ($phone) with doctor #$doctorId on $bookingDate"]);
+                audit_log($pdo, 'booking_created', "Booking #$bookingId for $personName ($phone) with doctor #$doctorId on $bookingDate", $_SESSION['user_id']);
                 $pdo->commit();
 
                 // Email the doctor (best-effort, after commit).
@@ -179,9 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
     ");
     $upd->execute([$_SESSION['user_id'], $reason ?: null, $bookingId]);
     if ($upd->rowCount()) {
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'booking_cancelled',
-                "Cancelled booking #$bookingId" . ($reason !== '' ? " — $reason" : '')]);
+        audit_log($pdo, 'booking_cancelled', "Cancelled booking #$bookingId" . ($reason !== '' ? " — $reason" : ''), $_SESSION['user_id']);
         // Email the doctor it fell through (best-effort).
         notify_booking_cancelled($pdo, $bookingId);
         $success = 'Booking cancelled — the doctor has been notified.';
@@ -201,8 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
     ");
     $upd->execute([$bookingId]);
     if ($upd->rowCount()) {
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'booking_no_show', "Marked booking #$bookingId as no-show"]);
+        audit_log($pdo, 'booking_no_show', "Marked booking #$bookingId as no-show", $_SESSION['user_id']);
         $success = 'Marked as no-show.';
     } else {
         $error = 'Only an open booking for today or earlier can be marked no-show.';

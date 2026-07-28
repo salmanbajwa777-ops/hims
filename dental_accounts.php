@@ -55,10 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'open_
                 ')->execute([$accountNumber, $patientId, $doctorId, $title, $discountPct,
                              $notes !== '' ? $notes : null, $userId]);
                 $newId = (int) $pdo->lastInsertId();
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$userId, 'dental_account_opened',
-                               "Opened package $accountNumber \"$title\" for patient #$patientId"
-                               . ($discountPct > 0 ? " (discount {$discountPct}%)" : '')]);
+                audit_log($pdo, 'dental_account_opened', "Opened package $accountNumber \"$title\" for patient #$patientId" . ($discountPct > 0 ? " (discount {$discountPct}%)" : ''), $userId);
                 $pdo->commit();
                 header('Location: dental_account.php?id=' . $newId . '&opened=1');
                 exit;

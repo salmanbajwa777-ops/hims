@@ -97,10 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
             . 'ON DUPLICATE KEY UPDATE ' . implode(', ', $upd)
         )->execute($vals);
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'procedure_added', "Added/updated procedure \"$name\" @ Rs $fee"
-                . ($consent ? ' (consent required)' : '') . ($hasDisp ? ' (has disposables)' : '')
-                . (!empty($isDental) ? ' (dental' . ($category ? ': ' . DENTAL_CAT_LABELS[$category] : '') . ')' : '')]);
+        audit_log($pdo, 'procedure_added', "Added/updated procedure \"$name\" @ Rs $fee" . ($consent ? ' (consent required)' : '') . ($hasDisp ? ' (has disposables)' : '') . (!empty($isDental) ? ' (dental' . ($category ? ': ' . DENTAL_CAT_LABELS[$category] : '') . ')' : ''), $_SESSION['user_id']);
         $success = "Procedure \"$name\" saved.";
     }
 }
@@ -161,8 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         }
     }
     if ($saved > 0) {
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'procedures_saved', "Bulk-saved $saved procedure(s)"]);
+        audit_log($pdo, 'procedures_saved', "Bulk-saved $saved procedure(s)", $_SESSION['user_id']);
         $success = "Saved $saved procedure(s)." . ($bad ? ' (Rows missing a name/valid rate were skipped.)' : '') . ($dupe ? ' (Duplicate names were skipped.)' : '');
     } else {
         $error = $dupe ? 'A procedure with that name already exists.' : 'A procedure needs a name and a non-negative rate.';
@@ -267,12 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 $pdo->prepare('DELETE FROM doctor_procedures WHERE doctor_id = ?')->execute([$editId]);
             }
 
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([
-                    $_SESSION['user_id'],
-                    'doctor_procedures_updated',
-                    "Updated procedure assignments for doctor #$editId ({$doctor['name']}), " . count($keepIds) . ' assignment(s) on file',
-                ]);
+            audit_log($pdo, 'doctor_procedures_updated', "Updated procedure assignments for doctor #$editId ({$doctor['name']}), " . count($keepIds) . ' assignment(s) on file', $_SESSION['user_id']);
             $success = "Procedure assignments updated for {$doctor['name']}.";
         }
     }

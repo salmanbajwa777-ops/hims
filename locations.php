@@ -50,8 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
         $success = 'Area approved.';
     }
 
-    $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-    $log->execute([$_SESSION['user_id'], 'area_reviewed', "Reviewed pending area #$areaId" . ($mergeIntoId ? " (merged into #$mergeIntoId)" : '')]);
+    audit_log($pdo, 'area_reviewed', "Reviewed pending area #$areaId" . ($mergeIntoId ? " (merged into #$mergeIntoId)" : ''), $_SESSION['user_id']);
 }
 
 $cities = $pdo->query('SELECT id, name FROM cities ORDER BY name')->fetchAll();

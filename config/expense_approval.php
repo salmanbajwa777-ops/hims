@@ -13,6 +13,8 @@
  * Returns ['ok' => bool, 'status' => 'APPROVED'|'REJECTED'|'ALREADY'|'MISSING',
  *          'message' => string]. 'ALREADY' means someone beat us to it.
  */
+
+require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/mailer.php';   // (for consistency; notify is fired by caller)
 
 function decide_expense(PDO $pdo, int $expenseId, bool $approve, ?int $deciderId, string $rejectReason = ''): array {
@@ -72,12 +74,7 @@ function decide_expense(PDO $pdo, int $expenseId, bool $approve, ?int $deciderId
 
         // audit_logs.user_id is nullable (FK ON DELETE SET NULL); a magic-link
         // decider is anonymous, so log NULL + note the channel in the details.
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([
-                $deciderId,
-                $action,
-                $deciderId !== null ? $note : $note . ' (via email approval link)',
-            ]);
+        audit_log($pdo, $action, $deciderId !== null ? $note : $note . ' (via email approval link)', $deciderId);
 
         $pdo->commit();
         return [

@@ -130,8 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remov
     $pdo->prepare('DELETE FROM admission_services WHERE id = ? AND admission_id = ?')->execute([$sid, $admissionId]);
     // Removing a chargeable line is a money-affecting edit — audit it (matches the
     // audit discipline on every other bill mutation).
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$uid, 'admission_service_removed', "Removed service #$sid from admission #$admissionId"]);
+    audit_log($pdo, 'admission_service_removed', "Removed service #$sid from admission #$admissionId", $uid);
     $flash = 'Service removed.';
 }
 
@@ -177,8 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assig
     if ($nurseId > 0) {
         $pdo->prepare('UPDATE admissions SET assigned_nurse_id = ?, assigned_at = NOW(), status = IF(status = \'PENDING_ASSIGNMENT\', \'ACTIVE\', status) WHERE id = ?')
             ->execute([$nurseId, $admissionId]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'admission_nurse_assigned', "Assigned nurse #$nurseId to admission #$admissionId"]);
+        audit_log($pdo, 'admission_nurse_assigned', "Assigned nurse #$nurseId to admission #$admissionId", $uid);
         $flash = 'Nurse assigned.';
         $adm = load_admission($pdo, $admissionId);
     }
@@ -210,8 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
         $pdo->prepare('UPDATE admissions SET status = \'DISCHARGE_IN_PROGRESS\', discharged_at = COALESCE(discharged_at, NOW()) WHERE id = ?')
             ->execute([$admissionId]);
         $pdo->prepare('UPDATE visits SET discharged_at = NOW() WHERE id = ?')->execute([(int) $adm['visit_id']]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'admission_discharge_submitted', "Discharge submitted for admission #$admissionId"]);
+        audit_log($pdo, 'admission_discharge_submitted', "Discharge submitted for admission #$admissionId", $uid);
 
         $canBill = has_permission('ADMISSION_FINALIZE_BILL');
         if ($canBill) {

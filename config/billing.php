@@ -11,6 +11,8 @@
 // pattern used for MRNs and queue tokens. rowCount() distinguishes the two branches:
 // MySQL reports 1 affected row for a fresh INSERT and 2 for the ON DUPLICATE KEY
 // update path, so the first invoice of a month correctly gets sequence 1.
+
+require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 function generate_invoice_number(PDO $pdo): string {
     $year = (int) date('Y');
     $month = (int) date('n');
@@ -1181,8 +1183,7 @@ function void_bill(PDO $pdo, int $billId, int $userId, string $reason): array {
     if ($upd->rowCount() !== 1) {
         return [false, 'Could not void the invoice (already voided?).'];
     }
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$userId, 'bill_voided', "Voided invoice {$bill['invoice_number']} (bill #$billId) — $reason"]);
+    audit_log($pdo, 'bill_voided', "Voided invoice {$bill['invoice_number']} (bill #$billId) — $reason", $userId);
     return [true, "Invoice {$bill['invoice_number']} voided. The number is kept for the record."];
 }
 
@@ -1226,8 +1227,7 @@ function void_refund(PDO $pdo, int $refundId, int $userId, string $reason): arra
     if ($upd->rowCount() !== 1) {
         return [false, 'Could not void the refund (already voided?).'];
     }
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$userId, 'refund_voided', "Voided refund {$r['refund_number']} (#$refundId) — $reason"]);
+    audit_log($pdo, 'refund_voided', "Voided refund {$r['refund_number']} (#$refundId) — $reason", $userId);
     return [true, "Refund {$r['refund_number']} voided. The number is kept for the record."];
 }
 
@@ -1283,8 +1283,7 @@ function void_admission_bill(PDO $pdo, int $admBillId, int $userId, string $reas
             $pdo->prepare('UPDATE patients SET unpaid_flag = 0 WHERE id = ? AND unpaid_total <= 0')
                 ->execute([(int) $ab['patient_id']]);
         }
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'admission_bill_voided', "Voided admission bill {$ab['invoice_number']} (#$admBillId) — $reason"]);
+        audit_log($pdo, 'admission_bill_voided', "Voided admission bill {$ab['invoice_number']} (#$admBillId) — $reason", $userId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -1328,8 +1327,7 @@ function void_er_bill(PDO $pdo, int $erBillId, int $userId, string $reason): arr
             $pdo->rollBack();
             return [false, 'Could not void the ER bill (already voided?).'];
         }
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'er_bill_voided', "Voided ER bill {$eb['invoice_number']} (#$erBillId) — $reason"]);
+        audit_log($pdo, 'er_bill_voided', "Voided ER bill {$eb['invoice_number']} (#$erBillId) — $reason", $userId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -1374,8 +1372,7 @@ function void_procedure_bill(PDO $pdo, int $procBillId, int $userId, string $rea
             $pdo->rollBack();
             return [false, 'Could not void the procedure bill (already voided?).'];
         }
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'procedure_bill_voided', "Voided procedure bill {$pb['invoice_number']} (#$procBillId) — $reason"]);
+        audit_log($pdo, 'procedure_bill_voided', "Voided procedure bill {$pb['invoice_number']} (#$procBillId) — $reason", $userId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }

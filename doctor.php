@@ -63,8 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($upd->rowCount()) {
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([$_SESSION['user_id'], $auditAction, "Visit #$visitId ($auditAction)"]);
+            audit_log($pdo, $auditAction, "Visit #$visitId ($auditAction)", $_SESSION['user_id']);
         }
 
         // Post/redirect/get so a refresh doesn't re-submit the state change.

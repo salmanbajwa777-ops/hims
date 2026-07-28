@@ -14,6 +14,7 @@
  * Requires config/billing.php (require_day_open, doctor_split_sql).
  */
 
+require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/billing.php';
 
 
@@ -325,9 +326,7 @@ function void_dental_account_item(PDO $pdo, int $itemId, int $userId, string $re
             $pdo->rollBack();
             return [false, 'Could not void the item (already voided?).'];
         }
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'dental_account_item_voided',
-                       "Voided \"{$it['description']}\" (Rs {$it['amount']}) on account {$it['account_number']} — $reason"]);
+        audit_log($pdo, 'dental_account_item_voided', "Voided \"{$it['description']}\" (Rs {$it['amount']}) on account {$it['account_number']} — $reason", $userId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -380,9 +379,7 @@ function void_dental_payment(PDO $pdo, int $paymentId, int $userId, string $reas
             $pdo->rollBack();
             return [false, 'Could not void the payment (already voided?).'];
         }
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'dental_payment_voided',
-                       "Voided receipt {$pay['receipt_number']} (Rs {$pay['amount']}) on account {$pay['account_number']} — $reason"]);
+        audit_log($pdo, 'dental_payment_voided', "Voided receipt {$pay['receipt_number']} (Rs {$pay['amount']}) on account {$pay['account_number']} — $reason", $userId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }

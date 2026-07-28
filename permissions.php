@@ -61,12 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 
         $pdo->commit();
 
-        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-        $log->execute([
-            $_SESSION['user_id'],
-            'role_permissions_updated',
-            "Updated default permissions for role $role (" . count($checkedIds) . ' permissions)',
-        ]);
+        audit_log($pdo, 'role_permissions_updated', "Updated default permissions for role $role (" . count($checkedIds) . ' permissions)', $_SESSION['user_id']);
 
         $success = "Default permissions updated for " . ucfirst(strtolower($role)) . '.';
     }

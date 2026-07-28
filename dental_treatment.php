@@ -84,10 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
                     $nextPlan !== '' ? $nextPlan : null,
                     $doctorId, $userId,
                 ]);
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$userId, 'dental_treatment_recorded',
-                               "Recorded \"{$proc['name']}\"" . ($tooth !== '' ? " on tooth $tooth" : '')
-                               . " for patient #$patientId"]);
+                audit_log($pdo, 'dental_treatment_recorded', "Recorded \"{$proc['name']}\"" . ($tooth !== '' ? " on tooth $tooth" : '') . " for patient #$patientId", $userId);
                 $success = 'Treatment recorded.' . ($tooth !== '' ? ' Tooth ' . htmlspecialchars($tooth) . '.' : '');
             } catch (PDOException $e) {
                 error_log('[dental_treatment] ' . $e->getMessage());
@@ -113,8 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
                                WHERE id = ? AND voided_at IS NULL');
         $upd->execute([$userId, $reason, $recId]);
         if ($upd->rowCount() === 1) {
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$userId, 'dental_treatment_voided', "Voided treatment record #$recId — $reason"]);
+            audit_log($pdo, 'dental_treatment_voided', "Voided treatment record #$recId — $reason", $userId);
             $success = 'Treatment record voided.';
         } else {
             $error = 'Could not void that record (already voided?).';

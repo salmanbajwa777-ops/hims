@@ -35,8 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
             ON DUPLICATE KEY UPDATE shift_limit = VALUES(shift_limit), is_active = 1
         ');
         $stmt->execute([$name, ec_amt($_POST['shift_limit'] ?? 0), $_SESSION['user_id']]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'expense_category_saved', "Saved expense category \"$name\""]);
+        audit_log($pdo, 'expense_category_saved', "Saved expense category \"$name\"", $_SESSION['user_id']);
         $success = "Category \"$name\" saved.";
     }
 }
@@ -64,8 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         }
     }
     if ($saved > 0) {
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'expense_categories_saved', "Bulk-saved $saved expense categor" . ($saved === 1 ? 'y' : 'ies')]);
+        audit_log($pdo, 'expense_categories_saved', "Bulk-saved $saved expense categor" . ($saved === 1 ? 'y' : 'ies'), $_SESSION['user_id']);
         $success = "Saved $saved categor" . ($saved === 1 ? 'y' : 'ies') . '. New limits apply from the next posting.'
             . ($blank ? ' (Blank-named rows skipped.)' : '') . ($dupe ? ' (Some names clashed and were skipped.)' : '');
     } else {
@@ -83,8 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             $error = 'This category has expenses recorded against it — deactivate it instead so the history stays intact.';
         } else {
             $pdo->prepare('DELETE FROM expense_categories WHERE id = ?')->execute([$id]);
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'expense_category_deleted', "Deleted unused expense category #$id"]);
+            audit_log($pdo, 'expense_category_deleted', "Deleted unused expense category #$id", $_SESSION['user_id']);
             $success = 'Category deleted.';
         }
     }
@@ -97,8 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         INSERT INTO clinic_settings (setting_key, setting_value) VALUES (?, ?)
         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
     ')->execute(['expense_shift_limit_total', (string) $limit]);
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$_SESSION['user_id'], 'expense_shift_limit_saved', "Set overall per-shift expense limit to Rs $limit"]);
+    audit_log($pdo, 'expense_shift_limit_saved', "Set overall per-shift expense limit to Rs $limit", $_SESSION['user_id']);
     $success = $limit > 0
         ? 'Overall per-shift limit set to Rs ' . number_format($limit) . ' per user.'
         : 'Overall per-shift limit removed — postings are only bounded by category limits now.';

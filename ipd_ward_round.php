@@ -146,8 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 $uid, $loggedRole,
             ]);
 
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$uid, 'ipd_ward_round_saved', "Ward round note #$noteId for IPD admission #$admissionId (day $hospitalDay, $form[progress])"]);
+            audit_log($pdo, 'ipd_ward_round_saved', "Ward round note #$noteId for IPD admission #$admissionId (day $hospitalDay, $form[progress])", $uid);
 
             $pdo->commit();
             header('Location: ipd_ward_round.php?id=' . $admissionId . '&saved=1');

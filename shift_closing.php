@@ -158,15 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                 ]);
                 $closingId = (int) $pdo->lastInsertId();
 
-                $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-                $log->execute([
-                    $uid,
-                    'shift_closed',
-                    "Closing $closingNumber for $today: counted Rs " . number_format($counted, 2)
-                    . ' vs expected Rs ' . number_format($tally['expected_cash'], 2)
-                    . ' (variance ' . number_format($variance, 2) . '), handover declared Rs '
-                    . number_format($handoverDeclared, 2),
-                ]);
+                audit_log($pdo, 'shift_closed', "Closing $closingNumber for $today: counted Rs " . number_format($counted, 2) . ' vs expected Rs ' . number_format($tally['expected_cash'], 2) . ' (variance ' . number_format($variance, 2) . '), handover declared Rs ' . number_format($handoverDeclared, 2), $uid);
 
                 $pdo->commit();
 
@@ -253,9 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                     ")->execute([$counted, $variance, $varianceNote ?: null, $handoverDeclared, $round, (int) $closing['id']]);
 
                     $changedList = implode(', ', array_keys($changes));
-                    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                        ->execute([$uid, 'shift_closing_edited',
-                            "Closing {$closing['closing_number']} edited (round $round): $changedList"]);
+                    audit_log($pdo, 'shift_closing_edited', "Closing {$closing['closing_number']} edited (round $round): $changedList", $uid);
 
                     $pdo->commit();
 

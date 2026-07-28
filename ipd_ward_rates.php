@@ -49,8 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $id = (int) $id;
         $upd->execute([(float) $amt, (float) ($fees[$id] ?? 0), isset($enabled[$id]) ? 1 : 0, $uid, $id]);
     }
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$uid, 'ipd_ward_rates_updated', 'Updated IPD ward rates']);
+    audit_log($pdo, 'ipd_ward_rates_updated', 'Updated IPD ward rates', $uid);
     $success = 'Ward rates saved.';
 }
 

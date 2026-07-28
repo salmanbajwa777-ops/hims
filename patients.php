@@ -104,8 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick
     $insert->execute([$cityId, $name, 'pending', $_SESSION['user_id']]);
     $newId = (int) $pdo->lastInsertId();
 
-    $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-    $log->execute([$_SESSION['user_id'], 'area_quick_added', "Added area \"$name\" (id #$newId) pending review"]);
+    audit_log($pdo, 'area_quick_added', "Added area \"$name\" (id #$newId) pending review", $_SESSION['user_id']);
 
     echo json_encode(['id' => $newId, 'name' => $name, 'status' => 'pending']);
     exit;
@@ -407,9 +406,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
             $pdo->prepare('UPDATE patients SET mrn = ? WHERE id = ?')->execute([$mrn, $patientId]);
 
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'patient_registered_only',
-                    "Registered patient #$patientId ($name, MRN $mrn) — record only, no visit/invoice"]);
+            audit_log($pdo, 'patient_registered_only', "Registered patient #$patientId ($name, MRN $mrn) — record only, no visit/invoice", $_SESSION['user_id']);
 
             $pdo->commit();
 
@@ -526,13 +523,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                     $paymentMode
                 );
 
-                $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-                $log->execute([
-                    $_SESSION['user_id'],
-                    'patient_registered',
-                    "Registered patient #$patientId ($name, MRN $mrn), visit #$visitId with doctor #$doctorId, token #$tokenNo" .
-                        ($discountPct > 0 ? ", {$discountPct}% discount applied" : ''),
-                ]);
+                audit_log($pdo, 'patient_registered', "Registered patient #$patientId ($name, MRN $mrn), visit #$visitId with doctor #$doctorId, token #$tokenNo" . ($discountPct > 0 ? ", {$discountPct}% discount applied" : ''), $_SESSION['user_id']);
 
                 $pdo->commit();
 
@@ -677,10 +668,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 $pdo, $visitId, $ctRow['label'], $fullFee, $discountPct, (int) $_SESSION['user_id'], $paymentMode
             );
 
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'followup_registered',
-                    "Follow-up visit #$visitId for patient #$patientId ({$patient['mrn']}), {$quote['fee_type']} ({$quote['reason']}), token #$tokenNo"
-                    . ($categoryPct > 0 ? ", {$cat['name']} category discount {$categoryPct}% (total {$discountPct}%)" : '')]);
+            audit_log($pdo, 'followup_registered', "Follow-up visit #$visitId for patient #$patientId ({$patient['mrn']}), {$quote['fee_type']} ({$quote['reason']}), token #$tokenNo" . ($categoryPct > 0 ? ", {$cat['name']} category discount {$categoryPct}% (total {$discountPct}%)" : ''), $_SESSION['user_id']);
 
             $pdo->commit();
 
@@ -737,11 +725,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_d
     } else {
         $pdo->prepare('UPDATE patients SET discount_category_id = ?, discount_assigned_by_id = ?, discount_assigned_at = NOW() WHERE id = ?')
             ->execute([$categoryId, $_SESSION['user_id'], $targetId]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'patient_discount_category_set',
-                $categoryId !== null
-                    ? "Assigned \"$catName\" discount category to patient #$targetId ({$target['name']}, MRN {$target['mrn']})"
-                    : "Removed discount category from patient #$targetId ({$target['name']}, MRN {$target['mrn']})"]);
+        audit_log($pdo, 'patient_discount_category_set', $categoryId !== null ? "Assigned \"$catName\" discount category to patient #$targetId ({$target['name']}, MRN {$target['mrn']})" : "Removed discount category from patient #$targetId ({$target['name']}, MRN {$target['mrn']})", $_SESSION['user_id']);
         $success = $categoryId !== null
             ? "{$target['name']} assigned to \"$catName\" — future invoices auto-discount."
             : "Discount category removed from {$target['name']}.";
@@ -768,12 +752,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         // (which only detaches, never deletes, the visits they're linked to).
         $pdo->prepare('DELETE FROM patients WHERE id = ?')->execute([$deleteId]);
 
-        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-        $log->execute([
-            $_SESSION['user_id'],
-            'patient_deleted',
-            "Deleted patient #$deleteId ({$targetPatient['name']}, MRN {$targetPatient['mrn']})",
-        ]);
+        audit_log($pdo, 'patient_deleted', "Deleted patient #$deleteId ({$targetPatient['name']}, MRN {$targetPatient['mrn']})", $_SESSION['user_id']);
 
         $success = "Deleted {$targetPatient['name']}.";
     }

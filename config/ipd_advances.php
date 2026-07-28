@@ -21,6 +21,8 @@
  */
 
 /** True once the advance ledger exists. Cached per request. */
+
+require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 function ipd_advances_ready(PDO $pdo): bool
 {
     static $ready = null;
@@ -144,9 +146,7 @@ function ipd_take_advance(PDO $pdo, int $admissionId, float $amount, string $met
                 VALUES (?, ?, 'PAYMENT', ?, ?, ?, NOW(), ?, ?)")
             ->execute([$receipt, $admissionId, $amount, $method, $note ?: null, $uid, $uid]);
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'ipd_advance_taken',
-                "Advance $receipt — Rs " . number_format($amount, 2) . " ($method) on admission #$admissionId"]);
+        audit_log($pdo, 'ipd_advance_taken', "Advance $receipt — Rs " . number_format($amount, 2) . " ($method) on admission #$admissionId", $uid);
         $pdo->commit();
         return [true, $receipt];
     } catch (Throwable $e) {
@@ -191,9 +191,7 @@ function ipd_void_advance(PDO $pdo, int $advanceId, string $reason, int $uid): a
                        WHERE id = ? AND voided_at IS NULL')
             ->execute([$uid, mb_substr(trim($reason), 0, 255), $advanceId]);
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'ipd_advance_voided',
-                "Voided advance {$row['receipt_number']} (Rs " . number_format((float) $row['amount'], 2) . "): $reason"]);
+        audit_log($pdo, 'ipd_advance_voided', "Voided advance {$row['receipt_number']} (Rs " . number_format((float) $row['amount'], 2) . "): $reason", $uid);
         return [true, $row['receipt_number']];
     } catch (Throwable $e) {
         return [false, 'Could not void the receipt.'];
@@ -246,9 +244,7 @@ function ipd_refund_excess_advance(PDO $pdo, int $admissionId, float $amount, st
                 VALUES (?, ?, 'REFUND', ?, ?, 'Excess advance returned at discharge', NOW(), ?, ?)")
             ->execute([$receipt, $admissionId, $amount, $method, $uid, $uid]);
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'ipd_advance_refunded',
-                "Returned excess advance $receipt — Rs " . number_format($amount, 2) . " ($method) on admission #$admissionId"]);
+        audit_log($pdo, 'ipd_advance_refunded', "Returned excess advance $receipt — Rs " . number_format($amount, 2) . " ($method) on admission #$admissionId", $uid);
         return [true, $receipt];
     } catch (Throwable $e) {
         return [false, 'Could not record the refund.'];

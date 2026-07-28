@@ -28,6 +28,8 @@
 
 // Required here, not left to callers: IPD admits arrive from three pages and the
 // shell visit needs a session-aware token from every one of them.
+
+require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/tokens.php';
 
 function handle_ipd_admit(PDO $pdo): array {
@@ -160,8 +162,7 @@ function handle_ipd_admit(PDO $pdo): array {
         $pdo->prepare('UPDATE visits SET disposition = \'IN_DOOR\', admitted_at = NOW() WHERE id = ?')
             ->execute([$visitId]);
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'ipd_patient_admitted', "IPD admit: visit #$visitId, ward $ward room $roomNo, admission #$admissionId by $admitRole"]);
+        audit_log($pdo, 'ipd_patient_admitted', "IPD admit: visit #$visitId, ward $ward room $roomNo, admission #$admissionId by $admitRole", $uid);
 
         $pdo->commit();
 

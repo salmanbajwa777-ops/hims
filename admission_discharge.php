@@ -148,8 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
         // that is no longer embedded in the amount.
         $pdo->prepare('UPDATE admission_bill_items SET description = ?, quantity = ?, unit_rate = ?, amount = ?, discount_pct = 0, discount_amount = 0 WHERE id = ? AND admission_bill_id = ?')
             ->execute([$desc, $qty, $rate, $amount, $itemId, $bill['id']]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'admission_bill_item_edited', "Edited item #$itemId on admission bill {$bill['invoice_number']}"]);
+        audit_log($pdo, 'admission_bill_item_edited', "Edited item #$itemId on admission bill {$bill['invoice_number']}", $uid);
         resync_admission_bill_discount($pdo, (int) $bill['id']);
         recalc_admission_bill_totals($pdo, (int) $bill['id']);
     }
@@ -194,8 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply
     $pdo->prepare('UPDATE admission_bills SET manual_discount_amount = ?, manual_discount_pct = ?, manual_discount_by_id = ? WHERE id = ?')
         ->execute([$amount, $pct, $uid, $bill['id']]);
     recalc_admission_bill_totals($pdo, (int) $bill['id']);
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$uid, 'admission_bill_discount', "Manual discount Rs " . number_format($amount, 2) . ($pct > 0 ? " ({$pct}%)" : '') . " on {$bill['invoice_number']}"]);
+    audit_log($pdo, 'admission_bill_discount', "Manual discount Rs " . number_format($amount, 2) . ($pct > 0 ? " ({$pct}%)" : '') . " on {$bill['invoice_number']}", $uid);
     header('Location: admission_discharge.php?id=' . $admissionId); exit;
 }
 
@@ -255,8 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
         }
         $pdo->prepare('UPDATE admissions SET status = \'DISCHARGED\', discharge_finalized_by_id = ?, discharge_finalized_at = NOW() WHERE id = ?')
             ->execute([$uid, $admissionId]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'admission_bill_paid', "Admission bill {$bill['invoice_number']} paid Rs " . number_format($paid, 2) . " ($method)"]);
+        audit_log($pdo, 'admission_bill_paid', "Admission bill {$bill['invoice_number']} paid Rs " . number_format($paid, 2) . " ($method)", $uid);
         $pdo->commit();
 
         // Alert admin: discharge complete, bill paid in full (best-effort, after commit).
@@ -312,8 +309,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
                 ->execute([$short, (int) $adm['patient_id']]);
             $pdo->prepare('UPDATE admissions SET status = \'DISCHARGED\', discharge_finalized_by_id = ?, discharge_finalized_at = NOW() WHERE id = ?')
                 ->execute([$uid, $admissionId]);
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$uid, 'admission_writeoff_approved', "Wrote off Rs " . number_format($short, 2) . " on {$bill['invoice_number']}: $reason"]);
+            audit_log($pdo, 'admission_writeoff_approved', "Wrote off Rs " . number_format($short, 2) . " on {$bill['invoice_number']}: $reason", $uid);
             $pdo->commit();
 
             // Alert admin: discharge with a write-off (best-effort, after commit).

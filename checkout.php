@@ -45,8 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'start
                 (int) $_SESSION['user_id']
             );
 
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([$_SESSION['user_id'], 'bill_created', "Created bill #$billId for visit #$visitId"]);
+            audit_log($pdo, 'bill_created', "Created bill #$billId for visit #$visitId", $_SESSION['user_id']);
 
             $pdo->commit();
             header('Location: checkout.php?bill_id=' . $billId);
@@ -112,8 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
         $error = 'Bill not found or already finalized.';
     } else {
         $pdo->prepare("UPDATE bills SET status = 'finalized' WHERE id = ?")->execute([$billId]);
-        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-        $log->execute([$_SESSION['user_id'], 'bill_finalized', "Finalized bill #$billId ({$bill['invoice_number']})"]);
+        audit_log($pdo, 'bill_finalized', "Finalized bill #$billId ({$bill['invoice_number']})", $_SESSION['user_id']);
         $success = 'Invoice finalized.';
         header('Location: checkout.php?bill_id=' . $billId);
         exit;
@@ -170,8 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
             ")->execute([$paymentMethod, $bill['grand_total'], $billId]);
         }
 
-        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-        $log->execute([$_SESSION['user_id'], 'bill_paid', "Recorded payment for bill #$billId ({$bill['invoice_number']}), method $paymentMethod, amount {$bill['grand_total']}"]);
+        audit_log($pdo, 'bill_paid', "Recorded payment for bill #$billId ({$bill['invoice_number']}), method $paymentMethod, amount {$bill['grand_total']}", $_SESSION['user_id']);
 
         // Log the settled invoice to the yearly Google Sheet. Bills raised at
         // registration already pushed their row and sheet_push() skips anything

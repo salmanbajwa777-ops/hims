@@ -142,12 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
             ]);
             $refundId = (int) $pdo->lastInsertId();
 
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([
-                $_SESSION['user_id'],
-                'refund_issued',
-                "Refund $refundNumber of Rs $amount against bill #$billId, reason: $reason",
-            ]);
+            audit_log($pdo, 'refund_issued', "Refund $refundNumber of Rs $amount against bill #$billId, reason: $reason", $_SESSION['user_id']);
 
             $pdo->commit();
 

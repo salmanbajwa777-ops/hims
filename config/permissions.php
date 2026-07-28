@@ -16,6 +16,35 @@ if (isset($pdo) && $pdo instanceof PDO) {
     $pdo->exec("SET time_zone = '+05:00'");
 }
 
+/**
+ * Single funnel for audit_logs writes.
+ *
+ * Exists so that "who really did this" survives impersonation. While an admin
+ * is viewing the app as a staff member, $_SESSION['user_id'] IS the staff
+ * member — deliberately, so day-cash and closing totals reconcile against what
+ * that staff member sees on their own screen. That leaves the audit trail as
+ * the only place the admin's involvement can be recorded, so this appends
+ * "[via ADMIN … viewing as …]" to details automatically.
+ *
+ * imp_audit_suffix() returns '' in a normal session, so this is a no-op wrapper
+ * outside impersonation. A DB trigger would have caught the same cases without
+ * touching call sites, but this DB user is denied CREATE ROUTINE and the
+ * project has never shipped a trigger, so tagging happens in PHP instead.
+ *
+ * $userId defaults to the acting session user; pass NULL explicitly for the
+ * system/cron writes that have no user.
+ */
+function audit_log(PDO $pdo, string $action, string $details, $userId = false): void {
+    if ($userId === false) {
+        $userId = $_SESSION['user_id'] ?? null;
+    }
+    if (function_exists('imp_audit_suffix')) {
+        $details .= imp_audit_suffix();
+    }
+    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
+        ->execute([$userId !== null ? (int) $userId : null, $action, $details]);
+}
+
 function load_permissions(PDO $pdo, int $userId, string $baseRole): array {
     $stmt = $pdo->prepare('
         SELECT p.`key`

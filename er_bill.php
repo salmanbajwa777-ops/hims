@@ -150,13 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
                 $itemIns->execute([$erBillId, $ln['id'], $ln['name'], $ln['qty'], $ln['rate'], $lineAmount]);
             }
 
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([
-                (int) $_SESSION['user_id'],
-                'er_bill_raised',
-                "ER bill $invoiceNumber for patient #$patientId: Rs " . number_format($grandTotal, 2)
-                . ' (' . count($lines) . ' service' . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)",
-            ]);
+            audit_log($pdo, 'er_bill_raised', "ER bill $invoiceNumber for patient #$patientId: Rs " . number_format($grandTotal, 2) . ' (' . count($lines) . ' service' . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)", (int) $_SESSION['user_id']);
 
             $pdo->commit();
 

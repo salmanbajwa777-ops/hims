@@ -132,10 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
                              $text !== '' ? $text : null,
                              $snapshot ? json_encode($snapshot) : null, $userId]);
                 $newId = (int) $pdo->lastInsertId();
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$userId, 'dental_consent_generated',
-                               "Generated consent #$newId for patient #$patientId"
-                               . ($snapshot ? " (package {$snapshot['account_number']}, total Rs {$snapshot['total']})" : '')]);
+                audit_log($pdo, 'dental_consent_generated', "Generated consent #$newId for patient #$patientId" . ($snapshot ? " (package {$snapshot['account_number']}, total Rs {$snapshot['total']})" : ''), $userId);
                 header('Location: dental_consent.php?patient_id=' . $patientId . '&generated=' . $newId);
                 exit;
             } catch (PDOException $e) {
@@ -173,9 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
             ->execute([$signedName, $relation !== '' ? $relation : null, $cid]);
 
         if (dental_consent_store($pdo, $pending, $cid, $userId)) {
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$userId, 'dental_consent_signed',
-                           "Signed consent #$cid uploaded — signed by $signedName"]);
+            audit_log($pdo, 'dental_consent_signed', "Signed consent #$cid uploaded — signed by $signedName", $userId);
             $success = 'Consent recorded as signed.';
         } else {
             $error = 'Could not save the scan. Please try again.';

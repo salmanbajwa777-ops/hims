@@ -56,8 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
     $pdo->prepare("UPDATE ipd_admissions SET status = 'DISCHARGE_IN_PROGRESS', discharged_at = COALESCE(discharged_at, NOW()) WHERE id = ?")
         ->execute([$admissionId]);
     $pdo->prepare('UPDATE visits SET discharged_at = NOW() WHERE id = ?')->execute([(int) $adm['visit_id']]);
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$uid, 'ipd_discharge_submitted', "IPD discharge submitted for admission #$admissionId"]);
+    audit_log($pdo, 'ipd_discharge_submitted', "IPD discharge submitted for admission #$admissionId", $uid);
     $flash = 'Discharge submitted — review the bill below.';
     $adm = load_ipd_adm_bill($pdo, $admissionId);
 }
@@ -111,8 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply
         $pdo->prepare('UPDATE ipd_bills SET manual_discount_amount = ?, manual_discount_pct = 0 WHERE id = ?')->execute([$val, $bill['id']]);
     }
     recalc_ipd_bill_totals($pdo, (int) $bill['id']);
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$uid, 'ipd_bill_discount', "Discount on IPD bill #{$bill['id']} ($mode $val)"]);
+    audit_log($pdo, 'ipd_bill_discount', "Discount on IPD bill #{$bill['id']} ($mode $val)", $uid);
     $flash = 'Discount applied.';
     $bill = ensure_ipd_bill($pdo, $adm, $uid);
     $locked = ($bill['status'] === 'paid' || $bill['printed_at']);
@@ -172,8 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
             $pdo->prepare("UPDATE ipd_admissions SET status = 'DISCHARGED', discharge_finalized_by_id = ?, discharge_finalized_at = NOW(), discharged_at = COALESCE(discharged_at, NOW()) WHERE id = ?")
                 ->execute([$uid, $admissionId]);
 
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$uid, 'ipd_bill_settled', "IPD bill {$bill['invoice_number']} settled: collected $paid, advance applied $advApplied, write-off $writeOff"]);
+            audit_log($pdo, 'ipd_bill_settled', "IPD bill {$bill['invoice_number']} settled: collected $paid, advance applied $advApplied, write-off $writeOff", $uid);
             $pdo->commit();
 
             // Return the excess AFTER the bill commits: the refund is its own

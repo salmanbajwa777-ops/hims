@@ -22,6 +22,8 @@
 // Required here rather than left to the callers: admits arrive from three pages
 // (receptionist.php, doctor.php, patients.php) and only one of them loaded this
 // library, so a sheet row silently went missing from the other two.
+
+require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/sheets.php';
 // Same reasoning: the shell-visit token must be issued the same way from all three.
 require_once __DIR__ . '/tokens.php';
@@ -140,8 +142,7 @@ function handle_admit_patient(PDO $pdo): array {
         $pdo->prepare('UPDATE visits SET disposition = \'SHORT_STAY\', admission_type = ?, admitted_at = NOW() WHERE id = ?')
             ->execute([$admType, $visitId]);
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'patient_admitted', "Admitted visit #$visitId ($admType), admission #$admissionId by $admitRole"]);
+        audit_log($pdo, 'patient_admitted', "Admitted visit #$visitId ($admType), admission #$admissionId by $admitRole", $uid);
 
         $pdo->commit();
 

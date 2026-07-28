@@ -86,8 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 ]);
             }
 
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'doctor_schedule_updated', "Weekly schedule updated for doctor #$doctorId"]);
+            audit_log($pdo, 'doctor_schedule_updated', "Weekly schedule updated for doctor #$doctorId", $_SESSION['user_id']);
 
             $pdo->commit();
             $saved = true;

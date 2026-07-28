@@ -47,8 +47,7 @@ if ($migrated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '
             sheet_mark($pdo, $row['doc_type'], (int) $row['doc_ref'], $ok, $err);
             if ($ok) {
                 $success = 'Row sent to the sheet.';
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$_SESSION['user_id'], 'sheet_row_resent', "Resent {$row['doc_type']} #{$row['doc_ref']} to the Google Sheet"]);
+                audit_log($pdo, 'sheet_row_resent', "Resent {$row['doc_type']} #{$row['doc_ref']} to the Google Sheet", $_SESSION['user_id']);
             } else {
                 $error = 'Still failing: ' . $err;
             }
@@ -74,8 +73,7 @@ if ($migrated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '
         }
         $success = "Resent $sent row(s)." . ($stillFailing > 0 ? " $stillFailing still failing." : '');
         if ($sent > 0) {
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$_SESSION['user_id'], 'sheet_resend_all', "Resent $sent row(s) to the Google Sheet"]);
+            audit_log($pdo, 'sheet_resend_all', "Resent $sent row(s) to the Google Sheet", $_SESSION['user_id']);
         }
     }
 }

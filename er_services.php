@@ -25,8 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $en  = isset($enabled[$type]) ? 1 : 0;
         $upd->execute([$amt, $en, $_SESSION['user_id'], $type]);
     }
-    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-        ->execute([$_SESSION['user_id'], 'admission_rates_updated', 'Updated admission-type rates']);
+    audit_log($pdo, 'admission_rates_updated', 'Updated admission-type rates', $_SESSION['user_id']);
     $success = 'Admission rates saved.';
 }
 
@@ -72,8 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $saved++;
     }
     if ($saved > 0) {
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'er_services_saved', "Bulk-saved $saved ER service(s)"]);
+        audit_log($pdo, 'er_services_saved', "Bulk-saved $saved ER service(s)", $_SESSION['user_id']);
         $success = "Saved $saved service(s)." . ($skipped ? ' (Rows missing a name/type/charge were skipped.)' : '');
     } else {
         $error = $skipped ? 'A service needs a name, a type, and a charge type.' : 'Nothing to save.';

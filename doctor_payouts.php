@@ -66,8 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Lines go with it, freeing their source rows for a future
                     // payout (the UNIQUE key would otherwise block them forever).
                     $pdo->prepare('DELETE FROM doctor_payout_lines WHERE payout_id = ?')->execute([$pid]);
-                    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                        ->execute([$userId, 'payout_voided', "Voided draft payout #$pid — $reason"]);
+                    audit_log($pdo, 'payout_voided', "Voided draft payout #$pid — $reason", $userId);
                     $success = 'Draft payout discarded. Those bills are available for a new payout.';
                     $viewId = 0;
                 } else {

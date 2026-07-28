@@ -212,11 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_i
                         (float) $proc['doctor_share_pct'], (int) $proc['has_tax'], (float) $proc['tax_percent'],
                         $userId,
                     ]);
-                    $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                        ->execute([$userId, 'dental_account_item_added',
-                                   "Added \"{$proc['name']}\"" . ($tooth !== '' ? " tooth $tooth" : '')
-                                   . " Rs $amount" . ($labCharge > 0 ? " + lab Rs $labCharge" : '')
-                                   . " to account {$account['account_number']}"]);
+                    audit_log($pdo, 'dental_account_item_added', "Added \"{$proc['name']}\"" . ($tooth !== '' ? " tooth $tooth" : '') . " Rs $amount" . ($labCharge > 0 ? " + lab Rs $labCharge" : '') . " to account {$account['account_number']}", $userId);
                     $success = 'Item added. The package total has been updated.';
                 } catch (PDOException $e) {
                     error_log('[dental_account add_item] ' . $e->getMessage());
@@ -270,9 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'take_
                 ')->execute([$receiptNumber, $accountId, $amount, $method, $userId, $userId,
                              $notes !== '' ? $notes : null]);
                 $payId = (int) $pdo->lastInsertId();
-                $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                    ->execute([$userId, 'dental_account_payment_taken',
-                               "Receipt $receiptNumber — Rs $amount ($method) against account {$account['account_number']}"]);
+                audit_log($pdo, 'dental_account_payment_taken', "Receipt $receiptNumber — Rs $amount ($method) against account {$account['account_number']}", $userId);
                 $pdo->commit();
                 // Straight to the receipt, mirroring how every other bill in the
                 // app settles: take the money, hand over the paper.
@@ -309,8 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
         $pdo->prepare("UPDATE dental_procedure_accounts
                           SET status = 'SETTLED', settled_at = NOW(), settled_by_id = ?
                         WHERE id = ? AND status = 'OPEN'")->execute([$userId, $accountId]);
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'dental_account_settled', "Settled account {$account['account_number']}"]);
+        audit_log($pdo, 'dental_account_settled', "Settled account {$account['account_number']}", $userId);
         $success = 'Account settled.';
         $account['status'] = 'SETTLED';
         $isOpen = false;
@@ -332,10 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
                         WHERE id = ? AND status = 'OPEN'")->execute([$userId, $reason, $accountId]);
         // The overpayment is named in the audit trail, not just shown on screen:
         // a refund that has to be raised by hand needs a record that says why.
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$userId, 'dental_account_cancelled',
-                       "Cancelled account {$account['account_number']} — $reason"
-                       . ($t['overpaid'] > 0 ? " — OVERPAID Rs {$t['overpaid']}, refund due" : '')]);
+        audit_log($pdo, 'dental_account_cancelled', "Cancelled account {$account['account_number']} — $reason" . ($t['overpaid'] > 0 ? " — OVERPAID Rs {$t['overpaid']}, refund due" : ''), $userId);
         $success = 'Account cancelled. The balance is frozen.'
                  . ($t['overpaid'] > 0 ? ' A refund of Rs ' . number_format($t['overpaid'], 2) . ' is due.' : '');
         $account['status'] = 'CANCELLED';

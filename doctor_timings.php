@@ -80,8 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             $up->execute([$docId, $today, $start, $end, $start2, $end2, $status, $note, $_SESSION['user_id']]);
         }
 
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$_SESSION['user_id'], 'doctor_timings_updated', "Updated doctor timings for $today"]);
+        audit_log($pdo, 'doctor_timings_updated', "Updated doctor timings for $today", $_SESSION['user_id']);
 
         $pdo->commit();
         $saved = true;

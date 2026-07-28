@@ -34,6 +34,13 @@ const DEFAULT_STAFF_PASSWORD = '123456';
 $error = '';
 $success = '';
 
+// Refusal from impersonate.php (e.g. target deleted, or is another admin), which
+// redirects back here rather than dead-ending on a bare error page.
+if (!empty($_SESSION['flash_error'])) {
+    $error = (string) $_SESSION['flash_error'];
+    unset($_SESSION['flash_error']);
+}
+
 // Ensures the upload directory and its deny-all .htaccess exist before any
 // upload is attempted (staff_docs_store resolves the path itself).
 staff_doc_dir();
@@ -140,12 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
 
                 staff_docs_store($pdo, $pendingDocs, (int) $newUserId, (int) $_SESSION['user_id']);
 
-                $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-                $log->execute([
-                    $_SESSION['user_id'],
-                    'staff_created',
-                    "Created user #$newUserId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : ''),
-                ]);
+                audit_log($pdo, 'staff_created', "Created user #$newUserId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : ''), $_SESSION['user_id']);
 
                 // Welcome email with login link + temporary password (best-effort;
                 // silently skipped when the account has no email address).
@@ -281,12 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
 
                 staff_docs_store($pdo, $pendingDocs, (int) $editId, (int) $_SESSION['user_id']);
 
-                $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-                $log->execute([
-                    $_SESSION['user_id'],
-                    'staff_updated',
-                    "Updated user #$editId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : '') . ($resetPassword ? ', password reset to default' : ''),
-                ]);
+                audit_log($pdo, 'staff_updated', "Updated user #$editId ($name, $role)" . (count($pendingDocs) ? ', ' . count($pendingDocs) . ' document(s) attached' : '') . ($resetPassword ? ', password reset to default' : ''), $_SESSION['user_id']);
 
                 $success = "Account updated for $name." . ($resetPassword ? ' Password reset to ' . DEFAULT_STAFF_PASSWORD . ' — they must change it on next sign-in.' : '');
             }
@@ -326,12 +323,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
             }
         }
 
-        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-        $log->execute([
-            $_SESSION['user_id'],
-            'permissions_updated',
-            "Updated individual permissions for user #$editId ({$targetUser['name']})",
-        ]);
+        audit_log($pdo, 'permissions_updated', "Updated individual permissions for user #$editId ({$targetUser['name']})", $_SESSION['user_id']);
 
         $success = "Permissions updated for {$targetUser['name']}.";
     }
@@ -389,12 +381,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             $pdo->prepare('DELETE FROM doctor_consult_types WHERE doctor_id = ?')->execute([$editId]);
         }
 
-        $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-        $log->execute([
-            $_SESSION['user_id'],
-            'consult_types_updated',
-            "Updated consultation types for doctor #$editId ({$doctor['name']}), " . count($keepIds) . ' type(s) on file',
-        ]);
+        audit_log($pdo, 'consult_types_updated', "Updated consultation types for doctor #$editId ({$doctor['name']}), " . count($keepIds) . ' type(s) on file', $_SESSION['user_id']);
 
         $success = "Consultation types updated for {$doctor['name']}.";
     }
@@ -416,12 +403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggl
         } else {
             $pdo->prepare('UPDATE users SET is_active = ? WHERE id = ?')->execute([$setActive, $targetId]);
 
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([
-                $_SESSION['user_id'],
-                $setActive ? 'staff_reactivated' : 'staff_deactivated',
-                ($setActive ? 'Reactivated' : 'Deactivated') . " user #$targetId ({$targetUser['name']}, {$targetUser['base_role']})",
-            ]);
+            audit_log($pdo, $setActive ? 'staff_reactivated' : 'staff_deactivated', ($setActive ? 'Reactivated' : 'Deactivated') . " user #$targetId ({$targetUser['name']}, {$targetUser['base_role']})", $_SESSION['user_id']);
 
             $success = ($setActive ? 'Reactivated ' : 'Deactivated ') . $targetUser['name'] . '.';
         }
@@ -447,12 +429,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             // for the FK definitions this depends on.
             $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$deleteId]);
 
-            $log = $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)');
-            $log->execute([
-                $_SESSION['user_id'],
-                'staff_deleted',
-                "Deleted user #$deleteId ({$targetUser['name']}, {$targetUser['base_role']})",
-            ]);
+            audit_log($pdo, 'staff_deleted', "Deleted user #$deleteId ({$targetUser['name']}, {$targetUser['base_role']})", $_SESSION['user_id']);
 
             $success = "Deleted {$targetUser['name']}.";
         }
@@ -794,6 +771,19 @@ require __DIR__ . '/partials/sidebar.php';
                                     <input type="hidden" name="user_id" value="<?= (int) $s['id'] ?>">
                                     <input type="hidden" name="set_active" value="<?= $willDeactivate ? '0' : '1' ?>">
                                     <button type="submit" class="edit-link" style="background:none;border:none;padding:0;font:inherit;cursor:pointer;color:<?= $willDeactivate ? 'var(--text-secondary)' : 'var(--primary)' ?>;"><?= $willDeactivate ? 'Deactivate' : 'Reactivate' ?></button>
+                                </form>
+                                <?php endif; ?>
+                                <?php
+                                /* "View as" — open HIMS exactly as this person sees it, to diagnose a
+                                   screen (day closing, vitals chart) without travelling to their desk.
+                                   Not offered for other ADMINs (impersonation.php refuses it) nor for
+                                   yourself. Writes are live under their name, so the confirm says so. */
+                                if ($s['base_role'] !== 'ADMIN' && (int) $s['id'] !== (int) $_SESSION['user_id']): ?>
+                                &nbsp;·&nbsp;
+                                <form method="POST" action="impersonate.php" style="display:inline;" onsubmit="return confirm('Open HIMS as <?= htmlspecialchars(addslashes($s['name'])) ?>?\n\nYou will see their screens and their permissions only. Anything you save is recorded under their name (the audit log notes it was you).');">
+                                    <input type="hidden" name="action" value="start">
+                                    <input type="hidden" name="user_id" value="<?= (int) $s['id'] ?>">
+                                    <button type="submit" class="edit-link" style="background:none;border:none;padding:0;font:inherit;cursor:pointer;color:var(--primary);">View as</button>
                                 </form>
                                 <?php endif; ?>
                                 &nbsp;·&nbsp;
