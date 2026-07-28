@@ -109,8 +109,13 @@
        two-word item ("Treatment Records", "Dental Accounts", "In-Door Ward
        Rates") onto two lines and the long ones onto three. Sub-items lose a
        further 20px to the indent + rule, so they wrapped hardest of all.
-       248 clears the longest label in the tree on one line. */
-    --sidebar-w: 248px;
+
+       264 + the trimmed .nav-sub indent below gives sub-items ~161px of text,
+       measured in Chrome. That clears every current label except "Procedures &
+       Dental Catalogue" (191px), which ellipsises — sizing the whole chrome to
+       one 30-character outlier isn't worth ~45px of every page's width, and
+       that item carries a title tooltip. */
+    --sidebar-w: 264px;
 
     /* ---- DEPRECATED legacy aliases (see header note) ----
        Remapped onto the new palette so un-migrated pages inherit the theme.
@@ -247,7 +252,10 @@ button { font-family: inherit; }
 .nav-parent.open .nav-caret { transform: rotate(180deg); }
 /* A closed submenu is display:none rather than max-height:0 so its links are
    removed from the tab order, not merely hidden. */
-.nav-sub { display: none; margin: 2px 0 2px 11px; padding-left: 9px; border-left: 1px solid rgba(255,255,255,.14); }
+/* Indent trimmed 20px -> 14px: the border rule already signals the nesting, and
+   sub-items are the longest labels in the tree, so every px here is the px that
+   decides whether they fit on one line. */
+.nav-sub { display: none; margin: 2px 0 2px 8px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.14); }
 .nav-sub.open { display: block; }
 /* Children keep the nav link size (--fs-cell); the indent + rule already carry
    the hierarchy, and --fs-micro is a row-meta size, too small to click. */

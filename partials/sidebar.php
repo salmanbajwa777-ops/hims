@@ -350,7 +350,12 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
                     if (!empty($k['disabled']))    { $kcls .= ' disabled'; }
                     if ($navActive === $k['slug']) { $kcls .= ' active'; }
                     $khref = !empty($k['disabled']) ? '#' : $k['href'];
-                    $kattr = !empty($k['disabled']) ? ' title="Not built yet" aria-disabled="true"' : '';
+                    // Sub-item labels are the longest in the tree and a very long
+                    // one ellipsises, so carry the full text as a tooltip. The
+                    // disabled reason wins where both would apply.
+                    $kattr = !empty($k['disabled'])
+                        ? ' title="Not built yet" aria-disabled="true"'
+                        : ' title="' . htmlspecialchars($k['label']) . '"';
                     if ($navActive === $k['slug']) { $kattr .= ' aria-current="page"'; }
                     echo '<a class="' . $kcls . '" href="' . htmlspecialchars($khref) . '"' . $kattr . '>'
                        . '<span class="nav-icon">' . sb_icon($k['icon']) . '</span> '
@@ -364,7 +369,9 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
             if (!empty($it['disabled']))     { $cls .= ' disabled'; }
             if ($navActive === $it['slug'])  { $cls .= ' active'; }
             $href = !empty($it['disabled']) ? '#' : $it['href'];
-            $attr = !empty($it['disabled']) ? ' title="Not built yet" aria-disabled="true"' : '';
+            $attr = !empty($it['disabled'])
+                ? ' title="Not built yet" aria-disabled="true"'
+                : ' title="' . htmlspecialchars($it['label']) . '"';
             if ($navActive === $it['slug'])  { $attr .= ' aria-current="page"'; }
             echo '<a class="' . $cls . '" href="' . htmlspecialchars($href) . '"' . $attr . '>'
                . '<span class="nav-icon">' . sb_icon($it['icon']) . '</span> '
