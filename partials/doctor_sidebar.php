@@ -57,13 +57,13 @@ function ds_icon(string $name): string {
 
     <div class="nav-group">
         <div class="nav-group-label">Clinical</div>
-        <a class="nav-item <?= $dsActive === 'console' ? 'active' : '' ?>" href="doctor.php"><span class="nav-icon"><?= ds_icon('grid') ?></span> My Console</a>
-        <a class="nav-item" href="doctor.php"><span class="nav-icon"><?= ds_icon('users') ?></span> My Queue <?php if ($dsWaitingCount): ?><span class="count"><?= $dsWaitingCount ?></span><?php endif; ?></a>
+        <a class="nav-item <?= $dsActive === 'console' ? 'active' : '' ?>" href="doctor.php"><span class="nav-icon"><?= ds_icon('grid') ?></span> <span class="nav-label">My Console</span></a>
+        <a class="nav-item" href="doctor.php"><span class="nav-icon"><?= ds_icon('users') ?></span> <span class="nav-label">My Queue</span><?php if ($dsWaitingCount): ?><span class="count"><?= $dsWaitingCount ?></span><?php endif; ?></a>
         <?php if (function_exists('has_permission') && has_permission('IPD_VIEW_WARD')): ?>
-        <a class="nav-item <?= $dsActive === 'ipd' ? 'active' : '' ?>" href="ipd_admissions.php"><span class="nav-icon"><?= ds_icon('bed') ?></span> In-Door (IPD)</a>
+        <a class="nav-item <?= $dsActive === 'ipd' ? 'active' : '' ?>" href="ipd_admissions.php"><span class="nav-icon"><?= ds_icon('bed') ?></span> <span class="nav-label">In-Door (IPD)</span></a>
         <?php endif; ?>
-        <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('stetho') ?></span> Consultations</a>
-        <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('file') ?></span> Prescriptions</a>
+        <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('stetho') ?></span> <span class="nav-label">Consultations</span></a>
+        <a class="nav-item disabled" href="#"><span class="nav-icon"><?= ds_icon('file') ?></span> <span class="nav-label">Prescriptions</span></a>
     </div>
 
     <?php
@@ -82,31 +82,31 @@ function ds_icon(string $name): string {
     <div class="nav-group">
         <div class="nav-group-label">Dental</div>
         <?php if (has_permission('DENTAL_RECORD_TREATMENT')): ?>
-        <a class="nav-item <?= $dsActive === 'dental_treatment' ? 'active' : '' ?>" href="dental_treatment.php"><span class="nav-icon"><?= ds_icon('tooth') ?></span> Treatment Records</a>
+        <a class="nav-item <?= $dsActive === 'dental_treatment' ? 'active' : '' ?>" href="dental_treatment.php"><span class="nav-icon"><?= ds_icon('tooth') ?></span> <span class="nav-label">Treatment Records</span></a>
         <?php endif; ?>
         <?php if (has_permission('DENTAL_VIEW_ACCOUNTS')): ?>
-        <a class="nav-item <?= $dsActive === 'dental_accounts' ? 'active' : '' ?>" href="dental_accounts.php"><span class="nav-icon"><?= ds_icon('receipt') ?></span> Dental Accounts</a>
+        <a class="nav-item <?= $dsActive === 'dental_accounts' ? 'active' : '' ?>" href="dental_accounts.php"><span class="nav-icon"><?= ds_icon('receipt') ?></span> <span class="nav-label">Dental Accounts</span></a>
         <?php endif; ?>
         <?php if (has_permission('DENTAL_MANAGE_LAB_WORK')): ?>
-        <a class="nav-item <?= $dsActive === 'dental_lab' ? 'active' : '' ?>" href="dental_lab.php"><span class="nav-icon"><?= ds_icon('clock') ?></span> Lab Work</a>
+        <a class="nav-item <?= $dsActive === 'dental_lab' ? 'active' : '' ?>" href="dental_lab.php"><span class="nav-icon"><?= ds_icon('clock') ?></span> <span class="nav-label">Lab Work</span></a>
         <?php endif; ?>
     </div>
     <?php endif; ?>
 
     <div class="nav-group">
         <div class="nav-group-label">Records</div>
-        <a class="nav-item <?= $dsActive === 'patients' ? 'active' : '' ?>" href="patients.php"><span class="nav-icon"><?= ds_icon('search') ?></span> Find Patient</a>
-        <a class="nav-item <?= $dsActive === 'schedule' ? 'active' : '' ?>" href="my_schedule.php"><span class="nav-icon"><?= ds_icon('calendar') ?></span> My Schedule</a>
+        <a class="nav-item <?= $dsActive === 'patients' ? 'active' : '' ?>" href="patients.php"><span class="nav-icon"><?= ds_icon('search') ?></span> <span class="nav-label">Find Patient</span></a>
+        <a class="nav-item <?= $dsActive === 'schedule' ? 'active' : '' ?>" href="my_schedule.php"><span class="nav-icon"><?= ds_icon('calendar') ?></span> <span class="nav-label">My Schedule</span></a>
     </div>
 
     <div class="nav-group">
         <div class="nav-group-label">Analytics</div>
-        <a class="nav-item <?= $dsActive === 'analytics' ? 'active' : '' ?>" href="doctor_analytics.php"><span class="nav-icon"><?= ds_icon('chart') ?></span> My Reports</a>
+        <a class="nav-item <?= $dsActive === 'analytics' ? 'active' : '' ?>" href="doctor_analytics.php"><span class="nav-icon"><?= ds_icon('chart') ?></span> <span class="nav-label">My Reports</span></a>
     </div>
 
     <div class="nav-group">
         <div class="nav-group-label">Account</div>
-        <a class="nav-item <?= $dsActive === 'profile' ? 'active' : '' ?>" href="profile.php"><span class="nav-icon"><?= ds_icon('user') ?></span> My Profile</a>
+        <a class="nav-item <?= $dsActive === 'profile' ? 'active' : '' ?>" href="profile.php"><span class="nav-icon"><?= ds_icon('user') ?></span> <span class="nav-label">My Profile</span></a>
     </div>
 
     <div class="sidebar-foot">

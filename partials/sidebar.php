@@ -354,7 +354,7 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
                     if ($navActive === $k['slug']) { $kattr .= ' aria-current="page"'; }
                     echo '<a class="' . $kcls . '" href="' . htmlspecialchars($khref) . '"' . $kattr . '>'
                        . '<span class="nav-icon">' . sb_icon($k['icon']) . '</span> '
-                       . htmlspecialchars($k['label']) . '</a>';
+                       . '<span class="nav-label">' . htmlspecialchars($k['label']) . '</span></a>';
                 }
                 echo '</div>';
                 continue;
@@ -368,7 +368,7 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
             if ($navActive === $it['slug'])  { $attr .= ' aria-current="page"'; }
             echo '<a class="' . $cls . '" href="' . htmlspecialchars($href) . '"' . $attr . '>'
                . '<span class="nav-icon">' . sb_icon($it['icon']) . '</span> '
-               . htmlspecialchars($it['label']) . '</a>';
+               . '<span class="nav-label">' . htmlspecialchars($it['label']) . '</span></a>';
         }
         echo '</div>';
     }
