@@ -18,6 +18,10 @@
 -- No stored procedures (the DB user is denied CREATE ROUTINE), so each ALTER is
 -- guarded by an information_schema check run through a prepared statement.
 -- Idempotent: safe to run more than once. All timestamps are PKT (+05:00).
+-- Schema is named EXPLICITLY, never DATABASE(): phpMyAdmin often lands you in
+-- information_schema, where DATABASE() resolves there and EVERY guard finds
+-- nothing -- so each IF takes the "already exists" branch and the migration
+-- reports success while doing absolutely nothing.
 -- Run in phpMyAdmin against the hims database.
 -- =============================================================================
 
@@ -27,11 +31,11 @@
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE er_bills ADD COLUMN doctor_id INT NULL AFTER patient_id',
+        'ALTER TABLE u402528120_hmis.er_bills ADD COLUMN doctor_id INT NULL AFTER patient_id',
         'SELECT ''er_bills.doctor_id already exists'''
     )
     FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
+    WHERE TABLE_SCHEMA = 'u402528120_hmis'
       AND TABLE_NAME   = 'er_bills'
       AND COLUMN_NAME  = 'doctor_id'
 );
@@ -43,11 +47,11 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE er_bills ADD COLUMN doctor_manual VARCHAR(255) NULL AFTER doctor_id',
+        'ALTER TABLE u402528120_hmis.er_bills ADD COLUMN doctor_manual VARCHAR(255) NULL AFTER doctor_id',
         'SELECT ''er_bills.doctor_manual already exists'''
     )
     FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
+    WHERE TABLE_SCHEMA = 'u402528120_hmis'
       AND TABLE_NAME   = 'er_bills'
       AND COLUMN_NAME  = 'doctor_manual'
 );
@@ -60,11 +64,11 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE er_bills ADD CONSTRAINT fk_er_bill_doctor FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE SET NULL',
+        'ALTER TABLE u402528120_hmis.er_bills ADD CONSTRAINT fk_er_bill_doctor FOREIGN KEY (doctor_id) REFERENCES u402528120_hmis.users(id) ON DELETE SET NULL',
         'SELECT ''fk_er_bill_doctor already exists'''
     )
     FROM information_schema.TABLE_CONSTRAINTS
-    WHERE TABLE_SCHEMA    = DATABASE()
+    WHERE TABLE_SCHEMA    = 'u402528120_hmis'
       AND TABLE_NAME      = 'er_bills'
       AND CONSTRAINT_NAME = 'fk_er_bill_doctor'
 );
@@ -76,11 +80,11 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE er_bills ADD INDEX idx_er_bill_doctor (doctor_id)',
+        'ALTER TABLE u402528120_hmis.er_bills ADD INDEX idx_er_bill_doctor (doctor_id)',
         'SELECT ''idx_er_bill_doctor already exists'''
     )
     FROM information_schema.STATISTICS
-    WHERE TABLE_SCHEMA = DATABASE()
+    WHERE TABLE_SCHEMA = 'u402528120_hmis'
       AND TABLE_NAME   = 'er_bills'
       AND INDEX_NAME   = 'idx_er_bill_doctor'
 );
@@ -91,7 +95,7 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- -----------------------------------------------------------------------------
 SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
 FROM information_schema.COLUMNS
-WHERE TABLE_SCHEMA = DATABASE()
+WHERE TABLE_SCHEMA = 'u402528120_hmis'
   AND TABLE_NAME   = 'er_bills'
   AND COLUMN_NAME IN ('doctor_id','doctor_manual')
 ORDER BY ORDINAL_POSITION;

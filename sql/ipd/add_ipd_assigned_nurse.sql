@@ -16,6 +16,10 @@
 -- No stored procedures (the DB user is denied CREATE ROUTINE), so each ALTER is
 -- guarded by an information_schema check executed through a prepared statement.
 -- Idempotent: safe to run more than once. All timestamps are PKT (+05:00).
+-- Schema is named EXPLICITLY, never DATABASE(): phpMyAdmin often lands you in
+-- information_schema, where DATABASE() resolves there and EVERY guard finds
+-- nothing -- so each IF takes the "already exists" branch and the migration
+-- reports success while doing absolutely nothing.
 -- Run in phpMyAdmin against the hims database.
 -- =============================================================================
 
@@ -27,11 +31,11 @@
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE ipd_admissions ADD COLUMN assigned_nurse_id INT NULL AFTER admitted_by_role',
+        'ALTER TABLE u402528120_hmis.ipd_admissions ADD COLUMN assigned_nurse_id INT NULL AFTER admitted_by_role',
         'SELECT ''ipd_admissions.assigned_nurse_id already exists'''
     )
     FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
+    WHERE TABLE_SCHEMA = 'u402528120_hmis'
       AND TABLE_NAME   = 'ipd_admissions'
       AND COLUMN_NAME  = 'assigned_nurse_id'
 );
@@ -45,11 +49,11 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE ipd_admissions ADD COLUMN assigned_at DATETIME NULL AFTER assigned_nurse_id',
+        'ALTER TABLE u402528120_hmis.ipd_admissions ADD COLUMN assigned_at DATETIME NULL AFTER assigned_nurse_id',
         'SELECT ''ipd_admissions.assigned_at already exists'''
     )
     FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
+    WHERE TABLE_SCHEMA = 'u402528120_hmis'
       AND TABLE_NAME   = 'ipd_admissions'
       AND COLUMN_NAME  = 'assigned_at'
 );
@@ -62,11 +66,11 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE ipd_admissions ADD CONSTRAINT fk_ipd_adm_nurse FOREIGN KEY (assigned_nurse_id) REFERENCES users(id) ON DELETE SET NULL',
+        'ALTER TABLE u402528120_hmis.ipd_admissions ADD CONSTRAINT fk_ipd_adm_nurse FOREIGN KEY (assigned_nurse_id) REFERENCES u402528120_hmis.users(id) ON DELETE SET NULL',
         'SELECT ''fk_ipd_adm_nurse already exists'''
     )
     FROM information_schema.TABLE_CONSTRAINTS
-    WHERE TABLE_SCHEMA    = DATABASE()
+    WHERE TABLE_SCHEMA    = 'u402528120_hmis'
       AND TABLE_NAME      = 'ipd_admissions'
       AND CONSTRAINT_NAME = 'fk_ipd_adm_nurse'
 );
@@ -79,11 +83,11 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @sql = (
     SELECT IF(
         COUNT(*) = 0,
-        'ALTER TABLE ipd_admissions ADD INDEX idx_ipd_admission_nurse (assigned_nurse_id, status)',
+        'ALTER TABLE u402528120_hmis.ipd_admissions ADD INDEX idx_ipd_admission_nurse (assigned_nurse_id, status)',
         'SELECT ''idx_ipd_admission_nurse already exists'''
     )
     FROM information_schema.STATISTICS
-    WHERE TABLE_SCHEMA = DATABASE()
+    WHERE TABLE_SCHEMA = 'u402528120_hmis'
       AND TABLE_NAME   = 'ipd_admissions'
       AND INDEX_NAME   = 'idx_ipd_admission_nurse'
 );
@@ -94,7 +98,7 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- -----------------------------------------------------------------------------
 SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
 FROM information_schema.COLUMNS
-WHERE TABLE_SCHEMA = DATABASE()
+WHERE TABLE_SCHEMA = 'u402528120_hmis'
   AND TABLE_NAME   = 'ipd_admissions'
   AND COLUMN_NAME IN ('assigned_nurse_id','assigned_at')
 ORDER BY ORDINAL_POSITION;
