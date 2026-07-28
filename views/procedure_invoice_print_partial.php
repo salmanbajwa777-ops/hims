@@ -9,8 +9,11 @@
 //   1. A procedure HAS a performing doctor, so the doctor is named on the slip —
 //      the ER slip drops that row because a walk-in service has none.
 //   2. A patient signature block, since a procedure is a physical intervention.
-//      This is the receipt's acknowledgement line, NOT the clinical consent form
-//      (mandatory_consent) — that document is a later phase.
+//      This is the receipt's acknowledgement line, NOT the clinical consent
+//      form. That document now exists: when the bill carries a procedure with a
+//      consent template, views/procedure_consent_print_partial.php appends two
+//      copies of it as further pages of this same document, so reception gets
+//      the receipt and both consent copies from one print action.
 //
 // A5 only, and no tax, matching every other slip in the system.
 
@@ -110,11 +113,41 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
         .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #B0B0B0; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px; }
         .pay-note { font-weight: normal; color: #555; white-space: nowrap; text-align: center; }
 
+        /* ---- Consent sheets, appended after the receipt ------------------
+           Only loaded into the same document; each consent copy is its own
+           .sheet and starts on a new page (see .consent-sheet below). */
+        .copytag { text-align: center; font-size: 8px; font-weight: bold; letter-spacing: 2px; border: 1px solid #000; padding: 1px 8px; margin: 0 auto 2mm; width: fit-content; }
+        .pt { width: 100%; border-collapse: collapse; font-size: 9px; margin-bottom: 2mm; }
+        .pt td { border: 1px solid #C8C8C8; padding: 1px 5px; height: 18px; vertical-align: middle; }
+        .pt td.k { background: #F4F4F4; font-weight: bold; width: 17%; }
+        .pt td.v { font-weight: bold; width: 33%; }
+        .sect { font-size: 9px; font-weight: bold; letter-spacing: 1.1px; margin: 3mm 0 1.5mm; text-transform: uppercase; border-bottom: 1px solid #B0B0B0; padding-bottom: 1.5px; }
+        .body-text { font-size: 9.5px; line-height: 1.75; text-align: justify; overflow-wrap: break-word; }
+        .body-text p { margin: 0 0 2.5mm; }
+        /* Fill-in rule. A fixed width (not min-width) with max-width:100% so a
+           long typed name can never push the justified paragraph off the sheet. */
+        .blank { display: inline-block; border-bottom: 1px solid #000; width: 34mm; max-width: 100%; text-align: center; font-weight: bold; line-height: 1.15; vertical-align: baseline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .fillhint { font-size: 7px; color: #666; font-style: italic; }
+        /* margin-top:auto pins the signatures to the foot of the sheet, leaving
+           the mid-page clear — that gap is where the doctor writes notes, as on
+           the paper form this replaces. */
+        .sigblock { display: flex; justify-content: space-between; gap: 6mm; margin-top: auto; padding-top: 8mm; }
+        .sigbox2 { flex: 1; }
+        .sigline2 { border-top: 1px solid #444; padding-top: 2px; font-size: 8.5px; font-weight: bold; }
+        .sigsub { font-size: 7.5px; color: #555; margin-top: 1px; }
+
         @media print {
-            html, body { width: 148mm; height: 210mm; }
+            html, body { width: 148mm; }
             .sheet { min-height: 210mm; padding: 6mm 6mm 4mm; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             @page { size: A5; margin: 0; }
+            /* Each consent copy is its own page. Without this the sheets run on
+               and the signature block lands halfway down the next sheet.
+               `height: 210mm` was also dropped from html/body above: it caps the
+               document at ONE page, so with consents attached the browser
+               printed the receipt and silently discarded everything after it. */
+            .consent-sheet { page-break-before: always; break-before: page; }
+            .sheet { page-break-inside: avoid; break-inside: avoid; }
         }
     </style>
 </head>
@@ -214,6 +247,15 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
         </div>
 
     </div>
+
+    <?php
+    // Consent sheets, two copies each, appended as further pages of the SAME
+    // document so the whole set comes out of one print action. $consents is
+    // empty for a procedure with no consent template, and this emits nothing.
+    if (!empty($consents)) {
+        require __DIR__ . '/procedure_consent_print_partial.php';
+    }
+    ?>
 
     <script>
         window.addEventListener('load', function() { window.print(); });

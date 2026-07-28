@@ -28,6 +28,9 @@ require_once __DIR__ . '/config/sheets.php';
 // here is what makes the gate active; without it the function_exists() guard
 // falls through and this page warns rather than blocks, exactly as before.
 require_once __DIR__ . '/config/dental.php';
+// Procedure consent: the per-procedure template, the frozen consent row, and
+// the sheets appended to the printed slip.
+require_once __DIR__ . '/config/consent.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_RAISE_PROCEDURE_BILL');
 
@@ -68,6 +71,12 @@ if (isset($_GET['print']) && isset($_GET['procedure_bill_id'])) {
     $itemsStmt->execute([$procBillId]);
     $items = $itemsStmt->fetchAll();
 
+    // Consent sheets to append after the receipt. Empty when no procedure on
+    // the bill carries a template, in which case the slip prints exactly as it
+    // always did. A REPRINT reprints the consent too — that is deliberate: the
+    // signed copy gets lost, and the patient copy walks out of the building.
+    $consents = consent_for_bill($pdo, $procBillId);
+
     $pdo->prepare('UPDATE procedure_bills SET printed_at = NOW(), printed_by_id = COALESCE(printed_by_id, ?) WHERE id = ?')
         ->execute([(int) $_SESSION['user_id'], $procBillId]);
 
@@ -94,6 +103,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
     $assignIds   = $_POST['assignment_id'] ?? [];       // parallel arrays
     $quantities  = $_POST['quantity'] ?? [];
     $disposables = $_POST['disposables'] ?? [];
+
+    // Who is signing the consent. Both optional: left empty the printed sheet
+    // carries a blank rule for the parent to fill in by hand, which is how the
+    // paper form has always worked. Relation is validated against the fixed
+    // list so the column cannot fill up with "father"/"Father"/"walid".
+    $signerName     = trim((string) ($_POST['consent_signer_name'] ?? ''));
+    $signerRelation = trim((string) ($_POST['consent_signer_relation'] ?? ''));
+    if ($signerRelation !== '' && !in_array($signerRelation, consent_relations(), true)) {
+        $signerRelation = '';
+    }
 
     // Settling a bill moves money — refuse once the cashier's shift is closed.
     $dayLock = require_day_open($pdo);
@@ -153,18 +172,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
         }
     }
 
-    // CONSENT GATE. procedure_master.mandatory_consent has existed since the
-    // catalogue was built, but until the dental module there was no consent
-    // FORM to point at, so this page only warned. Now a flagged procedure
-    // genuinely cannot be billed without a signed consent on file.
+    // CONSENT GATE.
     //
-    // function_exists() guard: on a database where the dental module has not
-    // been installed there is nowhere to capture a consent, so blocking every
-    // flagged procedure would break billing that worked yesterday. Absent the
-    // module, behaviour is exactly as before.
+    // The gate used to demand a consent that was already SIGNED, and a consent
+    // only becomes SIGNED when the scanned paper is uploaded. That works for
+    // dentistry, where the consent is captured at treatment planning — days
+    // before anything is billed. It CANNOT work for a walk-in procedure: the
+    // patient is at the desk, the consent sheet prints with the receipt, and it
+    // is signed on the spot. Requiring a signed scan first made any procedure
+    // with a consent template permanently unbillable.
+    //
+    // So the gate now splits on where the consent comes from:
+    //
+    //   - Procedure HAS a template  -> this page prints the consent itself, so
+    //     there is nothing to wait for. Billing creates the PENDING consent and
+    //     prints it; the signed scan is filed afterwards on the register.
+    //
+    //   - Procedure is flagged mandatory_consent but has NO template -> the
+    //     consent lives elsewhere (the dental module's own capture page), and
+    //     the original rule stands: a signed consent must already exist.
+    //
+    // Net effect: no procedure that could be billed yesterday is blocked today,
+    // and no flagged procedure is ever billed with no consent recorded at all.
     if (!$error && function_exists('dental_consent_satisfied')) {
         foreach ($lines as $ln) {
-            if (!empty($ln['consent']) && !dental_consent_satisfied($pdo, $patientId, $ln['master_id'])) {
+            if (empty($ln['consent'])) {
+                continue;
+            }
+            if (consent_template_for($pdo, (int) $ln['master_id']) !== null) {
+                continue;   // printed here, with the receipt
+            }
+            if (!dental_consent_satisfied($pdo, $patientId, $ln['master_id'])) {
                 $error = '“' . $ln['name'] . '” requires a signed consent before it can be billed. '
                        . 'Capture it on the Consent page, then bill this again.';
                 break;
@@ -172,7 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
         }
     }
 
-    $patStmt = $pdo->prepare('SELECT id, name FROM patients WHERE id = ?');
+    // mrn + father_name are here for the consent sheet, which names the patient
+    // as "<name> S/O <father_name>" and prints the MR number in its header.
+    $patStmt = $pdo->prepare('SELECT id, name, mrn, father_name FROM patients WHERE id = ?');
     $patStmt->execute([$patientId]);
     $patient = $patStmt->fetch();
 
@@ -250,7 +290,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
                 $itemIns->execute($params);
             }
 
+            // Consent rows for any line that carries a template, created INSIDE
+            // the transaction: a consent must never survive a bill that rolled
+            // back, and a bill must never commit having failed to record the
+            // consent it is about to print. The wording is frozen onto the row
+            // here — see consent_create_for_bill().
+            $consentsCreated = consent_create_for_bill(
+                $pdo, $procBillId, $patientId, $doctorId, $lines,
+                $patient, (string) $doctor['name'], (int) $_SESSION['user_id'],
+                $signerName, $signerRelation
+            );
+
             audit_log($pdo, 'procedure_bill_raised', "Procedure bill $invoiceNumber for patient #$patientId by {$doctor['name']}: Rs " . number_format($grandTotal, 2) . ' (' . count($lines) . ' procedure' . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)", (int) $_SESSION['user_id']);
+
+            if ($consentsCreated > 0) {
+                audit_log($pdo, 'procedure_consent_created', "$consentsCreated consent form(s) generated for procedure bill $invoiceNumber (patient #$patientId)" . ($signerName !== '' ? ", signer: $signerName" . ($signerRelation !== '' ? " ($signerRelation)" : '') : ', signer to be filled by hand'), (int) $_SESSION['user_id']);
+            }
 
             $pdo->commit();
 
@@ -311,9 +366,16 @@ $procDoctors = $pdo->query("
 
 // Every active assignment, grouped by doctor for the client-side picker.
 // COALESCE(dp.fee, pm.fee): NULL override = the master's current rate.
+// Does this database have consent templates yet? Everything consent-related in
+// the form below is conditional on it.
+$procHasConsentTpl = consent_column_live($pdo);
 $assignRows = $pdo->query("
     SELECT dp.id, dp.doctor_id, pm.name, COALESCE(dp.fee, pm.fee) AS fee, pm.mandatory_consent"
-    . ($procHasDisposables ? ", pm.has_disposables" : '') . "
+    . ($procHasDisposables ? ", pm.has_disposables" : '')
+    // TRIM + <> '': a template of whitespace is not a template. This mirrors
+    // consent_template_for(), so the button the cashier sees and the sheet the
+    // server prints agree on which procedures have a consent form.
+    . ($procHasConsentTpl ? ", (pm.consent_template IS NOT NULL AND TRIM(pm.consent_template) <> '') AS has_tpl" : '') . "
     FROM doctor_procedures dp
     JOIN procedure_master pm ON pm.id = dp.procedure_master_id
     WHERE dp.is_active = 1 AND pm.is_active = 1
@@ -329,6 +391,9 @@ foreach ($assignRows as $r) {
         // Drives whether the line gets a supplies-cost box. Server re-checks it
         // on submit, so this is a UI hint, not the authority.
         'disp'    => (int) ($r['has_disposables'] ?? 0),
+        // Has a consent form that THIS page prints, as opposed to one captured
+        // elsewhere. Decides which of the two consent messages the cashier sees.
+        'tpl'     => (int) ($r['has_tpl'] ?? 0),
     ];
 }
 
@@ -397,6 +462,15 @@ $headExtra = <<<CSS
 .raisebtn[disabled] { opacity: .5; cursor: not-allowed; }
 .disc-note { font-size: 12px; color: var(--primary-dark); margin-top: 8px; }
 .consent-note { font-size: 12px; color: var(--amber-text, #92400e); background: var(--amber-bg, #fef3c7); border-radius: var(--radius-input); padding: 8px 11px; margin-top: 10px; }
+/* Signer capture. Primary/sage rather than the amber above on purpose: this is
+   not a warning. Nothing is blocked, the consent prints either way, and the
+   fields only decide whether it prints pre-filled or with a rule to write on. */
+.signer-box { margin-top: 10px; padding: 12px 13px; border: 1px solid var(--primary); background: var(--primary-light); border-radius: var(--radius-input); }
+.signer-head { font-size: 12.5px; font-weight: 600; color: var(--primary-dark); margin-bottom: 10px; }
+.signer-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.signer-row .fld { flex: 1 1 190px; min-width: 160px; }
+.signer-box label .opt { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); }
+.signer-hint { font-size: 11.5px; color: var(--text-muted); margin: 8px 0 0; }
 .rtable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .rtable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .rtable td { padding: 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -509,6 +583,33 @@ require __DIR__ . '/partials/sidebar.php';
                             </div>
 
                             <div id="consentNote" class="consent-note" style="display:none;"></div>
+
+                            <?php if ($procHasConsentTpl): ?>
+                            <!-- Shown only when a procedure on the bill prints its own consent.
+                                 Both fields are optional: left empty the sheet prints a blank
+                                 rule for the parent to complete by hand, which is how the paper
+                                 form has always worked. -->
+                            <div id="signerBox" class="signer-box" style="display:none;">
+                                <div class="signer-head">Consent will print with the slip &mdash; 2 copies (clinic &amp; patient)</div>
+                                <div class="signer-row">
+                                    <div class="fld">
+                                        <label for="signerName">Consent signed by <span class="opt">(optional)</span></label>
+                                        <input type="text" name="consent_signer_name" id="signerName"
+                                               maxlength="150" placeholder="e.g. HAMZA TARIQ" class="uc">
+                                    </div>
+                                    <div class="fld">
+                                        <label for="signerRelation">Relation to patient</label>
+                                        <select name="consent_signer_relation" id="signerRelation">
+                                            <option value="">&mdash; leave blank &mdash;</option>
+                                            <?php foreach (consent_relations() as $rel): ?>
+                                            <option value="<?= htmlspecialchars($rel) ?>"><?= htmlspecialchars($rel) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                                <p class="signer-hint">Leave both empty to print blank lines for the parent to fill in and sign.</p>
+                            </div>
+                            <?php endif; ?>
 
                             <table class="ltable">
                                 <thead>
@@ -647,6 +748,7 @@ require __DIR__ . '/partials/sidebar.php';
     var discEl = document.getElementById('discAmt');
     var raiseBtn = document.getElementById('raiseBtn');
     var consentNote = document.getElementById('consentNote');
+    var signerBox = document.getElementById('signerBox');
     // Carries the selected patient through to the consent page's deep link.
     var consentPatientId = <?= (int) $selectedId ?>;
     var lines = [];
@@ -669,6 +771,7 @@ require __DIR__ . '/partials/sidebar.php';
             o.dataset.fee = p.fee;
             o.dataset.consent = p.consent;
             o.dataset.disp = p.disp;
+            o.dataset.tpl = p.tpl || 0;
             pick.appendChild(o);
         });
         pick.disabled = list.length === 0;
@@ -716,22 +819,41 @@ require __DIR__ . '/partials/sidebar.php';
         totalEl.textContent = fmt(total);
         raiseBtn.disabled = lines.length === 0;
 
-        // Surface the consent flag. This is no longer only a reminder: the
-        // server BLOCKS a flagged procedure without a signed consent on file,
-        // so the note links straight to where one is captured. Kept as a
-        // warning rather than a disabled button because the consent may already
-        // exist from an earlier visit — only the server can know.
-        var needsConsent = lines.filter(function (l) { return l.consent; });
-        if (needsConsent.length) {
+        // Surface the consent state. Two different situations, and conflating
+        // them is what made this confusing before:
+        //
+        //   printsHere — the procedure has its own consent template, so the
+        //     sheet comes out with the slip. Nothing is blocked. Show the
+        //     signer fields so the cashier CAN pre-fill them if the parent is
+        //     standing there, and say plainly that it will print.
+        //
+        //   needsCapture — flagged, but the consent lives on another page. The
+        //     server WILL refuse the bill, so this stays a warning with a deep
+        //     link. Kept as a warning rather than a disabled button because a
+        //     consent may already exist from an earlier visit — only the server
+        //     can know that.
+        var printsHere = lines.filter(function (l) { return l.consent && l.tpl; });
+        var needsCapture = lines.filter(function (l) { return l.consent && !l.tpl; });
+
+        if (needsCapture.length) {
             consentNote.style.display = '';
             consentNote.innerHTML = 'Consent required for: <b>'
-                + needsConsent.map(function (l) { return l.name; }).join(', ')
+                + needsCapture.map(function (l) { return l.name; }).join(', ')
                 + '</b>. This bill will be refused unless a signed consent is on file. '
                 + '<a href="dental_consent.php' + (consentPatientId ? '?patient_id=' + consentPatientId : '')
                 + '" target="_blank" style="text-decoration:underline;">Capture consent</a>.';
         } else {
             consentNote.style.display = 'none';
         }
+
+        if (signerBox) {
+            signerBox.style.display = printsHere.length ? '' : 'none';
+        }
+        // Tell the cashier what is about to come out of the printer, so three
+        // sheets appearing instead of one is expected rather than alarming.
+        raiseBtn.textContent = printsHere.length
+            ? 'Take payment & print slip + consent'
+            : 'Take payment & print slip';
     }
 
     docPick.addEventListener('change', loadProcedures);
@@ -744,6 +866,7 @@ require __DIR__ . '/partials/sidebar.php';
         lines.push({
             id: opt.value, name: opt.dataset.name, qty: qty, rate: fee,
             amount: fee * qty, consent: opt.dataset.consent === '1',
+            tpl: opt.dataset.tpl === '1',
             disp: opt.dataset.disp === '1', dispCost: ''
         });
         pick.selectedIndex = 0; qtyIn.value = 1;
