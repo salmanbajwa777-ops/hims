@@ -38,9 +38,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ipd_a
 
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 
+// Two tabs, mirroring admissions.php:
+//   current (default) — still in the ward, plus today's discharges
+//   past              — discharged and finalized. Read-only; a finalized bill
+//                       is never reopened here, the row just becomes reachable.
+$tab = ($_GET['tab'] ?? '') === 'past' ? 'past' : 'current';
+$isPast = $tab === 'past';
+
+$isDate = fn($d) => is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) === 1;
+$day    = $isDate($_GET['date'] ?? '') ? $_GET['date'] : null;
+if ($day !== null && $day > date('Y-m-d')) { $day = date('Y-m-d'); }
+$q = trim($_GET['q'] ?? '');
+
+// DISCHARGE_IN_PROGRESS stays on `current` — it is unbilled work, not history.
+if ($isPast) {
+    $where  = "a.status = 'DISCHARGED' AND a.discharge_finalized_at IS NOT NULL";
+} else {
+    $where  = "(a.status <> 'DISCHARGED' OR a.discharge_finalized_at >= CURDATE())";
+}
+$params = [];
+if ($day !== null) {
+    $where .= ' AND DATE(a.admitted_at) = ?';
+    $params[] = $day;
+}
+if ($q !== '') {
+    $where .= ' AND (p.name LIKE ? OR p.mrn LIKE ?)';
+    $params[] = '%' . $q . '%';
+    $params[] = '%' . $q . '%';
+}
+$limitSql = $isPast ? ' LIMIT 300' : '';
+
 // Active first, then today's discharged. Joined for patient/consultant/ward.
-$rows = $pdo->query("
+$stmt = $pdo->prepare("
     SELECT a.id AS admission_id, a.status, a.admitted_at, a.ward, a.room_no,
+           a.discharge_finalized_at,
            v.token_no,
            p.mrn, p.name AS full_name, p.phone,
            COALESCE(du.name, a.admitting_consultant_manual) AS consultant_name,
@@ -51,9 +82,11 @@ $rows = $pdo->query("
     JOIN patients p ON p.id = v.patient_id
     LEFT JOIN users vd ON vd.id = v.doctor_id
     LEFT JOIN users du ON du.id = a.admitting_consultant_id
-    WHERE a.status <> 'DISCHARGED' OR a.discharge_finalized_at >= CURDATE()
-    ORDER BY (a.status = 'DISCHARGED'), a.admitted_at DESC
-")->fetchAll();
+    WHERE $where
+    ORDER BY (a.status = 'DISCHARGED'), a.admitted_at DESC$limitSql
+");
+$stmt->execute($params);
+$rows = $stmt->fetchAll();
 
 $qhActive = 'ipd';
 $qhBrand  = false;
@@ -75,6 +108,15 @@ tbody tr:first-child td { border-top: none; }
 .status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
 .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
 .admit-cta { display:flex; justify-content:flex-end; margin-bottom:14px; }
+/* Current / Past toggle + filter bar — kept identical to admissions.php so the
+   two ward boards read as one control. Anchors, so each tab is a real URL. */
+.pick-card { padding: 14px 16px; margin-bottom: 14px; }
+.mode-tabs { display: inline-flex; gap: 4px; padding: 3px; background: var(--bg, #F1F5F9); border-radius: 9px; margin-bottom: 12px; }
+.mode-tab { padding: 7px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); text-decoration: none; white-space: nowrap; }
+.mode-tab.on { background: var(--surface, #fff); color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.filter-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.filter-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--surface, #fff); color: var(--text); }
+.filter-form .q-field { min-width: 190px; flex: 1 1 190px; }
 CSS;
 $headExtra .= "\n</style>";
 require __DIR__ . '/partials/head.php';
@@ -86,7 +128,31 @@ require __DIR__ . '/partials/sidebar.php';
 <div class="content">
     <div>
         <div class="page-title">In-Door (IPD)</div>
-        <div class="page-sub">Admitted in-patients &mdash; <?= date('l, d/m/Y') ?> &middot; <span class="muted">admit an in-patient from the <a href="patients.php" style="color:var(--primary);font-weight:600;">Patients</a> list</span></div>
+        <div class="page-sub">
+            <?php if ($isPast): ?>
+                Discharged in-patients &mdash; read-only record
+            <?php else: ?>
+                Admitted in-patients &mdash; <?= date('l, d/m/Y') ?> &middot; <span class="muted">admit an in-patient from the <a href="patients.php" style="color:var(--primary);font-weight:600;">Patients</a> list</span>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Current / Past toggle — mirrors admissions.php. A discharged in-patient
+         drops off the current board the next day, so Past is the only way back. -->
+    <div class="card pick-card">
+        <div class="mode-tabs" role="tablist">
+            <a class="mode-tab<?= $isPast ? '' : ' on' ?>" href="ipd_admissions.php" role="tab" aria-selected="<?= $isPast ? 'false' : 'true' ?>">Currently admitted</a>
+            <a class="mode-tab<?= $isPast ? ' on' : '' ?>" href="ipd_admissions.php?tab=past" role="tab" aria-selected="<?= $isPast ? 'true' : 'false' ?>">Past admissions</a>
+        </div>
+        <form class="filter-form" method="GET" action="ipd_admissions.php">
+            <?php if ($isPast): ?><input type="hidden" name="tab" value="past"><?php endif; ?>
+            <input type="date" name="date" value="<?= htmlspecialchars($day ?? '') ?>" max="<?= date('Y-m-d') ?>" title="Admitted on this date">
+            <input type="search" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Name or MRN" class="q-field">
+            <button type="submit" class="btn">Filter</button>
+            <?php if ($day !== null || $q !== ''): ?>
+                <a class="btn secondary" href="ipd_admissions.php<?= $isPast ? '?tab=past' : '' ?>">Clear</a>
+            <?php endif; ?>
+        </form>
     </div>
 
     <?php if ($flash): ?><div class="alert success"><?= htmlspecialchars($flash) ?></div><?php endif; ?>
@@ -95,8 +161,17 @@ require __DIR__ . '/partials/sidebar.php';
     <div class="card">
         <?php if (!$rows): ?>
             <div class="empty">
-                <strong>No in-patients admitted</strong>
-                Admit a patient to In-Door from the Patients list and the stay will appear here.
+                <?php $filtered = ($day !== null || $q !== ''); ?>
+                <?php if ($isPast): ?>
+                    <strong>No past in-patients<?= $filtered ? ' match this filter' : '' ?></strong>
+                    <?= $filtered ? 'Try clearing the date or search above.' : 'Discharged in-patients will appear here once billed out.' ?>
+                <?php elseif ($filtered): ?>
+                    <strong>No current in-patient matches</strong>
+                    Nobody currently admitted matches this filter &mdash; check <a href="ipd_admissions.php?tab=past<?= $q !== '' ? '&amp;q=' . urlencode($q) : '' ?>">Past admissions</a>.
+                <?php else: ?>
+                    <strong>No in-patients admitted</strong>
+                    Admit a patient to In-Door from the Patients list and the stay will appear here.
+                <?php endif; ?>
             </div>
         <?php else: ?>
         <div class="table-scroll">
@@ -109,6 +184,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <th>Consultant</th>
                         <th>Status</th>
                         <th>Admitted</th>
+                        <?php if ($isPast): ?><th>Discharged</th><?php endif; ?>
                         <th></th>
                     </tr>
                 </thead>
@@ -130,7 +206,12 @@ require __DIR__ . '/partials/sidebar.php';
                         <td><?= htmlspecialchars($r['ward']) ?> &middot; Room <?= (int) $r['room_no'] ?></td>
                         <td><?= htmlspecialchars($r['consultant_name'] ?: '—') ?></td>
                         <td><span class="status-pill <?= $cls ?>"><?= $lbl ?></span></td>
-                        <td><?= date('d/m, h:i A', strtotime($r['admitted_at'])) ?></td>
+                        <td><?= date($isPast ? 'd/m/Y h:i A' : 'd/m, h:i A', strtotime($r['admitted_at'])) ?></td>
+                        <?php if ($isPast): ?>
+                        <td><?= $r['discharge_finalized_at']
+                                ? date('d/m/Y h:i A', strtotime($r['discharge_finalized_at']))
+                                : '&mdash;' ?></td>
+                        <?php endif; ?>
                         <td>
                             <a class="edit-link" href="ipd_admission.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--primary);font-weight:600;font-size:12.5px;">Manage &rarr;</a>
                         </td>
@@ -144,5 +225,9 @@ require __DIR__ . '/partials/sidebar.php';
 </div>
     </div>
 </div>
+
+<!-- dd/mm/yyyy display over a hidden yyyy-mm-dd value — the house date convention.
+     Any page with a date input must load this or the picker reads as mm/dd. -->
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>

@@ -86,6 +86,10 @@ $canRaiseProcedure = !$isDoctorReadonly && has_permission('RECEPTION_RAISE_PROCE
 // available to a doctor viewing this list — a dentist reaches the chair-side
 // record from here.
 $canRecordDental = has_permission('DENTAL_RECORD_TREATMENT');
+// Past stays are reachable from the patient row: a discharged admission drops
+// off the live admissions board the next day, so this is the by-patient way
+// back to it. Read-only lookup, so it mirrors the admissions page's own gate.
+$canViewStays = has_permission('RECEPTION_REGISTER_PATIENTS') || has_permission('NURSING_RECORD_ADMISSIONS');
 
 // ---------------- AJAX: quick-add area (used from the registration panel) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_add_area') {
@@ -1223,6 +1227,11 @@ require __DIR__ . '/partials/sidebar.php';
                                          charted first (tooth-wise), and only then billed — same-visit on the
                                          procedure bill, or added to a multi-visit package account. -->
                                     <a class="qa" href="dental_treatment.php?patient_id=<?= (int) $p['id'] ?>">Dental</a>
+                                    <?php endif; ?>
+                                    <?php if ($canViewStays): ?>
+                                    <!-- Searches the admissions page by MRN, which is unique — a name
+                                         search could pull in a second patient with the same name. -->
+                                    <a class="qa" href="admissions.php?q=<?= urlencode($p['mrn']) ?>">Stays</a>
                                     <?php endif; ?>
                                 </div>
                             </td>
