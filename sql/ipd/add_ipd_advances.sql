@@ -99,3 +99,24 @@ WHERE NOT EXISTS (
     SELECT 1 FROM role_permissions rp
     WHERE rp.base_role = seed.base_role AND rp.permission_id = p.id
 );
+
+-- ---- Verify (read-only; run separately) ----
+-- Every table name is FULLY QUALIFIED. Touching information_schema switches
+-- phpMyAdmin's current-database context, so a bare `permissions` here resolves
+-- to information_schema.permissions and fails with
+--   #1109 Unknown table 'permissions' in information_schema
+-- Expect 1 on every row except "role grants", which is 2 (ADMIN + STAFF).
+--
+-- SELECT 'ipd_advances' t, COUNT(*) ok FROM information_schema.tables
+--  WHERE table_schema = DATABASE() AND table_name = 'ipd_advances'
+-- UNION ALL SELECT 'ipd_advance_counters', COUNT(*) FROM information_schema.tables
+--  WHERE table_schema = DATABASE() AND table_name = 'ipd_advance_counters'
+-- UNION ALL SELECT 'advance_applied col', COUNT(*) FROM information_schema.columns
+--  WHERE table_schema = DATABASE() AND table_name = 'ipd_bills' AND column_name = 'advance_applied'
+-- UNION ALL SELECT 'advance_refunded col', COUNT(*) FROM information_schema.columns
+--  WHERE table_schema = DATABASE() AND table_name = 'ipd_bills' AND column_name = 'advance_refunded'
+-- UNION ALL SELECT 'permission', COUNT(*) FROM u402528120_hmis.permissions
+--  WHERE `key` = 'RECEPTION_TAKE_IPD_ADVANCE'
+-- UNION ALL SELECT 'role grants', COUNT(*) FROM u402528120_hmis.role_permissions rp
+--  JOIN u402528120_hmis.permissions p ON p.id = rp.permission_id
+--  WHERE p.`key` = 'RECEPTION_TAKE_IPD_ADVANCE';
