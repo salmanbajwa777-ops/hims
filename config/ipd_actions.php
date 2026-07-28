@@ -31,6 +31,8 @@
 
 require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/tokens.php';
+// Primary nurse is mandatory at admit — shared roster/validator with the ER handler.
+require_once __DIR__ . '/nurses.php';
 
 function handle_ipd_admit(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
@@ -48,6 +50,7 @@ function handle_ipd_admit(PDO $pdo): array {
     $consultManual = mb_strtoupper(trim($_POST['admitting_consultant_manual'] ?? ''), 'UTF-8') ?: null;
     $provDiag  = trim($_POST['provisional_diagnosis'] ?? '');
     $provDiag  = $provDiag === '' ? null : mb_substr($provDiag, 0, 500);
+    $nurseId   = (int) ($_POST['assigned_nurse_id'] ?? 0);
 
     $baseRole = $_SESSION['base_role'] ?? '';
     $uid = (int) $_SESSION['user_id'];
@@ -74,6 +77,16 @@ function handle_ipd_admit(PDO $pdo): array {
     // Consultant required — a system doctor or a typed name.
     if (!$consultId && !$consultManual) {
         $out['error'] = 'An admitting consultant is required.';
+        return $out;
+    }
+    // Primary nurse REQUIRED — no ward stay without someone accountable for it.
+    // Ownership only: any staff member holding the relevant nursing permission
+    // can still log care, medications and vitals against this admission. The
+    // roster key matches the one ipd_admission.php offers for handovers.
+    if (!is_valid_nurse($pdo, 'IPD_RECORD_HANDOVER', $nurseId)) {
+        $out['error'] = $nurseId > 0
+            ? 'The selected primary nurse is not an active nursing staff member.'
+            : 'Assign a primary nurse to admit this patient.';
         return $out;
     }
     // If a system consultant id was given, it must be a real doctor.
@@ -147,14 +160,16 @@ function handle_ipd_admit(PDO $pdo): array {
             throw new RuntimeException('already_admitted');
         }
 
+        // assigned_nurse_id / assigned_at come from sql/ipd/add_ipd_assigned_nurse.sql.
         $pdo->prepare('
             INSERT INTO ipd_admissions
                 (visit_id, ward, room_no, admitted_at, admitting_consultant_id,
-                 admitting_consultant_manual, provisional_diagnosis, admitted_by_id, admitted_by_role, status)
-            VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, \'ACTIVE\')
+                 admitting_consultant_manual, provisional_diagnosis, admitted_by_id, admitted_by_role,
+                 assigned_nurse_id, assigned_at, status)
+            VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, NOW(), \'ACTIVE\')
         ')->execute([
             $visitId, $ward, $roomNo, $consultId,
-            $consultId ? null : $consultManual, $provDiag, $uid, $admitRole,
+            $consultId ? null : $consultManual, $provDiag, $uid, $admitRole, $nurseId,
         ]);
         $admissionId = (int) $pdo->lastInsertId();
 
@@ -162,7 +177,7 @@ function handle_ipd_admit(PDO $pdo): array {
         $pdo->prepare('UPDATE visits SET disposition = \'IN_DOOR\', admitted_at = NOW() WHERE id = ?')
             ->execute([$visitId]);
 
-        audit_log($pdo, 'ipd_patient_admitted', "IPD admit: visit #$visitId, ward $ward room $roomNo, admission #$admissionId by $admitRole", $uid);
+        audit_log($pdo, 'ipd_patient_admitted', "IPD admit: visit #$visitId, ward $ward room $roomNo, admission #$admissionId by $admitRole, primary nurse #$nurseId", $uid);
 
         $pdo->commit();
 

@@ -46,6 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit
 $admTypes = $pdo->query('SELECT admission_type, rate_amount, rate_basis FROM admission_rates WHERE is_enabled = 1 ORDER BY FIELD(admission_type,"ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
 $admDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
 $admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
+// Primary nurse is mandatory at admit — an empty roster means no one can be held
+// accountable, so the dialog disables admitting rather than failing on POST.
+require_once __DIR__ . '/config/nurses.php';
+$admNurses = nurse_roster($pdo, 'NURSING_ATTEND_SHORT_STAY');
+$admitOpdOk = $admTypes && $admNurses;
 
 $mustChangePassword = (bool) $user['must_change_password'];
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
@@ -850,15 +855,17 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="type-opts">
                         <?php foreach ($admTypes as $i => $t): ?>
                         <label class="type-opt">
-                            <input type="radio" name="admission_type" value="<?= htmlspecialchars($t['admission_type']) ?>" <?= $i === 0 ? 'checked' : '' ?>>
+                            <input type="radio" name="admission_type" value="<?= htmlspecialchars($t['admission_type']) ?>" <?= ($i === 0 && $admitOpdOk) ? 'checked' : '' ?> <?= $admitOpdOk ? '' : 'disabled' ?>>
                             <span class="type-body">
                                 <span class="type-name"><?= htmlspecialchars($admTypeLabels[$t['admission_type']] ?? $t['admission_type']) ?></span>
-                                <span class="type-rate">Rs <?= number_format((float) $t['rate_amount']) ?>/<?= $t['rate_basis'] === 'DAILY' ? 'day' : 'hr' ?></span>
+                                <span class="type-rate"><?= $admitOpdOk ? 'Rs ' . number_format((float) $t['rate_amount']) . '/' . ($t['rate_basis'] === 'DAILY' ? 'day' : 'hr') : 'No nursing staff available' ?></span>
                             </span>
                         </label>
                         <?php endforeach; ?>
                         <?php if (!$admTypes): ?>
                         <div class="muted">No admission types are enabled. Set them under ER Services &amp; Rates.</div>
+                        <?php elseif (!$admNurses): ?>
+                        <div class="muted">No staff hold the short-stay nursing permission &mdash; grant it under Permissions before admitting.</div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -873,11 +880,27 @@ require __DIR__ . '/partials/sidebar.php';
                     </select>
                     <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" class="uc" placeholder="Or type the doctor's name" style="margin-top:8px;">
                 </div>
+
+                <!-- Primary nurse — mandatory (handle_admit_patient() rejects an admit
+                     without one). Records accountability only: any nursing staff can
+                     still record vitals and log services against this stay. -->
+                <div class="admit-field">
+                    <label>Primary nurse <span style="color:var(--red,#dc2626);">*</span></label>
+                    <select name="assigned_nurse_id" required>
+                        <option value="">Select primary nurse&hellip;</option>
+                        <?php foreach ($admNurses as $n): ?>
+                        <option value="<?= (int) $n['id'] ?>"><?= htmlspecialchars($n['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="muted" style="margin-top:6px;font-size:12px;">
+                        Accountable for this stay. Any nursing staff can still record vitals and services.
+                    </div>
+                </div>
             </div>
 
             <div class="admit-foot">
                 <button type="button" class="btn secondary" onclick="closeAdmit()">Cancel</button>
-                <button type="submit" class="btn" <?= $admTypes ? '' : 'disabled' ?>>Admit &amp; start stay</button>
+                <button type="submit" class="btn" <?= $admitOpdOk ? '' : 'disabled' ?>>Admit &amp; start stay</button>
             </div>
         </form>
     </div>

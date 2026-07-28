@@ -8,6 +8,12 @@
  *   $ipdAdmitFormAction — where the form POSTs (defaults to the current script).
  *   $ipdWards           — [['ward','per_day_rate','consultant_visit_fee'], ...] enabled.
  *   $ipdDoctors         — [['id','name'], ...] system doctors for the consultant picker.
+ *   $ipdNurses          — [['id','name'], ...] eligible PRIMARY nurses.
+ *
+ * Assigning a primary nurse is MANDATORY — handle_ipd_admit() rejects an admit
+ * without one. It records who is accountable for the stay and does NOT restrict
+ * who may work on it: any staff member with the relevant nursing permission can
+ * still log care, medications and vitals against the admission.
  *
  * openIpdAdmit(id, patientName, doctorId, doctorName, byPatient) accepts either a
  * visit id (queue context) or a patient id (all-patients context) — the hidden
@@ -16,6 +22,10 @@
 $ipdAdmitFormAction = $ipdAdmitFormAction ?? basename($_SERVER['SCRIPT_NAME'] ?? 'patients.php');
 $ipdWards   = $ipdWards ?? [];
 $ipdDoctors = $ipdDoctors ?? [];
+$ipdNurses  = $ipdNurses ?? [];
+// A primary nurse is mandatory, so an empty roster makes admitting impossible —
+// the submit is disabled rather than letting the form take a server rejection.
+$ipdAdmitOk = $ipdWards && $ipdNurses;
 ?>
 <style>
 .ipd-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
@@ -82,6 +92,25 @@ $ipdDoctors = $ipdDoctors ?? [];
                 </div>
 
                 <div class="ipd-field">
+                    <label>Primary nurse <span style="color:var(--red,#dc2626);">*</span></label>
+                    <select name="assigned_nurse_id" required>
+                        <option value="">Select primary nurse&hellip;</option>
+                        <?php foreach ($ipdNurses as $n): ?>
+                        <option value="<?= (int) $n['id'] ?>"><?= htmlspecialchars($n['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php if (!$ipdNurses): ?>
+                    <div class="muted" style="margin-top:6px;font-size:12px;">
+                        No staff hold the In-Door nursing permission &mdash; grant it under Permissions before admitting.
+                    </div>
+                    <?php else: ?>
+                    <div class="muted" style="margin-top:6px;font-size:12px;">
+                        Accountable for this stay. Any nursing staff can still log care and vitals.
+                    </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="ipd-field">
                     <label>Provisional diagnosis <span class="muted" style="font-weight:500;">(working diagnosis &mdash; seeds the first ward round)</span></label>
                     <textarea name="provisional_diagnosis" maxlength="500" placeholder="e.g. Community Acquired Pneumonia"></textarea>
                 </div>
@@ -89,7 +118,7 @@ $ipdDoctors = $ipdDoctors ?? [];
 
             <div class="ipd-foot">
                 <button type="button" class="btn secondary" onclick="closeIpdAdmit()">Cancel</button>
-                <button type="submit" class="btn" <?= $ipdWards ? '' : 'disabled' ?>>Admit to In-Door</button>
+                <button type="submit" class="btn" <?= $ipdAdmitOk ? '' : 'disabled' ?>>Admit to In-Door</button>
             </div>
         </form>
     </div>

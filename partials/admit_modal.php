@@ -8,6 +8,14 @@
  *   $admTypes         — [['admission_type','rate_amount','rate_basis'], ...] (enabled).
  *   $admDoctors       — [['id','name'], ...] system doctors for the picker.
  *   $admTypeLabels    — ['ROUTINE'=>'Routine', ...] display labels.
+ *   $admNurses        — [['id','name'], ...] eligible PRIMARY nurses (short-stay).
+ *
+ * Assigning a primary nurse is MANDATORY on both routes — the handlers reject an
+ * admit without one, and the picker below is `required`. It records who is
+ * accountable for the stay; it does not restrict who may work on it (any staff
+ * member with the relevant nursing permission still logs vitals and services).
+ * The two routes draw from different rosters ($admNurses vs $ipdNurses) because
+ * short-stay and In-Door nursing are separate permissions.
  *
  * In-Door (IPD) is offered as one more admission type in the SAME picker, so
  * reception makes a single "where is this patient going" choice instead of
@@ -17,6 +25,7 @@
  * $admitShowIpd = true and supplying:
  *   $ipdWards   — [['ward','per_day_rate','consultant_visit_fee'], ...] enabled.
  *   $ipdDoctors — [['id','name'], ...] consultants.
+ *   $ipdNurses  — [['id','name'], ...] eligible primary nurses (In-Door).
  * Left false (doctor.php) the modal is exactly the pre-merge admit-only dialog.
  *
  * openAdmit(idPayload) accepts either a visit id (queue context) OR a patient id
@@ -30,9 +39,17 @@ $admTypeLabels = $admTypeLabels ?? ['ROUTINE' => 'Routine', 'PRIVATE' => 'Privat
 $admitShowIpd = !empty($admitShowIpd);
 $ipdWards = $ipdWards ?? [];
 $ipdDoctors = $ipdDoctors ?? [];
+$admNurses = $admNurses ?? [];
+$ipdNurses = $ipdNurses ?? [];
+// A primary nurse is mandatory, so a route with an EMPTY nurse roster cannot be
+// completed at all — treat it as unavailable here rather than letting the user
+// fill the form and take a server-side rejection. Each route is judged on its
+// own roster because the two use different nursing permissions.
+$admitOpdOk = $admTypes && $admNurses;
+$admitIpdOk = $admitShowIpd && $ipdWards && $ipdNurses;
 // The submit button must not be dead when In-Door is the only route available
 // (e.g. no hourly admission rates enabled but wards are).
-$admitHasAnyRoute = $admTypes || ($admitShowIpd && $ipdWards);
+$admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
 ?>
 <style>
 .admit-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
@@ -79,11 +96,13 @@ $admitHasAnyRoute = $admTypes || ($admitShowIpd && $ipdWards);
                     <label>Admission type</label>
                     <div class="type-opts">
                         <?php foreach ($admTypes as $i => $t): ?>
+                        <!-- Disabled with an empty short-stay nurse roster: a primary
+                             nurse is mandatory, so this route cannot be completed. -->
                         <label class="type-opt">
-                            <input type="radio" name="admission_type" value="<?= htmlspecialchars($t['admission_type']) ?>" <?= $i === 0 ? 'checked' : '' ?>>
+                            <input type="radio" name="admission_type" value="<?= htmlspecialchars($t['admission_type']) ?>" <?= ($i === 0 && $admitOpdOk) ? 'checked' : '' ?> <?= $admitOpdOk ? '' : 'disabled' ?>>
                             <span class="type-body">
                                 <span class="type-name"><?= htmlspecialchars($admTypeLabels[$t['admission_type']] ?? $t['admission_type']) ?></span>
-                                <span class="type-rate">Rs <?= number_format((float) $t['rate_amount']) ?>/<?= $t['rate_basis'] === 'DAILY' ? 'day' : 'hr' ?></span>
+                                <span class="type-rate"><?= $admitOpdOk ? 'Rs ' . number_format((float) $t['rate_amount']) . '/' . ($t['rate_basis'] === 'DAILY' ? 'day' : 'hr') : 'No nursing staff available' ?></span>
                             </span>
                         </label>
                         <?php endforeach; ?>
@@ -91,15 +110,25 @@ $admitHasAnyRoute = $admTypes || ($admitShowIpd && $ipdWards);
                         <!-- Third route: In-Door. Same picker, different module — the
                              JS below re-points the form at the IPD handler. -->
                         <label class="type-opt">
-                            <input type="radio" name="admission_type" value="__IPD__" id="admitTypeIpd" <?= $admTypes ? '' : 'checked' ?> <?= $ipdWards ? '' : 'disabled' ?>>
+                            <input type="radio" name="admission_type" value="__IPD__" id="admitTypeIpd" <?= $admitOpdOk ? '' : 'checked' ?> <?= $admitIpdOk ? '' : 'disabled' ?>>
                             <span class="type-body">
                                 <span class="type-name">In-Door (IPD)</span>
-                                <span class="type-rate"><?= $ipdWards ? 'Ward admission &mdash; per-day room rate' : 'No wards enabled' ?></span>
+                                <span class="type-rate"><?php
+                                    if (!$ipdWards)      { echo 'No wards enabled'; }
+                                    elseif (!$ipdNurses) { echo 'No nursing staff available'; }
+                                    else                 { echo 'Ward admission &mdash; per-day room rate'; }
+                                ?></span>
                             </span>
                         </label>
                         <?php endif; ?>
-                        <?php if (!$admTypes && !($admitShowIpd && $ipdWards)): ?>
-                        <div class="muted">No admission types are enabled. Set them under ER Services &amp; Rates.</div>
+                        <?php if (!$admitHasAnyRoute): ?>
+                        <div class="muted">
+                            <?php if ($admTypes || ($admitShowIpd && $ipdWards)): ?>
+                            No staff hold the nursing permission required to take a patient, so admitting is blocked. Grant it under Permissions.
+                            <?php else: ?>
+                            No admission types are enabled. Set them under ER Services &amp; Rates.
+                            <?php endif; ?>
+                        </div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -115,6 +144,27 @@ $admitHasAnyRoute = $admTypes || ($admitShowIpd && $ipdWards);
                             <?php endforeach; ?>
                         </select>
                         <input type="text" name="admitting_doctor_manual" id="admitDoctorManual" class="uc" placeholder="Or type the doctor's name" style="margin-top:8px;">
+                    </div>
+
+                    <!-- Primary nurse — mandatory. `required` is toggled by JS so a
+                         hidden picker can never block the other route's submit. -->
+                    <div class="admit-field" style="margin-top:16px;">
+                        <label>Primary nurse <span style="color:var(--red,#dc2626);">*</span></label>
+                        <select name="assigned_nurse_id" id="admitNurse" data-opd-required>
+                            <option value="">Select primary nurse&hellip;</option>
+                            <?php foreach ($admNurses as $n): ?>
+                            <option value="<?= (int) $n['id'] ?>"><?= htmlspecialchars($n['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php if (!$admNurses): ?>
+                        <div class="muted" style="margin-top:6px;font-size:12px;">
+                            No staff hold the short-stay nursing permission — grant it under Permissions before admitting.
+                        </div>
+                        <?php else: ?>
+                        <div class="muted" style="margin-top:6px;font-size:12px;">
+                            Accountable for this stay. Any nursing staff can still record vitals and services.
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -153,6 +203,25 @@ $admitHasAnyRoute = $admTypes || ($admitShowIpd && $ipdWards);
                             <?php endforeach; ?>
                         </select>
                         <input type="text" name="admitting_consultant_manual" id="admitIpdDoctorManual" class="uc" placeholder="Or type the consultant's name" style="margin-top:8px;">
+                    </div>
+
+                    <div class="admit-field" style="margin-top:16px;">
+                        <label>Primary nurse <span style="color:var(--red,#dc2626);">*</span></label>
+                        <select name="assigned_nurse_id" id="admitIpdNurse" data-ipd-required>
+                            <option value="">Select primary nurse&hellip;</option>
+                            <?php foreach ($ipdNurses as $n): ?>
+                            <option value="<?= (int) $n['id'] ?>"><?= htmlspecialchars($n['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php if (!$ipdNurses): ?>
+                        <div class="muted" style="margin-top:6px;font-size:12px;">
+                            No staff hold the In-Door nursing permission — grant it under Permissions before admitting.
+                        </div>
+                        <?php else: ?>
+                        <div class="muted" style="margin-top:6px;font-size:12px;">
+                            Accountable for this stay. Any nursing staff can still log care and vitals.
+                        </div>
+                        <?php endif; ?>
                     </div>
 
                     <div class="admit-field" style="margin-top:16px;">
@@ -217,9 +286,12 @@ function admitSyncRoute() {
     document.getElementById('admitAction').value = isIpd ? 'ipd_admit_patient' : 'admit_patient';
     document.getElementById('admitSubmit').textContent = isIpd ? 'Admit to In-Door' : 'Admit & start stay';
 
-    // Only the visible route's fields may block submission.
-    var reqs = document.querySelectorAll('#admitIpdFields [data-ipd-required]');
-    for (var i = 0; i < reqs.length; i++) { reqs[i].required = isIpd; }
+    // Only the visible route's fields may block submission. Both routes now carry
+    // required inputs (the mandatory primary nurse), so each set is toggled.
+    var ipdReqs = document.querySelectorAll('#admitIpdFields [data-ipd-required]');
+    for (var i = 0; i < ipdReqs.length; i++) { ipdReqs[i].required = isIpd; }
+    var opdReqs = document.querySelectorAll('#admitOpdFields [data-opd-required]');
+    for (var j = 0; j < opdReqs.length; j++) { opdReqs[j].required = !isIpd; }
 }
 document.addEventListener('change', function (e) {
     if (e.target && e.target.name === 'admission_type') { admitSyncRoute(); }

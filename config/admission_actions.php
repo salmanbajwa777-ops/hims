@@ -27,6 +27,9 @@ require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/sheets.php';
 // Same reasoning: the shell-visit token must be issued the same way from all three.
 require_once __DIR__ . '/tokens.php';
+// Primary nurse is mandatory at admit — the roster/validator is shared with the
+// IPD handler and the stay pages so they can never disagree on who qualifies.
+require_once __DIR__ . '/nurses.php';
 
 function handle_admit_patient(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];
@@ -44,6 +47,18 @@ function handle_admit_patient(PDO $pdo): array {
     $admType   = $_POST['admission_type'] ?? '';
     $docId     = (int) ($_POST['admitting_doctor_id'] ?? 0) ?: null;
     $docManual = mb_strtoupper(trim($_POST['admitting_doctor_manual'] ?? ''), 'UTF-8') ?: null;
+    $nurseId   = (int) ($_POST['assigned_nurse_id'] ?? 0);
+
+    // Primary nurse is REQUIRED — no stay may exist without someone accountable
+    // for it. This only fixes ownership: any staff member with the relevant
+    // nursing permission can still record vitals and log services on this stay.
+    // Validated against the live roster because a POST can name any user id.
+    if (!is_valid_nurse($pdo, 'NURSING_ATTEND_SHORT_STAY', $nurseId)) {
+        $out['error'] = $nurseId > 0
+            ? 'The selected primary nurse is not an active nursing staff member.'
+            : 'Assign a primary nurse to admit this patient.';
+        return $out;
+    }
 
     // Type must be a currently-enabled admission type.
     $rateOk = $pdo->prepare('SELECT 1 FROM admission_rates WHERE admission_type = ? AND is_enabled = 1');
@@ -128,21 +143,25 @@ function handle_admit_patient(PDO $pdo): array {
             throw new RuntimeException('already_admitted');
         }
 
+        // Opens ACTIVE, not PENDING_ASSIGNMENT: the primary nurse is captured in
+        // this same INSERT, so the "awaiting nurse" state is unreachable for new
+        // admits. The enum value is kept for stays created before this change,
+        // which admission.php can still assign a nurse to.
         $pdo->prepare('
             INSERT INTO admissions
                 (visit_id, admission_type, admitted_by_id, admitted_by_role, admitted_at,
-                 admitting_doctor_id, admitting_doctor_manual, status)
-            VALUES (?, ?, ?, ?, NOW(), ?, ?, \'PENDING_ASSIGNMENT\')
+                 assigned_nurse_id, assigned_at, admitting_doctor_id, admitting_doctor_manual, status)
+            VALUES (?, ?, ?, ?, NOW(), ?, NOW(), ?, ?, \'ACTIVE\')
         ')->execute([
             $visitId, $admType, $uid, $admitRole,
-            $docId, $docId ? null : $docManual,
+            $nurseId, $docId, $docId ? null : $docManual,
         ]);
         $admissionId = (int) $pdo->lastInsertId();
 
         $pdo->prepare('UPDATE visits SET disposition = \'SHORT_STAY\', admission_type = ?, admitted_at = NOW() WHERE id = ?')
             ->execute([$admType, $visitId]);
 
-        audit_log($pdo, 'patient_admitted', "Admitted visit #$visitId ($admType), admission #$admissionId by $admitRole", $uid);
+        audit_log($pdo, 'patient_admitted', "Admitted visit #$visitId ($admType), admission #$admissionId by $admitRole, primary nurse #$nurseId", $uid);
 
         $pdo->commit();
 

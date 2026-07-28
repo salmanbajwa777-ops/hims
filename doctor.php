@@ -122,11 +122,14 @@ $canDoctorAdmit = has_permission('ADMISSION_ADMIT_PATIENT');
 // queue 403s them). Surface Invoice/Refund on their own DONE rows. refund.php still
 // enforces that the approver is this visit's doctor, so scope is safe.
 $canDoctorRefund = has_permission('RECEPTION_ISSUE_REFUNDS');
-$admTypes = $admDoctors = [];
+$admTypes = $admDoctors = $admNurses = [];
 $admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
 if ($canDoctorAdmit) {
     $admTypes = $pdo->query('SELECT admission_type, rate_amount, rate_basis FROM admission_rates WHERE is_enabled = 1 ORDER BY FIELD(admission_type,"ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
     $admDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
+    // Primary nurse is mandatory at admit — the doctor picks one here too.
+    require_once __DIR__ . '/config/nurses.php';
+    $admNurses = nurse_roster($pdo, 'NURSING_ATTEND_SHORT_STAY');
 }
 $visits = $queueStmt->fetchAll();
 

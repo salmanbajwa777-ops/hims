@@ -52,20 +52,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ipd_a
 
 // Admit-modal data (only needed for reception; harmless if the modal isn't shown).
 $canAdmitHere = !$isDoctorReadonly && has_permission('ADMISSION_ADMIT_PATIENT');
-$admTypes = $admDoctors = [];
+$admTypes = $admDoctors = $admNurses = [];
 $admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
 if ($canAdmitHere) {
     $admTypes = $pdo->query('SELECT admission_type, rate_amount, rate_basis FROM admission_rates WHERE is_enabled = 1 ORDER BY FIELD(admission_type,"ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
     $admDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
+    // Primary nurse is mandatory at admit (short-stay roster).
+    require_once __DIR__ . '/config/nurses.php';
+    $admNurses = nurse_roster($pdo, 'NURSING_ATTEND_SHORT_STAY');
 }
 
 // In-Door admit-modal data. Doctors admit from their own console too, so this is
 // gated on the IPD permission, not on !$isDoctorReadonly.
 $canIpdAdmitHere = has_permission('IPD_ADMIT_PATIENT');
-$ipdWards = $ipdDoctors = [];
+$ipdWards = $ipdDoctors = $ipdNurses = [];
 if ($canIpdAdmitHere) {
     $ipdWards = $pdo->query('SELECT ward, per_day_rate, consultant_visit_fee FROM ipd_ward_rates WHERE is_enabled = 1 ORDER BY ward')->fetchAll();
     $ipdDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name")->fetchAll();
+    // Primary nurse is mandatory at admit. Separate roster from short-stay — the
+    // two routes use different nursing permissions.
+    require_once __DIR__ . '/config/nurses.php';
+    $ipdNurses = nurse_roster($pdo, 'IPD_RECORD_HANDOVER');
 }
 // In-Door renders as the third option inside the shared admit modal (one dialog,
 // one picker). Both routes POST back to this page; the modal swaps the action.
