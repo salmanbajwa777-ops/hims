@@ -656,6 +656,8 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         'online_procedure_total' => 0.0, 'online_procedure_count' => 0,
         'cash_dental_total' => 0.0, 'cash_dental_count' => 0,
         'online_dental_total' => 0.0, 'online_dental_count' => 0,
+        'cash_advance_total' => 0.0, 'cash_advance_count' => 0,
+        'online_advance_total' => 0.0, 'online_advance_count' => 0,
         'cash_refund_total' => 0.0, 'cash_refund_count' => 0,
         'expense_total' => 0.0, 'expense_count' => 0,
     ];
@@ -785,6 +787,39 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
         // procedure_bills not migrated yet — leave procedure buckets at zero.
     }
 
+    // IPD advance payments ("ADV" series, sql/ipd/add_ipd_advances.sql).
+    //
+    // Money taken BEFORE the stay is billed, and refunds of the excess handed
+    // back at discharge. Both directions are stamped with paid_by_id/paid_at, so
+    // an advance lands on the shift that took it and a refund reduces the shift
+    // that returned it — the SUM below is signed by direction to do exactly that.
+    //
+    // Folded into the admission buckets like ER/procedures/dental so the stored
+    // closing columns and the printed A5 slip pick it up with no schema change.
+    // A patient may pay several advances across one stay; each is its own row.
+    try {
+        $stmt = $pdo->prepare("
+            SELECT (payment_method = 'cash') AS is_cash,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(CASE WHEN direction = 'REFUND' THEN -amount ELSE amount END), 0) AS total
+            FROM ipd_advances
+            WHERE voided_at IS NULL AND paid_at >= ? AND paid_at < ? AND paid_by_id = ?
+            GROUP BY is_cash
+        ");
+        $stmt->execute([$winStart, $winEnd, $userId]);
+        foreach ($stmt->fetchAll() as $r) {
+            $isCash = (int) $r['is_cash'];
+            $k = $isCash ? 'cash_advance' : 'online_advance';
+            $t[$k . '_total'] = (float) $r['total'];
+            $t[$k . '_count'] = (int) $r['n'];
+            $admKey = $isCash ? 'cash_admission' : 'online_admission';
+            $t[$admKey . '_total'] += (float) $r['total'];
+            $t[$admKey . '_count'] += (int) $r['n'];
+        }
+    } catch (Throwable $e) {
+        // ipd_advances not migrated yet — leave advance buckets at zero.
+    }
+
     // Dental package payments ("DP" series, sql/add_dental_module.sql).
     //
     // The SHAPE DIFFERS from every *_bills table above and the difference
@@ -868,11 +903,18 @@ function day_cash_tally(PDO $pdo, string $date, int $userId): array {
     );
 
     // Admissions/discharges ALONE — the admission bucket with the streams that
-    // were folded into it taken back out. The closing sheet lists each stream on
-    // its own row, so it needs the un-folded figure; showing $cash_admission_total
-    // beside ER/procedure/dental rows would present the same money twice.
-    // Clamped at 0: rounding on three folded streams can push this a hair
-    // negative, and a negative admissions line reads as a bug to the cashier.
+    // get their OWN row on the closing sheet taken back out (ER, procedures,
+    // dental). Showing the raw bucket beside those rows would present the same
+    // money twice.
+    //
+    // IPD advances are deliberately NOT subtracted: they have no separate row
+    // and belong under Admissions/Discharges, which is where a cashier looks for
+    // "money taken for an admitted patient". Advance refunds carry a negative
+    // sign in that sum, so returning an excess correctly reduces the line.
+    //
+    // Clamped at 0: rounding across the folded streams — or an advance refund
+    // larger than the day's other admission money — can push this negative, and
+    // a negative admissions line reads as a bug to the cashier.
     foreach (['cash', 'online'] as $mode) {
         $t[$mode . '_admission_only_total'] = round(max(0, $t[$mode . '_admission_total']
             - $t[$mode . '_er_total'] - $t[$mode . '_procedure_total'] - $t[$mode . '_dental_total']), 2);
