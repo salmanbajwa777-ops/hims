@@ -17,6 +17,12 @@
 require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
+// audit_log() lives in permissions.php. This page does not gate on a permission
+// — everyone edits their own profile — so it had no reason to load that file
+// until the audit-log refactor moved the helper there. Without it, saving a
+// profile, changing a password or uploading a document fatals with
+// "Call to undefined function audit_log()".
+require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/staff_documents.php';
 
 $uid = (int) $_SESSION['user_id'];
@@ -56,8 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         } else {
             $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?')
                 ->execute([$name, $email !== '' ? $email : null, $phone !== '' ? $phone : null, $uid]);
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$uid, 'profile_updated', "Updated own profile details (name/email/phone)"]);
+            audit_log($pdo, 'profile_updated', "Updated own profile details (name/email/phone)", $uid);
             $success = 'Profile saved. Remember: you sign in with this email or phone.';
         }
     }
@@ -83,8 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
         $pdo->prepare('UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?')
             ->execute([password_hash($new, PASSWORD_BCRYPT), $uid]);
         $_SESSION['must_change_password'] = false;
-        $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-            ->execute([$uid, 'password_changed', 'Changed own password from profile page']);
+        audit_log($pdo, 'password_changed', 'Changed own password from profile page', $uid);
         $success = 'Password updated.';
     }
 }
@@ -104,8 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
         if ($stored === 0) {
             $error = 'The upload could not be saved. Please try again.';
         } else {
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$uid, 'document_uploaded', "Uploaded $stored document(s) to own profile"]);
+            audit_log($pdo, 'document_uploaded', "Uploaded $stored document(s) to own profile", $uid);
             $success = $stored === 1 ? 'Document uploaded.' : "$stored documents uploaded.";
         }
     }

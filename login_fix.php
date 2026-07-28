@@ -14,6 +14,11 @@
  * Usage: https://<site>/login_fix.php?key=FIX-HIMS-2026
  */
 require_once __DIR__ . '/config/db.php';
+// audit_log() lives in permissions.php. This page deliberately cannot require a
+// login (it exists to rescue one), so it never loaded that file — but the
+// audit-log refactor moved the helper there, and without this the rescue fatals
+// on submit, i.e. precisely when it is needed.
+require_once __DIR__ . '/config/permissions.php';
 
 const FIX_KEY = 'FIX-HIMS-2026';
 
@@ -43,8 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $pdo->prepare('UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?')
                 ->execute([password_hash($new, PASSWORD_BCRYPT), $userId]);
-            $pdo->prepare('INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)')
-                ->execute([$userId, 'password_rescue', 'Password reset via one-time login_fix page']);
+            audit_log($pdo, 'password_rescue', 'Password reset via one-time login_fix page', $userId);
             $done = true;
             $msg = 'Password set for ' . htmlspecialchars($target['name']) . '. Log in now — this page has deleted itself.';
             @unlink(__FILE__);   // job done — remove the rescue page
