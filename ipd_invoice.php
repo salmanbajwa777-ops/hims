@@ -66,6 +66,7 @@ $balanceDue = max(0, round((float) $bill['grand_total'] - $advApplied, 2));
 // hardcoded a name that matched neither.
 require_once __DIR__ . '/config/brand.php';
 $brand = brand($bill['consultant_specialty'] ?? null);
+$logoFile = brand_logo($bill['consultant_specialty'] ?? null);
 ?>
 <!doctype html>
 <html lang="en">
@@ -80,6 +81,7 @@ body { font-family: 'Lora', Georgia, serif; color: #1a1a1a; margin: 0; padding: 
 .wrap { max-width: 148mm; margin: 0 auto; }
 :root[data-paper="A4"] .wrap { max-width: 186mm; }
 .hdr { border: 1.5px solid #1a1a1a; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; }
+.clinic-logo { height: 34px; display: block; background: #fff; margin-bottom: 2px; }
 .hdr h1 { font-size: 18px; margin: 0 0 2px; }
 .hdr .sub { font-size: 11px; color: #444; }
 .meta { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
@@ -103,6 +105,7 @@ table.items tr.grp td { background: #f0f0ec; font-weight: 700; font-size: 10px; 
 <div class="print-btn"><button onclick="window.print()">Print / Save PDF</button><?php $paperDefault = 'A5'; $paperMargin = '10mm'; require __DIR__ . '/partials/paper_size.php'; ?></div>
 <div class="wrap">
     <div class="hdr">
+        <img class="clinic-logo" src="assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
         <h1><?= htmlspecialchars($brand['name']) ?></h1>
         <div class="sub">In-Door (IPD) Invoice &middot; <?= htmlspecialchars($bill['invoice_number']) ?></div>
     </div>

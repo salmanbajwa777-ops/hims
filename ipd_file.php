@@ -93,6 +93,7 @@ $pb->execute([(int) ($_SESSION['user_id'] ?? 0)]);
 $printedBy = (string) ($pb->fetchColumn() ?: 'STAFF');
 
 $b = brand($adm['consultant_specialty'] ?? null);
+$logoFile = brand_logo($adm['consultant_specialty'] ?? null);
 
 $progressLabels = ['IMPROVING' => 'Improving', 'STABLE' => 'Stable', 'SLOW' => 'Slow progress',
                    'DETERIORATING' => 'Deteriorating', 'CRITICAL' => 'Critical'];
@@ -105,9 +106,12 @@ $careLabels = ['NURSING_CARE' => 'Nursing care', 'MEDICATION' => 'Medication',
                'DOCTOR_VISIT' => 'Doctor visit', 'HANDOVER' => 'Handover', 'OTHER' => 'Other'];
 
 // The page header repeats on every sheet so a loose page is still identifiable.
-$patientHeader = function (string $sheetName) use ($adm, $b, $days) { ?>
+$patientHeader = function (string $sheetName) use ($adm, $b, $days, $logoFile) { ?>
     <div class="hdr">
-        <div class="brand"><?= htmlspecialchars($b['name']) ?></div>
+        <div class="mark">
+            <img class="clinic-logo" src="assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
+            <div class="brand"><?= htmlspecialchars($b['name']) ?></div>
+        </div>
         <div class="sheet"><?= htmlspecialchars($sheetName) ?></div>
     </div>
     <div class="meta">
@@ -137,7 +141,10 @@ body { font-family: 'Lora', Georgia, serif; color: #1a1a1a; margin: 0; padding: 
 .sheet-page { page-break-after: always; }
 .sheet-page:last-child { page-break-after: auto; }
 .hdr { border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; margin-bottom: 12px;
-       display: flex; justify-content: space-between; align-items: baseline; }
+       display: flex; justify-content: space-between; align-items: center; }
+.hdr .mark { display: flex; align-items: center; gap: 8px; }
+.clinic-logo { height: 30px; display: block; background: #fff; }
+:root[data-paper="A5"] .clinic-logo { height: 24px; }
 .hdr .brand { font-size: 17px; font-weight: 700; letter-spacing: .02em; }
 .hdr .sheet { font-size: 12px; color: #444; text-transform: uppercase; letter-spacing: .08em; }
 .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 14px; margin-bottom: 16px;

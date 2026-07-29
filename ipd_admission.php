@@ -690,6 +690,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <a class="btn secondary" style="text-align:center;" href="ipd_discharge_summary.php?id=<?= (int) $adm['id'] ?>">Discharge summary</a>
                             <?php endif; ?>
                             <a class="btn secondary" style="text-align:center;" href="ipd_stay_report.php?id=<?= (int) $adm['id'] ?>" target="_blank">Stay report</a>
+                            <a class="btn secondary" style="text-align:center;" href="ipd_file.php?id=<?= (int) $adm['id'] ?>" target="_blank">Patient file</a>
                             <?php if ($canDischargeFlow): ?>
                             <a class="btn" style="text-align:center;" href="ipd_discharge.php?id=<?= (int) $adm['id'] ?>">
                                 <?= $adm['status'] === 'DISCHARGED' ? 'View bill' : ($adm['status'] === 'ACTIVE' ? 'Discharge & bill' : 'Continue billing') ?>

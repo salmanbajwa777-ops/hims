@@ -74,6 +74,7 @@ $days = max(1, (int) $a->diff($d)->days + 1);
 // else the house brand. A manual (non-user) consultant has no specialty, so it
 // falls through to the house brand — the right default.
 $b = brand($adm['consultant_specialty'] ?? null);
+$logoFile = brand_logo($adm['consultant_specialty'] ?? null);
 ?>
 <!doctype html>
 <html lang="en">
@@ -88,6 +89,7 @@ body { font-family: 'Lora', Georgia, serif; color: #1a1a1a; margin: 0; padding: 
 .wrap { max-width: 148mm; margin: 0 auto; }
 :root[data-paper="A4"] .wrap { max-width: 186mm; }
 .hdr { border: 1.5px solid #1a1a1a; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; text-align: center; }
+.clinic-logo { height: 34px; display: block; background: #fff; margin: 0 auto 2px; }
 .hdr h1 { font-size: 18px; margin: 0 0 2px; letter-spacing: .02em; }
 .hdr .sub { font-size: 11px; color: #444; }
 .meta { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
@@ -118,6 +120,7 @@ table.items tr.off td.svc { text-decoration: line-through; }
 <div class="print-btn"><button onclick="window.print()">Print / Save PDF</button><?php $paperDefault = 'A5'; $paperMargin = '10mm'; require __DIR__ . '/partials/paper_size.php'; ?></div>
 <div class="wrap">
     <div class="hdr">
+        <img class="clinic-logo" src="assets/images/<?= htmlspecialchars($logoFile) ?>" alt="">
         <h1><?= htmlspecialchars($b['name']) ?></h1>
         <div class="sub">In-Patient Stay &middot; Service Record</div>
     </div>
