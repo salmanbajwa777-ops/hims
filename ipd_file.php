@@ -114,10 +114,12 @@ $patientHeader = function (string $sheetName) use ($adm, $b, $days) { ?>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Patient File — <?= htmlspecialchars($adm['patient_name']) ?></title>
 <style>
-@page { size: A4; margin: 12mm; }
+/* @page is written by partials/paper_size.php so the size can be switched. */
 * { box-sizing: border-box; }
 body { font-family: 'Lora', Georgia, serif; color: #1a1a1a; margin: 0; padding: 18px; font-size: 12.5px; }
 .wrap { max-width: 186mm; margin: 0 auto; }
+:root[data-paper="A5"] .wrap { max-width: 128mm; }
+:root[data-paper="A5"] .meta { grid-template-columns: repeat(2, 1fr); }
 .sheet-page { page-break-after: always; }
 .sheet-page:last-child { page-break-after: auto; }
 .hdr { border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; margin-bottom: 12px;
@@ -152,7 +154,8 @@ tr.off td.svc { text-decoration: line-through; }
        font-family: system-ui, -apple-system, sans-serif; }
 .bar h1 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
 .bar label { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; font-size: 12.5px; cursor: pointer; }
-.bar .btns { margin-top: 10px; display: flex; gap: 8px; }
+.bar .btns { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.bar .paper-pick { margin-left: 6px; padding-left: 12px; border-left: 1px solid rgba(255,255,255,.28); }
 .bar button { font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 7px; cursor: pointer;
               border: 1px solid rgba(255,255,255,.35); background: transparent; color: #fff; }
 .bar button.go { background: #fff; color: #223A31; border-color: #fff; font-weight: 600; }
@@ -173,6 +176,7 @@ tr.off td.svc { text-decoration: line-through; }
             <button type="button" id="selAll">Select all</button>
             <button type="button" id="selNone">Clear</button>
             <button type="submit">Apply</button>
+            <?php $paperDefault = 'A4'; $paperMargin = '12mm'; require __DIR__ . '/partials/paper_size.php'; ?>
             <button type="button" class="go" onclick="window.print()">Print / Save PDF</button>
         </div>
     </form>

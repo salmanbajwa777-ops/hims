@@ -74,10 +74,11 @@ $brand = brand($bill['consultant_specialty'] ?? null);
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IPD Invoice <?= htmlspecialchars($bill['invoice_number']) ?></title>
 <style>
-@page { size: A5; margin: 10mm; }
+/* @page is written by partials/paper_size.php so the size can be switched. */
 * { box-sizing: border-box; }
 body { font-family: 'Lora', Georgia, serif; color: #1a1a1a; margin: 0; padding: 16px; font-size: 12.5px; }
 .wrap { max-width: 148mm; margin: 0 auto; }
+:root[data-paper="A4"] .wrap { max-width: 186mm; }
 .hdr { border: 1.5px solid #1a1a1a; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; }
 .hdr h1 { font-size: 18px; margin: 0 0 2px; }
 .hdr .sub { font-size: 11px; color: #444; }
@@ -93,12 +94,13 @@ table.items td.amt, table.items th.amt { text-align: right; }
 table.items tr.grp td { background: #f0f0ec; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #444; padding: 4px 8px; }
 .tot .r.due { border-top: 1px solid #999; font-weight: 700; font-size: 13px; margin-top: 3px; padding-top: 5px; }
 .foot { margin-top: 20px; font-size: 10.5px; color: #666; text-align: center; }
-.print-btn { margin: 12px 0; }
+.print-btn { margin: 12px 0; display: flex; align-items: center; gap: 14px; }
+.print-btn .paper-pick { padding-left: 14px; border-left: 1px solid #ccc; }
 @media print { .print-btn { display: none; } body { padding: 0; } }
 </style>
 </head>
 <body>
-<div class="print-btn"><button onclick="window.print()">Print / Save PDF</button></div>
+<div class="print-btn"><button onclick="window.print()">Print / Save PDF</button><?php $paperDefault = 'A5'; $paperMargin = '10mm'; require __DIR__ . '/partials/paper_size.php'; ?></div>
 <div class="wrap">
     <div class="hdr">
         <h1><?= htmlspecialchars($brand['name']) ?></h1>
