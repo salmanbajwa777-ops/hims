@@ -170,6 +170,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_v
     $adm = load_admission($pdo, $admissionId);
 }
 
+// ---------------- Log a care event ----------------
+// Clinical, non-chargeable — the ER mirror of ipd_care_events. This is the only
+// place an un-billed nursing action can be written down on a short stay: the
+// service log costs money, this doesn't. DOCTOR_VISIT / HANDOVER / SERVICE are
+// written by system code, never offered in the dropdown, so the posted value is
+// whitelisted down to the four a nurse may choose.
+// Wrapped in try/catch so a stay page still works if add_admission_care_events.sql
+// hasn't been applied yet.
+$canLogCare = $isOpen && has_permission('NURSING_LOG_CARE');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_care' && $canLogCare) {
+    $type = in_array($_POST['event_type'] ?? '', ['NURSING_CARE','MEDICATION','OBSERVATION','OTHER'], true)
+        ? $_POST['event_type'] : 'NURSING_CARE';
+    $note = trim($_POST['care_note'] ?? '');
+    if ($note !== '') {
+        // 3-role world: base_role is ADMIN/DOCTOR/STAFF, all valid in logged_by_role.
+        $careRole = in_array($baseRole, ['ADMIN','DOCTOR','STAFF'], true) ? $baseRole : 'STAFF';
+        try {
+            $pdo->prepare('
+                INSERT INTO admission_care_events (admission_id, event_type, note, logged_by_id, logged_by_role, event_at)
+                VALUES (?, ?, ?, ?, ?, NOW())
+            ')->execute([$admissionId, $type, mb_substr($note, 0, 1000), $uid, $careRole]);
+            $flash = 'Care event logged.';
+        } catch (Throwable $e) {
+            $err = 'Could not log the care event — the care-events table may not be set up yet.';
+        }
+    }
+}
+
 // ---------------- Assign / pick up nurse ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assign_nurse' && $isOpen) {
     $nurseId = (int) ($_POST['nurse_id'] ?? 0);
@@ -191,6 +219,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hando
         $pdo->prepare('INSERT INTO admission_handovers (admission_id, from_nurse_id, to_nurse_id, notes, status_at_handover) VALUES (?, ?, ?, ?, ?)')
             ->execute([$admissionId, $uid, $toNurse, $notes, $statusAt]);
         $pdo->prepare('UPDATE admissions SET assigned_nurse_id = ? WHERE id = ?')->execute([$toNurse, $admissionId]);
+        // Mirror it into the flow-sheet so the clinical timeline shows the change of
+        // hands alongside the care around it (same double-write as ipd_admission.php).
+        // Best-effort: a missing care-events table must never fail the handover itself.
+        try {
+            $hoRole = in_array($baseRole, ['ADMIN','DOCTOR','STAFF'], true) ? $baseRole : 'STAFF';
+            $pdo->prepare('
+                INSERT INTO admission_care_events (admission_id, event_type, note, logged_by_id, logged_by_role, event_at)
+                VALUES (?, \'HANDOVER\', ?, ?, ?, NOW())
+            ')->execute([
+                $admissionId,
+                'Handover · status ' . $statusAt . ($notes !== '' ? ' · ' . mb_substr($notes, 0, 200) : ''),
+                $uid, $hoRole,
+            ]);
+        } catch (Throwable $e) { /* table not migrated yet — handover still stands */ }
         $flash = 'Handover recorded.';
         $adm = load_admission($pdo, $admissionId);
     }
@@ -242,6 +284,31 @@ if ($canViewVitals) {
         $vitals = [];   // table not migrated yet
     }
 }
+
+// Care flow-sheet (newest first). Capped like the IPD page — a long stay's tail
+// belongs in the printed record, not on the working screen. Tolerates the table
+// not existing yet so a mid-deploy gap degrades to "no care events".
+$careEvents = [];
+try {
+    $cStmt = $pdo->prepare('
+        SELECT c.*, u.name AS by_name
+        FROM admission_care_events c JOIN users u ON u.id = c.logged_by_id
+        WHERE c.admission_id = ? ORDER BY c.event_at DESC, c.id DESC LIMIT 100
+    ');
+    $cStmt->execute([$admissionId]);
+    $careEvents = $cStmt->fetchAll();
+} catch (PDOException $e) {
+    $careEvents = [];   // table not migrated yet
+}
+
+// Screen labels for the event enum. SERVICE is included here from the start —
+// ipd_admission.php omits it and renders the raw enum for mirrored service rows.
+$careTypeLabels = [
+    'DOCTOR_VISIT' => 'Doctor visit', 'NURSING_CARE' => 'Nursing care',
+    'MEDICATION'   => 'Medication',   'OBSERVATION'  => 'Observation',
+    'HANDOVER'     => 'Handover',     'SERVICE'      => 'Service given',
+    'OTHER'        => 'Other',
+];
 
 // Half-hourly cadence: nurses record vitals every 30 min during an active stay.
 // Compute minutes since the newest reading so the card can nudge when it's due.
@@ -347,10 +414,18 @@ $headExtra = <<<CSS
 .vit-grid label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .vit-grid input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
 .vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
-.vitals-log { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.vitals-log th, .vitals-log td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.vitals-log th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
-@media (max-width: 960px) { .a-grid { grid-template-columns: 1fr; } }
+.vitals-log, .care-log { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.vitals-log th, .vitals-log td, .care-log th, .care-log td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.vitals-log th, .care-log th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
+.care-log td { white-space: normal; }
+.ev-tag { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); }
+.ev-tag.HANDOVER { background: #EDE7FB; color: #6D28D9; }
+.ev-tag.DOCTOR_VISIT { background: var(--green-bg); color: var(--green-text); }
+.care-form { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: end; margin: 14px 0; }
+.care-form label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+.care-form select, .care-form input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
+.care-form select:focus, .care-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+@media (max-width: 960px) { .a-grid { grid-template-columns: 1fr; } .care-form { grid-template-columns: 1fr; } }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -610,6 +685,48 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php if (!empty($vt['notes'])): ?>
                         <tr><td></td><td colspan="8" class="muted" style="font-size:12px;padding-top:0;">&#8627; <?= htmlspecialchars($vt['notes']) ?></td></tr>
                         <?php endif; ?>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Care flow-sheet — un-billed nursing actions. Mirrors the IPD page. -->
+            <?php if ($canLogCare || $careEvents): ?>
+            <div class="card" style="margin-top:20px;">
+                <div class="section-title">Care flow-sheet</div>
+                <div class="section-sub">Nursing care and handovers, newest first. Carries no charge.</div>
+                <?php if ($canLogCare): ?>
+                <form method="POST" action="admission.php?id=<?= $admissionId ?>" class="care-form">
+                    <input type="hidden" name="action" value="add_care">
+                    <div>
+                        <label>Type</label>
+                        <select name="event_type">
+                            <option value="NURSING_CARE">Nursing care</option>
+                            <option value="MEDICATION">Medication</option>
+                            <option value="OBSERVATION">Observation</option>
+                            <option value="OTHER">Other</option>
+                        </select>
+                    </div>
+                    <div><label>Note</label><input type="text" name="care_note" maxlength="1000" placeholder="e.g. IV line flushed; patient tolerating oral feeds" required></div>
+                    <button type="submit" class="btn secondary">Log</button>
+                </form>
+                <?php endif; ?>
+                <div style="overflow-x:auto;margin-top:6px;">
+                <table class="care-log">
+                    <thead><tr><th>Time</th><th>Type</th><th>Detail</th><th>By</th></tr></thead>
+                    <tbody>
+                        <?php if (!$careEvents): ?>
+                        <tr><td colspan="4" class="muted" style="padding:16px 10px;">No care events yet.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($careEvents as $ev): ?>
+                        <tr>
+                            <td class="mono"><?= date('d/m H:i', strtotime($ev['event_at'])) ?></td>
+                            <td><span class="ev-tag <?= htmlspecialchars($ev['event_type']) ?>"><?= htmlspecialchars($careTypeLabels[$ev['event_type']] ?? $ev['event_type']) ?></span></td>
+                            <td><?= htmlspecialchars($ev['note'] ?: '—') ?></td>
+                            <td class="muted"><?= htmlspecialchars($ev['by_name']) ?></td>
+                        </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
