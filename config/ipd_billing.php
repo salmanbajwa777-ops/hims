@@ -95,6 +95,36 @@ function ipd_insert_service_line(PDO $pdo, int $billId, array $svc): void {
 }
 
 /**
+ * Mirror a logged service into the nursing flow-sheet.
+ *
+ * ipd_services is the BILLING log; ipd_care_events is the CLINICAL record of
+ * what was done to the patient. Before this, an injection or a cannulation
+ * appeared only in the first, so the printed care record silently omitted every
+ * action that happened to carry a price. The care row carries NO money — the
+ * charge stays in ipd_services — and points back with ref_table/ref_id, the same
+ * way a daily-round note does.
+ *
+ * Best-effort by design: a failure here must never lose the service itself, and
+ * an environment without the widened ENUM simply gets no care row.
+ */
+function log_ipd_service_care_event(PDO $pdo, int $admissionId, array $svc, int $serviceId, int $uid, string $role): void {
+    $qty = $svc['charge_type'] === 'HOURLY'
+        ? ((int) ($svc['duration_minutes'] ?? 0)) . ' min'
+        : 'x' . max(1, (int) ($svc['quantity'] ?? 1));
+    $note = $svc['service_name'] . ' ' . $qty;
+    if (!empty($svc['clinical_note'])) { $note .= ' — ' . $svc['clinical_note']; }
+    try {
+        $pdo->prepare('
+            INSERT INTO ipd_care_events (admission_id, event_type, ref_table, ref_id, note, logged_by_id, logged_by_role, event_at)
+            VALUES (?, \'SERVICE\', \'ipd_services\', ?, ?, ?, ?, NOW())
+        ')->execute([$admissionId, $serviceId, mb_substr($note, 0, 1000), $uid, $role]);
+    } catch (Throwable $e) {
+        // ENUM not widened yet (sql/ipd/add_ipd_care_service_events.sql) — the
+        // service is already saved, so degrade rather than fail the whole action.
+    }
+}
+
+/**
  * Put a just-logged service onto an ALREADY-EXISTING bill.
  *
  * ensure_ipd_bill() early-returns when a bill exists (ipd_bills.admission_id is

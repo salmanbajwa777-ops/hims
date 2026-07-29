@@ -139,6 +139,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                 $note !== '' ? mb_substr($note, 0, 200) : null, $uid, $loggedRole,
             ]);
             $serviceId = (int) $pdo->lastInsertId();
+            // A given service is also a care action — mirror it into the
+            // flow-sheet so the clinical record is complete without prices.
+            log_ipd_service_care_event($pdo, $admissionId, [
+                'service_name' => $svc['service_name'], 'charge_type' => $svc['charge_type'],
+                'quantity' => $qty, 'duration_minutes' => $dur, 'clinical_note' => $note,
+            ], $serviceId, $uid, $loggedRole);
             $billState = append_ipd_service_to_bill($pdo, $admissionId, $serviceId);
             audit_log($pdo, 'ipd_service_logged', $svc['service_name'] . " logged for IPD admission #$admissionId (bill: $billState)", $uid);
             $pdo->commit();

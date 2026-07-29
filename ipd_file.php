@@ -41,10 +41,13 @@ $stmt->execute([$admissionId]);
 $adm = $stmt->fetch();
 if (!$adm) { http_response_code(404); exit('IPD admission not found.'); }
 
-// Which sheets? Default to all four so a bare link still prints a full file.
-$all = ['summary', 'notes', 'vitals', 'services'];
-$want = isset($_GET['sheets']) ? array_intersect(explode(',', (string) $_GET['sheets']), $all) : $all;
-if (!$want) { $want = $all; }
+// Which sheets? The default set is the CLINICAL file. "billing" is the priced
+// services list — useful when someone queries the bill, but it is not part of a
+// patient's clinical record, so it is off unless asked for.
+$all     = ['summary', 'notes', 'vitals', 'care', 'billing'];
+$default = ['summary', 'notes', 'vitals', 'care'];
+$want = isset($_GET['sheets']) ? array_intersect(explode(',', (string) $_GET['sheets']), $all) : $default;
+if (!$want) { $want = $default; }
 $want = array_values($want);
 $has = fn(string $s) => in_array($s, $want, true);
 
@@ -69,7 +72,13 @@ $notes = $has('notes')
 $vitals = $has('vitals')
     ? $q('SELECT v.*, u.name AS by_name FROM ipd_vitals v LEFT JOIN users u ON u.id = v.recorded_by_id WHERE v.admission_id = ? ORDER BY v.recorded_at, v.id', [$admissionId])
     : [];
-$services = $has('services')
+// The nursing flow-sheet — what was DONE to the patient. Handover rows are
+// excluded: they are a shift-accountability record, not care given.
+$care = $has('care')
+    ? $q("SELECT c.*, u.name AS by_name FROM ipd_care_events c LEFT JOIN users u ON u.id = c.logged_by_id
+          WHERE c.admission_id = ? AND c.event_type <> 'HANDOVER' ORDER BY c.event_at, c.id", [$admissionId])
+    : [];
+$services = $has('billing')
     ? $q('SELECT s.*, u.name AS by_name FROM ipd_services s LEFT JOIN users u ON u.id = s.logged_by_id WHERE s.admission_id = ? ORDER BY s.logged_at, s.id', [$admissionId])
     : [];
 
@@ -88,7 +97,12 @@ $b = brand($adm['consultant_specialty'] ?? null);
 $progressLabels = ['IMPROVING' => 'Improving', 'STABLE' => 'Stable', 'SLOW' => 'Slow progress',
                    'DETERIORATING' => 'Deteriorating', 'CRITICAL' => 'Critical'];
 $sheetTitles = ['summary' => 'Discharge Summary', 'notes' => 'Daily Round Notes',
-                'vitals' => 'Vitals Chart', 'services' => 'Services Record'];
+                'vitals' => 'Vitals Chart', 'care' => 'Nursing Care Record',
+                'billing' => 'Billed Services'];
+
+$careLabels = ['NURSING_CARE' => 'Nursing care', 'MEDICATION' => 'Medication',
+               'OBSERVATION' => 'Observation', 'SERVICE' => 'Service given',
+               'DOCTOR_VISIT' => 'Doctor visit', 'HANDOVER' => 'Handover', 'OTHER' => 'Other'];
 
 // The page header repeats on every sheet so a loose page is still identifiable.
 $patientHeader = function (string $sheetName) use ($adm, $b, $days) { ?>
@@ -143,6 +157,8 @@ tr.off td.svc { text-decoration: line-through; }
 .f { margin-bottom: 5px; font-size: 11.5px; }
 .f span { color: #666; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; display: block; }
 .pill { display: inline-block; padding: 1px 8px; border: 1px solid #999; border-radius: 20px; font-size: 10px; }
+tr.daybreak td { background: #f4f4f0; font-weight: 700; font-size: 9.5px; text-transform: uppercase;
+                 letter-spacing: .06em; color: #444; padding: 3px 7px; }
 .narr { white-space: pre-wrap; font-size: 12px; line-height: 1.65; }
 .sig { margin-top: 34px; display: flex; gap: 40px; }
 .sig div { flex: 1; border-top: 1px solid #1a1a1a; padding-top: 5px; font-size: 10.5px; color: #555; }
@@ -274,9 +290,40 @@ tr.off td.svc { text-decoration: line-through; }
 </div>
 <?php endif; ?>
 
-<?php if ($has('services')): ?>
+<?php if ($has('care')): ?>
 <div class="sheet-page">
-    <?php $patientHeader('Services Record'); ?>
+    <?php $patientHeader('Nursing Care Record'); ?>
+    <?php if (!$care): ?>
+        <div class="empty">No care events were logged for this admission.</div>
+    <?php else: ?>
+        <table>
+            <thead><tr><th>Date / time</th><th>Type</th><th>Action</th><th>By</th></tr></thead>
+            <tbody>
+                <?php $lastDay = null; foreach ($care as $c):
+                    $day = date('d/m/Y', strtotime($c['event_at'])); ?>
+                    <?php if ($day !== $lastDay): $lastDay = $day; ?>
+                    <tr class="daybreak"><td colspan="4"><?= $day ?></td></tr>
+                    <?php endif; ?>
+                <tr>
+                    <td class="w"><?= date('H:i', strtotime($c['event_at'])) ?></td>
+                    <td class="w"><span class="pill"><?= htmlspecialchars($careLabels[$c['event_type']] ?? $c['event_type']) ?></span></td>
+                    <td><?= nl2br(htmlspecialchars($c['note'] ?: '—')) ?></td>
+                    <td class="w"><?= htmlspecialchars(mb_strtoupper($c['by_name'] ?: '—')) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <div class="foot" style="text-align:left;font-style:italic;">
+            <?= count($care) ?> care event<?= count($care) === 1 ? '' : 's' ?> recorded. This sheet carries no charges.
+        </div>
+    <?php endif; ?>
+    <div class="foot">Printed <?= date('d/m/Y H:i') ?> &middot; by <?= htmlspecialchars(mb_strtoupper($printedBy)) ?></div>
+</div>
+<?php endif; ?>
+
+<?php if ($has('billing')): ?>
+<div class="sheet-page">
+    <?php $patientHeader('Billed Services'); ?>
     <?php if (!$services): ?>
         <div class="empty">No services were logged during this stay.</div>
     <?php else: ?>

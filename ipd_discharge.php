@@ -88,6 +88,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                 $admissionId, $svc['id'], $svc['service_type'], $svc['service_name'], $svc['charge_type'],
                 $qty, $dur, $svc['base_charge'], $charge, $note !== '' ? mb_substr($note, 0, 200) : null, $uid, $loggedRole,
             ]);
+            // Mirror into the nursing flow-sheet: a given service is also a care
+            // action, so the clinical record shows it (without the price).
+            log_ipd_service_care_event($pdo, $admissionId, [
+                'service_name' => $svc['service_name'], 'charge_type' => $svc['charge_type'],
+                'quantity' => $qty, 'duration_minutes' => $dur, 'clinical_note' => $note,
+            ], (int) $pdo->lastInsertId(), $uid, $loggedRole);
             audit_log($pdo, 'ipd_service_logged', $svc['service_name'] . " logged for IPD admission #$admissionId", $uid);
             $flash = 'Service logged.';
         }
