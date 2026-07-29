@@ -4,13 +4,13 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 
 // Three base roles now: ADMIN (holds everything), DOCTOR (clinical), STAFF
-// (every desk/ward worker — capabilities come entirely from permissions).
+// (every desk/bedside worker — capabilities come entirely from permissions).
 $roles = ['ADMIN', 'DOCTOR', 'STAFF'];
 // Category order + labels drive the grouped layout on this screen. Keys are
 // re-categorized by sql/rbac_overhaul_3_categories.sql into these five buckets.
 $categoryLabels = [
     'reception' => 'Front Desk & Reception',
-    'nursing'   => 'Nursing & Ward',
+    'nursing'   => 'Nursing & Patient Care',
     'clinical'  => 'Clinical',
     // Added by sql/add_dental_permissions.sql. Without an entry here the nine
     // dental keys still work, but render under a bare ucfirst('dental') heading

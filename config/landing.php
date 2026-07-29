@@ -8,7 +8,7 @@
  * now defers to this file, keeping ONE definition of the landing rule.
  *
  * Only DOCTOR and ADMIN are role-driven; STAFF is one role covering every
- * desk/ward worker, so their home is chosen by what they can actually DO
+ * desk/in-door worker, so their home is chosen by what they can actually DO
  * (permissions), not by a sub-role that no longer exists. Requires session
  * permissions to be loaded.
  */

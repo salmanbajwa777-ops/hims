@@ -6,7 +6,7 @@ require_once __DIR__ . '/config/tokens.php';
 require_once __DIR__ . '/config/staff_documents.php';
 
 // Three base roles: pick the identity, then grant capabilities on the
-// Permissions tab / per-person overrides. STAFF covers every desk/ward worker.
+// Permissions tab / per-person overrides. STAFF covers every desk/bedside worker.
 $roles = ['STAFF', 'MANAGER', 'DOCTOR', 'ADMIN'];
 // Doctor specialty categories. Only DENTAL prints the tooth logo on invoices;
 // every other value falls through to the general logo (see *_print_partial.php).
@@ -486,7 +486,7 @@ foreach ($pdo->query('SELECT id, doctor_id, label, fee, is_default, is_revisit_e
 // sql/rbac_overhaul_3_categories.sql into these five buckets.
 $categoryLabels = [
     'reception' => 'Front Desk & Reception',
-    'nursing'   => 'Nursing & Ward',
+    'nursing'   => 'Nursing & Patient Care',
     'clinical'  => 'Clinical',
     'financial' => 'Money & Billing',
     'managerial' => 'Managerial & Oversight',

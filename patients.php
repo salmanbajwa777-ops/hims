@@ -65,9 +65,9 @@ if ($canAdmitHere) {
 // In-Door admit-modal data. Doctors admit from their own console too, so this is
 // gated on the IPD permission, not on !$isDoctorReadonly.
 $canIpdAdmitHere = has_permission('IPD_ADMIT_PATIENT');
-$ipdWards = $ipdDoctors = $ipdNurses = [];
+$roomCategories = $ipdDoctors = $ipdNurses = [];
 if ($canIpdAdmitHere) {
-    $ipdWards = $pdo->query('SELECT ward, per_day_rate, consultant_visit_fee FROM ipd_ward_rates WHERE is_enabled = 1 ORDER BY ward')->fetchAll();
+    $roomCategories = $pdo->query('SELECT room_category, per_day_rate, consultant_visit_fee FROM ipd_room_rates WHERE is_enabled = 1 ORDER BY room_category')->fetchAll();
     $ipdDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name")->fetchAll();
     // Primary nurse is mandatory at admit. Separate roster from short-stay — the
     // two routes use different nursing permissions.

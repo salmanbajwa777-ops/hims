@@ -23,19 +23,19 @@ if (!$user) {
     exit;
 }
 
-// Ward work: reception staff and nurses both need this, as do admins/managers.
+// In-Door work: reception staff and nurses both need this, as do admins/managers.
 // NURSE/ADMIN/MANAGER hold NURSING_RECORD_ADMISSIONS via role_permissions
 // (sql/rbac_overhaul_2_grants.sql); reception holds RECEPTION_REGISTER_PATIENTS.
 $baseRole = $_SESSION['base_role'] ?? '';
 if (!has_permission('RECEPTION_REGISTER_PATIENTS') && !has_permission('NURSING_RECORD_ADMISSIONS')) {
     http_response_code(403);
-    exit('Forbidden — ward access only.');
+    exit('Forbidden — in-door access only.');
 }
 
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 
 // Two tabs on one page:
-//   current (default) — the live ward board: everyone still admitted, plus
+//   current (default) — the live admissions board: everyone still admitted, plus
 //                       today's discharges. Not date-scoped, so a stay
 //                       crossing midnight still shows.
 //   past              — stays already discharged. Read-only: a finalized bill

@@ -34,7 +34,7 @@ $adm = $stmt->fetch();
 if (!$adm) { http_response_code(404); exit('Admission not found.'); }
 
 // Admission settlement is its own capability now (ADMISSION_FINALIZE_BILL), split
-// from the OPD till (RECEPTION_PROCESS_PAYMENTS) so a ward biller can settle
+// from the OPD till (RECEPTION_PROCESS_PAYMENTS) so an in-door biller can settle
 // discharges without touching front-desk payments. ADMIN/MANAGER hold both keys
 // via role_permissions (see sql/rbac_overhaul_2_grants.sql), so no role hardcode.
 $canFinalize = has_permission('ADMISSION_FINALIZE_BILL');

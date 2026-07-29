@@ -20,10 +20,10 @@
  * In-Door (IPD) is offered as one more admission type in the SAME picker, so
  * reception makes a single "where is this patient going" choice instead of
  * hunting for a second button. It stays a separate module underneath: choosing
- * it swaps the body to the ward fields and re-points the form at the IPD
+ * it swaps the body to the in-door fields and re-points the form at the IPD
  * handler (action=ipd_admit_patient, config/ipd_actions.php). Enable by setting
  * $admitShowIpd = true and supplying:
- *   $ipdWards   — [['ward','per_day_rate','consultant_visit_fee'], ...] enabled.
+ *   $roomCategories   — [['room_category','per_day_rate','consultant_visit_fee'], ...] enabled.
  *   $ipdDoctors — [['id','name'], ...] consultants.
  *   $ipdNurses  — [['id','name'], ...] eligible primary nurses (In-Door).
  * Left false (doctor.php) the modal is exactly the pre-merge admit-only dialog.
@@ -37,7 +37,7 @@ $admTypes = $admTypes ?? [];
 $admDoctors = $admDoctors ?? [];
 $admTypeLabels = $admTypeLabels ?? ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
 $admitShowIpd = !empty($admitShowIpd);
-$ipdWards = $ipdWards ?? [];
+$roomCategories = $roomCategories ?? [];
 $ipdDoctors = $ipdDoctors ?? [];
 $admNurses = $admNurses ?? [];
 $ipdNurses = $ipdNurses ?? [];
@@ -46,9 +46,9 @@ $ipdNurses = $ipdNurses ?? [];
 // fill the form and take a server-side rejection. Each route is judged on its
 // own roster because the two use different nursing permissions.
 $admitOpdOk = $admTypes && $admNurses;
-$admitIpdOk = $admitShowIpd && $ipdWards && $ipdNurses;
+$admitIpdOk = $admitShowIpd && $roomCategories && $ipdNurses;
 // The submit button must not be dead when In-Door is the only route available
-// (e.g. no hourly admission rates enabled but wards are).
+// (e.g. no hourly admission rates enabled but room categories are).
 $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
 ?>
 <style>
@@ -70,7 +70,7 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
 .admit-field select, .admit-field input[type="text"], .admit-field input[type="number"], .admit-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border,#e2e8f0); border-radius: 12px; font: inherit; font-size: 13.5px; background: var(--bg,#f8fafc); }
 .admit-field textarea { resize: vertical; min-height: 60px; }
 .admit-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px 20px; }
-/* In-Door merge: the body can now grow past the viewport (ward + room +
+/* In-Door merge: the body can now grow past the viewport (room category + room +
    consultant + diagnosis), so it scrolls instead of pushing the footer off. */
 .admit-body { max-height: 70vh; overflow-y: auto; }
 .admit-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -114,16 +114,16 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                             <span class="type-body">
                                 <span class="type-name">In-Door (IPD)</span>
                                 <span class="type-rate"><?php
-                                    if (!$ipdWards)      { echo 'No wards enabled'; }
+                                    if (!$roomCategories)      { echo 'No room categories enabled'; }
                                     elseif (!$ipdNurses) { echo 'No nursing staff available'; }
-                                    else                 { echo 'Ward admission &mdash; per-day room rate'; }
+                                    else                 { echo 'Room admission &mdash; per-day room rate'; }
                                 ?></span>
                             </span>
                         </label>
                         <?php endif; ?>
                         <?php if (!$admitHasAnyRoute): ?>
                         <div class="muted">
-                            <?php if ($admTypes || ($admitShowIpd && $ipdWards)): ?>
+                            <?php if ($admTypes || ($admitShowIpd && $roomCategories)): ?>
                             No staff hold the nursing permission required to take a patient, so admitting is blocked. Grant it under Permissions.
                             <?php else: ?>
                             No admission types are enabled. Set them under ER Services &amp; Rates.
@@ -175,21 +175,21 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                 <?php if ($admitShowIpd): ?>
                 <!-- ---- In-Door fields (mirror partials/ipd_admit_modal.php) ----
                      `required` is applied by JS only while this route is active, so a
-                     hidden ward select can never block an hourly-admission submit. -->
+                     hidden room-category select can never block an hourly-admission submit. -->
                 <div id="admitIpdFields" hidden>
                     <div class="admit-row2">
                         <div class="admit-field">
-                            <label>Ward</label>
-                            <select name="ward" id="admitIpdWard" data-ipd-required>
-                                <option value="">Select ward&hellip;</option>
-                                <?php foreach ($ipdWards as $w): ?>
-                                <option value="<?= htmlspecialchars($w['ward']) ?>">
-                                    <?= htmlspecialchars($w['ward']) ?><?= (float) $w['per_day_rate'] > 0 ? ' (Rs ' . number_format((float) $w['per_day_rate']) . '/day)' : '' ?>
+                            <label>Room category</label>
+                            <select name="room_category" id="admitIpdRoomCat" data-ipd-required>
+                                <option value="">Select room category&hellip;</option>
+                                <?php foreach ($roomCategories as $w): ?>
+                                <option value="<?= htmlspecialchars($w['room_category']) ?>">
+                                    <?= htmlspecialchars($w['room_category']) ?><?= (float) $w['per_day_rate'] > 0 ? ' (Rs ' . number_format((float) $w['per_day_rate']) . '/day)' : '' ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
-                            <?php if (!$ipdWards): ?>
-                            <div class="muted" style="margin-top:6px;font-size:12px;">No wards enabled. Set them under In-Door Ward Rates.</div>
+                            <?php if (!$roomCategories): ?>
+                            <div class="muted" style="margin-top:6px;font-size:12px;">No room categories enabled. Set them under In-Door Room Categories &amp; Rates.</div>
                             <?php endif; ?>
                         </div>
                         <div class="admit-field">
@@ -230,7 +230,7 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                     </div>
 
                     <div class="admit-field" style="margin-top:16px;">
-                        <label>Provisional diagnosis <span class="muted" style="font-weight:500;">(working diagnosis &mdash; seeds the first ward round)</span></label>
+                        <label>Provisional diagnosis <span class="muted" style="font-weight:500;">(working diagnosis &mdash; seeds the first daily round)</span></label>
                         <textarea name="provisional_diagnosis" maxlength="500" placeholder="e.g. Community Acquired Pneumonia"></textarea>
                     </div>
                 </div>

@@ -18,7 +18,7 @@ refresh_session_permissions($pdo);
 $baseRole = $_SESSION['base_role'] ?? '';
 $uid = (int) $_SESSION['user_id'];
 
-// Access: reception, nursing, admin, manager. (Doctors don't manage the ward here.)
+// Access: reception, nursing, admin, manager. (Doctors don't manage in-door stays here.)
 // ADMIN/MANAGER/NURSE now hold NURSING_RECORD_ADMISSIONS via role_permissions
 // (sql/rbac_overhaul_2_grants.sql), so the gate is pure permission checks.
 $canView = has_permission('RECEPTION_REGISTER_PATIENTS')
@@ -59,7 +59,7 @@ $err = '';
 $isOpen = $adm['status'] !== 'DISCHARGED';
 $canLog = $isOpen && has_permission('NURSING_LOG_CHARGEABLE_EVENTS');
 // Bedside nursing (shift handover of a stay) is now permission-gated, not
-// role-gated: any STAFF member holding the ward-attendance permission is a nurse
+// role-gated: any STAFF member holding the short-stay attendance permission is a nurse
 // for this purpose. Replaces the old `$baseRole === 'NURSE'` checks.
 $canAttendWard = has_permission('NURSING_ATTEND_SHORT_STAY');
 
@@ -257,7 +257,7 @@ $servicesTotal = 0.0;
 foreach ($services as $s) { if ($s['is_billable']) { $servicesTotal += (float) $s['calculated_charge']; } }
 
 $erServices = $pdo->query("SELECT id, service_type, service_name, charge_type, base_charge FROM er_services_master WHERE status = 'ACTIVE' ORDER BY service_type, service_name")->fetchAll();
-// "Nurses" available to attend a stay = anyone who holds the ward-attendance
+// "Nurses" available to attend a stay = anyone who holds the short-stay attendance
 // permission (role default OR per-user grant), not a base_role. Effective
 // permission = a role grant not cancelled by a user revoke, plus any per-user
 // grant — computed here in SQL to mirror load_permissions().

@@ -146,7 +146,7 @@ $n2 = fn(float $v) => number_format($v, 2);
             </tr>
         </table>
 
-        <div class="section-title">IN-DOOR WARD ROUNDS &amp; PROCEDURES</div>
+        <div class="section-title">IN-DOOR DAILY ROUNDS &amp; PROCEDURES</div>
         <table class="amounts-table">
             <tr><th>Item</th><th class="text-right">Count</th><th class="text-right">Amount (Rs)</th></tr>
             <?php if ($ipdCount > 0): ?>
@@ -156,7 +156,7 @@ $n2 = fn(float $v) => number_format($v, 2);
                 <td class="text-right"><?= $n2($ipdGross) ?></td>
             </tr>
             <?php else: ?>
-            <tr class="none"><td>No paid ward rounds in this period</td><td class="text-right">&mdash;</td><td class="text-right">&mdash;</td></tr>
+            <tr class="none"><td>No paid daily rounds in this period</td><td class="text-right">&mdash;</td><td class="text-right">&mdash;</td></tr>
             <?php endif; ?>
             <?php if (!$procLive): ?>
             <tr class="none"><td>Procedures &mdash; billing not live yet</td><td class="text-right">&mdash;</td><td class="text-right">&mdash;</td></tr>

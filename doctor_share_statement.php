@@ -148,7 +148,7 @@ if ($doc) {
 }
 
 // ===========================================================================
-// IPD ward rounds — chargeable notes (is_paid = 1) on admissions whose IPD
+// IPD daily rounds — chargeable notes (is_paid = 1) on admissions whose IPD
 // bill was PAID inside the range. Per-round attribution via each row's own
 // visit_charge snapshot, so consultants sharing a stay each earn their own.
 // ===========================================================================
@@ -469,7 +469,7 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                     </tr>
 
                     <!-- IPD -->
-                    <tr class="sect"><td colspan="3">In-Door Ward Rounds</td></tr>
+                    <tr class="sect"><td colspan="3">In-Door Daily Rounds</td></tr>
                     <?php if ($ipdCount > 0): ?>
                     <tr>
                         <td>Consultant visits <span class="muted">(billed on discharge)</span></td>
@@ -477,7 +477,7 @@ $m = fn(float $v) => 'Rs ' . number_format($v);
                         <td class="n"><?= $m($ipdGross) ?></td>
                     </tr>
                     <?php else: ?>
-                    <tr><td colspan="2" class="muted">No paid ward rounds in this period</td><td class="n">&mdash;</td></tr>
+                    <tr><td colspan="2" class="muted">No paid daily rounds in this period</td><td class="n">&mdash;</td></tr>
                     <?php endif; ?>
 
                     <!-- Procedures -->

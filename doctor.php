@@ -196,12 +196,12 @@ $moRevisitRate = $moConsultN > 0 ? $moRevisitN / $moConsultN * 100 : 0.0;
 
 // ER admission money is deliberately EXCLUDED from the doctor's earnings figures
 // (2026-07-23): it's clinic revenue, not the doctor's. The active-admissions
-// cards below stay — they're operational (who's in the ward), not money.
+// cards below stay — they're operational (who's admitted), not money.
 // $moTotal is now the doctor's EARNED share this month, not gross billed.
 $moTotal = (float) ($mo['full_amt'] ?? 0) + (float) ($mo['revisit_amt'] ?? 0);
 
 // Currently-active admissions under this doctor (operational cards only — the
-// doctor sees who's in the ward, NOT the billing. Charges/running totals are
+// doctor sees who's admitted, NOT the billing. Charges/running totals are
 // deliberately not fetched here; billing belongs to reception.)
 $actQ = $pdo->prepare("
     SELECT a.id, a.admission_type, a.admitted_at,
@@ -657,7 +657,7 @@ require __DIR__ . '/partials/head.php';
                 <div class="section-head">
                     <div>
                         <div class="section-title">Active ER admissions (<?= count($activeAdms) ?>)</div>
-                        <div class="section-sub">Patients you admitted who are still in the ward</div>
+                        <div class="section-sub">Patients you admitted who are still admitted</div>
                     </div>
                     <a class="card-link" href="doctor_analytics.php?view=admissions">History &rarr;</a>
                 </div>

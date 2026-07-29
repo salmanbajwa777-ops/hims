@@ -9,7 +9,7 @@ $stmt->execute([$_SESSION['user_id']]);
 $user = $stmt->fetch();
 
 // "Back to work" link. DOCTOR is role-driven; STAFF is chosen by capability
-// (reception queue vs ward) now that the sub-roles are gone. Mirrors
+// (reception queue vs in-door) now that the sub-roles are gone. Mirrors
 // index.php's landing_page_for_role().
 $sbRole = $_SESSION['base_role'] ?? '';
 if ($sbRole === 'DOCTOR') {

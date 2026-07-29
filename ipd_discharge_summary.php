@@ -4,7 +4,7 @@
  *
  * The doctor (or a staffer the admin has granted IPD_WRITE_SUMMARY per case)
  * writes the summary by hand. Final Diagnosis pre-fills from the latest
- * ward-round note's Primary Diagnosis; the ward-round notes are shown alongside
+ * daily-round note's Primary Diagnosis; the daily-round notes are shown alongside
  * for reference. Save draft -> Finalize (locks).
  */
 require_once __DIR__ . '/config/auth.php';
@@ -28,7 +28,7 @@ $stmt->execute([$admissionId]);
 $adm = $stmt->fetch();
 if (!$adm) { http_response_code(404); exit('IPD admission not found.'); }
 
-// Latest ward-round note (seeds Final Diagnosis).
+// Latest daily-round note (seeds Final Diagnosis).
 $ln = $pdo->prepare('SELECT * FROM ipd_doctor_visits WHERE admission_id = ? ORDER BY visited_at DESC, id DESC LIMIT 1');
 $ln->execute([$admissionId]);
 $latest = $ln->fetch() ?: null;
@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$locked) {
 $vFinalDx = $summary['final_diagnosis'] ?? ($latest['primary_diagnosis'] ?? ($adm['provisional_diagnosis'] ?? ''));
 $vText    = $summary['summary_text'] ?? '';
 
-// All ward-round notes for the reference panel.
+// All daily-round notes for the reference panel.
 $notes = $pdo->prepare('SELECT dv.*, u.name AS author_name FROM ipd_doctor_visits dv JOIN users u ON u.id = dv.doctor_id WHERE dv.admission_id = ? ORDER BY dv.visited_at ASC, dv.id ASC');
 $notes->execute([$admissionId]);
 $notes = $notes->fetchAll();
@@ -133,7 +133,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <?php else: ?>
                     <form method="POST" action="ipd_discharge_summary.php?id=<?= $admissionId ?>">
                         <div class="ds-field">
-                            <label>Final Diagnosis <span class="muted" style="font-weight:500;">(pre-filled from the latest ward round)</span></label>
+                            <label>Final Diagnosis <span class="muted" style="font-weight:500;">(pre-filled from the latest daily round)</span></label>
                             <input type="text" name="final_diagnosis" maxlength="500" value="<?= htmlspecialchars($vFinalDx) ?>" placeholder="e.g. Community Acquired Pneumonia — resolved">
                         </div>
                         <div class="ds-field">
@@ -149,11 +149,11 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
 
                 <div class="card">
-                    <div class="section-title">Ward-round notes</div>
+                    <div class="section-title">Daily-round notes</div>
                     <div class="section-sub">Reference — the clinical trail for this admission.</div>
                     <div style="margin-top:12px;">
                         <?php if (!$notes): ?>
-                        <div class="muted">No ward-round notes recorded.</div>
+                        <div class="muted">No daily-round notes recorded.</div>
                         <?php endif; ?>
                         <?php foreach ($notes as $n): ?>
                         <div class="ref-note">

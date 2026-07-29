@@ -768,7 +768,7 @@ require __DIR__ . '/partials/sidebar.php';
 
                 <div class="card">
                     <div class="section-title">Admissions Census</div>
-                    <div class="section-sub">Live ward status</div>
+                    <div class="section-sub">Live room status</div>
                     <?php if (!$adm['has_table']): ?>
                         <div style="color:var(--text-muted);font-size:13px;padding:20px 0;">Admissions module not enabled.</div>
                     <?php else: ?>

@@ -68,7 +68,7 @@ if ($sbBaseRole === 'DOCTOR') {
 
 // "Home" destination. DOCTOR + ADMIN are role-driven; STAFF is chosen by
 // capability now that the reception/nurse sub-roles are gone — the reception
-// work-queue if they register patients, else the ward list if they do
+// work-queue if they register patients, else the admitted-patient list if they do
 // admissions, else the dashboard. Mirrors index.php's landing_page_for_role().
 if ($sbBaseRole === 'DOCTOR') {
     $sbHome = 'doctor.php';
@@ -111,7 +111,7 @@ if (!function_exists('sb_icon')) {
  * it), or 'disabled' => true (not built yet, shown greyed with a tooltip
  * rather than silently dropped).
  *
- * Nurses get a Nursing group instead of Reception: their work is the ward,
+ * Nurses get a Nursing group instead of Reception: their work is the bedside,
  * not registration/checkout. Their Dashboard item points at admissions too
  * (via $sbHome), so 'admissions' is dropped from their duplicate listing.
  */
@@ -216,7 +216,7 @@ $sbGroups = [
                 ['slug' => 'permissions', 'label' => 'Permissions',     'icon' => 'lock',    'href' => 'permissions.php'],
                 ['slug' => 'locations',   'label' => 'Cities & Areas',  'icon' => 'pin',     'href' => 'locations.php'],
                 ['slug' => 'er_services', 'label' => 'ER Services & Rates','icon' => 'receipt','href' => 'er_services.php'],
-                ['slug' => 'ipd_ward_rates', 'label' => 'In-Door Ward Rates','icon' => 'bed','href' => 'ipd_ward_rates.php'],
+                ['slug' => 'ipd_room_rates', 'label' => 'In-Door Room Categories & Rates','icon' => 'bed','href' => 'ipd_room_rates.php'],
                 ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
                 ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
                 ['slug' => 'procedure_master', 'label' => 'Procedures & Dental Catalogue',  'icon' => 'receipt', 'href' => 'procedure_master.php'],

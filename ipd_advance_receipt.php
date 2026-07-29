@@ -33,7 +33,7 @@ if (!ipd_advances_ready($pdo)) {
 
 $stmt = $pdo->prepare('
     SELECT a.*, u.name AS received_by_name,
-           adm.ward, adm.room_no, adm.admitted_at,
+           adm.room_category, adm.room_no, adm.admitted_at,
            p.name AS patient_name, p.mrn, p.phone, p.dob
     FROM ipd_advances a
     JOIN ipd_admissions adm ON adm.id = a.admission_id
@@ -123,7 +123,7 @@ $methodLabel = ucfirst(str_replace('_', ' ', $r['payment_method']));
     <div class="rows">
         <div class="row"><div class="k">Patient</div><div class="v"><?= htmlspecialchars(mb_strtoupper($r['patient_name'], 'UTF-8')) ?></div></div>
         <div class="row"><div class="k">MR No.</div><div class="v"><?= htmlspecialchars($r['mrn']) ?></div></div>
-        <div class="row"><div class="k">Admission</div><div class="v">#<?= (int) $r['admission_id'] ?> &middot; <?= htmlspecialchars($r['ward']) ?> ward, room <?= (int) $r['room_no'] ?></div></div>
+        <div class="row"><div class="k">Admission</div><div class="v">#<?= (int) $r['admission_id'] ?> &middot; <?= htmlspecialchars($r["room_category"]) ?>, room <?= (int) $r['room_no'] ?></div></div>
         <div class="row"><div class="k">Admitted</div><div class="v"><?= date('d/m/Y', strtotime($r['admitted_at'])) ?></div></div>
         <div class="row"><div class="k"><?= $isReturn ? 'Returned as' : 'Received as' ?></div><div class="v"><?= htmlspecialchars($methodLabel) ?></div></div>
         <div class="row"><div class="k">Date &amp; time</div><div class="v"><?= date('d/m/Y, h:i A', strtotime($r['created_at'])) ?></div></div>

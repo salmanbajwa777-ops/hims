@@ -15,7 +15,7 @@
  *
  * IPD specifics:
  *   - Room number is TYPED (1-4), clamped here. No bed-resource table.
- *   - Ward must be an enabled ipd_ward_rates row.
+ *   - Room category must be an enabled ipd_room_rates row.
  *   - Admitting consultant is REQUIRED: auto-loaded when a doctor admits
  *     themselves, otherwise the receptionist picks a system doctor or types one.
  *   - Marks the visit disposition IN_DOOR (added in sql/ipd/add_ipd_admissions.sql).
@@ -45,7 +45,7 @@ function handle_ipd_admit(PDO $pdo): array {
 
     $visitId   = (int) ($_POST['visit_id'] ?? 0);
     $patientId = (int) ($_POST['patient_id'] ?? 0);   // used only when there's no visit
-    $ward      = trim($_POST['ward'] ?? '');
+    $roomCategory      = trim($_POST['room_category'] ?? '');
     $roomNo    = (int) ($_POST['room_no'] ?? 0);
     $consultId = (int) ($_POST['admitting_consultant_id'] ?? 0) ?: null;
     $consultManual = mb_strtoupper(trim($_POST['admitting_consultant_manual'] ?? ''), 'UTF-8') ?: null;
@@ -63,11 +63,11 @@ function handle_ipd_admit(PDO $pdo): array {
     }
 
     // ---- Validate ----
-    // Ward must be currently enabled.
-    $wardOk = $pdo->prepare('SELECT 1 FROM ipd_ward_rates WHERE ward = ? AND is_enabled = 1');
-    $wardOk->execute([$ward]);
-    if (!$wardOk->fetchColumn()) {
-        $out['error'] = 'Pick a valid, enabled ward.';
+    // The room category must be currently enabled.
+    $categoryOk = $pdo->prepare('SELECT 1 FROM ipd_room_rates WHERE room_category = ? AND is_enabled = 1');
+    $categoryOk->execute([$roomCategory]);
+    if (!$categoryOk->fetchColumn()) {
+        $out['error'] = 'Pick a valid, enabled room category.';
         return $out;
     }
     // Room 1-4, typed.
@@ -80,7 +80,7 @@ function handle_ipd_admit(PDO $pdo): array {
         $out['error'] = 'An admitting consultant is required.';
         return $out;
     }
-    // Primary nurse REQUIRED — no ward stay without someone accountable for it.
+    // Primary nurse REQUIRED — no in-door stay without someone accountable for it.
     // Ownership only: any staff member holding the relevant nursing permission
     // can still log care, medications and vitals against this admission. The
     // roster key matches the one ipd_admission.php offers for handovers.
@@ -161,12 +161,12 @@ function handle_ipd_admit(PDO $pdo): array {
         // assigned_nurse_id / assigned_at come from sql/ipd/add_ipd_assigned_nurse.sql.
         $pdo->prepare('
             INSERT INTO ipd_admissions
-                (visit_id, ward, room_no, admitted_at, admitting_consultant_id,
+                (visit_id, room_category, room_no, admitted_at, admitting_consultant_id,
                  admitting_consultant_manual, provisional_diagnosis, admitted_by_id, admitted_by_role,
                  assigned_nurse_id, assigned_at, status)
             VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, NOW(), \'ACTIVE\')
         ')->execute([
-            $visitId, $ward, $roomNo, $consultId,
+            $visitId, $roomCategory, $roomNo, $consultId,
             $consultId ? null : $consultManual, $provDiag, $uid, $admitRole, $nurseId,
         ]);
         $admissionId = (int) $pdo->lastInsertId();
@@ -175,7 +175,7 @@ function handle_ipd_admit(PDO $pdo): array {
         $pdo->prepare('UPDATE visits SET disposition = \'IN_DOOR\', admitted_at = NOW() WHERE id = ?')
             ->execute([$visitId]);
 
-        audit_log($pdo, 'ipd_patient_admitted', "IPD admit: visit #$visitId, ward $ward room $roomNo, admission #$admissionId by $admitRole, primary nurse #$nurseId", $uid);
+        audit_log($pdo, 'ipd_patient_admitted', "IPD admit: visit #$visitId, room category $roomCategory, room $roomNo, admission #$admissionId by $admitRole, primary nurse #$nurseId", $uid);
 
         $pdo->commit();
 

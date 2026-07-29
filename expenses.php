@@ -833,7 +833,7 @@ if (!$isAdmin) {
             if (d.bills === 0) {
                 earned.className = 'earned-box warn';
                 earned.innerHTML = '<strong>Nothing earned</strong> by this doctor in that month — '
-                    + 'no paid OPD consultations and no paid in-door ward rounds. '
+                    + 'no paid OPD consultations and no paid in-door daily rounds. '
                     + 'Check the month before posting.';
                 return;
             }
@@ -850,7 +850,7 @@ if (!$isAdmin) {
                       + 'OPD ' + money(d.opd_doctor) + ' <span class="muted">· ' + d.opd_bills
                       + ' consultation' + (d.opd_bills === 1 ? '' : 's') + '</span>'
                       + ' &nbsp;|&nbsp; In-door ' + money(d.ipd_doctor)
-                      + ' <span class="muted">· ' + d.ipd_visits + ' ward round'
+                      + ' <span class="muted">· ' + d.ipd_visits + ' daily round'
                       + (d.ipd_visits === 1 ? '' : 's') + '</span></div>';
             } else {
                 html += '<div class="stream-line muted">from ' + d.opd_bills

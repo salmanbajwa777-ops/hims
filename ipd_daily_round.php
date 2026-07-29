@@ -1,13 +1,13 @@
 <?php
 /**
- * IPD Consultant Ward Round Note — the ipd_doctor_visits capture form.
+ * IPD Consultant Daily Round Note — the ipd_doctor_visits capture form.
  *
  * Each save creates ONE immutable ipd_doctor_visits row (previous notes are
  * read-only = audit trail; a correction is a NEW note, never an update). The
  * author is the logged-in covering consultant (NOT the admitting consultant).
  *
  * Three-tier diagnosis carry-forward:
- *   - first ward round pre-fills Primary Diagnosis from ipd_admissions.provisional_diagnosis
+ *   - first daily round pre-fills Primary Diagnosis from ipd_admissions.provisional_diagnosis
  *   - every later round pre-fills from the MOST RECENT note
  *   (always editable — a pre-fill, never a lock)
  *
@@ -67,16 +67,16 @@ $latest = latest_ipd_note($pdo, $admissionId);
 $hospitalDay = (int) ((new DateTime(date('Y-m-d')))
     ->diff(new DateTime(date('Y-m-d', strtotime($adm['admitted_at']))))->days) + 1;
 
-// The ward's consultant visit fee (snapshotted onto the note at save).
-$feeStmt = $pdo->prepare('SELECT consultant_visit_fee FROM ipd_ward_rates WHERE ward = ?');
-$feeStmt->execute([$adm['ward']]);
-$wardFee = (float) ($feeStmt->fetchColumn() ?: 0);
+// The room category's consultant fee (snapshotted onto the note at save).
+$feeStmt = $pdo->prepare('SELECT consultant_visit_fee FROM ipd_room_rates WHERE room_category = ?');
+$feeStmt->execute([$adm['room_category']]);
+$roundFee = (float) ($feeStmt->fetchColumn() ?: 0);
 
 $flash = '';
 $err = '';
 $isOpen = $adm['status'] === 'ACTIVE';
 
-// ---- Save the ward round ----
+// ---- Save the daily round ----
 $progressVals = ['IMPROVING','STABLE','SLOW','DETERIORATING','CRITICAL'];
 $nextReviewVals = ['EVENING','TOMORROW_AM','TOMORROW_PM','AFTER_48H','PRN'];
 // Keep POSTed values so a validation failure re-renders what was typed.
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 $form['clinical_assessment'] ?: null,
                 $form['management_plan'] ?: null,
                 $form['family_counselling'] ?: null,
-                $nextReview, $isPaid, $wardFee, $uid,
+                $nextReview, $isPaid, $roundFee, $uid,
             ]);
             $noteId = (int) $pdo->lastInsertId();
 
@@ -142,14 +142,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 VALUES (?, \'DOCTOR_VISIT\', \'ipd_doctor_visits\', ?, ?, ?, ?, NOW())
             ')->execute([
                 $admissionId, $noteId,
-                'Ward round (Day ' . $hospitalDay . '): ' . $form['progress'],
+                'Daily round (Day ' . $hospitalDay . '): ' . $form['progress'],
                 $uid, $loggedRole,
             ]);
 
-            audit_log($pdo, 'ipd_ward_round_saved', "Ward round note #$noteId for IPD admission #$admissionId (day $hospitalDay, $form[progress])", $uid);
+            audit_log($pdo, 'ipd_ward_round_saved', "Daily round note #$noteId for IPD admission #$admissionId (day $hospitalDay, $form[progress])", $uid);
 
             $pdo->commit();
-            header('Location: ipd_ward_round.php?id=' . $admissionId . '&saved=1');
+            header('Location: ipd_daily_round.php?id=' . $admissionId . '&saved=1');
             exit;
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -214,7 +214,7 @@ function ipd_round_age(?string $dob): string {
     return (int) floor((time() - $d) / (30.44 * 86400)) . 'm';
 }
 
-$pageTitle = 'Ward Round — ' . $adm['patient_name'];
+$pageTitle = 'Daily Round — ' . $adm['patient_name'];
 $headExtra = <<<CSS
 <style>
 .wr-head { border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:18px; }
@@ -259,12 +259,12 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="content">
             <div class="page-head">
                 <div>
-                    <div class="page-title">Ward Round Note</div>
+                    <div class="page-title">Daily Round Note</div>
                     <div class="page-sub"><a href="ipd_admission.php?id=<?= $admissionId ?>" style="color:var(--primary);font-weight:600;">&larr; Back to stay</a></div>
                 </div>
             </div>
 
-            <?php if (isset($_GET['saved'])): ?><div class="alert success">Ward round note saved.</div><?php endif; ?>
+            <?php if (isset($_GET['saved'])): ?><div class="alert success">Daily round note saved.</div><?php endif; ?>
             <?php if ($err): ?><div class="alert error"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
             <!-- Auto-filled header (read only) -->
@@ -274,7 +274,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div><div class="k">MR No.</div><div class="v"><?= htmlspecialchars($adm['mrn']) ?></div></div>
                     <div><div class="k">Adm No.</div><div class="v">#<?= (int) $adm['id'] ?></div></div>
                     <div><div class="k">Age / Sex</div><div class="v"><?= htmlspecialchars(ipd_round_age($adm['dob'])) ?> &middot; <?= htmlspecialchars($genderLabels[$adm['gender']] ?? $adm['gender']) ?></div></div>
-                    <div><div class="k">Ward / Room</div><div class="v"><?= htmlspecialchars($adm['ward']) ?> &middot; <?= (int) $adm['room_no'] ?></div></div>
+                    <div><div class="k">Room</div><div class="v"><?= htmlspecialchars($adm['room_category']) ?> &middot; <?= (int) $adm['room_no'] ?></div></div>
                     <div><div class="k">Consultant</div><div class="v"><?= htmlspecialchars($authorName) ?></div></div>
                     <div><div class="k">Date / Time</div><div class="v"><?= date('d/m, H:i') ?></div></div>
                     <div><div class="k">Hospital Day</div><div class="v"><?= $hospitalDay ?></div></div>
@@ -282,9 +282,9 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
 
             <?php if (!$isOpen): ?>
-            <div class="alert" style="background:#F1F5F9;color:var(--text-secondary);">This admission is <?= htmlspecialchars(strtolower(str_replace('_',' ',$adm['status']))) ?> — new ward-round notes are closed. Existing notes remain below.</div>
+            <div class="alert" style="background:#F1F5F9;color:var(--text-secondary);">This admission is <?= htmlspecialchars(strtolower(str_replace('_',' ',$adm['status']))) ?> — new daily-round notes are closed. Existing notes remain below.</div>
             <?php elseif ($canWrite): ?>
-            <form method="POST" action="ipd_ward_round.php?id=<?= $admissionId ?>">
+            <form method="POST" action="ipd_daily_round.php?id=<?= $admissionId ?>">
                 <input type="hidden" name="action" value="save_round">
 
                 <div class="card">
@@ -329,7 +329,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <span class="vit-chip" style="color:var(--text-muted);">Last: <?= date('d/m h:i A', strtotime($latestVitals['recorded_at'])) ?></span>
                         </div>
                         <?php else: ?>
-                        <div class="muted" style="font-size:12.5px;">No vitals recorded yet (nursing vitals arrive with the ward's flow sheet).</div>
+                        <div class="muted" style="font-size:12.5px;">No vitals recorded yet (nursing vitals arrive with the flow sheet).</div>
                         <?php endif; ?>
                     </div>
 
@@ -370,19 +370,19 @@ require __DIR__ . '/partials/sidebar.php';
                         </div>
                     </div>
 
-                    <div style="margin-top:6px;"><button type="submit" class="btn">Save Ward Round</button></div>
+                    <div style="margin-top:6px;"><button type="submit" class="btn">Save Daily Round</button></div>
                     <div class="doc-note" style="margin-top:8px;">Requires Primary Diagnosis, Overall Clinical Progress, and at least one of Clinical Assessment or Management Plan.</div>
                 </div>
             </form>
             <?php else: ?>
-            <div class="alert" style="background:#F1F5F9;color:var(--text-secondary);">You can view the ward-round history but not write notes.</div>
+            <div class="alert" style="background:#F1F5F9;color:var(--text-secondary);">You can view the daily-round history but not write notes.</div>
             <?php endif; ?>
 
             <!-- Read-only note timeline -->
-            <div class="section-title" style="margin-top:24px;">Ward-round history</div>
+            <div class="section-title" style="margin-top:24px;">Daily-round history</div>
             <div class="section-sub" style="margin-bottom:12px;">Each note is a permanent record. Corrections are entered as a new note.</div>
             <?php if (!$notes): ?>
-            <div class="empty" style="padding:24px;"><strong>No ward-round notes yet</strong>The first note pre-fills the primary diagnosis from the admission's provisional diagnosis.</div>
+            <div class="empty" style="padding:24px;"><strong>No daily-round notes yet</strong>The first note pre-fills the primary diagnosis from the admission's provisional diagnosis.</div>
             <?php else: ?>
             <?php foreach ($notes as $n): [$glyph,$plabel,$pcol] = $progressMeta[$n['progress']] ?? ['','',''];?>
             <div class="note-item">

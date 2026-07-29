@@ -1414,7 +1414,7 @@ function void_procedure_bill(PDO $pdo, int $procBillId, int $userId, string $rea
 // off the top BEFORE tax and before the split — the confirmed three-step rule:
 //   1. deduct disposables   2. tax the remainder   3. split what's left
 // The patient's total never changes; this only decides how the money already
-// collected is carved up. Consultations and ward rounds pass 0 and behave
+// collected is carved up. Consultations and daily rounds pass 0 and behave
 // exactly as before. The clinic keeps the disposables back, so it is added to
 // the clinic's side and the four parts still re-sum to gross:
 //   disposables + tax + doctor + clinic == gross
@@ -1500,14 +1500,14 @@ function doctor_split_sql(string $amt, string $share, string $hasTax, string $ta
 //
 // TWO streams count today:
 //   1. OPD consultations — bills joined to visits.doctor_id.
-//   2. IPD ward rounds   — ipd_doctor_visits rows flagged is_paid = 1 (the
+//   2. IPD daily rounds   — ipd_doctor_visits rows flagged is_paid = 1 (the
 //      first note of each calendar day), whose visit_charge snapshot is billed
 //      to the patient as the CONSULT_VISIT line on the admission's ipd_bill.
 //      An in-door patient's consultations ARE the consultant's income and carry
 //      the same tax-first split as an OPD consult.
 //
 // IPD money is recognised when the IPD BILL is paid, not when the round was
-// written — a ward round on the 28th that settles on the 2nd belongs to the
+// written — a daily round on the 28th that settles on the 2nd belongs to the
 // month the money arrived, matching the cash basis used everywhere else.
 // Because one bill covers the whole stay, a doctor's rounds are attributed via
 // their own visit_charge rows rather than by splitting the bill total.
@@ -1601,7 +1601,7 @@ function doctor_earned_for_month(PDO $pdo, int $doctorId, string $month): array 
         'ipd_visits' => 0,
     ];
 
-    // ---- IPD ward rounds -------------------------------------------------
+    // ---- IPD daily rounds -------------------------------------------------
     // The consultant's chargeable notes (is_paid = 1) on admissions whose IPD
     // bill was PAID inside this month. Attribution is per-round via each row's
     // own visit_charge snapshot, so two consultants sharing a stay each earn
@@ -1809,7 +1809,7 @@ function clinic_doctor_shares(PDO $pdo, string $start, string $end): array {
         }
     } catch (PDOException $e) { /* consult share columns or tables absent */ }
 
-    // ---- IPD ward rounds (an in-door consult is consultation income) ----
+    // ---- IPD daily rounds (an in-door consult is consultation income) ----
     try {
         $d = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'doctor');
         $t = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'tax');
@@ -1970,7 +1970,7 @@ function clinic_income_buckets(PDO $pdo, string $start, string $end, string $buc
         foreach ($q->fetchAll() as $r) { $add($minus, $r['b'], $r['amt']); }
     } catch (PDOException $e) { /* consult share columns not migrated */ }
 
-    // ---- Doctor share + withheld tax: IPD ward rounds ----
+    // ---- Doctor share + withheld tax: IPD daily rounds ----
     try {
         $d = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'doctor');
         $t = doctor_split_sql('dv.visit_charge', 'dr.consult_share_pct', 'dr.consult_has_tax', 'dr.consult_tax_pct', 'tax');

@@ -1,6 +1,6 @@
 <?php
 /**
- * In-Door (IPD) ward list — currently-admitted in-patients.
+ * In-Door (IPD) admitted-patient list — currently-admitted in-patients.
  *
  * The IPD counterpart to admissions.php (which is ER short-stay). Lists active
  * IPD stays (not date-scoped, so a multi-day stay still shows) plus today's
@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ipd_a
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 
 // Two tabs, mirroring admissions.php:
-//   current (default) — still in the ward, plus today's discharges
+//   current (default) — still admitted, plus today's discharges
 //   past              — discharged and finalized. Read-only; a finalized bill
 //                       is never reopened here, the row just becomes reachable.
 $tab = ($_GET['tab'] ?? '') === 'past' ? 'past' : 'current';
@@ -68,9 +68,9 @@ if ($q !== '') {
 }
 $limitSql = $isPast ? ' LIMIT 300' : '';
 
-// Active first, then today's discharged. Joined for patient/consultant/ward.
+// Active first, then today's discharged. Joined for patient/consultant/room category.
 $stmt = $pdo->prepare("
-    SELECT a.id AS admission_id, a.status, a.admitted_at, a.ward, a.room_no,
+    SELECT a.id AS admission_id, a.status, a.admitted_at, a.room_category, a.room_no,
            a.discharge_finalized_at,
            v.token_no,
            p.mrn, p.name AS full_name, p.phone,
@@ -109,7 +109,7 @@ tbody tr:first-child td { border-top: none; }
 .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
 .admit-cta { display:flex; justify-content:flex-end; margin-bottom:14px; }
 /* Current / Past toggle + filter bar — kept identical to admissions.php so the
-   two ward boards read as one control. Anchors, so each tab is a real URL. */
+   two admission boards read as one control. Anchors, so each tab is a real URL. */
 .pick-card { padding: 14px 16px; margin-bottom: 14px; }
 .mode-tabs { display: inline-flex; gap: 4px; padding: 3px; background: var(--bg, #F1F5F9); border-radius: 9px; margin-bottom: 12px; }
 .mode-tab { padding: 7px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); text-decoration: none; white-space: nowrap; }
@@ -180,7 +180,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <tr>
                         <th>Token</th>
                         <th>Patient</th>
-                        <th>Ward / Room</th>
+                        <th>Room</th>
                         <th>Consultant</th>
                         <th>Status</th>
                         <th>Admitted</th>
@@ -203,7 +203,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <div class="name"><?= htmlspecialchars($r['full_name']) ?></div>
                             <div class="mrn"><?= htmlspecialchars($r['mrn']) ?></div>
                         </td>
-                        <td><?= htmlspecialchars($r['ward']) ?> &middot; Room <?= (int) $r['room_no'] ?></td>
+                        <td><?= htmlspecialchars($r['room_category']) ?> &middot; Room <?= (int) $r['room_no'] ?></td>
                         <td><?= htmlspecialchars($r['consultant_name'] ?: '—') ?></td>
                         <td><span class="status-pill <?= $cls ?>"><?= $lbl ?></span></td>
                         <td><?= date($isPast ? 'd/m/Y h:i A' : 'd/m, h:i A', strtotime($r['admitted_at'])) ?></td>

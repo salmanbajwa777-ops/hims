@@ -303,7 +303,7 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
                     <div class="card">
                         <div class="section-title">Lines</div>
                         <div class="section-sub">
-                            Every bill and ward round this payout covers, frozen at the figures paid.
+                            Every bill and daily round this payout covers, frozen at the figures paid.
                             Adjustments are reversed at their ORIGINAL amounts, not recomputed — a later
                             rate change never alters what was already paid.
                         </div>

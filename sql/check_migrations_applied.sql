@@ -113,6 +113,8 @@ SELECT m.migration, m.why, m.applied FROM (
     (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='u402528120_hmis' AND table_name='ipd_handovers')
   UNION ALL SELECT 'ipd/add_ipd_billing_discharge','IPD discharge + bill',
     (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='u402528120_hmis' AND table_name='ipd_discharge_summaries')
+  UNION ALL SELECT 'ipd/add_ipd_nurse_services','nurse-logged IPD services',
+    (SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema='u402528120_hmis' AND table_name='ipd_services' AND index_name='idx_ipd_service_adm_time')
   UNION ALL SELECT 'rbac_overhaul_4_fix_category_enum','category ENUM->VARCHAR',
     (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='u402528120_hmis' AND table_name='permissions' AND column_name='category' AND data_type='varchar')
   UNION ALL SELECT 'collapse_roles_to_staff','3-role model (NURSE gone)',

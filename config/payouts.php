@@ -9,7 +9,7 @@
  * claims every past month underpaid them.
  *
  * So a payout snapshots its figures INCLUDING the rates in force at the time,
- * one line per source bill / ward round.
+ * one line per source bill / daily round.
  *
  * Requires config/billing.php (doctor_split) and sql/add_doctor_payouts.sql.
  */
@@ -56,7 +56,7 @@ function last_settled_payout(PDO $pdo, int $doctorId): ?array {
 
 /**
  * EARNING lines for a period: one row per paid OPD bill and per chargeable IPD
- * ward round, split at the doctor's CURRENT rates (which are then frozen onto
+ * daily round, split at the doctor's CURRENT rates (which are then frozen onto
  * the payout).
  *
  * Cash basis — a line belongs to the period the MONEY ARRIVED, matching every
@@ -98,7 +98,7 @@ function payout_earning_lines(PDO $pdo, int $doctorId, string $start, string $en
         }
     } catch (PDOException $e) { error_log('[payout opd] ' . $e->getMessage()); }
 
-    // ---- IPD ward rounds: chargeable notes on admissions whose bill was paid
+    // ---- IPD daily rounds: chargeable notes on admissions whose bill was paid
     //      in the window. An in-door consult is consultation income. ----
     try {
         $q = $pdo->prepare("

@@ -6,7 +6,7 @@
  *
  * Expects in scope:
  *   $ipdAdmitFormAction — where the form POSTs (defaults to the current script).
- *   $ipdWards           — [['ward','per_day_rate','consultant_visit_fee'], ...] enabled.
+ *   $roomCategories           — [['room_category','per_day_rate','consultant_visit_fee'], ...] enabled.
  *   $ipdDoctors         — [['id','name'], ...] system doctors for the consultant picker.
  *   $ipdNurses          — [['id','name'], ...] eligible PRIMARY nurses.
  *
@@ -20,12 +20,12 @@
  * field is chosen via byPatient so the handler resolves/creates the visit.
  */
 $ipdAdmitFormAction = $ipdAdmitFormAction ?? basename($_SERVER['SCRIPT_NAME'] ?? 'patients.php');
-$ipdWards   = $ipdWards ?? [];
+$roomCategories   = $roomCategories ?? [];
 $ipdDoctors = $ipdDoctors ?? [];
 $ipdNurses  = $ipdNurses ?? [];
 // A primary nurse is mandatory, so an empty roster makes admitting impossible —
 // the submit is disabled rather than letting the form take a server rejection.
-$ipdAdmitOk = $ipdWards && $ipdNurses;
+$ipdAdmitOk = $roomCategories && $ipdNurses;
 ?>
 <style>
 .ipd-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
@@ -61,17 +61,17 @@ $ipdAdmitOk = $ipdWards && $ipdNurses;
             <div class="ipd-body">
                 <div class="ipd-row2">
                     <div class="ipd-field">
-                        <label>Ward</label>
-                        <select name="ward" required>
-                            <option value="">Select ward&hellip;</option>
-                            <?php foreach ($ipdWards as $w): ?>
-                            <option value="<?= htmlspecialchars($w['ward']) ?>">
-                                <?= htmlspecialchars($w['ward']) ?><?= (float) $w['per_day_rate'] > 0 ? ' (Rs ' . number_format((float) $w['per_day_rate']) . '/day)' : '' ?>
+                        <label>Room category</label>
+                        <select name="room_category" required>
+                            <option value="">Select room category&hellip;</option>
+                            <?php foreach ($roomCategories as $w): ?>
+                            <option value="<?= htmlspecialchars($w['room_category']) ?>">
+                                <?= htmlspecialchars($w['room_category']) ?><?= (float) $w['per_day_rate'] > 0 ? ' (Rs ' . number_format((float) $w['per_day_rate']) . '/day)' : '' ?>
                             </option>
                             <?php endforeach; ?>
                         </select>
-                        <?php if (!$ipdWards): ?>
-                        <div class="muted" style="margin-top:6px;font-size:12px;">No wards enabled. Set them under In-Door Ward Rates.</div>
+                        <?php if (!$roomCategories): ?>
+                        <div class="muted" style="margin-top:6px;font-size:12px;">No room categories enabled. Set them under In-Door Room Categories &amp; Rates.</div>
                         <?php endif; ?>
                     </div>
                     <div class="ipd-field">
@@ -111,7 +111,7 @@ $ipdAdmitOk = $ipdWards && $ipdNurses;
                 </div>
 
                 <div class="ipd-field">
-                    <label>Provisional diagnosis <span class="muted" style="font-weight:500;">(working diagnosis &mdash; seeds the first ward round)</span></label>
+                    <label>Provisional diagnosis <span class="muted" style="font-weight:500;">(working diagnosis &mdash; seeds the first daily round)</span></label>
                     <textarea name="provisional_diagnosis" maxlength="500" placeholder="e.g. Community Acquired Pneumonia"></textarea>
                 </div>
             </div>

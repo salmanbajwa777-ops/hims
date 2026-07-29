@@ -3,8 +3,8 @@
  * In-Door (IPD) stay — the per-admission hub page.
  *
  * Phase 1 renders the auto-filled header only (patient, MR, admission no., age,
- * gender, ward, room, consultant, admitted, status). Later phases attach the
- * ward-round note (Phase 2), vitals/care/handover (Phase 3), and discharge +
+ * gender, room category, room no, consultant, admitted, status). Later phases attach the
+ * daily-round note (Phase 2), vitals/care/handover (Phase 3), and discharge +
  * billing (Phase 4) panels here. This is the IPD counterpart to admission.php.
  */
 require_once __DIR__ . '/config/auth.php';
@@ -13,6 +13,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/tokens.php';
 require_once __DIR__ . '/config/billing.php';        // require_day_open()
+require_once __DIR__ . '/config/ipd_billing.php';    // service charge + bill append
 require_once __DIR__ . '/config/ipd_advances.php';
 refresh_session_permissions($pdo);
 
@@ -98,6 +99,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_c
         }
     }
 }
+
+// ---------------- Log a chargeable service ----------------
+// The nurse who GIVES the service is the one who records it, at the bedside,
+// as it happens — rather than reception reconstructing the list from memory on
+// the discharge screen. Deliberately NOT fenced on $isOpen: care continues right
+// up to the moment the patient walks out, and append_ipd_service_to_bill() puts
+// a late entry onto the draft bill instead of silently dropping it.
+$canLogServices = has_permission('IPD_LOG_SERVICES');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_service' && $canLogServices) {
+    $erId = (int) ($_POST['er_service_id'] ?? 0);
+    $qty = max(1, (int) ($_POST['quantity'] ?? 1));
+    $dur = ($_POST['duration_minutes'] ?? '') !== '' ? (int) $_POST['duration_minutes'] : null;
+    $note = trim($_POST['clinical_note'] ?? '');
+
+    $svc = null;
+    if ($erId > 0) {
+        // Price comes from the catalogue, never from the POST.
+        $s = $pdo->prepare("SELECT * FROM er_services_master WHERE id = ? AND status = 'ACTIVE'");
+        $s->execute([$erId]);
+        $svc = $s->fetch() ?: null;
+    }
+
+    if (!$svc) {
+        $err = 'Pick a service.';
+    } elseif ($svc['charge_type'] === 'HOURLY' && (!$dur || $dur < 1)) {
+        // Without this an hourly service silently bills Rs 0 (rate x 0/60).
+        $err = 'Enter how many minutes for an hourly service.';
+    } else {
+        try {
+            $charge = ipd_service_charge($svc['charge_type'], (float) $svc['base_charge'], $qty, $dur);
+            $pdo->beginTransaction();
+            $pdo->prepare('
+                INSERT INTO ipd_services (admission_id, er_service_id, service_type, service_name, charge_type, quantity, duration_minutes, unit_charge, calculated_charge, clinical_note, logged_by_id, logged_by_role)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ')->execute([
+                $admissionId, $svc['id'], $svc['service_type'], $svc['service_name'], $svc['charge_type'],
+                $qty, $dur, $svc['base_charge'], $charge,
+                $note !== '' ? mb_substr($note, 0, 200) : null, $uid, $loggedRole,
+            ]);
+            $serviceId = (int) $pdo->lastInsertId();
+            $billState = append_ipd_service_to_bill($pdo, $admissionId, $serviceId);
+            audit_log($pdo, 'ipd_service_logged', $svc['service_name'] . " logged for IPD admission #$admissionId (bill: $billState)", $uid);
+            $pdo->commit();
+
+            // PRG: without the redirect an F5 re-posts and double-logs.
+            $msg = $billState === 'settled'
+                ? 'Service recorded — but the bill is already settled, so tell reception to add the charge.'
+                : 'Service logged.';
+            header('Location: ipd_admission.php?id=' . $admissionId . '&svc=' . rawurlencode($msg) . '#services');
+            exit;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            $err = 'Could not log the service.';
+        }
+    }
+}
+if (isset($_GET['svc']) && $_GET['svc'] !== '') { $flash = (string) $_GET['svc']; }
 
 // ---------------- Record a handover ----------------
 $canHandover = $isOpen && has_permission('IPD_RECORD_HANDOVER');
@@ -218,6 +276,31 @@ try {
     $handovers = $ho->fetchAll();
 } catch (Throwable $e) { $handovers = []; }
 
+// Services logged this stay. Joined to users so the log shows WHO gave it —
+// the whole point of moving logging to the bedside. Removed items (is_billable
+// = 0) are still listed: the clinical record of what was done survives an admin
+// taking the charge off.
+$loggedServices = [];
+try {
+    $ls = $pdo->prepare('
+        SELECT s.*, u.name AS by_name
+        FROM ipd_services s
+        LEFT JOIN users u ON u.id = s.logged_by_id
+        WHERE s.admission_id = ?
+        ORDER BY s.logged_at DESC, s.id DESC
+    ');
+    $ls->execute([$admissionId]);
+    $loggedServices = $ls->fetchAll();
+} catch (Throwable $e) { $loggedServices = []; }
+
+// Catalogue for the picker. Shared with ER — see er_services_master.
+$serviceCatalogue = [];
+if ($canLogServices) {
+    try {
+        $serviceCatalogue = $pdo->query("SELECT id, service_type, service_name, charge_type, base_charge FROM er_services_master WHERE status = 'ACTIVE' ORDER BY service_type, service_name")->fetchAll();
+    } catch (Throwable $e) { $serviceCatalogue = []; }
+}
+
 // Nurses available for handover = active users holding IPD_RECORD_HANDOVER.
 $nurses = [];
 if ($canHandover) {
@@ -294,6 +377,18 @@ $headExtra = <<<CSS
 .mini-form input, .mini-form select, .mini-form textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); }
 .mini-form input:focus, .mini-form select:focus, .mini-form textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
 .mini-form label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
+.svc-form { display: grid; grid-template-columns: 2fr .6fr .7fr; gap: 10px; align-items: end; margin: 14px 0; }
+.svc-form .svc-note { grid-column: 1 / 3; }
+.svc-form button { grid-column: 3; }
+@media (max-width: 620px){
+    .svc-form { grid-template-columns: 1fr 1fr; }
+    .svc-form > div:first-child, .svc-form .svc-note, .svc-form button { grid-column: 1 / -1; }
+}
+.ev-tag.PROCEDURE { background: var(--amber-bg); color: var(--amber-text); }
+.ev-tag.svc-rm { background: var(--red-bg); color: var(--red-text); margin-left: 4px; }
+.svc-off td { opacity: .6; }
+.svc-off td:nth-child(2) { text-decoration: line-through; }
+.svc-off td:nth-child(2) .ev-tag { text-decoration: none; display: inline-block; }
 CSS;
 $headExtra .= "\n</style>";
 require __DIR__ . '/partials/head.php';
@@ -327,7 +422,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div><div class="k">Admission No.</div><div class="v">#<?= (int) $adm['id'] ?></div></div>
                     <div><div class="k">Age</div><div class="v"><?= htmlspecialchars(ipd_age_label($adm['dob'])) ?></div></div>
                     <div><div class="k">Gender</div><div class="v"><?= htmlspecialchars($genderLabels[$adm['gender']] ?? $adm['gender']) ?></div></div>
-                    <div><div class="k">Ward</div><div class="v"><?= htmlspecialchars($adm['ward']) ?></div></div>
+                    <div><div class="k">Room</div><div class="v"><?= htmlspecialchars($adm['room_category']) ?></div></div>
                     <div><div class="k">Room</div><div class="v"><?= (int) $adm['room_no'] ?></div></div>
                     <div><div class="k">Consultant</div><div class="v"><?= htmlspecialchars($adm['consultant_name'] ?: '—') ?></div></div>
                     <div><div class="k">Admitted</div><div class="v"><?= date('d/m, H:i', strtotime($adm['admitted_at'])) ?></div></div>
@@ -513,16 +608,66 @@ require __DIR__ . '/partials/sidebar.php';
                         </table>
                         </div>
                     </div>
+
+                    <?php if ($canLogServices || $loggedServices): ?>
+                    <div class="card" style="margin-top:20px;" id="services">
+                        <div class="section-title">Services</div>
+                        <div class="section-sub">Log each chargeable service as you give it &mdash; it goes on the patient's bill and stay report automatically.</div>
+                        <?php if ($canLogServices): ?>
+                        <form method="POST" action="ipd_admission.php?id=<?= $admissionId ?>" class="mini-form svc-form">
+                            <input type="hidden" name="action" value="add_service">
+                            <div>
+                                <label>Service</label>
+                                <select name="er_service_id" required>
+                                    <option value="">Select&hellip;</option>
+                                    <?php foreach ($serviceCatalogue as $cs): ?>
+                                    <option value="<?= (int) $cs['id'] ?>" data-hourly="<?= $cs['charge_type'] === 'HOURLY' ? 1 : 0 ?>">
+                                        <?= htmlspecialchars($cs['service_name']) ?><?= $cs['charge_type'] === 'HOURLY' ? ' (hourly)' : '' ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div><label>Qty</label><input type="number" name="quantity" value="1" min="1" step="1"></div>
+                            <div><label>Minutes</label><input type="number" name="duration_minutes" min="1" step="1" placeholder="&mdash;"></div>
+                            <div class="svc-note"><label>Note (optional)</label><input type="text" name="clinical_note" maxlength="200" placeholder="e.g. 4 L/min via mask"></div>
+                            <button type="submit" class="btn secondary">Log</button>
+                        </form>
+                        <?php endif; ?>
+                        <div style="overflow-x:auto;margin-top:6px;">
+                        <table class="care-log">
+                            <thead><tr><th>Time</th><th>Service</th><th>Qty</th><th>By</th></tr></thead>
+                            <tbody>
+                                <?php if (!$loggedServices): ?><tr><td colspan="4" class="muted" style="padding:16px 10px;">No services logged yet.</td></tr><?php endif; ?>
+                                <?php foreach ($loggedServices as $ls): $off = (int) $ls['is_billable'] === 0; ?>
+                                <tr<?= $off ? ' class="svc-off"' : '' ?>>
+                                    <td class="mono"><?= date('d/m H:i', strtotime($ls['logged_at'])) ?></td>
+                                    <td>
+                                        <span class="ev-tag <?= $ls['service_type'] ?>"><?= $ls['service_type'] === 'PROCEDURE' ? 'Procedure' : 'Service' ?></span>
+                                        <?= htmlspecialchars($ls['service_name']) ?>
+                                        <?php if ($off): ?><span class="ev-tag svc-rm">Not charged</span><?php endif; ?>
+                                    </td>
+                                    <td class="mono"><?= $ls['charge_type'] === 'HOURLY' ? ((int) $ls['duration_minutes']) . ' min' : (int) $ls['quantity'] ?></td>
+                                    <td class="muted"><?= htmlspecialchars($ls['by_name'] ?: '—') ?></td>
+                                </tr>
+                                <?php if (!empty($ls['clinical_note'])): ?>
+                                <tr><td></td><td colspan="3" class="muted" style="font-size:12px;padding-top:0;">&#8627; <?= htmlspecialchars($ls['clinical_note']) ?></td></tr>
+                                <?php endif; ?>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
 
-                <!-- Right: ward round shortcut + handover -->
+                <!-- Right: daily round shortcut + handover -->
                 <div>
                     <?php if (has_permission('IPD_VIEW_WARD_ROUNDS')): ?>
                     <div class="card">
-                        <div class="section-title">Ward rounds</div>
+                        <div class="section-title">Daily rounds</div>
                         <div class="section-sub">Consultant daily progress notes.</div>
-                        <a class="btn" style="width:100%;text-align:center;margin-top:12px;" href="ipd_ward_round.php?id=<?= (int) $adm['id'] ?>">
-                            <?= has_permission('IPD_WRITE_WARD_ROUND') && $isOpen ? 'Write ward round' : 'View ward-round notes' ?>
+                        <a class="btn" style="width:100%;text-align:center;margin-top:12px;" href="ipd_daily_round.php?id=<?= (int) $adm['id'] ?>">
+                            <?= has_permission('IPD_WRITE_WARD_ROUND') && $isOpen ? 'Write daily round' : 'View daily-round notes' ?>
                         </a>
                     </div>
                     <?php endif; ?>
@@ -538,6 +683,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <?php if ($canSummary): ?>
                             <a class="btn secondary" style="text-align:center;" href="ipd_discharge_summary.php?id=<?= (int) $adm['id'] ?>">Discharge summary</a>
                             <?php endif; ?>
+                            <a class="btn secondary" style="text-align:center;" href="ipd_stay_report.php?id=<?= (int) $adm['id'] ?>" target="_blank">Stay report</a>
                             <?php if ($canDischargeFlow): ?>
                             <a class="btn" style="text-align:center;" href="ipd_discharge.php?id=<?= (int) $adm['id'] ?>">
                                 <?= $adm['status'] === 'DISCHARGED' ? 'View bill' : ($adm['status'] === 'ACTIVE' ? 'Discharge & bill' : 'Continue billing') ?>

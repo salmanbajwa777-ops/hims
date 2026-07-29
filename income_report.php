@@ -521,7 +521,7 @@ $pieColors = ['#0E5456', '#1A7F7E', '#2E9E86', '#7FB069', '#C7B446', '#E08D3C'];
             <div class="card">
                 <div class="section-title">Earned by Doctor</div>
                 <div class="section-sub">
-                    OPD consultations plus in-door ward rounds, on each doctor's own share and tax rate.
+                    OPD consultations plus in-door daily rounds, on each doctor's own share and tax rate.
                     Tax withheld is what the clinic deposits — a doctor who self-deposits shows zero.
                 </div>
                 <div style="overflow-x:auto;">

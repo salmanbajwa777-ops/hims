@@ -88,9 +88,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
                 $admissionId, $svc['id'], $svc['service_type'], $svc['service_name'], $svc['charge_type'],
                 $qty, $dur, $svc['base_charge'], $charge, $note !== '' ? mb_substr($note, 0, 200) : null, $uid, $loggedRole,
             ]);
+            audit_log($pdo, 'ipd_service_logged', $svc['service_name'] . " logged for IPD admission #$admissionId", $uid);
             $flash = 'Service logged.';
         }
     }
+}
+
+// ---------------- Override one charge line's rate ----------------
+// Room / nursing / MO / consultant lines are computed from the room category's
+// rates, but a bill sometimes needs a one-off figure (a negotiated room rate, a
+// short first day). SERVICE lines are excluded — those carry their own frozen
+// per-line charge and are adjusted by removing the service instead.
+// Every override is audited: a hand-edited charge must be answerable later.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'override_line' && $canFinalize) {
+    $lineId = (int) ($_POST['line_id'] ?? 0);
+    $newRate = max(0, (float) ($_POST['unit_rate'] ?? 0));
+    try {
+        $li = $pdo->prepare("
+            SELECT i.* FROM ipd_bill_items i
+            JOIN ipd_bills b ON b.id = i.ipd_bill_id
+            WHERE i.id = ? AND b.admission_id = ? AND b.status = 'draft' AND i.item_kind <> 'SERVICE'
+        ");
+        $li->execute([$lineId, $admissionId]);
+        $line = $li->fetch();
+        if (!$line) {
+            $err = 'That line cannot be edited — the bill may already be settled.';
+        } else {
+            $qty = max(1, (int) $line['quantity']);
+            $amount = round($newRate * $qty, 2);
+            $pdo->prepare('UPDATE ipd_bill_items SET unit_rate = ?, amount = ? WHERE id = ?')
+                ->execute([$newRate, $amount, $lineId]);
+            recalc_ipd_bill_totals($pdo, (int) $line['ipd_bill_id']);
+            audit_log($pdo, 'ipd_bill_line_override',
+                "Line #$lineId ({$line['item_kind']}) on IPD admission #$admissionId: rate {$line['unit_rate']} -> $newRate", $uid);
+            $flash = 'Charge updated.';
+        }
+    } catch (Throwable $e) {
+        $err = 'Could not update that charge.';
+    }
+}
+
+// ---------------- Remove / restore a logged service ----------------
+// Admin only. is_billable flips — the ipd_services row is NEVER deleted, so the
+// clinical record of what was done to the patient survives the charge coming off.
+$canRemoveService = has_permission('IPD_REMOVE_SERVICE');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', ['remove_service','restore_service'], true) && $canRemoveService) {
+    $svcId = (int) ($_POST['service_id'] ?? 0);
+    $makeBillable = ($_POST['action'] === 'restore_service');
+    try {
+        if (set_ipd_service_billable($pdo, $admissionId, $svcId, $makeBillable)) {
+            audit_log($pdo, $makeBillable ? 'ipd_service_restored' : 'ipd_service_removed',
+                "Service #$svcId " . ($makeBillable ? 'restored to' : 'removed from') . " the bill for IPD admission #$admissionId", $uid);
+            $flash = $makeBillable ? 'Service restored to the bill.' : 'Service removed from the bill.';
+        } else {
+            $err = 'That service could not be changed — the bill may already be settled.';
+        }
+    } catch (Throwable $e) {
+        $err = 'Could not update the service.';
+    }
+    $adm = load_ipd_adm_bill($pdo, $admissionId);
 }
 
 // A draft bill only exists once discharge is submitted (or someone opens billing).
@@ -196,12 +252,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
 // ---- Data for the view ----
 $items = [];
 if ($bill) {
-    $it = $pdo->prepare('SELECT * FROM ipd_bill_items WHERE ipd_bill_id = ? ORDER BY FIELD(item_kind,\'STAY\',\'CONSULT_VISIT\',\'SERVICE\'), id');
+    // FIELD() returns 0 for a value not in its list, which would sort the newer
+    // NURSING/MO kinds ABOVE everything else — they must be named here.
+    $it = $pdo->prepare('SELECT * FROM ipd_bill_items WHERE ipd_bill_id = ? ORDER BY FIELD(item_kind,\'STAY\',\'NURSING\',\'MO\',\'CONSULT_VISIT\',\'SERVICE\'), id');
     $it->execute([(int) $bill['id']]);
     $items = $it->fetchAll();
     $locked = ($bill['status'] === 'paid' || $bill['printed_at']);
 }
-$services = $pdo->prepare('SELECT * FROM ipd_services WHERE admission_id = ? ORDER BY logged_at');
+// Joined to users so reception can see WHO logged each line — nurse-logged
+// services land here automatically, so the name is what makes a surprise charge
+// answerable.
+$services = $pdo->prepare('
+    SELECT s.*, u.name AS by_name
+    FROM ipd_services s
+    LEFT JOIN users u ON u.id = s.logged_by_id
+    WHERE s.admission_id = ?
+    ORDER BY s.logged_at
+');
 $services->execute([$admissionId]);
 $services = $services->fetchAll();
 $erServices = $pdo->query("SELECT id, service_type, service_name, charge_type, base_charge FROM er_services_master WHERE status = 'ACTIVE' ORDER BY service_type, service_name")->fetchAll();
@@ -230,6 +297,25 @@ $headExtra = <<<CSS
 .adv-chip { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:20px; background:var(--primary-light); color:var(--primary-dark); margin-left:4px; }
 .adv-banner { background:#FFF7E8; border:1px solid #FBCFB0; color:#8a5a00; border-radius:8px; padding:11px 13px; font-size:12.5px; margin-bottom:14px; }
 .adv-banner b { display:block; margin-bottom:2px; font-size:13px; }
+.svc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.svc-table th, .svc-table td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--border); vertical-align:top; }
+.svc-table th { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; white-space:nowrap; }
+.svc-table td.mono { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.svc-table .svc-total td { border-bottom:none; border-top:2px solid var(--border); font-weight:700; font-size:13.5px; background:var(--bg); }
+.svc-tag.rm { display:inline-block; font-size:10px; font-weight:700; padding:1px 7px; border-radius:20px; background:var(--red-bg); color:var(--red-text); margin-left:4px; }
+.svc-off td:not(:last-child) { opacity:.6; }
+.svc-off td:nth-child(2) { text-decoration:line-through; }
+.svc-off td:nth-child(2) .svc-tag, .svc-off td:nth-child(2) .muted { text-decoration:none; }
+.svc-act { background:none; border:none; padding:2px 4px; font:inherit; font-size:12px; font-weight:600; color:var(--primary); cursor:pointer; text-decoration:underline; }
+.svc-act.danger { color:var(--red-text); }
+.rate-inp { width:92px; padding:5px 8px; border:1px solid var(--border); border-radius:8px;
+    font:inherit; font-size:12.5px; text-align:right; background:#fff; font-variant-numeric:tabular-nums; }
+.rate-inp:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); }
+.rate-go { border:1px solid var(--border); background:var(--bg); color:var(--primary);
+    border-radius:8px; padding:4px 8px; font-size:12px; cursor:pointer; line-height:1; }
+.rate-go:hover { background:var(--primary-light); }
+.kind-tag.NURSING { background:var(--green-bg); color:var(--green-text); }
+.kind-tag.MO { background:var(--amber-bg); color:var(--amber-text); }
 CSS;
 $headExtra .= "\n</style>";
 require __DIR__ . '/partials/head.php';
@@ -273,13 +359,32 @@ require __DIR__ . '/partials/sidebar.php';
                     <?php if (!$bill): ?>
                         <div class="muted" style="margin-top:8px;"><?= $adm['status'] === 'ACTIVE' ? 'The bill is raised once discharge is submitted.' : 'You do not have billing permission for IPD.' ?></div>
                     <?php else: ?>
+                    <?php
+                    $kindLabels = ['STAY' => 'ROOM', 'NURSING' => 'NURSING', 'MO' => 'MO',
+                                   'CONSULT_VISIT' => 'CONSULTANT', 'SERVICE' => 'SERVICE'];
+                    // A rate is only editable while the bill is open, and never on
+                    // a SERVICE line — those are changed by removing the service.
+                    $canOverride = $canFinalize && !$locked;
+                    ?>
                     <table class="bill-table" style="margin-top:12px;">
-                        <thead><tr><th>Item</th><th>Qty</th><th class="amt">Amount</th></tr></thead>
+                        <thead><tr><th>Item</th><th>Qty</th><th class="amt">Rate</th><th class="amt">Amount</th></tr></thead>
                         <tbody>
-                            <?php foreach ($items as $li): ?>
+                            <?php foreach ($items as $li): $editable = $canOverride && $li['item_kind'] !== 'SERVICE'; ?>
                             <tr>
-                                <td><span class="kind-tag"><?= htmlspecialchars($li['item_kind']) ?></span> <?= htmlspecialchars($li['description']) ?></td>
+                                <td><span class="kind-tag <?= htmlspecialchars($li['item_kind']) ?>"><?= htmlspecialchars($kindLabels[$li['item_kind']] ?? $li['item_kind']) ?></span> <?= htmlspecialchars($li['description']) ?></td>
                                 <td><?= rtrim(rtrim(number_format((float) $li['quantity'], 2), '0'), '.') ?></td>
+                                <td class="amt">
+                                    <?php if ($editable): ?>
+                                    <form method="POST" action="ipd_discharge.php?id=<?= $admissionId ?>" style="display:inline-flex;gap:5px;align-items:center;">
+                                        <input type="hidden" name="action" value="override_line">
+                                        <input type="hidden" name="line_id" value="<?= (int) $li['id'] ?>">
+                                        <input class="rate-inp" type="number" step="0.01" min="0" name="unit_rate" value="<?= htmlspecialchars((string) $li['unit_rate']) ?>">
+                                        <button type="submit" class="rate-go" title="Apply this rate">&#10003;</button>
+                                    </form>
+                                    <?php else: ?>
+                                    <span class="muted"><?= number_format((float) $li['unit_rate']) ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="amt">Rs <?= number_format((float) $li['amount']) ?></td>
                             </tr>
                             <?php endforeach; ?>
@@ -362,16 +467,59 @@ require __DIR__ . '/partials/sidebar.php';
                             </div>
                             <div style="margin-top:8px;"><input type="text" name="clinical_note" maxlength="200" placeholder="Detail (optional)" style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:10px;font:inherit;font-size:13px;background:var(--bg);"></div>
                         </form>
-                        <?php if ($services): ?>
-                        <div style="margin-top:12px;font-size:12.5px;">
-                            <?php foreach ($services as $s): ?>
-                            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
-                                <span><?= htmlspecialchars($s['service_name']) ?> <span class="muted">×<?= (int) $s['quantity'] ?></span></span>
-                                <span class="mono">Rs <?= number_format((float) $s['calculated_charge']) ?></span>
-                            </div>
-                            <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if ($services): ?>
+                    <div class="card" style="margin-top:20px;">
+                        <div class="section-title">Services logged during stay</div>
+                        <div class="section-sub">
+                            Nurse-logged items are already on the bill.
+                            <?= $canRemoveService ? 'Remove anything that should not be charged — the record of it stays.' : '' ?>
                         </div>
-                        <?php endif; ?>
+                        <div style="overflow-x:auto;margin-top:6px;">
+                        <table class="svc-table">
+                            <thead>
+                                <tr>
+                                    <th>When</th><th>Service</th><th>Logged by</th>
+                                    <th style="text-align:right;">Qty</th><th style="text-align:right;">Amount</th>
+                                    <?php if ($canRemoveService): ?><th></th><?php endif; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php $svcTotal = 0; foreach ($services as $s): $off = (int) $s['is_billable'] === 0; if (!$off) { $svcTotal += (float) $s['calculated_charge']; } ?>
+                                <tr<?= $off ? ' class="svc-off"' : '' ?>>
+                                    <td class="mono"><?= date('d/m H:i', strtotime($s['logged_at'])) ?></td>
+                                    <td>
+                                        <?= htmlspecialchars($s['service_name']) ?>
+                                        <?php if ($off): ?><span class="svc-tag rm">Removed</span><?php endif; ?>
+                                        <?php if (!empty($s['clinical_note'])): ?><div class="muted" style="font-size:11.5px;">&#8627; <?= htmlspecialchars($s['clinical_note']) ?></div><?php endif; ?>
+                                    </td>
+                                    <td class="muted"><?= htmlspecialchars($s['by_name'] ?: '—') ?></td>
+                                    <td class="mono" style="text-align:right;"><?= $s['charge_type'] === 'HOURLY' ? ((int) $s['duration_minutes']) . ' min' : (int) $s['quantity'] ?></td>
+                                    <td class="mono" style="text-align:right;"><?= $off ? '—' : number_format((float) $s['calculated_charge'], 2) ?></td>
+                                    <?php if ($canRemoveService): ?>
+                                    <td style="text-align:right;">
+                                        <?php if (!$locked): ?>
+                                        <form method="POST" action="ipd_discharge.php?id=<?= $admissionId ?>" style="display:inline;">
+                                            <input type="hidden" name="action" value="<?= $off ? 'restore_service' : 'remove_service' ?>">
+                                            <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
+                                            <button type="submit" class="svc-act<?= $off ? '' : ' danger' ?>"><?= $off ? 'Restore' : 'Remove' ?></button>
+                                        </form>
+                                        <?php else: ?><span class="muted">&mdash;</span><?php endif; ?>
+                                    </td>
+                                    <?php endif; ?>
+                                </tr>
+                                <?php endforeach; ?>
+                                <tr class="svc-total">
+                                    <td colspan="4">Services total</td>
+                                    <td class="mono" style="text-align:right;"><?= number_format($svcTotal, 2) ?></td>
+                                    <?php if ($canRemoveService): ?><td></td><?php endif; ?>
+                                </tr>
+                            </tbody>
+                        </table>
+                        </div>
+                        <a class="btn secondary" style="margin-top:12px;display:inline-block;" href="ipd_stay_report.php?id=<?= $admissionId ?>" target="_blank">Print stay report</a>
                     </div>
                     <?php endif; ?>
 
