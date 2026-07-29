@@ -51,10 +51,14 @@ if ($day !== null && $day > date('Y-m-d')) { $day = date('Y-m-d'); }
 $q = trim($_GET['q'] ?? '');
 
 // DISCHARGE_IN_PROGRESS stays on `current` — it is unbilled work, not history.
+// A finalized discharge leaves `current` IMMEDIATELY: the tab says "currently
+// admitted", so a settled patient sitting there reads as still occupying a bed.
+// (This used to keep same-day discharges on `current` until midnight for
+// paperwork convenience, which made the count wrong.)
 if ($isPast) {
     $where  = "a.status = 'DISCHARGED' AND a.discharge_finalized_at IS NOT NULL";
 } else {
-    $where  = "(a.status <> 'DISCHARGED' OR a.discharge_finalized_at >= CURDATE())";
+    $where  = "(a.status <> 'DISCHARGED' OR a.discharge_finalized_at IS NULL)";
 }
 $params = [];
 if ($day !== null) {
@@ -108,6 +112,8 @@ tbody tr:first-child td { border-top: none; }
 .status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
 .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
 .admit-cta { display:flex; justify-content:flex-end; margin-bottom:14px; }
+.file-link { display:block; margin-top:3px; color:var(--text-secondary); font-weight:600; font-size:11.5px; }
+.file-link:hover { color:var(--primary); }
 /* Current / Past toggle + filter bar — kept identical to admissions.php so the
    two admission boards read as one control. Anchors, so each tab is a real URL. */
 .pick-card { padding: 14px 16px; margin-bottom: 14px; }
@@ -214,6 +220,9 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endif; ?>
                         <td>
                             <a class="edit-link" href="ipd_admission.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--primary);font-weight:600;font-size:12.5px;">Manage &rarr;</a>
+                            <?php if ($r['status'] === 'DISCHARGED'): ?>
+                            <a class="edit-link file-link" href="ipd_file.php?id=<?= (int) $r['admission_id'] ?>" target="_blank">Print file</a>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
