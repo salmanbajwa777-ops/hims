@@ -527,7 +527,10 @@ require __DIR__ . '/partials/head.php';
                                     <button class="btn-ghost" type="button" disabled title="Finish the current consultation first">Start</button>
                                 <?php endif; ?>
                             <?php elseif ($st === 'IN_CONSULT'): ?>
-                                <button class="btn-ghost" type="button" disabled title="Note-writing lands in the next phase"><?= icon('pen', 12) ?> Note</button>
+                                <?php // Notes live on My Queue, which owns the note editor and the
+                                      // per-patient history drawer. The console links across rather
+                                      // than carrying a second copy of that UI. ?>
+                                <a class="btn-ghost" href="my_queue.php"><?= icon('pen', 12) ?> Note</a>
                                 <form class="inline-form" method="POST" action="doctor.php">
                                     <input type="hidden" name="action" value="finish_consult">
                                     <input type="hidden" name="visit_id" value="<?= (int) $v['visit_id'] ?>">
@@ -613,7 +616,7 @@ require __DIR__ . '/partials/head.php';
                         </div>
                         <div class="rev-total" style="font-size:12.5px"><span>Revisit rate</span><span class="tnum"><?= number_format($moRevisitRate, 1) ?>% (<?= $moRevisitN ?> / <?= $moConsultN ?>)</span></div>
                         <div class="build-notice" style="margin-top:10px">
-                            Consultation notes &amp; prescriptions land in the next phase — this console runs the live Start &rarr; Finish queue.
+                            Consultation notes and patient history live on <a href="my_queue.php">My Queue</a>. Prescriptions land in a later phase.
                         </div>
                     </div>
                 </div>

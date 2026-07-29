@@ -7,7 +7,9 @@
  * the markup AND its CSS + mobile-drawer JS. Include it INSIDE <div class="app">
  * (it renders the mobile bar, the overlay and the <aside>), after setting:
  *
- *   $dsActive       — 'console' | 'analytics' | 'schedule' | 'patients' | 'profile' (which nav item highlights)
+ *   $dsActive       — 'console' | 'queue' | 'ipd' | 'analytics' | 'schedule' | 'patients' | 'profile'
+ *                     (which nav item highlights). 'console' is doctor.php (the
+ *                     dashboard); 'queue' is my_queue.php (today's patients only).
  *   $dsUserName     — display name for the footer
  *   $dsWaitingCount — today's waiting count for the My Queue badge (0 hides it)
  *
@@ -58,7 +60,7 @@ function ds_icon(string $name): string {
     <div class="nav-group">
         <div class="nav-group-label">Clinical</div>
         <a class="nav-item <?= $dsActive === 'console' ? 'active' : '' ?>" href="doctor.php"><span class="nav-icon"><?= ds_icon('grid') ?></span> <span class="nav-label">My Console</span></a>
-        <a class="nav-item" href="doctor.php"><span class="nav-icon"><?= ds_icon('users') ?></span> <span class="nav-label">My Queue</span><?php if ($dsWaitingCount): ?><span class="count"><?= $dsWaitingCount ?></span><?php endif; ?></a>
+        <a class="nav-item <?= $dsActive === 'queue' ? 'active' : '' ?>" href="my_queue.php"><span class="nav-icon"><?= ds_icon('users') ?></span> <span class="nav-label">My Queue</span><?php if ($dsWaitingCount): ?><span class="count"><?= $dsWaitingCount ?></span><?php endif; ?></a>
         <?php if (function_exists('has_permission') && has_permission('IPD_VIEW_WARD')): ?>
         <a class="nav-item <?= $dsActive === 'ipd' ? 'active' : '' ?>" href="ipd_admissions.php"><span class="nav-icon"><?= ds_icon('bed') ?></span> <span class="nav-label">In-Door (IPD)</span></a>
         <?php endif; ?>
