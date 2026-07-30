@@ -201,5 +201,44 @@ step('refresh_session_permissions($pdo)', function () use ($pdo) {
     return count($_SESSION['permissions'] ?? []) . ' permission(s) in session';
 });
 
-echo "\nIf every step above says OK, the failure is in the HTML render below the\n";
-echo "queries — re-run procedure_master.php itself with display_errors on.\n";
+// ---------------------------------------------------------------------------
+// 7. Render the real page.
+//
+// Every step above passed on the live database, which means the failure is in
+// the HTML render, not the data. So stop probing around it and actually RUN
+// procedure_master.php with errors visible: include it with output buffered and
+// thrown away, so the only thing that reaches the browser is the exception or
+// fatal that the host would otherwise turn into a bare 500.
+//
+// GET only. The page's three POST handlers are skipped because $_SERVER's
+// method is GET here, so this cannot save, delete or re-assign anything.
+// ---------------------------------------------------------------------------
+echo str_repeat('=', 78) . "\n";
+echo "RENDERING procedure_master.php (output discarded, errors shown)\n";
+echo str_repeat('=', 78) . "\n\n";
+
+// The page re-declares dental_fields_from_post() and re-requires the same
+// configs. Those are require_once so they are fine, but the function is a plain
+// declaration -- if this diagnostic ever gets it too, PHP fatals on redeclare.
+// It does not today; noted so it stays that way.
+$GLOBALS['__diag'] = true;
+
+// A fatal inside the include kills the request, so flush what we know first.
+if (function_exists('ob_implicit_flush')) { ob_implicit_flush(false); }
+
+try {
+    ob_start();
+    require __DIR__ . '/../procedure_master.php';
+    $html = ob_get_clean();
+    echo "*** The page rendered with NO error (" . strlen($html) . " bytes).\n\n";
+    echo "So the 500 is NOT reproducible from this admin session. The usual\n";
+    echo "cause is that it depends on the POST that preceded it, or on a\n";
+    echo "different user's session/permission set.\n";
+} catch (Throwable $e) {
+    // ob_get_clean() is skipped on the throw path above, so drop the buffer here.
+    if (ob_get_level() > 0) { ob_end_clean(); }
+    echo "*** THE 500 ***\n\n";
+    echo get_class($e) . ": " . $e->getMessage() . "\n\n";
+    echo "  at " . $e->getFile() . ":" . $e->getLine() . "\n\n";
+    echo "Stack trace:\n" . $e->getTraceAsString() . "\n";
+}
