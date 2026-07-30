@@ -31,114 +31,30 @@ if ($baseRole !== 'DOCTOR' && $baseRole !== 'ADMIN') {
 // which is fine — the page just shows an empty queue).
 $doctorId = (int) $user['id'];
 
-// ---------------- Start / Finish a consultation ----------------
-// Only WAITING -> IN_CONSULT and IN_CONSULT -> DONE are allowed, and only on visits
-// that belong to this doctor today. The WHERE clause enforces both the ownership and
-// the valid prior state, so a stale/replayed POST can't jump states or touch another
-// doctor's visit.
-$flash = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action  = $_POST['action'] ?? '';
-    $visitId = (int) ($_POST['visit_id'] ?? 0);
-
-    if ($visitId > 0 && in_array($action, ['start_consult', 'finish_consult'], true)) {
-        if ($action === 'start_consult') {
-            $upd = $pdo->prepare("
-                UPDATE visits
-                SET consult_status = 'IN_CONSULT', started_at = NOW()
-                WHERE id = ? AND doctor_id = ? AND visit_date = CURDATE() AND consult_status = 'WAITING'
-            ");
-            $upd->execute([$visitId, $doctorId]);
-            $auditAction = 'consult_started';
-            $flash = $upd->rowCount() ? 'Consultation started.' : '';
-        } else {
-            $upd = $pdo->prepare("
-                UPDATE visits
-                SET consult_status = 'DONE', finished_at = NOW()
-                WHERE id = ? AND doctor_id = ? AND visit_date = CURDATE() AND consult_status = 'IN_CONSULT'
-            ");
-            $upd->execute([$visitId, $doctorId]);
-            $auditAction = 'consult_finished';
-            $flash = $upd->rowCount() ? 'Consultation completed.' : '';
-        }
-
-        if ($upd->rowCount()) {
-            audit_log($pdo, $auditAction, "Visit #$visitId ($auditAction)", $_SESSION['user_id']);
-        }
-
-        // Post/redirect/get so a refresh doesn't re-submit the state change.
-        header('Location: doctor.php' . ($flash ? '?done=' . urlencode($flash) : ''));
-        exit;
-    }
-
-    // ---------------- Admit a patient (doctor-initiated) ----------------
-    // A doctor can admit straight from their console. The shared handler admits against
-    // the passed visit (their queue row) and starts the stay clock.
-    if ($action === 'admit_patient') {
-        $result = handle_admit_patient($pdo);
-        if ($result['ok']) {
-            header('Location: admission.php?id=' . (int) $result['admission_id']);
-            exit;
-        }
-        header('Location: doctor.php?admit_error=' . urlencode($result['error']));
-        exit;
-    }
-}
+// Consultation state changes (start/finish) and doctor-initiated admits used to be
+// POSTed from the queue rows that lived on this page. The console is now a launchpad
+// and my_queue.php owns those actions, so this page handles no POSTs at all.
 $flash = trim($_GET['done'] ?? '');
-$admitError = trim($_GET['admit_error'] ?? '');
 
 $mustChangePassword = (bool) $user['must_change_password'];
 $hour = (int) date('G');
 $greeting = $hour < 12 ? 'Good Morning' : ($hour < 17 ? 'Good Afternoon' : 'Good Evening');
 
-// ---------------- Today's queue for this doctor ----------------
-// One row per visit today, patient + consult type joined in. Ordered so the active
-// consultation and those still waiting float to the top (by status), then newest
-// registration first within each group (highest token = latest arrival on top).
-$queueStmt = $pdo->prepare("
-    SELECT v.id AS visit_id, v.token_no, v.token_session, v.consult_status, v.started_at, v.created_at,
-           p.name AS patient_name, p.gender, p.dob, p.mrn,
-           t.label AS type_label, v.consultation_fee_type,
-           a.id AS admission_id, a.admission_type, a.status AS admission_status,
-           b.id AS bill_id, b.status AS bill_status, b.paid_amount
-    FROM visits v
-    JOIN patients p ON p.id = v.patient_id
-    LEFT JOIN doctor_consult_types t ON t.id = v.doctor_consult_type_id
-    LEFT JOIN admissions a ON a.visit_id = v.id
-    LEFT JOIN bills b ON b.visit_id = v.id
-    WHERE v.doctor_id = ? AND v.visit_date = CURDATE()
-    ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_session DESC, v.token_no DESC
+// ---------------- Today's counts for this doctor ----------------
+// The console no longer lists the queue (My Queue owns that), so this is a plain
+// tally per consult status rather than the full per-visit join it used to be.
+$countStmt = $pdo->prepare("
+    SELECT SUM(consult_status = 'WAITING')    AS waiting_n,
+           SUM(consult_status = 'IN_CONSULT') AS in_consult_n,
+           SUM(consult_status = 'DONE')       AS done_n
+    FROM visits
+    WHERE doctor_id = ? AND visit_date = CURDATE()
 ");
-$queueStmt->execute([$doctorId]);
-
-// This doctor's token prefix, resolved once for every row in their queue.
-$myPrefixStmt = $pdo->prepare('SELECT token_prefix FROM users WHERE id = ?');
-$myPrefixStmt->execute([$doctorId]);
-$myTokenPrefix = doctor_token_prefix($myPrefixStmt->fetchColumn() ?: null, $user['name'] ?? '');
-
-// Admit-modal data for the doctor console (doctors can admit from their queue).
-$canDoctorAdmit = has_permission('ADMISSION_ADMIT_PATIENT');
-// Doctors hold RECEPTION_ISSUE_REFUNDS but had no entry point (the receptionist
-// queue 403s them). Surface Invoice/Refund on their own DONE rows. refund.php still
-// enforces that the approver is this visit's doctor, so scope is safe.
-$canDoctorRefund = has_permission('RECEPTION_ISSUE_REFUNDS');
-$admTypes = $admDoctors = $admNurses = [];
-$admTypeLabels = ['ROUTINE' => 'Routine', 'PRIVATE' => 'Private Room', 'LONG_PRIVATE' => 'Long Private'];
-if ($canDoctorAdmit) {
-    $admTypes = $pdo->query('SELECT admission_type, rate_amount, rate_basis FROM admission_rates WHERE is_enabled = 1 ORDER BY FIELD(admission_type,"ROUTINE","PRIVATE","LONG_PRIVATE")')->fetchAll();
-    $admDoctors = $pdo->query("SELECT id, name FROM users WHERE base_role = 'DOCTOR' ORDER BY name")->fetchAll();
-    // Primary nurse is mandatory at admit — the doctor picks one here too.
-    require_once __DIR__ . '/config/nurses.php';
-    $admNurses = nurse_roster($pdo, 'NURSING_ATTEND_SHORT_STAY');
-}
-$visits = $queueStmt->fetchAll();
-
-$waiting   = array_values(array_filter($visits, fn($v) => $v['consult_status'] === 'WAITING'));
-$inConsult = array_values(array_filter($visits, fn($v) => $v['consult_status'] === 'IN_CONSULT'));
-$doneCount = count(array_filter($visits, fn($v) => $v['consult_status'] === 'DONE'));
-
-$current = $inConsult[0] ?? null;         // the one being seen right now (0 or 1)
-$next    = $waiting[0] ?? null;           // next to call in
+$countStmt->execute([$doctorId]);
+$todayCounts = $countStmt->fetch() ?: [];
+$waitingCount   = (int) ($todayCounts['waiting_n'] ?? 0);
+$inConsultCount = (int) ($todayCounts['in_consult_n'] ?? 0);
+$doneCount      = (int) ($todayCounts['done_n'] ?? 0);
 
 // ---------------- This-month analytics snapshot ----------------
 // Small always-on summary under the queue; the full picture (charts, tables,
@@ -251,29 +167,9 @@ try {
     // Dental module not migrated on this database.
 }
 
-function doc_age(array $v): ?int {
-    if (!empty($v['dob'])) {
-        return (new DateTime($v['dob']))->diff(new DateTime())->y;
-    }
-    return null;
-}
-
-// Minutes a still-waiting patient has been in the queue (since their visit row was created).
-function wait_minutes(string $createdAt): int {
-    return max(0, (int) floor((time() - strtotime($createdAt)) / 60));
-}
-
-function icon(string $name, int $size = 18): string {
-    $paths = [
-        'search'  => '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>',
-        'check'   => '<path d="M20 6L9 17l-5-5"/>',
-        'bell'    => '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
-        'play'    => '<polygon points="5 3 19 12 5 21 5 3"/>',
-        'pen'     => '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
-    ];
-    $p = $paths[$name] ?? '';
-    return '<svg width="' . $size . '" height="' . $size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' . $p . '</svg>';
-}
+// doc_age()/wait_minutes()/icon() went with the queue rows they served. The
+// destination cards use ds_icon() from partials/doctor_sidebar.php, so the two
+// nav surfaces draw from one icon set.
 
 $pageTitle = 'Doctor Console';
 $headExtra = <<<CSS
@@ -295,6 +191,15 @@ $headExtra = <<<CSS
    old full-width row of four tall kpi-cards). The 1px background trick draws the
    inner dividers from the wrapper's background color. */
 .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; box-shadow: var(--shadow-sm); }
+/* Leading the page full-width, the four cells sit in one row instead of the
+   rail's 2x2. Falls back to 2x2 when the row-2 columns stack, then to a single
+   column on a phone. */
+.kpi-grid-top { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 18px; }
+@media (max-width: 1200px) { .kpi-grid-top { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .kpi-grid-top { grid-template-columns: 1fr; } }
+html[data-view="mobile"] .kpi-grid-top { grid-template-columns: 1fr 1fr; }
+/* Forced DESKTOP on a phone: keep the single full-width row. */
+html[data-view="desktop"] .kpi-grid-top { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .kpi-cell { background: var(--card); padding: 13px 16px; display: block; color: inherit; }
 a.kpi-cell:hover { background: var(--primary-light); }
 .kpi-value { font-size: 21px; font-weight: 700; line-height: 1.15; }
@@ -381,7 +286,7 @@ require __DIR__ . '/partials/head.php';
     <?php
     $dsActive = 'console';
     $dsUserName = $user['name'];
-    $dsWaitingCount = count($waiting);
+    $dsWaitingCount = $waitingCount;
     // The sidebar's Dental group is specialty-gated; without this a dentist
     // opening the console lost the group they see everywhere else.
     $dsSpecialty = $user['specialty'] ?? '';
@@ -419,6 +324,30 @@ require __DIR__ . '/partials/head.php';
             <div class="flash"><?= htmlspecialchars($flash) ?></div>
             <?php endif; ?>
 
+            <!-- Today + this-month at a glance. Sits above everything else: it's the
+                 first thing a doctor wants off the console, so it leads the page
+                 full-width rather than riding in the right rail. -->
+            <div class="kpi-grid kpi-grid-top">
+                <div class="kpi-cell">
+                    <div class="kpi-value tnum"><?= $waitingCount ?></div>
+                    <div class="kpi-label">Waiting</div>
+                </div>
+                <div class="kpi-cell">
+                    <div class="kpi-value tnum"><?= $doneCount ?></div>
+                    <div class="kpi-label">Seen today</div>
+                </div>
+                <a class="kpi-cell" href="doctor_analytics.php?view=revisits">
+                    <div class="kpi-value tnum"><?= number_format($moRevisitRate, 1) ?>%</div>
+                    <div class="kpi-label">Revisit rate — <?= date('M') ?></div>
+                    <div class="kpi-sub tnum"><?= $moRevisitN ?> of <?= $moConsultN ?> paid consults</div>
+                </a>
+                <a class="kpi-cell" href="doctor_analytics.php?view=revenue">
+                    <div class="kpi-value tnum"><?= number_format($moTotal) ?> <small>PKR</small></div>
+                    <div class="kpi-label">Earned — <?= date('M') ?></div>
+                    <div class="kpi-sub">Your share of paid consults</div>
+                </a>
+            </div>
+
             <!-- Main row: the console is a launchpad. The live queue lives on My Queue
                  (its own page, which owns the note editor and history drawer); here the
                  left column mirrors the sidebar as destination cards, stats in the rail. -->
@@ -440,8 +369,12 @@ require __DIR__ . '/partials/head.php';
                     $navCards = [
                         ['group' => 'Clinical', 'items' => array_values(array_filter([
                             ['href' => 'my_queue.php', 'icon' => 'users', 'label' => 'My Queue',
-                             'desc' => "Today's patients — start, note, finish",
-                             'badge' => count($waiting) ?: null],
+                             // An open consultation is the more urgent fact, so it wins
+                             // the subtitle when there is one.
+                             'desc' => $inConsultCount
+                                 ? 'A consultation is open — finish it on My Queue'
+                                 : "Today's patients — start, note, finish",
+                             'badge' => $waitingCount ?: null],
                             has_permission('IPD_VIEW_WARD')
                                 ? ['href' => 'ipd_admissions.php', 'icon' => 'bed', 'label' => 'In-Door (IPD)',
                                    'desc' => 'Admitted patients and daily rounds'] : null,
@@ -520,27 +453,6 @@ require __DIR__ . '/partials/head.php';
                 $moMax = max(1.0, $moFull, $moRev);
                 ?>
                 <div class="stack">
-                    <div class="kpi-grid">
-                        <div class="kpi-cell">
-                            <div class="kpi-value tnum"><?= count($waiting) ?></div>
-                            <div class="kpi-label">Waiting</div>
-                        </div>
-                        <div class="kpi-cell">
-                            <div class="kpi-value tnum"><?= $doneCount ?></div>
-                            <div class="kpi-label">Seen today</div>
-                        </div>
-                        <a class="kpi-cell" href="doctor_analytics.php?view=revisits">
-                            <div class="kpi-value tnum"><?= number_format($moRevisitRate, 1) ?>%</div>
-                            <div class="kpi-label">Revisit rate — <?= date('M') ?></div>
-                            <div class="kpi-sub tnum"><?= $moRevisitN ?> of <?= $moConsultN ?> paid consults</div>
-                        </a>
-                        <a class="kpi-cell" href="doctor_analytics.php?view=revenue">
-                            <div class="kpi-value tnum"><?= number_format($moTotal) ?> <small>PKR</small></div>
-                            <div class="kpi-label">Earned — <?= date('M') ?></div>
-                            <div class="kpi-sub">Your share of paid consults</div>
-                        </a>
-                    </div>
-
                     <div class="card">
                         <div class="rail-title"><span>Earnings — <?= date('F') ?></span><a class="card-link" href="doctor_analytics.php?view=revenue">Full chart &rarr;</a></div>
                         <div class="rev-row">
@@ -654,10 +566,8 @@ require __DIR__ . '/partials/head.php';
         </div>
     </div>
 </div>
-<?php if ($canDoctorAdmit) { require __DIR__ . '/partials/admit_modal.php'; } ?>
-<?php if ($admitError): ?>
-<script>window.addEventListener('load', function () { alert(<?= json_encode($admitError) ?>); });</script>
-<?php endif; ?>
-<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
+<?php /* The admit modal (and the date-picker it needed) lived here to serve the
+   queue rows' Admit button. With the queue gone the console raises no admissions;
+   my_queue.php and the admissions pages still carry the modal. */ ?>
 </body>
 </html>
