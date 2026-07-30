@@ -106,10 +106,8 @@ $admDetail = $admDetail->fetchAll();
 $pageTitle = 'Discount Report';
 $headExtra = <<<CSS
 <style>
-.header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
-.header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+/* The page header styles are gone with the header itself — the shared
+   app bar brings its own from assets/app.css. */
 
 .month-form { display: flex; align-items: center; gap: 10px; }
 .month-form input[type=month] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
@@ -136,13 +134,9 @@ require __DIR__ . '/partials/head.php';
 $navActive = 'discount_report';
 require __DIR__ . '/partials/sidebar.php';
 ?>
-        <header class="header">
-            <div class="page-title" style="font-size:16px;">Discount Report</div>
-            <div class="header-right">
-                <span class="header-date"><?= date('D, d/m/Y') ?></span>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
+        <?php /* The page's own mini-header (title + date + Logout) is gone: the
+                 shared app bar above carries date and Logout on every page,
+                 and the title is repeated in .page-head just below. */ ?>
 
         <div class="content">
             <div class="page-head">

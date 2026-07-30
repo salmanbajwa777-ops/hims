@@ -533,22 +533,12 @@ $headExtra = <<<CSS
 CSS;
 require __DIR__ . '/partials/head.php';
 $navActive = 'expenses';
+/* This page used to branch on role: staff got the app bar, admins got an
+   inline-styled header of their own. Both are gone — sidebar.php emits the same
+   bar for every role, which is the point. The page title survives in .page-head
+   below, and date/Logout live in the bar. */
 require __DIR__ . '/partials/sidebar.php';
-if (!$isAdmin) {
-    $qhActive = 'expenses';
-    $qhBrand = false; // the sidebar already carries the HIMS mark
-    require __DIR__ . '/partials/quick_header.php';
-}
 ?>
-        <?php if ($isAdmin): ?>
-        <header class="header" style="height:72px;position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:rgba(255,255,255,.80);backdrop-filter:blur(18px);border-bottom:1px solid var(--border);">
-            <div class="page-title" style="font-size:16px;">Expenses</div>
-            <div style="display:flex;align-items:center;gap:18px;margin-left:auto;">
-                <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap;"><?= date('D, d/m/Y') ?></span>
-                <a style="font-size:13px;color:var(--text-secondary);font-weight:500;" href="logout.php">Logout</a>
-            </div>
-        </header>
-        <?php endif; ?>
 
         <div class="content">
             <div class="page-head">

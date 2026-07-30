@@ -423,13 +423,9 @@ $headExtra = <<<CSS
 .status-pill.teal  { background: var(--primary-light); color: var(--primary-dark); }
 .status-pill.grey  { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 
-/* Header (same look as doctor.php) */
-.header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.82); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
-.header-title { font-size: 16px; font-weight: 700; }
-.header-right { display: flex; align-items: center; gap: 16px; }
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; }
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+/* The bespoke page header is gone — partials/quick_header.php is the app bar
+   now, and its styles ship in assets/app.css. The page title and the admin
+   doctor-picker moved into .content as a .welcome-line. */
 
 /* View tabs */
 .view-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -533,9 +529,16 @@ require __DIR__ . '/partials/head.php';
     ?>
 
     <div class="main">
-        <header class="header">
-            <div class="header-title">My Reports<?= $isAdmin ? ' — ' . htmlspecialchars($doctorName) : '' ?></div>
-            <div class="header-right">
+        <?php require __DIR__ . '/partials/quick_header.php'; ?>
+
+        <div class="content">
+
+            <?php /* The page title and the admin's doctor picker used to sit in
+                     this page's own <header>. They are page controls, not
+                     chrome — the app bar above is identical on every screen, so
+                     anything specific to THIS screen belongs down here. */ ?>
+            <div class="welcome-line">
+                <h1>My Reports<?= $isAdmin ? ' — ' . htmlspecialchars($doctorName) : '' ?></h1>
                 <?php if ($isAdmin && $doctorList): ?>
                 <form class="doc-picker" method="GET" action="doctor_analytics.php">
                     <input type="hidden" name="view" value="<?= htmlspecialchars($view) ?>">
@@ -546,13 +549,7 @@ require __DIR__ . '/partials/head.php';
                     </select>
                 </form>
                 <?php endif; ?>
-                <span class="header-date tnum"><?= date('D, d/m/Y') ?></span>
-                <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= htmlspecialchars(strtoupper(substr($user['name'], 0, 1))) ?></a>
-                <a class="logout-link" href="logout.php">Logout</a>
             </div>
-        </header>
-
-        <div class="content">
 
             <div class="view-tabs">
                 <a class="view-tab <?= $view === 'revenue' ? 'active' : '' ?>" href="<?= qs_view('revenue') ?>">Revenue</a>

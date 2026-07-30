@@ -290,10 +290,8 @@ $pendingBills = $pdo->query("
 $pageTitle = 'Checkout & Billing';
 $headExtra = <<<CSS
 <style>
-.header { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; border-bottom: 1px solid var(--border); background: #fff; }
-.header-right { display: flex; align-items: center; gap: 16px; }
-.header-date { font-size: 12.5px; color: var(--text-muted); }
-.logout-link { font-size: 12.5px; color: var(--text-muted); text-decoration: none; }
+/* The page header styles are gone with the header itself — the shared
+   app bar brings its own from assets/app.css. */
 .status-pill.draft { background: #FEF3C7; color: #92400E; }
 .status-pill.finalized { background: var(--primary-light); color: var(--primary-dark); }
 .status-pill.paid { background: var(--green-bg); color: var(--green-text); }
@@ -313,13 +311,9 @@ require __DIR__ . '/partials/head.php';
 $navActive = 'checkout';
 require __DIR__ . '/partials/sidebar.php';
 ?>
-        <header class="header">
-            <div class="page-title" style="font-size:16px;">Checkout &amp; Billing</div>
-            <div class="header-right">
-                <span class="header-date"><?= date('D, d/m/Y') ?></span>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
+        <?php /* The page's own mini-header (title + date + Logout) is gone: the
+                 shared app bar above carries date and Logout on every page,
+                 and the title is repeated in .page-head just below. */ ?>
 
         <div class="content">
             <div class="page-head">

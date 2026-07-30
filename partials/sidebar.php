@@ -63,6 +63,7 @@ if ($sbBaseRole === 'DOCTOR') {
     echo '<div class="app">';
     require __DIR__ . '/doctor_sidebar.php';
     echo '<div class="main">';
+    require __DIR__ . '/quick_header.php'; // same app bar as every other role
     return; // caller closes .main and .app exactly as with the shared nav
 }
 
@@ -405,6 +406,16 @@ $sbRenderNav = function () use ($sbGroups, $sbIsAdmin, $sbBaseRole, $navActive, 
     </aside>
 
     <div class="main">
+<?php
+/* The application bar, on EVERY page that has a sidebar — which is every
+   logged-in page. It used to be opt-in: 15 pages required it by hand and the
+   other 27 simply had no top bar, so search, alerts and logout came and went
+   as you moved around the product. Including it here makes it structural: a
+   page cannot lose the bar without also losing its navigation. The pages that
+   still require it themselves are harmless — quick_header.php renders once per
+   request and ignores later includes. */
+require __DIR__ . '/quick_header.php';
+?>
 <?php /* caller closes .main and .app */ ?>
 
 <script>

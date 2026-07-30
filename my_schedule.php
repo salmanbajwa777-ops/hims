@@ -191,6 +191,10 @@ require __DIR__ . '/partials/head.php';
     ?>
 
     <div class="main">
+        <?php /* This page had no top bar at all — a doctor opening their
+                 schedule lost search, alerts and logout entirely. */ ?>
+        <?php require __DIR__ . '/partials/quick_header.php'; ?>
+
         <div class="content">
 
             <?php if ($saved): ?><div class="alert success">Weekly schedule saved.</div><?php endif; ?>

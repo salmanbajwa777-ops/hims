@@ -288,22 +288,8 @@ $headExtra = <<<CSS
    bespoke components (queue-first layout: header greeting, KPI grid, queue w/
    inline "now serving" row, right-rail month summaries). */
 .tnum { font-variant-numeric: tabular-nums; }
-
-/* Header — carries the greeting now (Option B: no hero banner below) */
-.header { height: 64px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: var(--card); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
-.header-greet .greet-line { font-size: 12px; color: var(--text-muted); }
-.header-greet .greet-name { font-size: 15.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
-.search-box { flex: 1; max-width: 420px; margin: 0 32px; position: relative; }
-.search-box input { width: 100%; padding: 9px 14px 9px 38px; border-radius: var(--radius-input); border: 1px solid var(--border); background: var(--bg); font-size: 13.5px; color: var(--text); }
-.search-box input:focus { outline: none; border-color: var(--primary); background: #fff; }
-.search-box .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-muted); display: flex; }
-.search-box .icon svg { width: 15px; height: 15px; }
-.header-right { display: flex; align-items: center; gap: 16px; }
-.icon-btn { width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border); background: #fff; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); position: relative; }
-.icon-btn svg { width: 17px; height: 17px; }
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; }
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+/* The bespoke page header is gone — partials/quick_header.php is the app bar
+   now, and its styles ship in assets/app.css. */
 
 /* Compact KPI grid — dense 2x2 block in the right rail (Option B: replaces the
    old full-width row of four tall kpi-cards). The 1px background trick draws the
@@ -402,17 +388,11 @@ a.kpi-cell:hover { background: var(--primary-light); }
    the user has forced Mobile view from the sidebar (html[data-view="mobile"]),
    so forced-mobile-on-a-monitor gets the same compact console. */
 @media (max-width: 720px) {
-    .header { height: auto; padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
-    .search-box { order: 3; margin: 0; max-width: none; flex-basis: 100%; }
-    .header-date { display: none; }
     .q-item { grid-template-columns: 34px 1fr; }
     .q-item .q-right { grid-column: 2; justify-content: flex-start; margin-top: 4px; }
     .q-item .wait-time { min-width: 0; text-align: left; order: 3; margin-left: auto; }
 }
 html[data-view="mobile"] .row-2 { grid-template-columns: 1fr; }
-html[data-view="mobile"] .header { height: auto; padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
-html[data-view="mobile"] .search-box { order: 3; margin: 0; max-width: none; flex-basis: 100%; }
-html[data-view="mobile"] .header-date { display: none; }
 html[data-view="mobile"] .q-item { grid-template-columns: 34px 1fr; }
 html[data-view="mobile"] .q-item .q-right { grid-column: 2; justify-content: flex-start; margin-top: 4px; }
 html[data-view="mobile"] .q-item .wait-time { min-width: 0; text-align: left; order: 3; margin-left: auto; }
@@ -432,24 +412,24 @@ require __DIR__ . '/partials/head.php';
     ?>
 
     <div class="main">
-        <header class="header">
-            <div class="header-greet">
-                <div class="greet-line"><?= $greeting ?>, <?= date('l, d/m') ?></div>
-                <div class="greet-name"><?= htmlspecialchars($user['name']) ?></div>
-            </div>
-            <form class="search-box" method="GET" action="patients.php">
-                <span class="icon"><?= icon('search') ?></span>
-                <input type="text" name="q" placeholder="Search a patient by name, phone or MRN…">
-            </form>
-            <div class="header-right">
-                <?php $nbClass = 'icon-btn'; require __DIR__ . '/partials/notification_bell.php'; ?>
-                <span class="header-date tnum"><?= date('D, d/m/Y') ?></span>
-                <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= htmlspecialchars(strtoupper(substr($user['name'], 0, 1))) ?></a>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
+        <?php
+        /* The shared application bar — identical to the one every other role
+           sees. This page used to hand-roll its own <header class="header">
+           with a greeting block; three doctor pages each had their own copy and
+           the front desk had a fourth, so the top of the screen changed shape
+           as you moved between them. The greeting has not been lost: the
+           welcome line in .content below still carries it, which is where a
+           greeting belongs anyway. */
+        require __DIR__ . '/partials/quick_header.php';
+        ?>
 
         <div class="content">
+
+            <div class="welcome-line">
+                <h1><?= $greeting ?>, <?= htmlspecialchars($user['name']) ?></h1>
+                <span class="welcome-date"><?= date('l, d/m/Y') ?></span>
+            </div>
+
 
             <?php if ($mustChangePassword): ?>
             <div class="nag-banner">

@@ -207,18 +207,8 @@ $headExtra = <<<CSS
 /* Queue page. Full-width single column — no right rail, because this page
    deliberately carries no money cards (that's the console's job). app.css
    supplies tokens, .app/.main/.content, .card, .btn* and .status-pill. */
-.header { display: flex; align-items: center; gap: 16px; padding: 0 24px; height: 64px;
-          background: var(--card); border-bottom: 1px solid var(--border); }
-.header-greet .greet-line { font-size: 12px; color: var(--text-muted); }
-.header-greet .greet-name { font-size: 15px; font-weight: 700; }
-.search-box { position: relative; flex: 1; max-width: 420px; margin: 0 auto; }
-.search-box input { width: 100%; padding: 9px 12px 9px 36px; border: 1px solid var(--border);
-                    border-radius: 999px; background: var(--bg); font-size: 13px; }
-.search-box .icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
-.header-right { display: flex; align-items: center; gap: 14px; margin-left: auto; }
-.avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff;
-          display: grid; place-items: center; font-weight: 700; font-size: 13px; }
-.logout-link { font-size: 13px; color: var(--text-muted); }
+/* The bespoke page header is gone — partials/quick_header.php is the app bar
+   now, and its styles ship in assets/app.css. */
 
 .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .section-title { font-size: 15px; font-weight: 700; }
@@ -368,14 +358,10 @@ $headExtra = <<<CSS
    button would take the whole row and push its siblings down, which is the
    orphaned-button problem this layout exists to remove. */
 @media (max-width: 720px) {
-    .header { height: auto; padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
-    .search-box { order: 3; margin: 0; max-width: none; flex-basis: 100%; }
     .q-item { grid-template-columns: 44px 1fr; gap: 11px; }
     .q-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .q-actions .q-span-2 { grid-column: auto; }
 }
-html[data-view="mobile"] .header { height: auto; padding: 10px 16px; flex-wrap: wrap; gap: 8px; }
-html[data-view="mobile"] .search-box { order: 3; margin: 0; max-width: none; flex-basis: 100%; }
 html[data-view="mobile"] .q-item { grid-template-columns: 44px 1fr; gap: 11px; }
 html[data-view="mobile"] .q-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 html[data-view="mobile"] .q-actions .q-span-2 { grid-column: auto; }
@@ -394,21 +380,9 @@ require __DIR__ . '/partials/head.php';
     ?>
 
     <div class="main">
-        <header class="header">
-            <div class="header-greet">
-                <div class="greet-line">My Queue — <?= date('l, d/m') ?></div>
-                <div class="greet-name"><?= htmlspecialchars($user['name']) ?></div>
-            </div>
-            <form class="search-box" method="GET" action="patients.php">
-                <span class="icon"><?= mq_icon('search') ?></span>
-                <input type="text" name="q" placeholder="Search a patient by name, phone or MRN…">
-            </form>
-            <div class="header-right">
-                <?php $nbClass = 'icon-btn'; require __DIR__ . '/partials/notification_bell.php'; ?>
-                <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= htmlspecialchars(strtoupper(substr($user['name'], 0, 1))) ?></a>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
+        <?php /* Shared app bar. The greeting block it replaced said "My Queue"
+                 immediately above a card whose own title is "My Queue". */ ?>
+        <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
         <div class="content">
 

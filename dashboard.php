@@ -371,72 +371,12 @@ $headExtra = <<<CSS
     gap: 24px;
 }
 
-/* ---------- Header ---------- */
-.header {
-    height: 72px;
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 32px;
-    background: rgba(255,255,255,.80);
-    backdrop-filter: blur(18px);
-    border-bottom: 1px solid var(--border);
-}
-.search-box {
-    flex: 1;
-    max-width: 420px;
-    margin: 0 32px;
-    position: relative;
-}
-.search-box input {
-    width: 100%;
-    padding: 9px 14px 9px 38px;
-    border-radius: var(--radius-input);
-    border: 1px solid var(--border);
-    background: #F8FAFC;
-    font-size: 13.5px;
-    color: var(--text);
-}
-.search-box input:focus { outline: none; border-color: var(--primary); background: #fff; }
-.search-box .icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-muted); display: flex; }
-.search-box .icon svg { width: 15px; height: 15px; }
-.search-box .kbd {
-    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-    font-size: 11px; color: var(--text-muted); background: #fff; border: 1px solid var(--border);
-    border-radius: 6px; padding: 2px 6px;
-}
-.header-right { display: flex; align-items: center; gap: 18px; }
-.icon-btn {
-    width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border);
-    background: #fff; display: flex; align-items: center; justify-content: center;
-    color: var(--text-secondary); position: relative; cursor: pointer;
-}
-.icon-btn svg { width: 17px; height: 17px; }
-.icon-btn .dot {
-    position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--red);
-    border: 1.5px solid #fff;
-}
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.avatar {
-    width: 38px; height: 38px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-    color: #fff; display: flex; align-items: center; justify-content: center;
-    font-weight: 600; font-size: 13px;
-}
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+/* The page header is gone: partials/quick_header.php (emitted by the sidebar)
+   is the app bar now, and it brings its own styles from app.css. These 56
+   lines styled a header this page no longer renders. */
 
-/* ---------- Welcome line ---------- */
-.welcome-line {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 4px 14px;
-}
-.welcome-line h1 { font-size: 26px; font-weight: 700; color: var(--text); margin: 0; }
-.welcome-date { font-size: 13.5px; color: var(--text-muted); }
+/* .welcome-line now ships in assets/app.css — the doctor console shows the
+   same greeting, and one definition beats two. */
 
 /* ---------- Section shell ---------- */
 .section-title { font-size: 18px; font-weight: 600; margin-bottom: 2px; }
@@ -601,22 +541,12 @@ tabular { font-variant-numeric: tabular-nums; }
 CSS;
 require __DIR__ . '/partials/head.php';
 $navActive = 'dashboard';
+/* partials/sidebar.php now emits the shared application bar itself, so the
+   72px translucent <header class="header"> this page used to carry by hand is
+   gone. It was the third of four separate top-bar implementations; its search
+   box wasn't even wired to a form action. */
 require __DIR__ . '/partials/sidebar.php';
 ?>
-        <header class="header">
-            <div class="search-box">
-                <span class="icon"><?= icon('search') ?></span>
-                <input type="text" placeholder="Search patients, invoices, staff...">
-                <span class="kbd">Ctrl K</span>
-            </div>
-
-            <div class="header-right">
-                <?php $nbClass = 'icon-btn'; require __DIR__ . '/partials/notification_bell.php'; ?>
-                <span class="header-date"><?= date('D, d/m/Y') ?></span>
-                <a class="avatar" href="profile.php" title="My Profile" style="text-decoration:none;"><?= strtoupper(substr($firstName, 0, 1)) ?></a>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
 
         <div class="content">
 

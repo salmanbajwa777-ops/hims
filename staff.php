@@ -552,10 +552,8 @@ function roleBadgeClass(string $role): string {
 $pageTitle = 'Staff & Doctors';
 $headExtra = <<<CSS
 <style>
-.header { height: 72px; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; background: rgba(255,255,255,.80); backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); }
-.header-right { display: flex; align-items: center; gap: 18px; margin-left: auto; }
-.header-date { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
-.logout-link { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+/* The page header styles are gone with the header itself — the shared
+   app bar brings its own from assets/app.css. */
 
 .doc-count-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 .doc-count-link.none { color: var(--text-muted); font-weight: 500; cursor: default; }
@@ -654,13 +652,9 @@ require __DIR__ . '/partials/head.php';
 $navActive = 'staff';
 require __DIR__ . '/partials/sidebar.php';
 ?>
-        <header class="header">
-            <div class="page-title" style="font-size:16px;">Staff &amp; Doctors</div>
-            <div class="header-right">
-                <span class="header-date"><?= date('D, d/m/Y') ?></span>
-                <a class="logout-link" href="logout.php">Logout</a>
-            </div>
-        </header>
+        <?php /* The page's own mini-header (title + date + Logout) is gone: the
+                 shared app bar above carries date and Logout on every page,
+                 and the title is repeated in .page-head just below. */ ?>
 
         <div class="content">
             <div class="page-head">

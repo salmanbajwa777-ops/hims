@@ -321,7 +321,12 @@ button { font-family: inherit; }
     position: sticky; top: 0; z-index: 20;
 }
 .appbar .search {
-    flex: 1; max-width: 560px; display: flex; align-items: center; gap: 8px;
+    /* min-width:0 is load-bearing, not decoration: without it the flex item
+       refuses to shrink below the intrinsic width of its placeholder text, so
+       on a phone the search box shoves the avatar and Logout off the right
+       edge — logging out becomes impossible. */
+    flex: 1 1 0; min-width: 0; max-width: 560px;
+    display: flex; align-items: center; gap: 8px;
     background: var(--card-alt); border: 1px solid var(--border);
     border-radius: var(--radius-input); padding: 7px 12px;
     font-size: var(--fs-btn); color: var(--text-muted);
@@ -354,6 +359,26 @@ button { font-family: inherit; }
     font-weight: 600; font-size: var(--fs-btn);
 }
 .appbar-logout { font-size: var(--fs-btn); color: var(--text-secondary); font-weight: 500; white-space: nowrap; }
+
+/* Narrow screens: drop the date first — it is the only thing in the bar that
+   is purely informational. Search, alerts, profile and Logout are all actions
+   and must survive at any width. Matches the media query the old per-page
+   headers used, plus the forced-Mobile view toggle, which needs !important to
+   beat the width-based rule when a desktop user pins Mobile. */
+@media (max-width: 720px) {
+    .appbar { gap: 10px; padding: 8px 14px; }
+    .appbar-date { display: none; }
+}
+html[data-view="mobile"] .appbar { gap: 10px !important; padding: 8px 14px !important; }
+html[data-view="mobile"] .appbar-date { display: none !important; }
+
+/* ---------- Welcome line ----------
+   The page greeting, now that the app bar carries identity instead of a
+   greeting block. dashboard.php defined this locally; the doctor console needs
+   the same thing, so it lives here rather than being copied a second time. */
+.welcome-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; }
+.welcome-line h1 { font-size: 26px; font-weight: 700; color: var(--text); margin: 0; }
+.welcome-date { font-size: 13.5px; color: var(--text-muted); }
 
 /* ---------- Card / section ---------- */
 .card {
