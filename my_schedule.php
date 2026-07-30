@@ -187,6 +187,9 @@ require __DIR__ . '/partials/head.php';
     <?php
     $dsActive = 'schedule';
     $dsUserName = $user['name'];
+    // The sidebar's Dental group is specialty-gated; without this a dentist
+    // lost the group here that they see on every other page.
+    $dsSpecialty = $user['specialty'] ?? '';
     require __DIR__ . '/partials/doctor_sidebar.php';
     ?>
 

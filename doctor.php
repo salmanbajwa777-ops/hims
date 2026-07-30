@@ -311,47 +311,32 @@ a.kpi-cell:hover { background: var(--primary-light); }
 .row-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; align-items: start; }
 .stack { display: flex; flex-direction: column; gap: 18px; }
 
-/* Queue — flush edge-to-edge rows; the card that hosts it drops its padding */
-.q-card { padding: 0; overflow: hidden; }
-.q-card .section-head { padding: 14px 20px 12px; border-bottom: 1px solid var(--border); margin-bottom: 0; }
-.q-count-pills { display: flex; gap: 6px; }
-/* section-head carries the divider below it, so the first row draws no border-top
-   (.section-head + .q-item, not :first-of-type — the head is also a div sibling) */
-.q-item { display: grid; grid-template-columns: 40px 1fr auto; gap: 13px; align-items: center; padding: 11px 20px; border-top: 1px solid var(--border); }
-.section-head + .q-item { border-top: none; }
-/* "Now serving" as a highlighted first row instead of a separate side panel */
-.q-item.serving { background: linear-gradient(90deg, var(--primary-light), transparent); border-left: 3px solid var(--primary); padding-left: 17px; }
-.q-item.serving .q-token { background: var(--primary); color: #fff; }
-/* Holds a code ("SB-1"), not a bare number, so width grows with the text off a
-   min-width instead of being a fixed square — "HS-12" must not clip. */
-.q-token { min-width: 48px; padding: 0 8px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; white-space: nowrap; background: var(--primary-light); color: var(--primary-dark); }
-.q-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.q-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 1px 7px; border-radius: 6px; background: rgba(26,127,126,.12); color: var(--primary); }
-/* Free follow-up: green, reads as "no fee" not "unpaid, chase it". */
-.q-tag.q-tag-free { background: #DCFCE7; color: #166534; }
-/* Discounted revisit (50%/75%): neutral amber so it's distinct from full-fee. */
-.q-tag.q-tag-revisit { background: #FEF3C7; color: #92400E; }
-/* Admitted stay: distinct blue so an admission never reads like a plain consult. */
-.q-tag.q-tag-admit { background: #DBEAFE; color: #1E40AF; }
-.q-meta { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
-.q-right { display: flex; align-items: center; gap: 12px; }
+/* Destination cards — the console's launchpad, mirroring the sidebar groups.
+   Two per row on desktop, one per row once the rail stacks underneath. */
+.nav-card-group { margin-bottom: 18px; }
+.nav-card-group:last-child { margin-bottom: 0; }
+.nav-card-group-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.nav-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.nav-card { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-sm); color: inherit; text-decoration: none; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+a.nav-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md, var(--shadow-sm)); transform: translateY(-1px); }
+.nav-card.disabled { opacity: .55; cursor: default; box-shadow: none; }
+.nav-card-icon { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--primary-light); color: var(--primary-dark); }
+.nav-card-icon svg { width: 19px; height: 19px; }
+.nav-card-body { min-width: 0; display: block; }
+.nav-card-label { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.nav-card-badge { background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 7px; border-radius: 20px; }
+.nav-card-desc { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+@media (max-width: 560px) { .nav-card-grid { grid-template-columns: 1fr; } }
+html[data-view="mobile"] .nav-card-grid { grid-template-columns: 1fr; }
+
 .status-pill { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
 .status-pill.waiting { background: #FFFBEB; color: #92400E; }
 .status-pill.in-consult { background: #ECFDF5; color: #047857; }
 .status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
-.wait-time { font-size: 12px; color: var(--text-muted); min-width: 54px; text-align: right; }
 .btn-primary { background: var(--primary); color: #fff; border: none; font-weight: 600; font-size: 12.5px; padding: 8px 14px; border-radius: 10px; display: inline-flex; align-items: center; gap: 6px; transition: background .15s ease; }
 .btn-primary:hover { background: var(--primary-dark); }
 .btn-primary svg { width: 12px; height: 12px; }
 .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); font-weight: 600; font-size: 12.5px; padding: 7px 13px; border-radius: 10px; }
-.inline-form { display: inline; }
-.empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
-
-/* Live pulse dot next to the "now serving" row's pill */
-.pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--green); position: relative; flex: 0 0 auto; }
-.pulse::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--green); animation: ring 1.8s ease-out infinite; }
-@keyframes ring { 0% { transform: scale(.6); opacity: .8; } 100% { transform: scale(1.6); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .pulse::after { animation: none; } }
 
 .mrn { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); }
 .nag-banner { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 14px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13.5px; color: #92400E; }
@@ -384,18 +369,7 @@ a.kpi-cell:hover { background: var(--primary-light); }
 .card-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 
 @media (max-width: 1200px) { .row-2 { grid-template-columns: 1fr; } }
-/* Mobile header + queue rows — fire on a real narrow screen (<=720px) AND when
-   the user has forced Mobile view from the sidebar (html[data-view="mobile"]),
-   so forced-mobile-on-a-monitor gets the same compact console. */
-@media (max-width: 720px) {
-    .q-item { grid-template-columns: 34px 1fr; }
-    .q-item .q-right { grid-column: 2; justify-content: flex-start; margin-top: 4px; }
-    .q-item .wait-time { min-width: 0; text-align: left; order: 3; margin-left: auto; }
-}
 html[data-view="mobile"] .row-2 { grid-template-columns: 1fr; }
-html[data-view="mobile"] .q-item { grid-template-columns: 34px 1fr; }
-html[data-view="mobile"] .q-item .q-right { grid-column: 2; justify-content: flex-start; margin-top: 4px; }
-html[data-view="mobile"] .q-item .wait-time { min-width: 0; text-align: left; order: 3; margin-left: auto; }
 /* Forced DESKTOP on a phone: keep the two-column console (don't collapse). */
 html[data-view="desktop"] .row-2 { grid-template-columns: 1.6fr 1fr; }
 </style>
@@ -408,6 +382,9 @@ require __DIR__ . '/partials/head.php';
     $dsActive = 'console';
     $dsUserName = $user['name'];
     $dsWaitingCount = count($waiting);
+    // The sidebar's Dental group is specialty-gated; without this a dentist
+    // opening the console lost the group they see everywhere else.
+    $dsSpecialty = $user['specialty'] ?? '';
     require __DIR__ . '/partials/doctor_sidebar.php';
     ?>
 
@@ -442,98 +419,98 @@ require __DIR__ . '/partials/head.php';
             <div class="flash"><?= htmlspecialchars($flash) ?></div>
             <?php endif; ?>
 
-            <!-- Main row: queue-first (Option B). The queue owns the left column with the
-                 active consultation as a highlighted first row; stats live in the right rail. -->
+            <!-- Main row: the console is a launchpad. The live queue lives on My Queue
+                 (its own page, which owns the note editor and history drawer); here the
+                 left column mirrors the sidebar as destination cards, stats in the rail. -->
             <div class="row-2">
 
-                <!-- My Queue -->
-                <div class="card q-card">
-                    <div class="section-head">
+                <!-- Destination cards — one per sidebar nav item, same gating as
+                     partials/doctor_sidebar.php so the two never disagree. -->
+                <div>
+                    <div class="section-head" style="margin-bottom:12px">
                         <div>
-                            <div class="section-title">My Queue</div>
-                            <div class="section-sub">Patients registered for you today, in token order</div>
-                        </div>
-                        <div class="q-count-pills">
-                            <?php if ($current): ?><span class="status-pill in-consult">1 in consult</span><?php endif; ?>
-                            <span class="status-pill waiting"><?= count($waiting) ?> waiting</span>
+                            <div class="section-title">Where to next</div>
+                            <div class="section-sub">Everything in your sidebar, one tap away</div>
                         </div>
                     </div>
 
-                    <?php if (empty($visits)): ?>
-                        <div class="empty-state">No patients registered for you today yet.<br>New registrations for you will appear here.</div>
-                    <?php else: foreach ($visits as $v): $age = doc_age($v); $st = $v['consult_status']; ?>
-                    <div class="q-item<?= $st === 'IN_CONSULT' ? ' serving' : '' ?>">
-                        <div class="q-token tnum"><?= htmlspecialchars($myTokenPrefix) ?>-<?= (int) $v['token_no'] ?></div>
-                        <div>
-                            <div class="q-name"><?= htmlspecialchars($v['patient_name']) ?>
-                                <?php if ($st === 'IN_CONSULT'): ?><span class="pulse"></span><span class="status-pill in-consult">Now serving</span><?php endif; ?>
-                                <?php if (!empty($v['admission_id'])): ?>
-                                    <?php // Admitted visits show the admission type, not the consult label — the row is a stay, not a plain consultation. ?>
-                                    <span class="q-tag q-tag-admit">Admitted · <?= htmlspecialchars($admTypeLabels[$v['admission_type']] ?? $v['admission_type']) ?></span>
-                                <?php elseif (!empty($v['type_label'])): ?>
-                                    <span class="q-tag"><?= htmlspecialchars($v['type_label']) ?></span>
-                                <?php endif; ?>
-                                <?php
-                                // Fee-type badge: the doctor sees at a glance that a visit is a
-                                // free follow-up (no fee, a consumed free turn) or a discounted
-                                // revisit. Full-fee visits carry no badge. Purely informational.
-                                $feeBadges = [
-                                    'FREE_FOLLOWUP' => ['Free follow-up', 'q-tag-free'],
-                                    'HALF_FOLLOWUP' => ['50% follow-up', 'q-tag-revisit'],
-                                    'THREE_QUARTER_FOLLOWUP' => ['75% follow-up', 'q-tag-revisit'],
-                                ];
-                                if (isset($feeBadges[$v['consultation_fee_type'] ?? ''])):
-                                    [$badgeText, $badgeClass] = $feeBadges[$v['consultation_fee_type']];
-                                ?><span class="q-tag <?= $badgeClass ?>"><?= $badgeText ?></span><?php endif; ?>
-                            </div>
-                            <div class="q-meta">
-                                <?= $age !== null ? 'Age ' . $age . ' · ' : '' ?>
-                                <?= htmlspecialchars(ucfirst(strtolower($v['gender']))) ?> ·
-                                <span class="mrn"><?= htmlspecialchars($v['mrn']) ?></span>
-                                <?php if ($st === 'IN_CONSULT' && $v['started_at']): ?> · started <?= date('g:i A', strtotime($v['started_at'])) ?><?php endif; ?>
-                            </div>
-                        </div>
-                        <div class="q-right">
-                            <?php if ($st === 'WAITING'): ?>
-                                <span class="wait-time tnum"><?= wait_minutes($v['created_at']) ?> min</span>
-                                <span class="status-pill waiting">Waiting</span>
-                                <?php if (!$current): ?>
-                                <form class="inline-form" method="POST" action="doctor.php">
-                                    <input type="hidden" name="action" value="start_consult">
-                                    <input type="hidden" name="visit_id" value="<?= (int) $v['visit_id'] ?>">
-                                    <button class="btn-primary" type="submit"><?= icon('play', 12) ?> Start</button>
-                                </form>
-                                <?php else: ?>
-                                    <button class="btn-ghost" type="button" disabled title="Finish the current consultation first">Start</button>
-                                <?php endif; ?>
-                            <?php elseif ($st === 'IN_CONSULT'): ?>
-                                <?php // Notes live on My Queue, which owns the note editor and the
-                                      // per-patient history drawer. The console links across rather
-                                      // than carrying a second copy of that UI. ?>
-                                <a class="btn-ghost" href="my_queue.php"><?= icon('pen', 12) ?> Note</a>
-                                <form class="inline-form" method="POST" action="doctor.php">
-                                    <input type="hidden" name="action" value="finish_consult">
-                                    <input type="hidden" name="visit_id" value="<?= (int) $v['visit_id'] ?>">
-                                    <button class="btn-primary" type="submit"><?= icon('check', 12) ?> Finish</button>
-                                </form>
-                            <?php else: ?>
-                                <span class="status-pill done">Done</span>
-                            <?php endif; ?>
-                            <?php if ($canDoctorAdmit): ?>
-                                <?php if (!empty($v['admission_id'])): ?>
-                                    <a class="btn-ghost" href="admission.php?id=<?= (int) $v['admission_id'] ?>">Manage stay</a>
-                                <?php else: ?>
-                                    <button class="btn-ghost" type="button"
-                                        onclick="openAdmit(<?= (int) $v['visit_id'] ?>, <?= htmlspecialchars(json_encode($v['patient_name']), ENT_QUOTES) ?>, <?= (int) $doctorId ?>, '', false)">Admit</button>
-                                <?php endif; ?>
-                            <?php endif; ?>
-                            <?php if ($canDoctorRefund && !empty($v['bill_id']) && $v['bill_status'] === 'paid'
-                                      && refunded_total($pdo, (int) $v['bill_id']) < (float) $v['paid_amount']): ?>
-                                <a class="btn-ghost" href="refund.php?bill_id=<?= (int) $v['bill_id'] ?>">Refund</a>
-                            <?php endif; ?>
+                    <?php
+                    // Built as data so the gating reads in one place. 'badge' shows a
+                    // live count; 'disabled' matches the not-yet-built sidebar entries.
+                    $navCards = [
+                        ['group' => 'Clinical', 'items' => array_values(array_filter([
+                            ['href' => 'my_queue.php', 'icon' => 'users', 'label' => 'My Queue',
+                             'desc' => "Today's patients — start, note, finish",
+                             'badge' => count($waiting) ?: null],
+                            has_permission('IPD_VIEW_WARD')
+                                ? ['href' => 'ipd_admissions.php', 'icon' => 'bed', 'label' => 'In-Door (IPD)',
+                                   'desc' => 'Admitted patients and daily rounds'] : null,
+                            ['href' => '#', 'icon' => 'stetho', 'label' => 'Consultations',
+                             'desc' => 'Coming in a later phase', 'disabled' => true],
+                            ['href' => '#', 'icon' => 'file', 'label' => 'Prescriptions',
+                             'desc' => 'Coming in a later phase', 'disabled' => true],
+                        ]))],
+                    ];
+
+                    // Dental group — same two conditions the sidebar uses: the
+                    // permission AND specialty DENTAL, so a paediatrician never
+                    // sees a tooth chart.
+                    $isDentist = ($user['specialty'] ?? '') === 'DENTAL';
+                    if ($isDentist) {
+                        $dentalItems = array_values(array_filter([
+                            has_permission('DENTAL_RECORD_TREATMENT')
+                                ? ['href' => 'dental_treatment.php', 'icon' => 'tooth', 'label' => 'Treatment Records',
+                                   'desc' => 'Tooth chart and treatment history'] : null,
+                            has_permission('DENTAL_VIEW_ACCOUNTS')
+                                ? ['href' => 'dental_accounts.php', 'icon' => 'receipt', 'label' => 'Dental Accounts',
+                                   'desc' => 'Multi-visit package balances',
+                                   'badge' => count($dentalAccounts) ?: null] : null,
+                            has_permission('DENTAL_MANAGE_LAB_WORK')
+                                ? ['href' => 'dental_lab.php', 'icon' => 'clock', 'label' => 'Lab Work',
+                                   'desc' => 'Work sent out and due back'] : null,
+                        ]));
+                        if ($dentalItems) {
+                            $navCards[] = ['group' => 'Dental', 'items' => $dentalItems];
+                        }
+                    }
+
+                    $navCards[] = ['group' => 'Records', 'items' => [
+                        ['href' => 'patients.php', 'icon' => 'search', 'label' => 'Find Patient',
+                         'desc' => 'Search records by name or MRN'],
+                        ['href' => 'my_schedule.php', 'icon' => 'calendar', 'label' => 'My Schedule',
+                         'desc' => 'Your weekly clinic timings'],
+                    ]];
+                    $navCards[] = ['group' => 'Analytics', 'items' => [
+                        ['href' => 'doctor_analytics.php', 'icon' => 'chart', 'label' => 'My Reports',
+                         'desc' => 'Earnings, revisits and admissions'],
+                    ]];
+                    $navCards[] = ['group' => 'Account', 'items' => [
+                        ['href' => 'profile.php', 'icon' => 'user', 'label' => 'My Profile',
+                         'desc' => 'Your details and password'],
+                    ]];
+                    ?>
+
+                    <?php foreach ($navCards as $grp): ?>
+                    <div class="nav-card-group">
+                        <div class="nav-card-group-label"><?= htmlspecialchars($grp['group']) ?></div>
+                        <div class="nav-card-grid">
+                            <?php foreach ($grp['items'] as $it):
+                                $isDisabled = !empty($it['disabled']);
+                                $tag = $isDisabled ? 'div' : 'a';
+                            ?>
+                            <<?= $tag ?> class="nav-card<?= $isDisabled ? ' disabled' : '' ?>"<?= $isDisabled ? '' : ' href="' . htmlspecialchars($it['href']) . '"' ?>>
+                                <span class="nav-card-icon"><?= ds_icon($it['icon']) ?></span>
+                                <span class="nav-card-body">
+                                    <span class="nav-card-label"><?= htmlspecialchars($it['label']) ?>
+                                        <?php if (!empty($it['badge'])): ?><span class="nav-card-badge tnum"><?= (int) $it['badge'] ?></span><?php endif; ?>
+                                    </span>
+                                    <span class="nav-card-desc"><?= htmlspecialchars($it['desc']) ?></span>
+                                </span>
+                            </<?= $tag ?>>
+                            <?php endforeach; ?>
                         </div>
                     </div>
-                    <?php endforeach; endif; ?>
+                    <?php endforeach; ?>
                 </div>
 
                 <!-- Right rail: dense stats + month summaries -->

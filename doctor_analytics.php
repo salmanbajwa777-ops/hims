@@ -525,6 +525,11 @@ require __DIR__ . '/partials/head.php';
     $dsActive = 'analytics';
     $dsUserName = $user['name'];
     $dsWaitingCount = $waitingCount;
+    // The sidebar's Dental group is specialty-gated; without this a dentist
+    // lost the group here that they see on every other page. $user, not the
+    // viewed doctor — an admin reading someone else's reports still gets their
+    // OWN nav.
+    $dsSpecialty = $user['specialty'] ?? '';
     require __DIR__ . '/partials/doctor_sidebar.php';
     ?>
 
