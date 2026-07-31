@@ -27,6 +27,11 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+// admission_actions.php fires notify_patient_admitted() behind a function_exists()
+// guard and does NOT load notify.php itself — it expects the calling page to. This
+// page handled admit_patient without it, so the guard silently swallowed the call
+// and an admit made from a doctor's own queue notified nobody at all.
+require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/admission_actions.php';
 require_once __DIR__ . '/config/tokens.php';
 require_once __DIR__ . '/config/consultation_notes.php';

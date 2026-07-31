@@ -37,6 +37,24 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
             $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') — Rs ' . number_format((float) $r['grand_total'], 0),
             'doctor.php', $r['invoice_number']);
 
+        // OPT-IN ONLY. This fires on every registration and every follow-up, which
+        // makes it the app's highest-volume email by a wide margin — enough to push
+        // the hosting account against its sending limit. It now defaults OFF
+        // (sql/add_email_on_new_patient.sql); a doctor switches it on for themselves
+        // in profile.php. Nothing is lost by staying off: the bell above already
+        // told them, and it ran before this check for exactly that reason.
+        // Guarded so an un-migrated server keeps the old always-send behaviour
+        // rather than going silent — same pattern as profile.php's document read.
+        $wantsEmail = true;
+        try {
+            $pStmt = $pdo->prepare('SELECT email_on_new_patient FROM users WHERE id = ?');
+            $pStmt->execute([(int) $r['doctor_id']]);
+            $wantsEmail = (bool) $pStmt->fetchColumn();
+        } catch (PDOException $e) {
+            $wantsEmail = true; // column not migrated yet
+        }
+        if (!$wantsEmail) { return; }
+
         $docEmail = user_email($pdo, (int) $r['doctor_id']);
         if (!$docEmail) { return; }
 
@@ -152,6 +170,75 @@ function notify_patient_admitted(PDO $pdo, int $admissionId): void {
                 'Patient admitted under your care — ' . $r['patient_name'],
                 mail_template('Patient Admitted Under Your Care', $docBody),
                 'admission-doctor:' . $admissionId);
+        }
+    } catch (Throwable $e) { /* best-effort */ }
+}
+
+/**
+ * IPD (In-Door) admission → admin + the admitting consultant.
+ *
+ * config/ipd_actions.php has called this since the IPD module shipped, behind a
+ * function_exists() guard — but the function was never written, so the guard
+ * swallowed the call and EVERY In-Door admission notified nobody at all, with no
+ * error anywhere. ER admits notified; IPD admits silently did not.
+ *
+ * Deliberately mirrors notify_patient_admitted() above, but IPD is a separate
+ * module with its own tables and its own column names: ipd_admissions, and
+ * admitting_consultant_id / _manual rather than admitting_doctor_id / _manual.
+ * (room_category was renamed from `ward` by sql/ipd/add_ipd_room_charges.sql.)
+ */
+function notify_ipd_patient_admitted(PDO $pdo, int $admissionId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT a.room_category, a.room_no, a.admitted_at, a.provisional_diagnosis,
+                   a.admitting_consultant_id,
+                   COALESCE(cu.name, a.admitting_consultant_manual, "—") AS consultant_name,
+                   p.name AS patient_name, p.mrn
+            FROM ipd_admissions a
+            JOIN visits v ON v.id = a.visit_id
+            JOIN patients p ON p.id = v.patient_id
+            LEFT JOIN users cu ON cu.id = a.admitting_consultant_id
+            WHERE a.id = ?
+        ');
+        $stmt->execute([$admissionId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $rows = [
+            'Patient'         => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
+            'Room'            => $r['room_category'] . ' — Room ' . $r['room_no'],
+            'Consultant'      => $r['consultant_name'],
+            'Admitted at'     => date('d/m/Y, h:i A', strtotime($r['admitted_at'])),
+        ];
+        // Only carried when one was recorded — an empty "Diagnosis —" row reads
+        // as missing information rather than as "not applicable yet".
+        if (trim((string) $r['provisional_diagnosis']) !== '') {
+            $rows['Provisional diagnosis'] = $r['provisional_diagnosis'];
+        }
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted to In-Door.</p>' . mail_kv($rows);
+
+        // Reuses the 'patient_admitted' type so the bell icon/tone matches the ER
+        // admit — notif_tone() matches on substring, and a new string would earn
+        // nothing here.
+        notify_users($pdo, array_merge(notif_admin_ids($pdo), [(int) $r['admitting_consultant_id']]), 'patient_admitted',
+            'In-Door admission — ' . $r['room_category'] . ' Room ' . $r['room_no'],
+            $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') under ' . $r['consultant_name'],
+            'ipd_admissions.php', 'IPD #' . $admissionId);
+
+        // Admin always; consultant additionally if they're a registered user with
+        // an email (they may have been typed free-text into _manual).
+        send_mail($pdo, admin_alert_email(),
+            'In-Door admission — ' . $r['patient_name'] . ' (' . $r['room_category'] . ' Room ' . $r['room_no'] . ')',
+            mail_template('Patient Admitted to In-Door', $body),
+            'ipd-admission:' . $admissionId);
+
+        $docEmail = user_email($pdo, (int) $r['admitting_consultant_id']);
+        if ($docEmail) {
+            $docBody = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted to In-Door under your care.</p>' . mail_kv($rows);
+            send_mail($pdo, $docEmail,
+                'In-Door patient admitted under your care — ' . $r['patient_name'],
+                mail_template('In-Door Patient Under Your Care', $docBody),
+                'ipd-admission-doctor:' . $admissionId);
         }
     } catch (Throwable $e) { /* best-effort */ }
 }

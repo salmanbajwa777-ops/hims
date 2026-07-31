@@ -20,8 +20,7 @@
  *     themselves, otherwise the receptionist picks a system doctor or types one.
  *   - Marks the visit disposition IN_DOOR (added in sql/ipd/add_ipd_admissions.sql).
  *
- * Gated on IPD_ADMIT_PATIENT. Requires an open PDO, an authenticated session, and
- * config/notify.php loaded by the caller (best-effort alert after commit).
+ * Gated on IPD_ADMIT_PATIENT. Requires an open PDO and an authenticated session.
  *
  * Returns ['ok' => bool, 'error' => string, 'admission_id' => int|null].
  */
@@ -31,6 +30,11 @@
 
 require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
 require_once __DIR__ . '/tokens.php';
+// notify_ipd_patient_admitted() — loaded here rather than left to the caller. It
+// used to be the caller's job, which meant a page that forgot it lost the admit
+// alert silently (the call site is behind function_exists()). require_once makes
+// this a no-op for the pages that already load it.
+require_once __DIR__ . '/notify.php';
 // Primary nurse is mandatory at admit — shared roster/validator with the ER handler.
 require_once __DIR__ . '/nurses.php';
 require_once __DIR__ . '/doctors.php';   // last_seen_doctor_id() for the shell visit

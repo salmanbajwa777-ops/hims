@@ -13,7 +13,7 @@
  *
  * Gated on ADMISSION_ADMIT_PATIENT (doctor + reception + admin + manager) — matching
  * the check the three UI entry points (patients / receptionist / doctor) use.
- * Requires an open PDO, an authenticated session, and config/notify.php loaded by the caller.
+ * Requires an open PDO and an authenticated session.
  *
  * Returns ['ok' => bool, 'error' => string, 'admission_id' => int|null]. The caller
  * decides how to redirect / surface the result.
@@ -32,6 +32,11 @@ require_once __DIR__ . '/tokens.php';
 require_once __DIR__ . '/nurses.php';
 // Admitting doctor is mandatory too — shared resolver/validator.
 require_once __DIR__ . '/doctors.php';
+// notify_patient_admitted() — exactly the same reasoning as sheets.php above, and
+// it had exactly the same outcome: my_queue.php handled an admit without loading
+// this, so the function_exists() guard at the call site swallowed the alert and
+// that admit notified nobody. require_once is a no-op where it is already loaded.
+require_once __DIR__ . '/notify.php';
 
 function handle_admit_patient(PDO $pdo): array {
     $out = ['ok' => false, 'error' => '', 'admission_id' => null];

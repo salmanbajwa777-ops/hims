@@ -72,6 +72,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         } else {
             $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?')
                 ->execute([$name, $email !== '' ? $email : null, $phone !== '' ? $phone : null, $uid]);
+
+            // New-patient email preference. Saved separately and guarded so an
+            // un-migrated server still saves the details above rather than
+            // fatalling the whole form (sql/add_email_on_new_patient.sql). An
+            // unchecked box posts nothing, hence the isset() rather than a value
+            // read — and the hidden field below means "absent" only ever means
+            // "the checkbox was on the page and left unticked".
+            if (isset($_POST['has_new_patient_pref'])) {
+                try {
+                    $pdo->prepare('UPDATE users SET email_on_new_patient = ? WHERE id = ?')
+                        ->execute([isset($_POST['email_on_new_patient']) ? 1 : 0, $uid]);
+                } catch (PDOException $e) { /* column not migrated yet */ }
+            }
+
             audit_log($pdo, 'profile_updated', "Updated own profile details (name/email/phone)", $uid);
             $success = 'Profile saved. Remember: you sign in with this email or phone.';
         }
@@ -256,6 +270,21 @@ require __DIR__ . '/partials/sidebar.php';
                             <input type="text" id="pf_phone" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" placeholder="03001234567">
                             <div class="pf-hint">Also accepted at the login screen — saved as 0300… (spaces, dashes and +92 are cleaned up automatically).</div>
                         </div>
+
+                        <?php /* Only doctors receive the new-patient email, and only
+                                 once the column exists. $user is a SELECT *, so the
+                                 array_key_exists() check needs no extra query. */ ?>
+                        <?php if ($user['base_role'] === 'DOCTOR' && array_key_exists('email_on_new_patient', $user)): ?>
+                        <div class="pf-field">
+                            <label>Email notifications</label>
+                            <input type="hidden" name="has_new_patient_pref" value="1">
+                            <label style="display:flex;align-items:flex-start;gap:9px;font-weight:500;color:var(--text-primary);cursor:pointer;">
+                                <input type="checkbox" name="email_on_new_patient" value="1" style="margin-top:2px;flex-shrink:0;"<?= !empty($user['email_on_new_patient']) ? ' checked' : '' ?>>
+                                <span>Email me when a patient is registered under my name</span>
+                            </label>
+                            <div class="pf-hint">Off by default. New patients always appear in your notification bell and in your queue — this only adds an email on top, and it arrives for every registration and follow-up.</div>
+                        </div>
+                        <?php endif; ?>
                         <div style="display:flex;justify-content:flex-end;margin-top:6px;">
                             <button type="submit" class="btn">Save details</button>
                         </div>
