@@ -435,6 +435,10 @@ require __DIR__ . '/partials/sidebar.php';
 .empty { text-align: center; color: var(--text-muted); padding: 26px 0; font-size: 13.5px; }
 .slip-link { font-weight: 600; color: var(--primary-dark); text-decoration: underline; }
 
+/* Negative-expected-cash explainer on a stranded shift. Amber, not red: the
+   figure is correct, it just needs explaining — red would read as data damage. */
+.neg-explain { background: var(--warn-bg); color: var(--warn); border-radius: var(--radius-input); padding: 11px 14px; font-size: 12.5px; line-height: 1.55; margin: 12px 0 4px; }
+
 /* ---- Received-history filters ----
    Two stacked rows rather than one wrapping toolbar: this card sits in the
    narrow right column, so a single flex row would wrap unpredictably between
@@ -805,26 +809,49 @@ require __DIR__ . '/partials/sidebar.php';
                     <input type="hidden" name="cashier_id" value="<?= (int) $s['cashier_id'] ?>">
                     <input type="hidden" name="close_date" value="<?= htmlspecialchars($s['date']) ?>">
 
+                    <?php
+                    // expected_cash is cash_in − refunds − counter expenses, so it goes
+                    // NEGATIVE on a day where a drawer paid money out without taking any
+                    // in (a refund against an older bill, or a petty-cash voucher). That
+                    // is a real, correct figure — but you cannot count negative notes, so
+                    // the count fields are min="0" and must not be prefilled with it.
+                    // Prefilling −2,000 into a min="0" input made the shift IMPOSSIBLE to
+                    // close: the browser blocked every submit and the day stayed stranded.
+                    $expCash    = (float) $s['expected_cash'];
+                    $isNegative = $expCash < 0;
+                    $prefill    = number_format(max(0, $expCash), 0, '.', '');
+                    ?>
                     <div class="pend" style="border-color:var(--red);background:var(--red-bg);">
                         <div>
                             <div class="who"><?= htmlspecialchars($s['cashier_name']) ?> — <?= date('D d/m/Y', strtotime($s['date'])) ?></div>
-                            <div class="det"><?= (int) $s['age_days'] ?> days ago · expected cash Rs <?= number_format($s['expected_cash'], 0) ?> (their system tally)</div>
+                            <div class="det"><?= (int) $s['age_days'] ?> days ago · expected cash Rs <?= number_format($expCash, 0) ?> (their system tally)</div>
                         </div>
                         <div>
-                            <div class="amt">Rs <?= number_format($s['expected_cash'], 0) ?></div>
+                            <div class="amt">Rs <?= number_format($expCash, 0) ?></div>
                             <div class="det" style="text-align:right;">expected</div>
                         </div>
                     </div>
 
+                    <?php if ($isNegative): ?>
+                    <p class="neg-explain">
+                        <strong>Expected cash is negative.</strong> On this day this drawer paid out more
+                        than it took in — a refund against an earlier bill, or a counter expense, with no
+                        cash collected to offset it. Nothing is wrong with the data: the clinic owed the
+                        drawer Rs <?= number_format(abs($expCash), 0) ?>, it did not hold it.
+                        Enter <strong>0</strong> below if no cash was physically handed over, and say so
+                        in the note.
+                    </p>
+                    <?php endif; ?>
+
                     <div class="hfield">
                         <label>Counted cash for that day (Rs)</label>
                         <input name="counted_cash" type="number" min="0" step="1" required
-                               value="<?= number_format($s['expected_cash'], 0, '.', '') ?>">
+                               value="<?= $prefill ?>">
                     </div>
                     <div class="hfield">
                         <label>Actual amount you received (Rs)</label>
                         <input name="handover_received" type="number" min="0" step="1" required
-                               value="<?= number_format($s['expected_cash'], 0, '.', '') ?>">
+                               value="<?= $prefill ?>">
                     </div>
                     <div class="hfield">
                         <label>Note (required) — why this was closed late</label>
