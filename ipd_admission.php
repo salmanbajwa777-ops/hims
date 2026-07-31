@@ -16,6 +16,7 @@ require_once __DIR__ . '/config/billing.php';        // require_day_open()
 require_once __DIR__ . '/config/ipd_billing.php';    // service charge + bill append
 require_once __DIR__ . '/config/ipd_advances.php';
 require_once __DIR__ . '/config/payment_methods.php';
+require_once __DIR__ . '/config/ipd_treatment.php';   // ipd_sheet_state() for the sheet card + banner
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -414,6 +415,13 @@ require __DIR__ . '/partials/sidebar.php';
             <?php if ($flash): ?><div class="alert success"><?= htmlspecialchars($flash) ?></div><?php endif; ?>
             <?php if ($err): ?><div class="alert error"><?= htmlspecialchars($err) ?></div><?php endif; ?>
 
+            <?php
+            /* Treatment-sheet prompt + unmissable "not signed yet" banner.
+               Renders nothing once a doctor has approved at least one order.
+               The partial reads $admissionId / $isOpen from this scope. */
+            include __DIR__ . '/partials/treatment_sheet_prompt.php';
+            ?>
+
             <div class="card">
                 <div class="a-head">
                     <div>
@@ -664,8 +672,30 @@ require __DIR__ . '/partials/sidebar.php';
 
                 <!-- Right: daily round shortcut + handover -->
                 <div>
-                    <?php if (has_permission('IPD_VIEW_WARD_ROUNDS')): ?>
+                    <?php if (has_permission('IPD_VIEW_TREATMENT_SHEET')):
+                        /* $sheetState is computed by the prompt partial above; recompute
+                           defensively in case this block is ever moved before it. */
+                        $tsCard = $sheetState ?? ipd_sheet_state($pdo, (int) $adm['id']);
+                    ?>
                     <div class="card">
+                        <div class="section-title">Treatment sheet</div>
+                        <div class="section-sub">
+                            <?php if (!$tsCard['cleared']): ?>
+                                <span style="color:var(--warn);font-weight:600;">Not approved &mdash; treatment cannot start</span>
+                            <?php elseif ($tsCard['pending']): ?>
+                                <span style="color:var(--warn);font-weight:600;"><?= (int) $tsCard['pending'] ?> order(s) awaiting approval</span>
+                            <?php else: ?>
+                                <?= (int) $tsCard['approved'] ?> approved medication order(s).
+                            <?php endif; ?>
+                        </div>
+                        <a class="btn" style="width:100%;text-align:center;margin-top:12px;" href="ipd_treatment_sheet.php?id=<?= (int) $adm['id'] ?>">
+                            <?= has_permission('IPD_WRITE_MED_ORDER') && $isOpen ? 'Open treatment sheet' : 'View treatment sheet' ?>
+                        </a>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if (has_permission('IPD_VIEW_WARD_ROUNDS')): ?>
+                    <div class="card" style="margin-top:20px;">
                         <div class="section-title">Daily rounds</div>
                         <div class="section-sub">Consultant daily progress notes.</div>
                         <a class="btn" style="width:100%;text-align:center;margin-top:12px;" href="ipd_daily_round.php?id=<?= (int) $adm['id'] ?>">

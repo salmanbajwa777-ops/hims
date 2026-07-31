@@ -227,6 +227,7 @@ $sbGroups = [
                 ['slug' => 'locations',   'label' => 'Cities & Areas',  'icon' => 'pin',     'href' => 'locations.php'],
                 ['slug' => 'er_services', 'label' => 'ER Services & Rates','icon' => 'receipt','href' => 'er_services.php'],
                 ['slug' => 'ipd_room_rates', 'label' => 'In-Door Room Categories & Rates','icon' => 'bed','href' => 'ipd_room_rates.php'],
+                ['slug' => 'ipd_formulary', 'label' => 'Drug Formulary', 'icon' => 'receipt', 'href' => 'ipd_formulary.php'],
                 ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
                 ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
                 ['slug' => 'procedure_master', 'label' => 'Procedures & Dental Catalogue',  'icon' => 'receipt', 'href' => 'procedure_master.php'],

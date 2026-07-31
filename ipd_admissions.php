@@ -14,6 +14,7 @@ require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/ipd_actions.php';
 require_once __DIR__ . '/config/tokens.php';
+require_once __DIR__ . '/config/ipd_treatment.php';   // ipd_sheet_state() for the ward-list flag
 refresh_session_permissions($pdo);
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
@@ -123,6 +124,11 @@ tbody tr:first-child td { border-top: none; }
 .filter-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .filter-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--surface, #fff); color: var(--text); }
 .filter-form .q-field { min-width: 190px; flex: 1 1 190px; }
+/* Treatment-sheet flags on the ward list — an unsigned drug chart must be
+   visible from the list, not only after opening the stay. */
+.ts-flag { display: inline-block; margin-top: 5px; font-size: 11.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+.ts-flag-none { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }
+.ts-flag-pend { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
 CSS;
 $headExtra .= "\n</style>";
 require __DIR__ . '/partials/head.php';
@@ -211,7 +217,21 @@ require __DIR__ . '/partials/sidebar.php';
                         </td>
                         <td><?= htmlspecialchars($r['room_category']) ?> &middot; Room <?= (int) $r['room_no'] ?></td>
                         <td><?= htmlspecialchars($r['consultant_name'] ?: '—') ?></td>
-                        <td><span class="status-pill <?= $cls ?>"><?= $lbl ?></span></td>
+                        <td>
+                            <span class="status-pill <?= $cls ?>"><?= $lbl ?></span>
+                            <?php
+                            /* Treatment-sheet flag. Only for still-admitted patients —
+                               a discharged stay's sheet is history, not an outstanding
+                               task, and flagging it would train people to ignore the flag. */
+                            if ($r['status'] !== 'DISCHARGED' && has_permission('IPD_VIEW_TREATMENT_SHEET')):
+                                $ts = ipd_sheet_state($pdo, (int) $r['admission_id']);
+                                if (!$ts['cleared']): ?>
+                                    <div class="ts-flag ts-flag-none" title="No doctor-approved medication order">&#9888; No treatment sheet</div>
+                                <?php elseif ($ts['pending']): ?>
+                                    <div class="ts-flag ts-flag-pend" title="Written but not yet approved by a doctor">&#9203; <?= (int) $ts['pending'] ?> awaiting approval</div>
+                                <?php endif;
+                            endif; ?>
+                        </td>
                         <td><?= date($isPast ? 'd/m/Y h:i A' : 'd/m, h:i A', strtotime($r['admitted_at'])) ?></td>
                         <?php if ($isPast): ?>
                         <td><?= $r['discharge_finalized_at']

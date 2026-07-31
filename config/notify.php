@@ -876,3 +876,75 @@ function notify_procedure_discount(PDO $pdo, int $procBillId): void {
             'procedure-discount:' . $b['invoice_number']);
     } catch (Throwable $e) { /* best-effort — never cost the clinic a paid bill */ }
 }
+
+/**
+ * A staff-written medication order is waiting for a doctor's signature.
+ *
+ * Fired from ipd_create_med_order() when the author could not self-approve. The
+ * order exists but generates no administration slots until someone signs it, so
+ * an un-notified pending order is a patient whose treatment silently never
+ * starts — this alert is the only thing standing between a written sheet and
+ * that outcome.
+ *
+ * Aimed at the admitting consultant first (they own the patient), with admins
+ * copied so a consultant who is off-shift is not a single point of failure.
+ * Best-effort throughout: a mail failure must never roll back the order.
+ */
+function notify_ipd_med_order_pending(PDO $pdo, int $orderId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT o.*, a.id AS admission_id, a.room_category, a.room_no,
+                   a.admitting_consultant_id,
+                   COALESCE(cu.name, a.admitting_consultant_manual, "—") AS consultant_name,
+                   cu.email AS consultant_email,
+                   p.name AS patient_name, p.mrn,
+                   wu.name AS written_by_name
+            FROM ipd_medication_orders o
+            JOIN ipd_admissions a ON a.id = o.admission_id
+            JOIN visits v ON v.id = a.visit_id
+            JOIN patients p ON p.id = v.patient_id
+            LEFT JOIN users cu ON cu.id = a.admitting_consultant_id
+            LEFT JOIN users wu ON wu.id = o.prescribed_by_id
+            WHERE o.id = ?
+        ');
+        $stmt->execute([$orderId]);
+        $r = $stmt->fetch();
+        if (!$r) { return; }
+
+        $drug = function_exists('ipd_order_line')
+            ? ipd_order_line($r)
+            : trim(($r['drug_name_snapshot'] ?? '') . ' ' . $r['route'] . ' ' . $r['frequency']);
+
+        $link = 'ipd_treatment_sheet.php?id=' . (int) $r['admission_id'];
+
+        // In-app first, and BEFORE any email gating — a disabled email switch
+        // must never also swallow the bell notification.
+        $targets = notif_admin_ids($pdo);
+        if ($r['admitting_consultant_id']) { $targets[] = (int) $r['admitting_consultant_id']; }
+        notify_users($pdo, $targets, 'med_order_pending',
+            'Medication order needs your approval',
+            $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') — ' . $drug,
+            $link, 'MEDORDER #' . $orderId);
+
+        if (!notif_email_enabled($pdo, 'ipd_med_order_pending')) { return; }
+
+        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+              . 'A medication order has been written for an admitted patient and is '
+              . '<strong>waiting for a doctor to approve it</strong>. No dose can be given until it is signed.</p>'
+            . mail_kv([
+                'Patient'    => strtoupper((string) $r['patient_name']) . ' (MRN ' . $r['mrn'] . ')',
+                'Room'       => $r['room_category'] . ' — Room ' . $r['room_no'],
+                'Drug'       => $drug,
+                'Written by' => $r['written_by_name'] ?? '—',
+                'Consultant' => $r['consultant_name'],
+            ]);
+
+        $to = $r['consultant_email'] ?: admin_alert_email();
+        if ($to) {
+            send_mail($pdo, $to,
+                'Approval needed — ' . $drug . ' for ' . strtoupper((string) $r['patient_name']),
+                mail_template('Medication Order Awaiting Approval', $body),
+                'ipd-med-order:' . $orderId);
+        }
+    } catch (Throwable $e) { /* best-effort — never cost the clinic an order */ }
+}
