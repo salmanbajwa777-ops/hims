@@ -19,6 +19,9 @@
 
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/mailer.php';
+// notif_email_enabled() — the global Settings → Notifications switch consulted
+// before the send at the bottom of this file.
+require_once __DIR__ . '/../config/notifications.php';
 
 // CLI runs freely; browser runs need the key ('cron_key' in config/mail.php,
 // falling back to the default below).
@@ -352,6 +355,15 @@ try {
 if ($mailFails > 0) {
     $body .= '<p style="margin:16px 0 0;font-size:13px;color:#b3261e;"><strong>' . $mailFails
         . ' notification email(s) failed to send today</strong> — check the email_log table.</p>';
+}
+
+// Global switch (Settings → Notifications). Checked HERE, at the send, not at
+// the top of the file: the procedure-discount auto-close sweep above is real
+// bookkeeping that must run every night whether or not anyone wants the email.
+if (!notif_email_enabled($pdo, 'daily_summary')) {
+    $msg = 'Daily summary email is switched off in Settings → Notifications. Sweep still ran.';
+    echo (php_sapi_name() === 'cli' ? $msg . "\n" : $msg);
+    return;
 }
 
 $ok = send_mail(

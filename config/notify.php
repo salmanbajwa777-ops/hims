@@ -37,6 +37,11 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
             $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') — Rs ' . number_format((float) $r['grand_total'], 0),
             'doctor.php', $r['invoice_number']);
 
+        // GLOBAL SWITCH FIRST — an admin turning this event off on
+        // notification_settings.php overrides every doctor's personal opt-in
+        // below. The per-doctor flag can only narrow an enabled event.
+        if (!notif_email_enabled($pdo, 'invoice_raised')) { return; }
+
         // OPT-IN ONLY. This fires on every registration and every follow-up, which
         // makes it the app's highest-volume email by a wide margin — enough to push
         // the hosting account against its sending limit. It now defaults OFF
@@ -106,6 +111,8 @@ function notify_refund_issued(PDO $pdo, int $refundId): void {
             $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') against ' . $r['invoice_number'],
             'refund.php', $r['refund_number']);
 
+        if (!notif_email_enabled($pdo, 'refund_issued')) { return; }
+
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $r['approved_by_id'])]);
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A refund voucher has been issued.</p>'
             . mail_kv([
@@ -156,6 +163,8 @@ function notify_patient_admitted(PDO $pdo, int $admissionId): void {
             'Patient admitted — ' . ($typeLabels[$r['admission_type']] ?? $r['admission_type']),
             $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') under ' . $r['doctor_name'],
             'admissions.php', 'Admission #' . $admissionId);
+
+        if (!notif_email_enabled($pdo, 'patient_admitted')) { return; }
 
         // Admin always; doctor additionally if they're a registered user with an email.
         send_mail($pdo, admin_alert_email(),
@@ -225,6 +234,11 @@ function notify_ipd_patient_admitted(PDO $pdo, int $admissionId): void {
             $r['patient_name'] . ' (MRN ' . $r['mrn'] . ') under ' . $r['consultant_name'],
             'ipd_admissions.php', 'IPD #' . $admissionId);
 
+        // Its own switch, separate from the ER/OPD admit above: the two events
+        // share a bell 'type' for tone/icon purposes but are distinct actions on
+        // the settings screen, and a clinic may well want one and not the other.
+        if (!notif_email_enabled($pdo, 'ipd_patient_admitted')) { return; }
+
         // Admin always; consultant additionally if they're a registered user with
         // an email (they may have been typed free-text into _manual).
         send_mail($pdo, admin_alert_email(),
@@ -284,6 +298,8 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
                 . ($writeOff > 0.001 ? ', written off Rs ' . number_format($writeOff, 0) : ''),
             'admissions.php', $r['invoice_number'] ?? ('Admission #' . $admissionId));
 
+        if (!notif_email_enabled($pdo, 'patient_discharged')) { return; }
+
         send_mail($pdo, admin_alert_email(),
             ($writeOff > 0.001 ? 'Discharge + WRITE-OFF — ' : 'Discharge — ') . $r['patient_name'],
             mail_template('Patient Discharged', $body),
@@ -291,7 +307,15 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
     } catch (Throwable $e) { /* best-effort */ }
 }
 
-/** New staff account created → welcome email with login link + temporary password. */
+/**
+ * New staff account created → welcome email with login link + temporary password.
+ *
+ * DELIBERATELY UNGATED. Every other sender checks notif_email_enabled() first;
+ * this one does not, because the email IS the delivery mechanism for the
+ * temporary password — suppressing it would create accounts that nobody can
+ * sign into. notification_settings.php renders this row checked and disabled,
+ * and refuses to save it off, so the two ends agree.
+ */
 function notify_staff_welcome(PDO $pdo, int $userId, string $tempPassword): void {
     try {
         $stmt = $pdo->prepare('SELECT name, email, base_role FROM users WHERE id = ?');
@@ -349,6 +373,8 @@ function notify_booking_created(PDO $pdo, int $bookingId): void {
             $who . ' · ' . $r['purpose'] . ($r['preferred_time'] ? ' at ' . $r['preferred_time'] : ''),
             'bookings.php', 'Booking #' . $bookingId);
 
+        if (!notif_email_enabled($pdo, 'booking_created')) { return; }
+
         $docEmail = user_email($pdo, (int) $r['doctor_id']);
         if (!$docEmail) { return; }
 
@@ -397,6 +423,8 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
             'Booking cancelled — ' . date('d/m', strtotime($r['booking_date'])),
             $who . ' · ' . $r['purpose'] . ($r['cancel_reason'] ? ' — ' . $r['cancel_reason'] : ''),
             'bookings.php', 'Booking #' . $bookingId);
+
+        if (!notif_email_enabled($pdo, 'booking_cancelled')) { return; }
 
         $docEmail = user_email($pdo, (int) $r['doctor_id']);
         if (!$docEmail) { return; }
@@ -476,6 +504,12 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
                 . ' — Rs ' . number_format((float) $r['amount'], 0),
             $r['category_name'] . ' · ' . $r['description'] . ' — posted by ' . $r['posted_by_name'],
             'expenses.php', $r['expense_number']);
+
+        // NOTE: switching this event off does more than silence a message — the
+        // 60-minute one-click magic link below is the only approval path that
+        // works without signing in, so turning it off leaves expenses.php as the
+        // sole way to approve. The settings screen says so on the row itself.
+        if (!notif_email_enabled($pdo, 'expense_approval')) { return; }
 
         $to = [admin_alert_email()];
         $mgr = $pdo->query("
@@ -570,6 +604,8 @@ function notify_expense_decided(PDO $pdo, int $expenseId): void {
                 . ' · by ' . ($r['approver_name'] ?? '—'),
             'expenses.php', $r['expense_number']);
 
+        if (!notif_email_enabled($pdo, 'expense_decided')) { return; }
+
         $to = array_values(array_filter(array_unique([
             admin_alert_email(),
             ($r['posted_by_email'] && filter_var($r['posted_by_email'], FILTER_VALIDATE_EMAIL)) ? $r['posted_by_email'] : null,
@@ -624,6 +660,8 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
             'Shift closed — handover Rs ' . number_format((float) $c['handover_declared'], 0) . ' pending',
             $c['cashier_name'] . ' · ' . date('D d/m/Y', strtotime($c['closing_date'])) . ' · ' . $varianceText,
             'admin_handovers.php', $c['closing_number']);
+
+        if (!notif_email_enabled($pdo, 'day_closed')) { return; }
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
         $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
@@ -703,6 +741,8 @@ function notify_closing_edited(PDO $pdo, int $closingId, int $round): void {
             $c['cashier_name'] . ' changed their figures (round ' . $round . ') · now declares Rs '
                 . number_format((float) $c['handover_declared'], 0),
             'admin_handovers.php', $c['closing_number']);
+
+        if (!notif_email_enabled($pdo, 'closing_edited')) { return; }
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
         $body = '<p style="font-size:14px;color:#B45309;font-weight:bold;margin:0 0 14px;">'
@@ -802,5 +842,37 @@ function notify_procedure_discount(PDO $pdo, int $procBillId): void {
         // would silently skip the bell for exactly the doctors who most need it.
         notify_users($pdo, [(int) $b['discount_doctor_id']], 'procedure_discount',
             $title, $body, 'procedure_discount_approvals.php', $b['invoice_number']);
+
+        // Email is OPT-IN and off by default (sql/add_notification_settings.sql).
+        // This event was in-app only until the settings screen was built; the
+        // sender below exists so the row on that screen means the same thing as
+        // every other row rather than being a checkbox that does nothing.
+        if (!notif_email_enabled($pdo, 'procedure_discount')) { return; }
+
+        $docEmail = user_email($pdo, (int) $b['discount_doctor_id']);
+        if (!$docEmail) { return; }
+
+        $kv = [
+            'Invoice'   => $b['invoice_number'],
+            'Patient'   => strtoupper((string) $b['patient_name']),
+            'Bill paid' => 'Rs ' . number_format((float) $b['grand_total'], 2),
+            'Discount given' => 'Rs ' . number_format($discount, 2),
+            'Given by'  => $b['raised_by_name'] ?? 'Reception',
+        ];
+        if ($b['manual_discount_reason']) { $kv['Reason'] = $b['manual_discount_reason']; }
+        if ($doctorLoss > 0) {
+            $kv['Effect on your share'] = 'Rs ' . number_format($doctorLoss, 2) . ' lower';
+        }
+        $mailBody = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+              . 'Reception gave a flat discount on a procedure bill performed under your name. '
+              . '<strong>The patient has already paid and this is not an authorisation request</strong> — '
+              . 'recording your view within 24 hours moves no money either way, but it does land on '
+              . 'the admin report. Silence closes it as auto-approved.</p>'
+            . mail_kv($kv);
+        send_mail($pdo, $docEmail,
+            'Discount Rs ' . number_format($discount, 0) . ' on ' . $b['invoice_number']
+            . ($doctorLoss > 0 ? ' — your share is Rs ' . number_format($doctorLoss, 0) . ' lower' : ''),
+            mail_template('Procedure Discount — Your View Requested', $mailBody),
+            'procedure-discount:' . $b['invoice_number']);
     } catch (Throwable $e) { /* best-effort — never cost the clinic a paid bill */ }
 }

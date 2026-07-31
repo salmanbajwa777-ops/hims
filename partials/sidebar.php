@@ -98,6 +98,9 @@ if (!function_exists('sb_icon')) {
             'clock'    => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
             'tooth'    => '<path d="M12 5.5c-1.5-1.2-3-1.8-4.5-1.5C5.6 4.4 4.5 6 4.5 8.3c0 1.6.4 3 .8 4.4.5 1.9.7 3.6.9 5.3.1 1.2.6 2 1.5 2s1.3-.8 1.6-2l.8-3.4c.2-.8.5-1.2.9-1.2s.7.4.9 1.2l.8 3.4c.3 1.2.7 2 1.6 2s1.4-.8 1.5-2c.2-1.7.4-3.4.9-5.3.4-1.4.8-2.8.8-4.4 0-2.3-1.1-3.9-3-4.3-1.5-.3-3 .3-4.5 1.5Z"/>',
             'wallet'   => '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
+            // Same glyph as the header bell in partials/notification_bell.php, so
+            // the Settings link and the thing it configures read as one feature.
+            'bell'     => '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
             'gear'     => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>',
         ];
         $p = $paths[$name] ?? '';
@@ -227,6 +230,7 @@ $sbGroups = [
                 ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
                 ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
                 ['slug' => 'procedure_master', 'label' => 'Procedures & Dental Catalogue',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
+                ['slug' => 'notification_settings', 'label' => 'Notifications', 'icon' => 'bell', 'href' => 'notification_settings.php'],
             ]],
         ],
     ],

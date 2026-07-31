@@ -96,6 +96,45 @@ function notify_users(PDO $pdo, array $userIds, string $type, string $title, ?st
 }
 
 /**
+ * Is the EMAIL for this event switched on globally?
+ *
+ * Governs one thing: whether the send_mail() in config/notify.php is allowed to
+ * fire. In-app notifications never consult this — every event always writes to
+ * the bell, which is why notify_users() sits ABOVE this check in every sender.
+ *
+ * GLOBAL and OVERRIDING. This is the clinic-wide switchboard set by an admin on
+ * notification_settings.php, and it wins over any per-user opt-in: a doctor who
+ * ticked email_on_new_patient still gets nothing if invoice_raised is off here.
+ * The per-user flag can only narrow an already-enabled event, never widen one.
+ *
+ * Defaults to TRUE when the row or the whole table is missing, so a server that
+ * hasn't run sql/add_notification_settings.sql keeps today's behaviour rather
+ * than going silently mute — the same fallback rule as the email_on_new_patient
+ * read in notify.php. A brand-new event type with no seeded row therefore mails
+ * until someone switches it off, which is the safe direction for a missing row.
+ *
+ * Cached per request: several senders check the same key more than once, and a
+ * page that raises two bills would otherwise repeat the lookup.
+ */
+function notif_email_enabled(PDO $pdo, string $eventType): bool
+{
+    static $cache = [];
+    if (array_key_exists($eventType, $cache)) {
+        return $cache[$eventType];
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT email_enabled FROM notification_settings WHERE event_type = ?');
+        $stmt->execute([$eventType]);
+        $row = $stmt->fetchColumn();
+        // false === no such row (unseeded event); null === row exists but NULL.
+        $cache[$eventType] = ($row === false) ? true : (bool) $row;
+    } catch (Throwable $e) {
+        $cache[$eventType] = true; // table not migrated yet
+    }
+    return $cache[$eventType];
+}
+
+/**
  * Every active user holding $permKey, as user ids.
  *
  * Mirrors load_permissions(): role grant minus a user revoke, plus a user
