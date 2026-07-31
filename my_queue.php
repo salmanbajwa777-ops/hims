@@ -119,8 +119,12 @@ $flash = trim($_GET['done'] ?? '');
 $admitError = trim($_GET['admit_error'] ?? '');
 
 // ---------------- Today's queue for this doctor ----------------
-// Same shape as the console's queue: active consultation first, then waiting,
-// then done; newest token on top within each group.
+// Rows sit in token order whatever their state, so a patient never changes
+// place on screen when their consultation starts or finishes — the stripe and
+// the status pill carry that, position does not. Session leads the sort because
+// tokens restart at 1 each sitting and the session is never printed, so two
+// people can hold "SB-1" on one date; keeping it first stops the evening list
+// interleaving with the morning one and showing that label twice in a row.
 $queueStmt = $pdo->prepare("
     SELECT v.id AS visit_id, v.token_no, v.token_session, v.consult_status, v.started_at, v.created_at,
            v.patient_id,
@@ -134,7 +138,7 @@ $queueStmt = $pdo->prepare("
     LEFT JOIN admissions a ON a.visit_id = v.id
     LEFT JOIN bills b ON b.visit_id = v.id
     WHERE v.doctor_id = ? AND v.visit_date = CURDATE()
-    ORDER BY FIELD(v.consult_status, 'IN_CONSULT', 'WAITING', 'DONE'), v.token_session DESC, v.token_no DESC
+    ORDER BY v.token_session DESC, v.token_no DESC
 ");
 $queueStmt->execute([$doctorId]);
 $visits = $queueStmt->fetchAll();
@@ -176,6 +180,13 @@ $waiting   = array_values(array_filter($visits, fn($v) => $v['consult_status'] =
 $inConsult = array_values(array_filter($visits, fn($v) => $v['consult_status'] === 'IN_CONSULT'));
 $doneCount = count(array_filter($visits, fn($v) => $v['consult_status'] === 'DONE'));
 $current   = $inConsult[0] ?? null;
+
+// The one thing the header is scanned for: who gets called next. $waiting keeps
+// the query's DESC order, so the lowest token — the next patient — is the LAST
+// element, not the first. With two sittings this lands on the earliest session
+// still waiting, which is the right answer: those patients are called first.
+$nextVisit = $waiting ? end($waiting) : null;
+$nextUp    = $nextVisit ? $myTokenPrefix . '-' . (int) $nextVisit['token_no'] : '';
 
 function mq_age(array $v): ?int {
     if (!empty($v['dob'])) {
@@ -394,7 +405,7 @@ require __DIR__ . '/partials/head.php';
                 <div class="section-head">
                     <div>
                         <div class="section-title">My Queue</div>
-                        <div class="section-sub">Patients registered for you today, in token order</div>
+                        <div class="section-sub">Today's patients in token order<?= $nextUp !== '' ? ' · next up ' . htmlspecialchars($nextUp) : '' ?></div>
                     </div>
                     <div class="q-count-pills">
                         <?php if ($current): ?><span class="status-pill in-consult">1 in consult</span><?php endif; ?>
