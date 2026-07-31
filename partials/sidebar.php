@@ -158,6 +158,12 @@ $sbGroups = [
              'perm' => 'FINANCIAL_POST_EXPENSES', 'notAdmin' => true],
             ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',    'href' => 'shift_closing.php',
              'perm' => 'RECEPTION_CLOSE_DAY', 'notAdmin' => true],
+            // Doctors answer procedure discounts here. Permission-gated, so it
+            // is invisible to reception — and it must stay in Workspace rather
+            // than Finances: a doctor never sees the Finances group, and they
+            // are the whole audience for it.
+            ['slug' => 'proc_discounts', 'label' => 'Procedure Discounts', 'icon' => 'receipt',
+             'href' => 'procedure_discount_approvals.php', 'perm' => 'DOCTOR_APPROVE_PROCEDURE_DISCOUNT'],
         ],
     ],
     [

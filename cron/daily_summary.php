@@ -31,6 +31,40 @@ if (php_sapi_name() !== 'cli' && ($_GET['key'] ?? '') !== $cronKey) {
 $today = date('Y-m-d');
 $niceDate = date('l, d/m/Y');
 
+// ---- Close out procedure discounts nobody answered ----
+//
+// A receptionist's flat discount goes to the performing doctor with 24 hours to
+// respond. Silence closes it: the money moved the moment the patient paid, and
+// leaving rows PENDING forever would grow a queue nobody works.
+//
+// AUTO_APPROVED, never APPROVED — "the doctor agreed" and "the doctor never
+// looked" are different facts, and the admin report exists to tell them apart.
+// discount_decided_by_id stays NULL for the same reason: nobody decided.
+//
+// SELF-HEALING: this sweeps EVERYTHING past the window, not just the last day,
+// so a cron that misses a run (or is registered late) catches up on the next
+// one instead of stranding those rows permanently. Several HIMS crons have been
+// written and never registered in hPanel; this one is at least safe when that
+// happens.
+//
+// Bolted onto the daily summary rather than given its own file for exactly that
+// reason — this cron is registered and verified running.
+$autoClosed = 0;
+try {
+    $sweep = $pdo->prepare("
+        UPDATE procedure_bills
+           SET discount_approval = 'AUTO_APPROVED', discount_decided_at = NOW()
+         WHERE discount_approval = 'PENDING'
+           AND discount_notified_at IS NOT NULL
+           AND discount_notified_at < (NOW() - INTERVAL 24 HOUR)
+    ");
+    $sweep->execute();
+    $autoClosed = $sweep->rowCount();
+} catch (Throwable $e) {
+    // Columns not migrated yet — leave it at zero rather than kill the summary.
+    $autoClosed = 0;
+}
+
 // ---- Registrations & revenue (consultation bills created today) ----
 $reg = $pdo->query("
     SELECT COUNT(*) AS visits,
@@ -256,6 +290,63 @@ if ($byCashier) {
             . '</tr>';
     }
     $body .= '</table>';
+}
+
+// ---- Procedure discounts ----
+//
+// The admin's only real lever. A doctor's answer moves no money, so the point
+// of this block is that discounts never happen quietly: who gave one, and
+// whether the doctor objected or simply never looked.
+try {
+    $pd = $pdo->query("
+        SELECT COUNT(*) AS n,
+               COALESCE(SUM(manual_discount_amount), 0) AS total,
+               SUM(discount_approval = 'REJECTED')      AS objected,
+               SUM(discount_approval = 'AUTO_APPROVED') AS unanswered,
+               SUM(discount_approval = 'PENDING')       AS pending
+          FROM procedure_bills
+         WHERE manual_discount_amount > 0 AND voided_at IS NULL
+           AND DATE(paid_at) = CURDATE()
+    ")->fetch();
+
+    if ($pd && (int) $pd['n'] > 0) {
+        $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">Procedure discounts</h3>'
+            . '<p style="margin:0;font-size:12.5px;color:#41504f;">'
+            . (int) $pd['n'] . ' discount(s) today totalling <strong>Rs '
+            . number_format((float) $pd['total'], 0) . '</strong>'
+            . ((int) $pd['pending'] > 0 ? ' · ' . (int) $pd['pending'] . ' still awaiting a doctor' : '')
+            . '.</p>';
+
+        // Objections are the signal worth acting on — listed individually.
+        $obj = $pdo->query("
+            SELECT pb.invoice_number, pb.manual_discount_amount, pb.discount_reject_reason,
+                   p.name AS patient_name, d.name AS doctor_name, cu.name AS raised_by
+              FROM procedure_bills pb
+              JOIN patients p ON p.id = pb.patient_id
+              LEFT JOIN users d  ON d.id  = pb.discount_doctor_id
+              LEFT JOIN users cu ON cu.id = pb.created_by_id
+             WHERE pb.discount_approval = 'REJECTED' AND pb.voided_at IS NULL
+               AND DATE(pb.discount_decided_at) = CURDATE()
+             ORDER BY pb.discount_decided_at DESC
+        ")->fetchAll();
+        foreach ($obj as $o) {
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#b3261e;"><strong>Objected:</strong> '
+                . htmlspecialchars($o['invoice_number']) . ' · '
+                . htmlspecialchars(mb_strtoupper((string) $o['patient_name'])) . ' · Rs '
+                . number_format((float) $o['manual_discount_amount'], 0)
+                . ' given by ' . htmlspecialchars((string) ($o['raised_by'] ?? 'reception'))
+                . ' — ' . htmlspecialchars((string) ($o['doctor_name'] ?? 'the doctor'))
+                . ' says: &ldquo;' . htmlspecialchars((string) $o['discount_reject_reason']) . '&rdquo;</p>';
+        }
+
+        if ((int) $pd['unanswered'] > 0 || $autoClosed > 0) {
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#b45309;">'
+                . max((int) $pd['unanswered'], $autoClosed)
+                . ' discount(s) closed with no answer from the doctor within 24 hours.</p>';
+        }
+    }
+} catch (Throwable $e) {
+    // Not migrated yet — skip the section rather than break the summary.
 }
 
 if ($mailFails > 0) {

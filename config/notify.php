@@ -717,3 +717,90 @@ function notify_closing_edited(PDO $pdo, int $closingId, int $round): void {
             'closing-edit:' . $c['closing_number'] . ':' . $round);
     } catch (Throwable $e) { /* best-effort */ }
 }
+
+/**
+ * A receptionist gave a flat discount on a procedure bill — tell the doctor.
+ *
+ * The patient has already paid and gone; this is not an authorisation request.
+ * The doctor has 24 hours to record whether they agree, and their answer moves
+ * no money either way (a procedure bill cannot be refunded — refunds.bill_id is
+ * FK'd to the OPD bills table — and a void is refused once the cashier's day is
+ * signed, which inside 24 hours is the normal case). What the answer does do is
+ * land on the admin report, which is where the actual control lives.
+ *
+ * WHY THIS QUOTES THE DOCTOR'S OWN RUPEES.
+ * procedure_bill.php spreads a discount across the bill's lines and doctor share
+ * is computed per line on the discounted amount, so a discount comes out of the
+ * doctor's earnings at their own share percentage. Sending them "Rs 2,000
+ * discount" would hide the only number they actually care about. So this
+ * re-computes what they would have earned at list price against what they will
+ * now earn, and leads with the difference.
+ */
+function notify_procedure_discount(PDO $pdo, int $procBillId): void {
+    try {
+        $stmt = $pdo->prepare('
+            SELECT pb.invoice_number, pb.manual_discount_amount, pb.manual_discount_reason,
+                   pb.grand_total, pb.discount_doctor_id, pb.discount_approval,
+                   p.name AS patient_name,
+                   cu.name AS raised_by_name
+            FROM procedure_bills pb
+            JOIN patients p ON p.id = pb.patient_id
+            LEFT JOIN users cu ON cu.id = pb.created_by_id
+            WHERE pb.id = ?
+        ');
+        $stmt->execute([$procBillId]);
+        $b = $stmt->fetch();
+        if (!$b || $b['discount_approval'] !== 'PENDING' || !$b['discount_doctor_id']) {
+            return;
+        }
+
+        // The doctor's own exposure, from the per-line share snapshots. Summed
+        // twice over the same lines: once on what was actually billed, once on
+        // what the line would have been with no discount at all. The gap is
+        // what the discount cost them personally.
+        //
+        // doctor_split() lives in billing.php, which this file does NOT require
+        // (notify.php is deliberately light — it is pulled into pages that have
+        // no business loading the billing engine). Every caller today loads it
+        // first, but relying on that would make the doctor's own rupee figure
+        // silently disappear the day a caller does not. Load it here instead.
+        if (!function_exists('doctor_split') && is_file(__DIR__ . '/billing.php')) {
+            require_once __DIR__ . '/billing.php';
+        }
+        $doctorLoss = 0.0;
+        if (function_exists('doctor_split')) {
+            $li = $pdo->prepare('
+                SELECT amount, unit_rate, quantity, doctor_share_pct, has_tax, tax_percent,
+                       COALESCE(disposables_cost, 0) AS disposables_cost
+                FROM procedure_bill_items WHERE procedure_bill_id = ?
+            ');
+            $li->execute([$procBillId]);
+            foreach ($li->fetchAll() as $ln) {
+                $disp   = (float) $ln['disposables_cost'];
+                $actual = doctor_split((float) $ln['amount'], (float) $ln['doctor_share_pct'],
+                                       (bool) $ln['has_tax'], (float) $ln['tax_percent'], $disp);
+                $list   = doctor_split((float) $ln['unit_rate'] * (float) $ln['quantity'],
+                                       (float) $ln['doctor_share_pct'],
+                                       (bool) $ln['has_tax'], (float) $ln['tax_percent'], $disp);
+                $doctorLoss += ($list['doctor'] - $actual['doctor']);
+            }
+        }
+        $doctorLoss = max(0.0, round($doctorLoss, 0));
+
+        $discount = (float) $b['manual_discount_amount'];
+        $title = 'Discount Rs ' . number_format($discount, 0) . ' on ' . $b['invoice_number']
+            . ($doctorLoss > 0 ? ' — your share is Rs ' . number_format($doctorLoss, 0) . ' lower' : '');
+
+        $body = strtoupper((string) $b['patient_name'])
+            . ' · paid Rs ' . number_format((float) $b['grand_total'], 0)
+            . ' · by ' . ($b['raised_by_name'] ?? 'reception')
+            . ($b['manual_discount_reason'] ? ' — ' . $b['manual_discount_reason'] : '')
+            . ' · 24h to respond; the patient has already paid.';
+
+        // In-app FIRST and unconditionally. notify.php's mail helpers return
+        // early when there is no address on file, so an email-first ordering
+        // would silently skip the bell for exactly the doctors who most need it.
+        notify_users($pdo, [(int) $b['discount_doctor_id']], 'procedure_discount',
+            $title, $body, 'procedure_discount_approvals.php', $b['invoice_number']);
+    } catch (Throwable $e) { /* best-effort — never cost the clinic a paid bill */ }
+}

@@ -132,6 +132,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
     // consent_format_cnic(). Optional like the two above.
     $signerCnic = consent_format_cnic((string) ($_POST['consent_signer_cnic'] ?? ''));
 
+    // Reception's ad-hoc flat discount, in rupees. Separate permission from
+    // raising the bill at all, so it can be withdrawn from one person without
+    // stopping them billing — which, since the doctor's later decision moves no
+    // money, is the only real control there is.
+    //
+    // Rupees, never a percentage: a stored % silently re-scales itself if the
+    // bill is ever edited. Same lesson the admission manual discount learned.
+    $canDiscount = has_permission('RECEPTION_APPLY_PROCEDURE_DISCOUNT');
+    $manualDiscount = $canDiscount
+        ? max(0, round((float) str_replace(',', '', (string) ($_POST['manual_discount'] ?? '0')), 2))
+        : 0.0;
+    $manualDiscountReason = $canDiscount
+        ? mb_substr(trim((string) ($_POST['manual_discount_reason'] ?? '')), 0, 255)
+        : '';
+
     // Settling a bill moves money — refuse once the cashier's shift is closed.
     $dayLock = require_day_open($pdo);
 
@@ -261,21 +276,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
             // shows a generic "Discount"; the category name stays internal.
             $cat = patient_discount_category($pdo, $patientId);
             $discountPct = $cat ? (float) $cat['procedures_pct'] : 0.0;
-            $grandTotal = round($subtotal * (1 - $discountPct / 100), 2);
-            $discountAmount = round($subtotal - $grandTotal, 2);
+            $afterCategory = round($subtotal * (1 - $discountPct / 100), 2);
+            $discountAmount = round($subtotal - $afterCategory, 2);
+
+            // The manual discount STACKS on the category one and is clamped to
+            // what is left, so a bill can never go negative and the patient can
+            // never be owed money by a discount.
+            $manualDiscount = min($manualDiscount, $afterCategory);
+            $grandTotal = round($afterCategory - $manualDiscount, 2);
+
+            // The doctor only owes a decision when reception actually gave
+            // something away. 'NONE' otherwise, so undiscounted bills never
+            // appear in anyone's queue.
+            $discountApproval = $manualDiscount > 0.009 ? 'PENDING' : 'NONE';
+
             $status = $grandTotal > 0 ? 'paid' : 'waived';
 
             $invoiceNumber = generate_procedure_invoice_number($pdo);
 
+            // discount_notified_at is stamped here, not when the doctor opens the
+            // app: the 24-hour clock must run for a doctor who never logs in, or
+            // the sweep would never time anything out.
             $pdo->prepare('
                 INSERT INTO procedure_bills
                     (invoice_number, patient_id, doctor_id, subtotal, discount_pct, discount_amount,
-                     grand_total, status, payment_method, paid_amount, paid_at, paid_by_id, created_by_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+                     grand_total, status, payment_method, paid_amount, paid_at, paid_by_id, created_by_id,
+                     manual_discount_amount, manual_discount_reason, discount_approval,
+                     discount_doctor_id, discount_notified_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)
             ')->execute([
                 $invoiceNumber, $patientId, $doctorId, $subtotal, $discountPct, $discountAmount,
                 $grandTotal, $status, $paymentMethod, $grandTotal,
                 (int) $_SESSION['user_id'], (int) $_SESSION['user_id'],
+                $manualDiscount,
+                $manualDiscount > 0.009 ? ($manualDiscountReason ?: null) : null,
+                $discountApproval,
+                $manualDiscount > 0.009 ? $doctorId : null,
+                $manualDiscount > 0.009 ? date('Y-m-d H:i:s') : null,
             ]);
             $procBillId = (int) $pdo->lastInsertId();
 
@@ -292,11 +329,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
                          doctor_share_pct, has_tax, tax_percent)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                   ');
-            foreach ($lines as $ln) {
-                // Spread the category discount proportionally across the lines so
+            // Both discounts collapse into ONE ratio before the loop. Applying
+            // them in sequence would round twice per line and drift SUM(amount)
+            // away from grand_total by a paisa or two — and that invariant is
+            // load-bearing: doctor share is computed per LINE, so any drift puts
+            // the share statement and the P&L quietly at odds with the drawer.
+            //
+            // $subtotal is guaranteed > 0 here: an empty $lines set is rejected
+            // above, and every line carries a positive rate.
+            $lineRatio = $subtotal > 0 ? ($grandTotal / $subtotal) : 0.0;
+
+            // Whatever the per-line rounding loses or gains is carried and
+            // settled on the last line, so the sum is EXACT rather than merely
+            // close. Without this a 3-line bill can end up a paisa off.
+            $spreadRemaining = $grandTotal;
+            $lastIndex = count($lines) - 1;
+
+            foreach ($lines as $lnIdx => $ln) {
+                // Spread both discounts proportionally across the lines so
                 // SUM(amount) always re-sums to grand_total — the doctor's share
                 // is then computed on what was ACTUALLY collected, not list price.
-                $lineAmount = $discountPct > 0 ? round($ln['amount'] * (1 - $discountPct / 100), 2) : $ln['amount'];
+                $lineAmount = $lnIdx === $lastIndex
+                    ? round($spreadRemaining, 2)
+                    : round($ln['amount'] * $lineRatio, 2);
+                $spreadRemaining = round($spreadRemaining - $lineAmount, 2);
                 // The supplies cost is NOT discounted — the clinic paid the same
                 // for them whoever the patient is. But a discount can drop the
                 // line below the cost, so re-clamp: the deduction can never
@@ -335,6 +391,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
             // Best-effort Sheet log after commit — never block reception.
             if (function_exists('sheet_push')) {
                 try { sheet_push($pdo, 'PROCEDURE', $procBillId, (int) $_SESSION['user_id']); } catch (Throwable $e) { /* ignore */ }
+            }
+
+            // Tell the doctor a discount was given. AFTER commit and wrapped,
+            // exactly like the Sheet push: the patient has paid and the slip is
+            // about to print, so a notification failure must never cost the
+            // clinic the bill. The doctor's 24h clock is already stamped on the
+            // row, so a dropped notification delays the alert, not the deadline.
+            if ($manualDiscount > 0.009 && function_exists('notify_procedure_discount')) {
+                try { notify_procedure_discount($pdo, $procBillId); } catch (Throwable $e) { /* ignore */ }
             }
 
             header('Location: procedure_bill.php?print=1&procedure_bill_id=' . $procBillId);
@@ -479,6 +544,16 @@ $headExtra = <<<CSS
 /* Payment toggle: .paytoggle in assets/app.css. This page posts CASH/DIGITAL
    rather than cash/card, so the markup is written out instead of coming from
    pay_method_toggle() — the look is shared, the values are not. */
+
+/* Flat discount. Deliberately quiet: it sits below the total rather than beside
+   it, because the common case is no discount at all and it should not read as a
+   field waiting to be filled. */
+.mdisc { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 8px; }
+.mdisc label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.mdisc input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 14px; background: var(--bg); box-sizing: border-box; }
+.mdisc input:focus { outline: none; border-color: var(--primary); background: #fff; }
+.mdisc input[type="number"] { font-weight: 700; font-variant-numeric: tabular-nums; }
+.mdisc-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
 .raisebtn { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: var(--radius-btn); background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
 .raisebtn[disabled] { opacity: .5; cursor: not-allowed; }
 .disc-note { font-size: 12px; color: var(--primary-dark); margin-top: 8px; }
@@ -678,6 +753,26 @@ require __DIR__ . '/partials/sidebar.php';
                             <p class="disc-note">A <?= rtrim(rtrim(number_format((float) $selectedCat['procedures_pct'], 2), '0'), '.') ?>% discount applies to this patient and is already included.</p>
                             <?php endif; ?>
 
+                            <?php if (has_permission('RECEPTION_APPLY_PROCEDURE_DISCOUNT')): ?>
+                            <!-- Flat discount. Payment is NOT held for the doctor's answer:
+                                 the bill is taken and printed now, and the doctor records
+                                 whether they agree within 24 hours. Their decision moves no
+                                 money — it goes on the record, and onto the admin report. -->
+                            <div class="mdisc">
+                                <label for="manualDiscount">Discount (Rs)</label>
+                                <input type="number" id="manualDiscount" name="manual_discount"
+                                       min="0" step="1" value="" placeholder="0" inputmode="numeric"
+                                       autocomplete="off">
+                                <input type="text" id="manualDiscountReason" name="manual_discount_reason"
+                                       maxlength="255" placeholder="Reason (shown to the doctor)"
+                                       autocomplete="off">
+                                <p class="mdisc-note" id="mdiscNote" hidden>
+                                    The performing doctor is notified and has 24 hours to approve.
+                                    This does <strong>not</strong> hold up the payment.
+                                </p>
+                            </div>
+                            <?php endif; ?>
+
                             <!-- Nothing pre-checked on purpose — the submit handler at the
                                  bottom of this page refuses to send until one is chosen. -->
                             <div class="paytoggle" role="radiogroup" aria-label="Payment method" style="margin-top:16px;">
@@ -774,6 +869,10 @@ require __DIR__ . '/partials/sidebar.php';
     var subEl = document.getElementById('subAmt');
     var discEl = document.getElementById('discAmt');
     var raiseBtn = document.getElementById('raiseBtn');
+    // Both null unless the user holds RECEPTION_APPLY_PROCEDURE_DISCOUNT — the
+    // block is not rendered at all otherwise, so every use is guarded.
+    var mdiscEl = document.getElementById('manualDiscount');
+    var mdiscNote = document.getElementById('mdiscNote');
     var consentNote = document.getElementById('consentNote');
     var signerBox = document.getElementById('signerBox');
     // Carries the selected patient through to the consent page's deep link.
@@ -843,6 +942,17 @@ require __DIR__ . '/partials/sidebar.php';
         var total = discountPct > 0 ? Math.round(subtotal * (1 - discountPct / 100)) : subtotal;
         if (subEl) { subEl.textContent = fmt(subtotal); }
         if (discEl) { discEl.textContent = '− ' + fmt(subtotal - total); }
+
+        // The flat discount stacks on the category one and is clamped to what
+        // is left, exactly as the server does — the screen must never promise a
+        // total the slip will not print.
+        var manual = 0;
+        if (mdiscEl) {
+            manual = Math.max(0, parseFloat(mdiscEl.value) || 0);
+            if (manual > total) { manual = total; }
+            total = total - manual;
+            if (mdiscNote) { mdiscNote.hidden = manual <= 0; }
+        }
         totalEl.textContent = fmt(total);
         raiseBtn.disabled = lines.length === 0;
 
@@ -884,6 +994,10 @@ require __DIR__ . '/partials/sidebar.php';
     }
 
     docPick.addEventListener('change', loadProcedures);
+
+    // Re-price on every keystroke so the staffer sees the real payable figure
+    // before taking the money, not after the slip prints.
+    if (mdiscEl) { mdiscEl.addEventListener('input', render); }
 
     // CNIC dashes as the cashier types: 00000-0000000-0. Digits are the only
     // input kept, so pasting an already-punctuated number re-formats rather
