@@ -13,6 +13,7 @@ $currentUser = $currentUser->fetch();
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/sheets.php';
 require_once __DIR__ . '/config/tokens.php';
+require_once __DIR__ . '/config/payment_methods.php';
 
 $error = '';
 $success = '';
@@ -144,7 +145,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
     require_permission('RECEPTION_PROCESS_PAYMENTS');
     $billId = (int) ($_POST['bill_id'] ?? 0);
     $paymentMethod = $_POST['payment_method'] ?? '';
-    $allowedMethods = ['cash', 'card', 'bank_transfer', 'cheque'];
 
     $billStmt = $pdo->prepare("SELECT * FROM bills WHERE id = ? AND status = 'finalized'");
     $billStmt->execute([$billId]);
@@ -158,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recor
         $error = $dayLock;
     } elseif (!$bill) {
         $error = 'Bill not found or not yet finalized.';
-    } elseif (!in_array($paymentMethod, $allowedMethods, true)) {
+    } elseif (!in_array($paymentMethod, PAY_METHODS_IN, true)) {
         $error = 'Please select a valid payment method.';
     } else {
         // paid_by_id = who collected the money — that user's shift tally owns it.
@@ -429,13 +429,11 @@ require __DIR__ . '/partials/sidebar.php';
                             <input type="hidden" name="action" value="record_payment">
                             <?= imp_confirm_field('Take this payment') ?>
                             <input type="hidden" name="bill_id" value="<?= (int) $activeBill['id'] ?>">
-                            <select name="payment_method" required style="padding:9px 11px; border:1px solid var(--border); border-radius:var(--radius-input); font-family:inherit;">
-                                <option value="">Payment method...</option>
-                                <option value="cash">Cash</option>
-                                <option value="card">Card</option>
-                                <option value="bank_transfer">Bank Transfer</option>
-                                <option value="cheque">Cheque</option>
-                            </select>
+                            <!-- Cash is pre-selected here, as on every other money form. The
+                                 old <select> opened on a blank "Payment method..." to stop a
+                                 four-way mis-scan; two labelled buttons can't be mis-scanned,
+                                 and the server whitelist still rejects anything else. -->
+                            <div style="flex:0 0 240px;"><?= pay_method_toggle('payment_method', 'cash', 'chk') ?></div>
                             <button type="submit" class="btn">Record Payment</button>
                         </form>
                         <?php endif; ?>

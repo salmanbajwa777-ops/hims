@@ -274,11 +274,9 @@ $headExtra = <<<CSS
 .totbar { display: flex; align-items: baseline; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 2px solid var(--border-strong); }
 .totbar .lbl { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 .totbar .amt { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.paymodes { display: flex; gap: 10px; margin-top: 16px; }
-.paymode { flex: 1; }
-.paymode input { position: absolute; opacity: 0; }
-.paymode label { display: block; text-align: center; padding: 12px; border: 1.5px solid var(--border); border-radius: var(--radius-input); font-weight: 600; font-size: 14px; cursor: pointer; }
-.paymode input:checked + label { border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark); }
+/* Payment toggle: .paytoggle in assets/app.css. This page posts CASH/DIGITAL
+   rather than cash/card, so the markup is written out instead of coming from
+   pay_method_toggle() — the look is shared, the values are not. */
 .raisebtn { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: var(--radius-btn); background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
 .raisebtn[disabled] { opacity: .5; cursor: not-allowed; }
 .disc-note { font-size: 12px; color: var(--primary-dark); margin-top: 8px; }
@@ -428,15 +426,14 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="card">
                         <h2>4 &middot; Payment</h2>
                         <p class="sub">Collected now, before treatment.</p>
-                        <div class="paymodes">
-                            <div class="paymode">
-                                <input type="radio" name="payment_mode" id="payCash" value="CASH">
-                                <label for="payCash">Cash</label>
-                            </div>
-                            <div class="paymode">
-                                <input type="radio" name="payment_mode" id="payDigital" value="DIGITAL">
-                                <label for="payDigital">Online / Card</label>
-                            </div>
+                        <!-- Nothing pre-checked on purpose: the staffer must state how the
+                             money arrived before the bill can be raised (server check at the
+                             top of this file). -->
+                        <div class="paytoggle" role="radiogroup" aria-label="Payment method" style="margin-top:16px;">
+                            <input type="radio" class="paytoggle-i" name="payment_mode" id="payCash" value="CASH">
+                            <label class="paytoggle-b" for="payCash">Cash</label>
+                            <input type="radio" class="paytoggle-i" name="payment_mode" id="payDigital" value="DIGITAL">
+                            <label class="paytoggle-b" for="payDigital">Online / Card</label>
                         </div>
                         <button type="submit" class="raisebtn" id="raiseBtn" data-busy="Raising…" disabled>Raise bill &amp; print slip</button>
                     </div>

@@ -69,11 +69,11 @@ $dobDisplay = $bill['dob'] ? date('d/m/Y', strtotime($bill['dob'])) : '';
 $total = (float) $bill['grand_total'];
 $paid = (float) ($bill['paid_amount'] ?? 0);
 $writeoff = (float) $bill['write_off_amount'];
-$methodLabels = ['cash' => 'Cash', 'card' => 'Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
+require_once __DIR__ . '/config/payment_methods.php';
 // Payment mode prints as a footnote beside the patient name (matching the consultation
 // slip). Draft bills aren't settled yet, so no mode is shown for them.
 $paymentModeNote = $bill['status'] !== 'draft'
-    ? ($methodLabels[$bill['payment_method']] ?? '—')
+    ? pay_method_label($bill['payment_method'])
     : '';
 ?>
 <!DOCTYPE html>

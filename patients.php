@@ -1468,10 +1468,12 @@ require __DIR__ . '/partials/sidebar.php';
 .fu-quote .lbl { font-size:12.5px; color:var(--text-secondary); }
 .fu-quote .fee { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
 .fu-quote .tag { font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px; background:var(--primary-light); color:var(--primary-dark); margin-top:2px; display:inline-block; }
-.fu-pay { display:flex; gap:8px; }
-.fu-pay label.pill { flex:1; border:1px solid var(--border); border-radius:12px; padding:10px; text-align:center; font-size:13px; font-weight:600; cursor:pointer; }
-.fu-pay label.pill:has(input:checked) { border-color:var(--primary); background:var(--primary-light); color:var(--primary-dark); }
-.fu-pay input { display:none; }
+/* Payment toggle: .paytoggle in assets/app.css. The dialect that used to live
+   here shadowed the global .pill badge class, hid the radio with display:none
+   (killing keyboard access) and selected with :has(), which older browsers
+   ignore — leaving no visible selection at all on a form that takes money.
+   This modal posts CASH/DIGITAL, so the markup is written out rather than
+   coming from pay_method_toggle(). */
 .fu-override { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:7px; }
 .fu-foot { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px 22px; }
 </style>
@@ -1514,9 +1516,11 @@ require __DIR__ . '/partials/sidebar.php';
                 <label class="fu-override"><input type="checkbox" name="override_full" value="1" id="fuOverride" onchange="fuApplyOverride()"> Charge full fee instead (override follow-up discount)</label>
                 <div>
                     <label>Payment mode</label>
-                    <div class="fu-pay">
-                        <label class="pill"><input type="radio" name="payment_mode" value="CASH" checked> Cash</label>
-                        <label class="pill"><input type="radio" name="payment_mode" value="DIGITAL"> Online / Card</label>
+                    <div class="paytoggle" role="radiogroup" aria-label="Payment mode">
+                        <input type="radio" class="paytoggle-i" name="payment_mode" id="fuPayCash" value="CASH" checked>
+                        <label class="paytoggle-b" for="fuPayCash">Cash</label>
+                        <input type="radio" class="paytoggle-i" name="payment_mode" id="fuPayDigital" value="DIGITAL">
+                        <label class="paytoggle-b" for="fuPayDigital">Online / Card</label>
                     </div>
                 </div>
             </div>

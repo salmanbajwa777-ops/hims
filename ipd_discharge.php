@@ -17,6 +17,7 @@ require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/ipd_billing.php';
 require_once __DIR__ . '/config/ipd_advances.php';
+require_once __DIR__ . '/config/payment_methods.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -180,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply
 
 // ---------------- Settle (take payment) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settle' && $bill && !$locked && $canFinalize) {
-    $method = in_array($_POST['payment_method'] ?? '', ['cash','card','bank_transfer','cheque'], true) ? $_POST['payment_method'] : 'cash';
+    $method = pay_method_in($_POST['payment_method'] ?? null);
     $paid = max(0, (float) ($_POST['paid_amount'] ?? 0));
     $grand = (float) $bill['grand_total'];
 
@@ -202,8 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
     $returnAmt = 0.0;
     if ($advRefundDue > 0.009) {
         $returnAmt = round(min((float) ($_POST['return_amount'] ?? $advRefundDue), $advRefundDue), 2);
-        $returnMethod = in_array($_POST['return_method'] ?? '', ['cash','card','bank_transfer','cheque'], true)
-            ? $_POST['return_method'] : 'cash';
+        $returnMethod = pay_method_in($_POST['return_method'] ?? null);
     }
 
     if ($shortfall > 0.009 && !$canApproveWriteoff) {
@@ -559,10 +559,14 @@ require __DIR__ . '/partials/sidebar.php';
                         <div class="section-sub">The bill settles fully from the advance held; nothing further is collected.</div>
                         <form method="POST" action="ipd_discharge.php?id=<?= $admissionId ?>" class="mini" style="margin-top:10px;display:flex;flex-direction:column;gap:10px;" onsubmit="return confirm('Return Rs <?= number_format($sReturnDue) ?> and discharge the patient?');" data-lock-submit>
                             <input type="hidden" name="action" value="settle">
+                            <!-- Nothing is COLLECTED on this branch — the advance already
+                                 covers the bill and the excess goes back. These two are inert
+                                 placeholders the settle handler still reads; the real choice
+                                 the staffer makes is return_method below. -->
                             <input type="hidden" name="payment_method" value="cash">
                             <input type="hidden" name="paid_amount" value="0">
                             <div><label>Returned as</label>
-                                <select name="return_method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select>
+                                <?= pay_method_toggle('return_method', 'cash', 'ret') ?>
                             </div>
                             <div><label>Amount returned</label>
                                 <input type="number" step="0.01" min="0" max="<?= number_format($sReturnDue, 2, '.', '') ?>"
@@ -580,7 +584,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <form method="POST" action="ipd_discharge.php?id=<?= $admissionId ?>" class="mini" style="margin-top:10px;display:flex;flex-direction:column;gap:10px;" onsubmit="return confirm('Settle this bill and discharge the patient?');" data-lock-submit>
                             <input type="hidden" name="action" value="settle">
                             <div><label>Payment method</label>
-                                <select name="payment_method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></select>
+                                <?= pay_method_toggle('payment_method', 'cash', 'stl') ?>
                             </div>
                             <div><label>Amount received</label>
                                 <input type="number" step="0.01" min="0" name="paid_amount"

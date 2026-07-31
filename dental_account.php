@@ -34,6 +34,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/dental.php';
+require_once __DIR__ . '/config/payment_methods.php';
 refresh_session_permissions($pdo);
 require_permission('DENTAL_VIEW_ACCOUNTS');
 
@@ -252,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'take_
             $error = $dayLock;
         } elseif ($amount <= 0) {
             $error = 'Enter an amount greater than zero.';
-        } elseif (!in_array($method, ['cash', 'card', 'bank_transfer', 'cheque'], true)) {
+        } elseif (!in_array($method, PAY_METHODS_IN, true)) {
             $error = 'Pick a valid payment method.';
         } else {
             $pdo->beginTransaction();
@@ -647,8 +648,6 @@ require __DIR__ . '/partials/sidebar.php';
                     </thead>
                     <tbody>
                         <?php
-                        $methodLabels = ['cash' => 'Cash', 'card' => 'Online / Card',
-                                         'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
                         foreach ($payments as $p): $v = $p['voided_at'] !== null || $p['status'] === 'voided'; ?>
                         <tr class="item-row <?= $v ? 'voided' : '' ?>">
                             <td style="font-weight:700;"><?= htmlspecialchars($p['receipt_number']) ?></td>
@@ -660,7 +659,7 @@ require __DIR__ . '/partials/sidebar.php';
                                 <div class="void-tag">VOIDED<?= $p['void_reason'] ? ' — ' . htmlspecialchars($p['void_reason']) : '' ?></div>
                                 <?php endif; ?>
                             </td>
-                            <td><?= htmlspecialchars($methodLabels[$p['payment_method']] ?? $p['payment_method']) ?></td>
+                            <td><?= htmlspecialchars(pay_method_label($p['payment_method'])) ?></td>
                             <td class="text-right">Rs <?= number_format((float) $p['amount'], 2) ?></td>
                             <td>
                                 <div style="display:flex;gap:6px;justify-content:flex-end;">
@@ -697,12 +696,7 @@ require __DIR__ . '/partials/sidebar.php';
                         </div>
                         <div class="field" style="margin:0;">
                             <label>Method</label>
-                            <select name="payment_method">
-                                <option value="cash">Cash</option>
-                                <option value="card">Online / Card</option>
-                                <option value="bank_transfer">Bank Transfer</option>
-                                <option value="cheque">Cheque</option>
-                            </select>
+                            <?= pay_method_toggle('payment_method', 'cash', 'dpay') ?>
                         </div>
                         <div class="field" style="margin:0;">
                             <label>Note (optional)</label>

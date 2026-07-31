@@ -13,6 +13,20 @@
 // 'failed' and are re-sent by cron/sheet_retry.php, so the sheet self-heals.
 
 require_once __DIR__ . '/billing.php';   // admission_billed_hours()
+require_once __DIR__ . '/payment_methods.php';
+
+/**
+ * pay_method_label() for a spreadsheet cell.
+ *
+ * Same canonical labels as every slip, except an unknown/NULL method stays an
+ * EMPTY cell rather than becoming an em dash — a lone "—" in a Sheets column
+ * looks like data and breaks the column's filters.
+ */
+function sheet_pay_label(?string $method): string
+{
+    $label = pay_method_label($method);
+    return $label === '—' ? '' : $label;
+}
 
 /**
  * Settings from config/sheets_config.php, or null when that file is absent
@@ -256,10 +270,9 @@ function sheet_row_for_bill(PDO $pdo, int $billId, ?int $actorId): ?array {
     $refunded = 0.0;
     try { $refunded = refunded_total($pdo, $billId); } catch (Throwable $e) { /* pre-migration */ }
 
-    $payLabels = ['cash' => 'Cash', 'card' => 'Online-Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
     $payment = $r['status'] === 'waived'
         ? 'Waived (free visit)'
-        : ($payLabels[$r['payment_method']] ?? '');
+        : sheet_pay_label($r['payment_method']);
 
     $when = $r['paid_at'] ?: $r['created_at'];
 
@@ -381,8 +394,7 @@ function sheet_row_for_admission_bill(PDO $pdo, int $admissionBillId, ?int $acto
     $net      = (float) $r['grand_total'];
     $discount = round($gross - $net, 2);
 
-    $payLabels = ['cash' => 'Cash', 'card' => 'Online-Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
-    $payment = $payLabels[$r['payment_method']] ?? '';
+    $payment = sheet_pay_label($r['payment_method']);
     if ((float) $r['write_off_amount'] > 0) {
         $payment = trim($payment . ' (written off Rs ' . number_format((float) $r['write_off_amount'], 2) . ')');
     }
@@ -454,8 +466,7 @@ function sheet_row_for_er_bill(PDO $pdo, int $erBillId, ?int $actorId): ?array {
     $net      = (float) $r['grand_total'];
     $discount = round($gross - $net, 2);
 
-    $payLabels = ['cash' => 'Cash', 'card' => 'Online-Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
-    $payment = $r['status'] === 'waived' ? 'Waived (no charge)' : ($payLabels[$r['payment_method']] ?? '');
+    $payment = $r['status'] === 'waived' ? 'Waived (no charge)' : sheet_pay_label($r['payment_method']);
 
     // The service line names, joined, for the descriptive column.
     $svc = $pdo->prepare('SELECT description, quantity FROM er_bill_items WHERE er_bill_id = ? ORDER BY id');

@@ -14,6 +14,7 @@ require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/sheets.php';
+require_once __DIR__ . '/config/payment_methods.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -207,7 +208,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'clear
 
 // ---- Finalize + payment ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finalize' && !$locked && $canFinalize) {
-    $method = $_POST['payment_method'] ?? 'cash';
+    // Whitelisted, not trusted: an out-of-ENUM value would be coerced to '' by
+    // MySQL and then read as NOT cash in every `<> 'cash'` tally, quietly moving
+    // drawer cash into the online column where it can never be reconciled.
+    $method = pay_method_in($_POST['payment_method'] ?? null);
     $paid = (float) ($_POST['paid_amount'] ?? 0);
     $total = (float) $bill['grand_total'];
     $paid = max(0, min($paid, $total));
@@ -526,10 +530,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="pay-grid">
                         <div>
                             <label>Payment method</label>
-                            <select name="payment_method">
-                                <option value="cash">Cash</option><option value="card">Card</option>
-                                <option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option>
-                            </select>
+                            <?= pay_method_toggle('payment_method', 'cash', 'adm') ?>
                         </div>
                         <div>
                             <label>Amount collected (Rs)</label>

@@ -61,11 +61,11 @@ $consultLabel = $items[0]['description'] ?? 'Consultation';
 // Payment mode is captured and settled at registration (see config/billing.php),
 // so it is a real, confirmed value on the printed slip — not "Pending". A free
 // follow-up (net 0, status 'waived') prints "Waived" rather than a cash/card mode.
-$paymentModeLabels = ['cash' => 'Cash', 'card' => 'Online / Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
+require_once __DIR__ . '/../config/payment_methods.php';
 if (($bill['status'] ?? '') === 'waived' || $netFee <= 0) {
     $paymentModeDisplay = 'Waived (free visit)';
 } else {
-    $paymentModeDisplay = $paymentModeLabels[$bill['payment_method'] ?? ''] ?? '—';
+    $paymentModeDisplay = pay_method_label($bill['payment_method'] ?? '');
 }
 
 // Everything below the vitals row is left blank on purpose: it is the doctor's

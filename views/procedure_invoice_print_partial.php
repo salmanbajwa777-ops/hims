@@ -51,11 +51,11 @@ $subtotal = (float) $bill['subtotal'];
 $discountAmount = (float) $bill['discount_amount'];
 
 $isVoided = !empty($bill['voided_at']);
-$paymentModeLabels = ['cash' => 'Cash', 'card' => 'Online / Card', 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
+require_once __DIR__ . '/../config/payment_methods.php';
 if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
     $paymentModeDisplay = 'Waived (no charge)';
 } else {
-    $paymentModeDisplay = $paymentModeLabels[$bill['payment_method'] ?? ''] ?? '—';
+    $paymentModeDisplay = pay_method_label($bill['payment_method'] ?? '');
 }
 ?>
 <!DOCTYPE html>

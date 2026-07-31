@@ -34,8 +34,7 @@ $doctorNameUpper = mb_strtoupper($account['doctor_name'] ?? '', 'UTF-8');
 $patientDobDisplay = $account['dob'] ? date('d/m/Y', strtotime($account['dob'])) : '';
 $printTimestamp = date('Y-m-d H:i:s');
 
-$methodLabels = ['cash' => 'Cash', 'card' => 'Online / Card',
-                 'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
+require_once __DIR__ . '/../config/payment_methods.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -198,7 +197,7 @@ $methodLabels = ['cash' => 'Cash', 'card' => 'Online / Card',
                 <tr>
                     <td><?= htmlspecialchars($p['receipt_number']) ?></td>
                     <td><?= date('d/m/Y', strtotime($p['paid_at'])) ?></td>
-                    <td><?= htmlspecialchars($methodLabels[$p['payment_method']] ?? $p['payment_method']) ?></td>
+                    <td><?= htmlspecialchars(pay_method_label($p['payment_method'])) ?></td>
                     <td class="num"><?= number_format((float) $p['amount'], 2) ?></td>
                 </tr>
                 <?php endforeach; ?>

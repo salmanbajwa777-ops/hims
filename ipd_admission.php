@@ -15,6 +15,7 @@ require_once __DIR__ . '/config/tokens.php';
 require_once __DIR__ . '/config/billing.php';        // require_day_open()
 require_once __DIR__ . '/config/ipd_billing.php';    // service charge + bill append
 require_once __DIR__ . '/config/ipd_advances.php';
+require_once __DIR__ . '/config/payment_methods.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -199,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'take_
         [$ok, $res] = ipd_take_advance(
             $pdo, $admissionId,
             (float) ($_POST['amount'] ?? 0),
-            (string) ($_POST['payment_method'] ?? 'cash'),
+            pay_method_in($_POST['payment_method'] ?? null),
             trim((string) ($_POST['note'] ?? '')) ?: null,
             $uid
         );
@@ -475,13 +476,8 @@ require __DIR__ . '/partials/sidebar.php';
                                    style="font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;">
                         </div>
                         <div>
-                            <label for="adv_pm">Received as</label>
-                            <select id="adv_pm" name="payment_method">
-                                <option value="cash">Cash</option>
-                                <option value="card">Card</option>
-                                <option value="bank_transfer">Bank transfer</option>
-                                <option value="cheque">Cheque</option>
-                            </select>
+                            <label>Received as</label>
+                            <?= pay_method_toggle('payment_method', 'cash', 'adv') ?>
                         </div>
                         <div><button type="submit" class="btn">Take advance</button></div>
                     </div>
@@ -509,7 +505,7 @@ require __DIR__ . '/partials/sidebar.php';
                                 <?php if ($isVoid): ?><span class="adv-tag void">VOID</span><?php endif; ?>
                                 <?php if ($isRet): ?><span class="adv-tag ret">RETURNED</span><?php endif; ?>
                                 <div class="adv-meta">
-                                    <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $a['payment_method']))) ?>
+                                    <?= htmlspecialchars(pay_method_label($a['payment_method'])) ?>
                                     &middot; <?= date('d/m/Y, h:i A', strtotime($a['created_at'])) ?>
                                     &middot; <?= htmlspecialchars($a['received_by_name'] ?: '—') ?>
                                     <?= $a['note'] ? ' &middot; ' . htmlspecialchars($a['note']) : '' ?>

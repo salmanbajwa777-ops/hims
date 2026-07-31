@@ -516,6 +516,54 @@ td { padding: 12px 10px; border-top: 1px solid var(--row-line); font-size: var(-
 .pill--danger { background: var(--danger-bg);    color: var(--danger); }
 .pill--quiet  { background: transparent; color: var(--text-muted); padding-inline: 0; }
 
+/* ============================================================================
+   PAYMENT TOGGLE — the ONE control for "how did the money come in".
+
+   Two buttons, Cash | Online / Card, because that is the only split the books
+   make: every tally is `payment_method = 'cash'` vs `<> 'cash'`. Replaces the
+   four-option <select> that sat on six money forms, and supersedes the two
+   duplicated dialects .fu-pay label.pill (patients.php) and .paymode
+   (er_bill.php + procedure_bill.php, where the CSS was copied byte-for-byte).
+
+   Markup comes from pay_method_toggle() in config/payment_methods.php.
+   Note this is NOT the .pill above — that is a read-only status badge. A
+   payment toggle is a form input, hence its own name.
+
+   TWO RULES THAT LOOK LIKE STYLE BUT ARE NOT:
+
+   1. `input:checked + label`, never :has(). The dialect this replaces used
+      :has(), which older Safari/Firefox ignore — there the control renders with
+      NO visible selection at all, on a form that takes money. The adjacent
+      sibling selector works everywhere.
+   2. The radio is hidden with position/opacity, never display:none. The old
+      dialect used display:none, which drops the input out of the tab order and
+      kills arrow-key navigation between the two options.
+   ============================================================================ */
+.paytoggle { display: flex; gap: 8px; }
+.paytoggle-i { position: absolute; opacity: 0; width: 0; height: 0; }
+
+/* Two class names deep (0,2,0) so it outranks the `.pay-grid label` /
+   `.mini label` field-caption rules on the host pages, which are (0,1,1) and
+   would otherwise force display:block and their own font-size onto the button. */
+.paytoggle .paytoggle-b {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    font-size: 13.5px; font-weight: 600; line-height: 1.4;
+    color: var(--text-secondary); background: var(--bg);
+    text-align: center; cursor: pointer; user-select: none; margin: 0;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.paytoggle .paytoggle-i:checked + .paytoggle-b {
+    background: var(--primary-light); border-color: var(--primary);
+    color: var(--primary-dark);
+}
+/* The input carries the focus but is invisible, so the ring goes on the label. */
+.paytoggle .paytoggle-i:focus-visible + .paytoggle-b {
+    outline: 2px solid var(--primary); outline-offset: 2px;
+}
+.paytoggle .paytoggle-i:disabled + .paytoggle-b { opacity: .5; cursor: not-allowed; }
+
 /* ---- Deprecated pill dialects -> mapped onto .pill ----
    Kept so un-migrated pages keep rendering correctly during the page-by-page
    rollout. Delete each block once no page references it. */

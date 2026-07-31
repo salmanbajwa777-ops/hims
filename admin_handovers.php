@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/config/guard_admin.php';
 require_once __DIR__ . '/config/billing.php';
+require_once __DIR__ . '/config/payment_methods.php';
 require_permission('ADMIN_RECEIVE_HANDOVER');
 
 $error = '';
@@ -638,7 +639,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php if (!empty($r['note'])): ?><span class="txn-note"><?= htmlspecialchars((string) $r['note']) ?></span><?php endif; ?>
                     </td>
                     <td><?= $r['paid_at'] ? date('h:i A', strtotime((string) $r['paid_at'])) : '—' ?></td>
-                    <td><?= htmlspecialchars((string) $r['payment_method']) ?></td>
+                    <td><?= htmlspecialchars(pay_method_label($r['payment_method'])) ?></td>
                     <td class="num<?= $amt < 0 ? ' txn-neg' : '' ?>">
                         <?= $amt < 0 ? '− ' . $money(abs($amt)) : $money($amt) ?>
                         <?php

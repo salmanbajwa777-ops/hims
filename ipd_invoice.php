@@ -65,6 +65,7 @@ $balanceDue = max(0, round((float) $bill['grand_total'] - $advApplied, 2));
 // the dental identity, everything else the house brand. This page previously
 // hardcoded a name that matched neither.
 require_once __DIR__ . '/config/brand.php';
+require_once __DIR__ . '/config/payment_methods.php';
 $brand = brand($bill['consultant_specialty'] ?? null);
 $logoFile = brand_logo($bill['consultant_specialty'] ?? null);
 ?>
@@ -156,7 +157,7 @@ table.items tr.grp td { background: #f0f0ec; font-weight: 700; font-size: 10px; 
         $cashPart = max(0, round((float) $bill['paid_amount'] - $advApplied, 2));
         ?>
         <?php if ($cashPart > 0.009): ?>
-        <div class="r"><span>Paid (<?= htmlspecialchars($bill['payment_method']) ?>)</span><span>Rs <?= number_format($cashPart) ?></span></div>
+        <div class="r"><span>Paid (<?= htmlspecialchars(pay_method_label($bill['payment_method'])) ?>)</span><span>Rs <?= number_format($cashPart) ?></span></div>
         <?php endif; ?>
         <?php if ($advRefunded > 0.009): ?><div class="r"><span>Advance returned</span><span>Rs <?= number_format($advRefunded) ?></span></div><?php endif; ?>
         <?php if ((float) $bill['write_off_amount'] > 0): ?><div class="r"><span>Written off</span><span>Rs <?= number_format((float) $bill['write_off_amount']) ?></span></div><?php endif; ?>

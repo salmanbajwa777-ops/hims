@@ -16,6 +16,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/ipd_advances.php';
 require_once __DIR__ . '/config/brand.php';
+require_once __DIR__ . '/config/payment_methods.php';
 refresh_session_permissions($pdo);
 
 // Doctors never handle cash and have no reason to print a money receipt.
@@ -62,7 +63,7 @@ try {
 } catch (Throwable $e) { /* printing must never fail on a bookkeeping write */ }
 
 $b = brand();
-$methodLabel = ucfirst(str_replace('_', ' ', $r['payment_method']));
+$methodLabel = pay_method_label($r['payment_method']);
 ?><!doctype html>
 <html lang="en">
 <head>

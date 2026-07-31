@@ -49,9 +49,8 @@ $doctorNameUpper = mb_strtoupper($payment['doctor_name'] ?? '', 'UTF-8');
 $thisPayment = (float) $payment['amount'];
 $isVoided = !empty($payment['voided_at']) || ($payment['status'] ?? '') === 'voided';
 
-$paymentModeLabels = ['cash' => 'Cash', 'card' => 'Online / Card',
-                      'bank_transfer' => 'Bank Transfer', 'cheque' => 'Cheque'];
-$paymentModeDisplay = $paymentModeLabels[$payment['payment_method'] ?? ''] ?? '—';
+require_once __DIR__ . '/../config/payment_methods.php';
+$paymentModeDisplay = pay_method_label($payment['payment_method'] ?? '');
 ?>
 <!DOCTYPE html>
 <html lang="en">
