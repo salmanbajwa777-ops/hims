@@ -983,6 +983,344 @@ function day_expense_rows(PDO $pdo, string $date, int $userId): array {
     }
 }
 
+/**
+ * The individual money rows behind day_cash_tally()'s buckets, for the admin's
+ * per-transaction cross-check on the handover page.
+ *
+ * THE RULE, and it is the whole reason this function is written the way it is:
+ * every stream's WHERE clause below is copy-identical to the matching block in
+ * day_cash_tally() — same business_day_window(), same status set, same
+ * voided_at IS NULL, same paid_by_id. If the two ever diverge these rows stop
+ * summing to the totals they explain, which is worse than showing no rows at
+ * all. Same rule day_expense_rows() is written under, for the same reason.
+ *
+ * Per-stream queries rather than one UNION, deliberately. The tables have
+ * genuinely different shapes (money in paid_amount vs amount, patient reached
+ * through 0-3 joins, different status enums) and every stream after the first
+ * two is migration-gated — a UNION would fatal the entire list when one table
+ * is absent, where the loop below just leaves that stream out. This mirrors
+ * clinic_revenue().
+ *
+ * 'amount' on every returned row is the CONTRIBUTION TO THIS DRAWER, not the
+ * invoice face value: IPD nets off the advance already banked on an earlier
+ * day, and an advance return is negative because the money left the till.
+ * 'face' carries the invoice total only when it differs, so the UI can explain
+ * the gap instead of looking like a discrepancy.
+ *
+ * Returns ['rows' => [...], 'cash' => float, 'online' => float, 'capped' => bool].
+ */
+function day_transaction_rows(PDO $pdo, string $date, int $userId, array $opts = []): array {
+    [$winStart, $winEnd] = business_day_window($pdo, $date);
+
+    $showVoided = !empty($opts['voided']);
+    $perStreamCap = 300;          // house convention; no paginated list exists
+    $rows = [];
+    $capped = false;
+
+    // Voided rows are fetched only when asked for, and never counted in the
+    // totals below — they are shown so "where did that receipt go?" has an
+    // answer, not so they can move the money.
+    $voidSql = $showVoided ? '' : ' AND %s.voided_at IS NULL';
+
+    // Each entry: the SELECT that normalises one stream onto the common shape.
+    // %VOID% is replaced per-stream so the voided filter stays togglable.
+    $run = function (string $sql, array $args) use ($pdo, &$rows, &$capped, $perStreamCap) {
+        try {
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($args);
+            $got = $stmt->fetchAll();
+            if (count($got) >= $perStreamCap) {
+                $capped = true;
+            }
+            foreach ($got as $r) {
+                $rows[] = $r;
+            }
+        } catch (Throwable $e) {
+            // Stream's table absent on this database — contribute nothing, the
+            // same silent degradation day_cash_tally() applies.
+        }
+    };
+
+    // ---- Consultations (bills). Patient via visits. -------------------------
+    $run("
+        SELECT b.invoice_number AS doc_no, 'Consultation' AS type,
+               p.name AS patient, b.payment_method, b.paid_at,
+               b.paid_amount AS amount, b.grand_total AS face,
+               b.voided_at, NULL AS note
+        FROM bills b
+        JOIN visits v ON v.id = b.visit_id
+        JOIN patients p ON p.id = v.patient_id
+        WHERE b.status = 'paid'" . sprintf($voidSql, 'b') . "
+          AND b.paid_at >= ? AND b.paid_at < ? AND b.paid_by_id = ?
+        ORDER BY b.paid_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- Admission / discharge bills. -------------------------------------
+    // status IN ('paid','finalized') exactly as the tally: a partial discharge
+    // payment sits at 'finalized' awaiting write-off approval, but the cash is
+    // already in the drawer. paid_amount > 0 keeps unpaid finalized bills out.
+    $run("
+        SELECT ab.invoice_number AS doc_no, 'Admission' AS type,
+               p.name AS patient, ab.payment_method, ab.paid_at,
+               ab.paid_amount AS amount, ab.grand_total AS face,
+               ab.voided_at,
+               CASE WHEN ab.status = 'finalized'
+                    THEN 'Partial — awaiting write-off approval' END AS note
+        FROM admission_bills ab
+        JOIN admissions a ON a.id = ab.admission_id
+        JOIN visits v ON v.id = a.visit_id
+        JOIN patients p ON p.id = v.patient_id
+        WHERE ab.status IN ('paid', 'finalized')" . sprintf($voidSql, 'ab') . "
+          AND ab.paid_amount > 0
+          AND ab.paid_at >= ? AND ab.paid_at < ? AND ab.paid_by_id = ?
+        ORDER BY ab.paid_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- IPD bills. Patient via ipd_admissions → visits. -------------------
+    // The amount MUST net off advance_applied, matching the tally: paid_amount
+    // is the full settlement including advance money banked on an earlier day.
+    // Showing the raw figure here would read as a discrepancy that isn't one.
+    $ipdAmt = column_exists($pdo, 'ipd_bills', 'advance_applied')
+        ? 'COALESCE(ib.paid_amount, 0) - COALESCE(ib.advance_applied, 0)'
+        : 'COALESCE(ib.paid_amount, 0)';
+    $ipdNote = column_exists($pdo, 'ipd_bills', 'advance_applied')
+        ? "CASE WHEN COALESCE(ib.advance_applied, 0) > 0
+                THEN CONCAT('Advance Rs ', FORMAT(ib.advance_applied, 0), ' applied — banked earlier') END"
+        : 'NULL';
+    $run("
+        SELECT ib.invoice_number AS doc_no, 'IPD' AS type,
+               p.name AS patient, ib.payment_method, ib.paid_at,
+               $ipdAmt AS amount, ib.paid_amount AS face,
+               ib.voided_at, $ipdNote AS note
+        FROM ipd_bills ib
+        JOIN ipd_admissions ia ON ia.id = ib.admission_id
+        JOIN visits v ON v.id = ia.visit_id
+        JOIN patients p ON p.id = v.patient_id
+        WHERE ib.status = 'paid'" . sprintf($voidSql, 'ib') . "
+          AND ib.paid_at >= ? AND ib.paid_at < ? AND ib.paid_by_id = ?
+        ORDER BY ib.paid_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- ER service bills. Patient joined DIRECTLY (patient_id on the row). --
+    $run("
+        SELECT e.invoice_number AS doc_no, 'ER Service' AS type,
+               p.name AS patient, e.payment_method, e.paid_at,
+               e.paid_amount AS amount, e.paid_amount AS face,
+               e.voided_at, NULL AS note
+        FROM er_bills e
+        JOIN patients p ON p.id = e.patient_id
+        WHERE e.status = 'paid'" . sprintf($voidSql, 'e') . "
+          AND e.paid_at >= ? AND e.paid_at < ? AND e.paid_by_id = ?
+        ORDER BY e.paid_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- Procedure bills. Patient joined directly. -------------------------
+    $run("
+        SELECT pb.invoice_number AS doc_no, 'Procedure' AS type,
+               p.name AS patient, pb.payment_method, pb.paid_at,
+               pb.paid_amount AS amount, pb.paid_amount AS face,
+               pb.voided_at, NULL AS note
+        FROM procedure_bills pb
+        JOIN patients p ON p.id = pb.patient_id
+        WHERE pb.status = 'paid'" . sprintf($voidSql, 'pb') . "
+          AND pb.paid_at >= ? AND pb.paid_at < ? AND pb.paid_by_id = ?
+        ORDER BY pb.paid_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- Dental package payments. Money is `amount`; no paid_amount exists. --
+    // Patient via the account, which is where the case (and the dentist) live.
+    $run("
+        SELECT dp.receipt_number AS doc_no, 'Dental' AS type,
+               p.name AS patient, dp.payment_method, dp.paid_at,
+               dp.amount AS amount, dp.amount AS face,
+               dp.voided_at, da.title AS note
+        FROM dental_procedure_payments dp
+        JOIN dental_procedure_accounts da ON da.id = dp.account_id
+        JOIN patients p ON p.id = da.patient_id
+        WHERE dp.status = 'paid'" . sprintf($voidSql, 'dp') . "
+          AND dp.paid_at >= ? AND dp.paid_at < ? AND dp.paid_by_id = ?
+        ORDER BY dp.paid_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- IPD advances. No status column — voiding is the only state. --------
+    // A REFUND is money leaving the drawer, so it carries a NEGATIVE amount
+    // here for the same reason the tally folds it in negative.
+    $run("
+        SELECT adv.receipt_number AS doc_no,
+               CASE WHEN adv.direction = 'REFUND' THEN 'Advance return' ELSE 'Advance' END AS type,
+               p.name AS patient, adv.payment_method, adv.paid_at,
+               CASE WHEN adv.direction = 'REFUND' THEN -adv.amount ELSE adv.amount END AS amount,
+               adv.amount AS face,
+               adv.voided_at,
+               CASE WHEN adv.direction = 'REFUND' THEN 'Excess returned at discharge' END AS note
+        FROM ipd_advances adv
+        JOIN ipd_admissions ia ON ia.id = adv.admission_id
+        JOIN visits v ON v.id = ia.visit_id
+        JOIN patients p ON p.id = v.patient_id
+        WHERE 1 = 1" . sprintf($voidSql, 'adv') . "
+          AND adv.paid_at >= ? AND adv.paid_at < ? AND adv.paid_by_id = ?
+        ORDER BY adv.paid_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- Cash refunds. Dated on created_at, NOT paid_at, and attributed to
+    // the drawer the cash came out of. Both quirks match the tally exactly.
+    $drawerExpr = column_exists($pdo, 'refunds', 'paid_out_by_id')
+        ? 'COALESCE(r.paid_out_by_id, r.generated_by_id)'
+        : 'r.generated_by_id';
+    $run("
+        SELECT r.refund_number AS doc_no, 'Refund' AS type,
+               p.name AS patient, 'cash' AS payment_method, r.created_at AS paid_at,
+               -r.amount AS amount, r.amount AS face,
+               r.voided_at, r.reason AS note
+        FROM refunds r
+        JOIN bills b ON b.id = r.bill_id
+        JOIN visits v ON v.id = b.visit_id
+        JOIN patients p ON p.id = v.patient_id
+        WHERE r.refund_mode = 'cash'" . sprintf($voidSql, 'r') . "
+          AND r.created_at >= ? AND r.created_at < ? AND $drawerExpr = ?
+        ORDER BY r.created_at LIMIT $perStreamCap
+    ", [$winStart, $winEnd, $userId]);
+
+    // ---- Filters, applied in PHP so every stream is filtered identically ----
+    $type = trim((string) ($opts['type'] ?? ''));
+    if ($type !== '' && $type !== 'ALL') {
+        $rows = array_values(array_filter($rows, fn($r) => $r['type'] === $type));
+    }
+    $mode = trim((string) ($opts['mode'] ?? ''));
+    if ($mode === 'cash' || $mode === 'online') {
+        $rows = array_values(array_filter($rows, fn($r) => $mode === 'cash'
+            ? $r['payment_method'] === 'cash'
+            : $r['payment_method'] !== 'cash'));
+    }
+    $q = trim((string) ($opts['q'] ?? ''));
+    if ($q !== '') {
+        $needle = mb_strtolower($q);
+        $rows = array_values(array_filter($rows, fn($r) =>
+            mb_strpos(mb_strtolower((string) $r['patient']), $needle) !== false
+            || mb_strpos(mb_strtolower((string) $r['doc_no']), $needle) !== false));
+    }
+
+    // Chronological across every stream — the order a drawer actually filled.
+    usort($rows, fn($a, $b) => strcmp((string) $a['paid_at'], (string) $b['paid_at']));
+
+    // Totals over what is DISPLAYED, excluding voided rows: a voided document
+    // may be visible for traceability but it never moved money.
+    //
+    // Refunds are kept OUT of cash/online and returned separately, because that
+    // is exactly how the tally splits them: cash_total is money IN, and the
+    // refund is subtracted afterwards into net_collected / expected_cash.
+    // Folding it into 'cash' here would make these totals disagree with
+    // cash_total by precisely the refund — the drift this function exists to
+    // make impossible.
+    $cash = $online = $refund = 0.0;
+    foreach ($rows as $r) {
+        if ($r['voided_at'] !== null) {
+            continue;
+        }
+        if ($r['type'] === 'Refund') {
+            $refund += abs((float) $r['amount']);
+            continue;
+        }
+        if ($r['payment_method'] === 'cash') {
+            $cash += (float) $r['amount'];
+        } else {
+            $online += (float) $r['amount'];
+        }
+    }
+
+    return ['rows' => $rows, 'cash' => round($cash, 2), 'online' => round($online, 2),
+            'refund' => round($refund, 2),
+            'net' => round($cash + $online - $refund, 2), 'capped' => $capped];
+}
+
+/**
+ * Money in this cashier's window that day_cash_tally() does NOT count, and why.
+ *
+ * The admin's real question when a closing looks wrong is "what is missing?",
+ * not "what is here?" — so this answers it directly. The three checks are the
+ * ones tools/diag_day_closing.php already hunts, lifted out of a plain-text
+ * developer script and into the page the admin actually uses, and extended to
+ * the streams that script never covered.
+ *
+ * Read-only and advisory: nothing here changes a tally or a closing. An empty
+ * return means the day is clean, and the caller should render nothing at all.
+ */
+function day_uncounted_rows(PDO $pdo, string $date, int $userId): array {
+    [$winStart, $winEnd] = business_day_window($pdo, $date);
+    $out = [];
+
+    $probe = function (string $sql, array $args) use ($pdo, &$out) {
+        try {
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($args);
+            foreach ($stmt->fetchAll() as $r) {
+                $out[] = $r;
+            }
+        } catch (Throwable $e) {
+            // Table absent on this database — nothing to report for it.
+        }
+    };
+
+    // [1] Partial discharge payments stranded at status='finalized' with the
+    // admission never closed out. The tally DOES count these (cash reached the
+    // drawer), but they are the rows most likely to look wrong on a slip, so
+    // they are surfaced with their full total for context.
+    $probe("
+        SELECT ab.invoice_number AS doc_no, 'Admission' AS stream,
+               p.name AS patient, ab.paid_amount AS amount, ab.grand_total AS face,
+               'Partial payment — write-off not yet approved' AS why
+        FROM admission_bills ab
+        JOIN admissions a ON a.id = ab.admission_id
+        JOIN visits v ON v.id = a.visit_id
+        JOIN patients p ON p.id = v.patient_id
+        WHERE ab.status = 'finalized' AND ab.paid_amount > 0 AND ab.voided_at IS NULL
+          AND ab.paid_at >= ? AND ab.paid_at < ? AND ab.paid_by_id = ?
+        ORDER BY ab.paid_at
+    ", [$winStart, $winEnd, $userId]);
+
+    // [2] Paid rows in this window with NO drawer attribution. These belong to
+    // nobody's shift and are counted for nobody — real money that will never
+    // appear on any closing until paid_by_id is set. Not user-scoped, because
+    // an orphan by definition has no user to scope it to.
+    foreach ([['bills', 'Consultation'], ['admission_bills', 'Admission'],
+              ['er_bills', 'ER Service'], ['procedure_bills', 'Procedure'],
+              ['ipd_bills', 'IPD']] as [$tbl, $label]) {
+        $probe("
+            SELECT invoice_number AS doc_no, ? AS stream, NULL AS patient,
+                   paid_amount AS amount, paid_amount AS face,
+                   'No drawer attribution — counted for nobody' AS why
+            FROM `$tbl`
+            WHERE status IN ('paid', 'finalized') AND voided_at IS NULL
+              AND paid_amount > 0
+              AND paid_at >= ? AND paid_at < ?
+              AND (paid_by_id IS NULL OR paid_by_id = 0)
+            ORDER BY paid_at
+        ", [$label, $winStart, $winEnd]);
+    }
+
+    // [3] This cashier's money paid on the calendar date but OUTSIDE the
+    // business-day window — it lands on the neighbouring closing instead, which
+    // is the single most confusing way for a slip to look short.
+    foreach ([['bills', 'Consultation'], ['admission_bills', 'Admission'],
+              ['er_bills', 'ER Service'], ['procedure_bills', 'Procedure'],
+              ['ipd_bills', 'IPD']] as [$tbl, $label]) {
+        $probe("
+            SELECT invoice_number AS doc_no, ? AS stream, NULL AS patient,
+                   paid_amount AS amount, paid_amount AS face,
+                   CONCAT('Paid ', DATE_FORMAT(paid_at, '%H:%i'),
+                          ' — outside this business day, lands on another closing') AS why
+            FROM `$tbl`
+            WHERE status IN ('paid', 'finalized') AND voided_at IS NULL
+              AND paid_amount > 0 AND paid_by_id = ?
+              AND DATE(paid_at) = ?
+              AND NOT (paid_at >= ? AND paid_at < ?)
+            ORDER BY paid_at
+        ", [$label, $userId, $date, $winStart, $winEnd]);
+    }
+
+    return $out;
+}
+
 // Cheap schema probe so code tolerates a migration not being run yet. Cached per
 // (table, column) for the request. Returns false on any error (missing table etc).
 function column_exists(PDO $pdo, string $table, string $column): bool {

@@ -244,25 +244,144 @@ $FIELD_LABELS = [
 $editCountSelect = column_exists($pdo, 'shift_closings', 'edit_count')
     ? 'c.edit_count,'
     : '0 AS edit_count,';
+// ---------------- Received history: filters ----------------
+//
+// This list used to be a hard "last 30", which meant a handover older than a
+// month was simply unreachable — there was no way to pull up a past date at
+// all. Filters make the whole archive addressable. Unlike the transaction
+// drill-down (deliberately locked to one closing so its total always ties to
+// the slip), a date RANGE is correct here: each row is a self-contained
+// closing, so widening the range adds rows without making any figure wrong.
+$isDate = fn($d) => is_string($d) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) === 1;
+$hFrom = $isDate($_GET['from'] ?? '') ? $_GET['from'] : '';
+$hTo   = $isDate($_GET['to'] ?? '')   ? $_GET['to']   : '';
+// Swap rather than error on a reversed range — the house behaviour (see
+// income_report.php / doctor_share_statement.php).
+if ($hFrom !== '' && $hTo !== '' && $hTo < $hFrom) {
+    [$hFrom, $hTo] = [$hTo, $hFrom];
+}
+$hCashier = (int) ($_GET['cashier'] ?? 0);
+$hQ       = trim($_GET['hq'] ?? '');
+$hFiltered = ($hFrom !== '' || $hTo !== '' || $hCashier > 0 || $hQ !== '');
+
+$hWhere  = ["c.status = 'RECEIVED'"];
+$hParams = [];
+if ($hFrom !== '')   { $hWhere[] = 'c.closing_date >= ?'; $hParams[] = $hFrom; }
+if ($hTo !== '')     { $hWhere[] = 'c.closing_date <= ?'; $hParams[] = $hTo; }
+if ($hCashier > 0)   { $hWhere[] = 'c.cashier_id = ?';    $hParams[] = $hCashier; }
+if ($hQ !== '') {
+    $hWhere[] = '(c.closing_number LIKE ? OR cu.name LIKE ?)';
+    $hParams[] = '%' . $hQ . '%';
+    $hParams[] = '%' . $hQ . '%';
+}
+// Unfiltered keeps the familiar recent-30 view; a filtered search reaches the
+// whole archive under a sane cap, matching the LIMIT 300 used app-wide.
+$hLimit = $hFiltered ? 300 : 30;
+
 try {
-    $historyStmt = $pdo->query("
+    $historyStmt = $pdo->prepare("
         SELECT c.closing_number, c.closing_date, c.handover_declared, c.handover_received,
                c.variance, c.received_at, c.id, $editCountSelect
                cu.name AS cashier_name, ru.name AS received_by_name
         FROM shift_closings c
         JOIN users cu ON cu.id = c.cashier_id
         LEFT JOIN users ru ON ru.id = c.received_by_id
-        WHERE c.status = 'RECEIVED'
-        ORDER BY c.closing_date DESC
-        LIMIT 30
+        WHERE " . implode(' AND ', $hWhere) . "
+        ORDER BY c.closing_date DESC, c.id DESC
+        LIMIT $hLimit
     ");
+    $historyStmt->execute($hParams);
     $history = $historyStmt->fetchAll();
 } catch (PDOException $e) {
     error_log('[admin_handovers history] ' . $e->getMessage());
     $history = [];
 }
 
-$pageTitle = 'Cash Handovers';
+// The active history filters as a URL suffix, appended to each drill-down link
+// so the return trip restores the same search.
+$histQs = http_build_query(array_filter([
+    'from' => $hFrom, 'to' => $hTo,
+    'cashier' => $hCashier > 0 ? $hCashier : '', 'hq' => $hQ,
+], fn($v) => $v !== '' && $v !== null));
+$histQs = $histQs ? '&amp;' . htmlspecialchars($histQs) : '';
+
+// Cashiers who actually appear in the archive — a dropdown of every user would
+// list people who have never run a drawer.
+try {
+    $hCashiers = $pdo->query("
+        SELECT DISTINCT u.id, u.name
+        FROM shift_closings c JOIN users u ON u.id = c.cashier_id
+        WHERE c.status = 'RECEIVED'
+        ORDER BY u.name
+    ")->fetchAll();
+} catch (PDOException $e) {
+    $hCashiers = [];
+}
+
+// ---------------- Transaction drill-down (?closing=N) ----------------
+//
+// The per-transaction cross-check. Scope is taken from the CLOSING ROW, never
+// from user input: one date, one cashier. That is deliberate and load-bearing —
+// a date-range filter here would produce a list that no longer ties to the
+// closing being checked, and a drill-down whose total doesn't equal the figure
+// it explains is worse than no drill-down at all.
+$detail = null;
+if (isset($_GET['closing'])) {
+    $stmt = $pdo->prepare("
+        SELECT c.*, cu.name AS cashier_name
+        FROM shift_closings c
+        JOIN users cu ON cu.id = c.cashier_id
+        WHERE c.id = ?
+    ");
+    $stmt->execute([(int) $_GET['closing']]);
+    $dc = $stmt->fetch();
+
+    if ($dc) {
+        $dType = trim($_GET['type'] ?? '');
+        $dMode = trim($_GET['mode'] ?? '');
+        $dQ    = trim($_GET['q'] ?? '');
+        $dVoid = !empty($_GET['voided']);
+
+        $txn = day_transaction_rows($pdo, $dc['closing_date'], (int) $dc['cashier_id'], [
+            'type' => $dType, 'mode' => $dMode, 'q' => $dQ, 'voided' => $dVoid,
+        ]);
+
+        // Counts per type for the filter tabs, computed UNFILTERED so each tab
+        // shows what it will open rather than what the current filter left.
+        $all = day_transaction_rows($pdo, $dc['closing_date'], (int) $dc['cashier_id'],
+                                    ['voided' => $dVoid]);
+        $typeCounts = [];
+        foreach ($all['rows'] as $r) {
+            $typeCounts[$r['type']] = ($typeCounts[$r['type']] ?? 0) + 1;
+        }
+
+        // The tie-out. Live rows are compared against the LIVE tally, which is
+        // what proves the drill-down is faithful. The stored snapshot is shown
+        // beside it but cannot be broken down per stream — shift_closings keeps
+        // only the pre-fold bucket set — so a long-closed day that was edited
+        // after signing can legitimately differ. The banner names which side is
+        // which rather than just crying "mismatch".
+        // Refunds are checked on their own line because the tally keeps them
+        // out of cash_total too — money in and money out are separate figures.
+        $liveTally = day_cash_tally($pdo, $dc['closing_date'], (int) $dc['cashier_id']);
+        $tieCash   = abs($all['cash'] - $liveTally['cash_total']) < 0.01
+                  && abs($all['refund'] - $liveTally['cash_refund_total']) < 0.01;
+        $tieOnline = abs($all['online'] - $liveTally['online_total']) < 0.01;
+
+        $detail = [
+            'c' => $dc, 'txn' => $txn, 'counts' => $typeCounts,
+            'tally' => $liveTally, 'tieCash' => $tieCash, 'tieOnline' => $tieOnline,
+            'allCash' => $all['cash'], 'allOnline' => $all['online'],
+            'allRefund' => $all['refund'],
+            'type' => $dType, 'mode' => $dMode, 'q' => $dQ, 'voided' => $dVoid,
+            'uncounted' => day_uncounted_rows($pdo, $dc['closing_date'], (int) $dc['cashier_id']),
+        ];
+    } else {
+        $error = 'That closing no longer exists.';
+    }
+}
+
+$pageTitle = $detail ? 'Handover Transactions' : 'Cash Handovers';
 require __DIR__ . '/partials/head.php';
 $navActive = 'handovers';
 require __DIR__ . '/partials/sidebar.php';
@@ -296,8 +415,11 @@ require __DIR__ . '/partials/sidebar.php';
 .htable td { padding: 9px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .htable tr:last-child td { border-bottom: none; }
 .htable td.num { text-align: right; white-space: nowrap; }
+/* Slip numbers and dates are identifiers — breaking "DC-2026-0044" across three
+   lines makes the column unscannable, which is the one thing this table is for. */
+.htable td.nowrap, .htable td.nowrap a { white-space: nowrap; }
 
-.ho-pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; }
+.ho-pill { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 .ho-pill.green { background: var(--green-bg); color: var(--green-text); }
 .ho-pill.amber { background: var(--amber-bg); color: var(--amber-text); }
 .ho-pill.red { background: var(--red-bg); color: var(--red-text); }
@@ -312,10 +434,261 @@ require __DIR__ . '/partials/sidebar.php';
 .alert-ok { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 500; }
 .empty { text-align: center; color: var(--text-muted); padding: 26px 0; font-size: 13.5px; }
 .slip-link { font-weight: 600; color: var(--primary-dark); text-decoration: underline; }
+
+/* ---- Received-history filters ----
+   Two stacked rows rather than one wrapping toolbar: this card sits in the
+   narrow right column, so a single flex row would wrap unpredictably between
+   widths. */
+.hist-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; padding: 12px; background: var(--card-alt); border: 1px solid var(--border); border-radius: var(--radius-input); }
+.hf-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.hf { display: flex; flex-direction: column; gap: 4px; flex: 1 1 130px; min-width: 0; }
+.hf.grow { flex: 1 1 150px; }
+.hf > span { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.hf input, .hf select { width: 100%; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13px; background: var(--card); color: var(--text); }
+.hf input:focus, .hf select:focus { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+.hf-actions { display: flex; gap: 8px; }
+.hf-actions .btn { padding: 8px 18px; font-size: 13px; }
+
+/* ---- Transaction drill-down ---- */
+.txn-link { font-size: 12.5px; font-weight: 600; color: var(--primary-dark); text-decoration: none; border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 3px 11px; white-space: nowrap; }
+.txn-link:hover { background: var(--primary-light, #eef2f0); border-color: var(--primary); }
+
+.txn-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.txn-scope { font-size: 12.5px; color: var(--text-muted); }
+.txn-scope b { color: var(--text); }
+
+/* Tabs are anchors, not buttons — each filter state is a real, bookmarkable URL
+   that works with the back button. Same rule as the admission boards. */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0; }
+.tabs a { padding: 6px 12px; border-radius: var(--radius-pill); background: var(--bg); border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; color: var(--text-secondary); text-decoration: none; }
+.tabs a:hover { border-color: var(--primary); }
+.tabs a.on { background: var(--primary-dark); border-color: var(--primary-dark); color: #fff; }
+.tabs a .n { opacity: .72; margin-left: 5px; }
+
+.txn-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.txn-filters input[type=search] { padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13px; background: var(--bg); color: var(--text); min-width: 210px; }
+.txn-filters label { font-size: 12.5px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }
+
+.txn-tab-amt { font-variant-numeric: tabular-nums; }
+.txn-row.void td { opacity: .5; text-decoration: line-through; }
+.txn-note { font-size: 11.5px; color: var(--text-muted); display: block; margin-top: 2px; }
+.txn-neg { color: var(--red-text, #b42318); }
+.txn-total td { font-weight: 700; border-top: 2px solid var(--border) !important; }
+
+.tie { border-radius: var(--radius-input); padding: 11px 14px; font-size: 12.5px; margin-bottom: 14px; }
+.tie.ok { background: var(--green-bg); color: var(--green-text); }
+.tie.bad { background: var(--amber-bg); color: var(--amber-text); }
+.tie b { font-variant-numeric: tabular-nums; }
+
+.unc { margin-top: 22px; border: 1px solid var(--amber); border-radius: var(--radius-input); background: var(--amber-bg); padding: 12px 14px; }
+.unc summary { font-size: 12.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--amber-text); cursor: pointer; }
+.unc .htable td, .unc .htable th { border-color: rgba(146,64,14,.25); }
+.unc-why { font-size: 11.5px; color: var(--amber-text); }
+.unc-intro { font-size: 12px; color: var(--amber-text); margin: 10px 0 4px; }
+
+@media (max-width: 700px) {
+    .txn-filters input[type=search] { min-width: 0; flex: 1 1 100%; }
+}
+@media print {
+    .sidebar, .mobile-bar, .appbar, .tabs, .txn-filters, .txn-link, .print-btn { display: none !important; }
+    .main { margin: 0 !important; }
+    .card { box-shadow: none !important; border: 1px solid #ccc; break-inside: avoid; }
+}
 </style>
 
 <div class="content">
+<?php if ($detail):
+    $dc = $detail['c'];
+    $rows = $detail['txn']['rows'];
+    // Every filter link must preserve the other filters, or clicking a type tab
+    // would silently throw away the search the admin just typed.
+    $dUrl = function (array $over = []) use ($detail, $dc) {
+        $p = array_filter([
+            'closing' => (int) $dc['id'],
+            'type'    => $detail['type'],
+            'mode'    => $detail['mode'],
+            'q'       => $detail['q'],
+            'voided'  => $detail['voided'] ? 1 : '',
+        ], fn($v) => $v !== '' && $v !== null);
+        foreach ($over as $k => $v) {
+            if ($v === '' || $v === null) { unset($p[$k]); } else { $p[$k] = $v; }
+        }
+        return 'admin_handovers.php?' . http_build_query($p);
+    };
+    $money = fn($v) => number_format((float) $v, 2);
+?>
+    <div class="page-head">
+        <h1>Handover transactions</h1>
+        <p>Every money row behind this closing, straight from the live tables. The figures below are what this drawer actually took — not invoice face value — so they tie to the slip.</p>
+    </div>
 
+    <?php if ($error): ?><div class="alert-error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+    <div class="card">
+        <div class="txn-head">
+            <div>
+                <h2 style="font-size:15px;font-weight:700;margin-bottom:3px;"><?= htmlspecialchars($dc['cashier_name']) ?></h2>
+                <div class="txn-scope">
+                    <b><?= date('d/m/Y', strtotime($dc['closing_date'])) ?></b>
+                    · slip <?= htmlspecialchars($dc['closing_number']) ?>
+                    · declared Rs <?= $money($dc['handover_declared']) ?>
+                </div>
+            </div>
+            <?php
+            // Carry the history filters back, so returning from a drill-down
+            // lands on the same search the admin left rather than resetting to
+            // the recent 30 and making them re-enter the date range.
+            $backQ = http_build_query(array_filter([
+                'from' => $hFrom, 'to' => $hTo,
+                'cashier' => $hCashier > 0 ? $hCashier : '', 'hq' => $hQ,
+            ], fn($v) => $v !== '' && $v !== null));
+            ?>
+            <a class="txn-link" href="admin_handovers.php<?= $backQ ? '?' . htmlspecialchars($backQ) : '' ?>">&larr; Back to handovers</a>
+        </div>
+
+        <?php
+        // The tie-out. This is the guard that makes the drill-down trustworthy:
+        // the rows are proven against the live tally rather than merely assumed
+        // to match it.
+        $tied = $detail['tieCash'] && $detail['tieOnline'];
+        ?>
+        <div class="tie <?= $tied ? 'ok' : 'bad' ?>" style="margin-top:14px;">
+            <?php if ($tied): ?>
+                These rows tie exactly to the day's tally — cash in <b>Rs <?= $money($detail['allCash']) ?></b>,
+                online <b>Rs <?= $money($detail['allOnline']) ?></b><?php if ($detail['allRefund'] > 0): ?>,
+                cash refunded <b>Rs <?= $money($detail['allRefund']) ?></b><?php endif; ?>.
+                Expected in hand Rs <?= $money($detail['tally']['expected_cash']) ?> after refunds and counter expenses.
+            <?php else: ?>
+                <strong>These rows do not tie to the day's tally.</strong>
+                Rows total cash <b>Rs <?= $money($detail['allCash']) ?></b> / online <b>Rs <?= $money($detail['allOnline']) ?></b>
+                / refunded <b>Rs <?= $money($detail['allRefund']) ?></b>;
+                the tally says cash <b>Rs <?= $money($detail['tally']['cash_total']) ?></b> / online <b>Rs <?= $money($detail['tally']['online_total']) ?></b>
+                / refunded <b>Rs <?= $money($detail['tally']['cash_refund_total']) ?></b>.
+                Treat the tally as authoritative and check the panel below before acting on this list.
+            <?php endif; ?>
+            <?php if ($dc['status'] === 'RECEIVED'): ?>
+                <br>Signed slip recorded expected Rs <?= $money($dc['expected_cash']) ?>, counted Rs <?= $money($dc['counted_cash']) ?>.
+                This list is recomputed live, so a row edited after signing will differ from the slip.
+            <?php endif; ?>
+        </div>
+
+        <?php // Type tabs. Counts come from the UNFILTERED set so each tab shows what it opens. ?>
+        <div class="tabs">
+            <a class="<?= $detail['type'] === '' ? 'on' : '' ?>" href="<?= htmlspecialchars($dUrl(['type' => ''])) ?>">All<span class="n"><?= array_sum($detail['counts']) ?></span></a>
+            <?php foreach ($detail['counts'] as $t => $n): ?>
+                <a class="<?= $detail['type'] === $t ? 'on' : '' ?>" href="<?= htmlspecialchars($dUrl(['type' => $t])) ?>"><?= htmlspecialchars($t) ?><span class="n"><?= $n ?></span></a>
+            <?php endforeach; ?>
+        </div>
+
+        <form class="txn-filters" method="GET" action="admin_handovers.php">
+            <input type="hidden" name="closing" value="<?= (int) $dc['id'] ?>">
+            <?php if ($detail['type'] !== ''): ?><input type="hidden" name="type" value="<?= htmlspecialchars($detail['type']) ?>"><?php endif; ?>
+            <input type="search" name="q" value="<?= htmlspecialchars($detail['q']) ?>" placeholder="Patient name or document no.">
+            <select name="mode" style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-input);font:inherit;font-size:13px;background:var(--bg);color:var(--text);">
+                <option value="">Cash &amp; online</option>
+                <option value="cash" <?= $detail['mode'] === 'cash' ? 'selected' : '' ?>>Cash only</option>
+                <option value="online" <?= $detail['mode'] === 'online' ? 'selected' : '' ?>>Online only</option>
+            </select>
+            <label><input type="checkbox" name="voided" value="1" <?= $detail['voided'] ? 'checked' : '' ?>> Show voided</label>
+            <button type="submit" class="btn">Filter</button>
+            <?php if ($detail['q'] !== '' || $detail['mode'] !== '' || $detail['type'] !== '' || $detail['voided']): ?>
+                <a class="btn secondary" href="admin_handovers.php?closing=<?= (int) $dc['id'] ?>">Clear</a>
+            <?php endif; ?>
+            <button type="button" class="btn secondary print-btn" onclick="window.print()">Print</button>
+        </form>
+
+        <?php if ($detail['txn']['capped']): ?>
+            <p class="unc-intro">Showing the first 300 rows of at least one stream — this list is truncated.</p>
+        <?php endif; ?>
+
+        <?php if (!$rows): ?>
+            <div class="empty">
+                <?php if ($detail['q'] !== '' || $detail['type'] !== '' || $detail['mode'] !== ''): ?>
+                    No transactions match this filter. <a class="slip-link" href="admin_handovers.php?closing=<?= (int) $dc['id'] ?>">Clear it</a> to see the whole day.
+                <?php else: ?>
+                    No money was recorded against this drawer on this day.
+                <?php endif; ?>
+            </div>
+        <?php else: ?>
+        <div style="overflow-x:auto;">
+        <table class="htable">
+            <thead>
+                <tr>
+                    <th>Document</th><th>Type</th><th>Patient</th>
+                    <th>Time</th><th>Method</th><th class="num">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php
+            $sumShown = 0.0;
+            foreach ($rows as $r):
+                $isVoid = $r['voided_at'] !== null;
+                if (!$isVoid) { $sumShown += (float) $r['amount']; }
+                $amt = (float) $r['amount'];
+            ?>
+                <tr class="txn-row<?= $isVoid ? ' void' : '' ?>">
+                    <td><?= htmlspecialchars((string) $r['doc_no']) ?></td>
+                    <td><?= htmlspecialchars((string) $r['type']) ?><?= $isVoid ? ' <span class="ho-pill red">VOID</span>' : '' ?></td>
+                    <td>
+                        <?= htmlspecialchars((string) ($r['patient'] ?? '—')) ?>
+                        <?php if (!empty($r['note'])): ?><span class="txn-note"><?= htmlspecialchars((string) $r['note']) ?></span><?php endif; ?>
+                    </td>
+                    <td><?= $r['paid_at'] ? date('h:i A', strtotime((string) $r['paid_at'])) : '—' ?></td>
+                    <td><?= htmlspecialchars((string) $r['payment_method']) ?></td>
+                    <td class="num<?= $amt < 0 ? ' txn-neg' : '' ?>">
+                        <?= $amt < 0 ? '− ' . $money(abs($amt)) : $money($amt) ?>
+                        <?php
+                        // Face value is shown only where it genuinely differs —
+                        // i.e. the drawer received LESS than the document's total
+                        // (a partial payment, or an IPD bill part-settled by an
+                        // earlier advance). For an outgoing row the face is the
+                        // same number with the sign stripped, so printing it adds
+                        // nothing but noise.
+                        if ($amt > 0 && (float) $r['face'] - $amt > 0.009): ?>
+                            <span class="txn-note">of <?= $money($r['face']) ?></span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+                <tr class="txn-total">
+                    <td colspan="5">Net of the rows shown<?= $detail['voided'] ? ' (voided excluded)' : '' ?></td>
+                    <td class="num">Rs <?= $money($sumShown) ?></td>
+                </tr>
+            </tfoot>
+        </table>
+        </div>
+        <?php endif; ?>
+
+        <?php
+        // "What is missing" — the question an admin actually has when a slip
+        // looks wrong. Silent on a clean day so it never becomes noise.
+        if ($detail['uncounted']): ?>
+        <details class="unc" <?= $tied ? '' : 'open' ?>>
+            <summary><?= count($detail['uncounted']) ?> row<?= count($detail['uncounted']) === 1 ? '' : 's' ?> needing attention</summary>
+            <p class="unc-intro">Money in or around this window that the tally treats specially — a bill with no drawer attribution belongs to nobody's shift, and a payment outside the business day lands on a neighbouring closing.</p>
+            <div style="overflow-x:auto;">
+            <table class="htable">
+                <thead><tr><th>Document</th><th>Stream</th><th>Patient</th><th class="num">Amount</th><th>Why</th></tr></thead>
+                <tbody>
+                <?php foreach ($detail['uncounted'] as $u): ?>
+                    <tr>
+                        <td><?= htmlspecialchars((string) $u['doc_no']) ?></td>
+                        <td><?= htmlspecialchars((string) $u['stream']) ?></td>
+                        <td><?= htmlspecialchars((string) ($u['patient'] ?? '—')) ?></td>
+                        <td class="num"><?= $money($u['amount']) ?></td>
+                        <td class="unc-why"><?= htmlspecialchars((string) $u['why']) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+        </details>
+        <?php endif; ?>
+    </div>
+
+<?php else: ?>
     <div class="page-head">
         <h1>Cash Handovers</h1>
         <p>Each receptionist's shift closing lands here separately. Recount their cash, review any highlighted post-close edits, confirm the signed slip is filed, then mark received — that locks the shift for good.</p>
@@ -354,6 +727,8 @@ require __DIR__ . '/partials/sidebar.php';
                                 <?= $pEdited && $p['edited_at'] ? ' · last edit ' . date('H:i', strtotime($p['edited_at'])) : '' ?>
                                 · variance <?= number_format((float) $p['variance'], 2) ?><?= $p['variance_note'] ? ' (note attached)' : '' ?>
                             </div>
+                            <?php // Cross-check BEFORE signing — this is the gate the list exists for. ?>
+                            <div style="margin-top:8px;"><a class="txn-link" href="admin_handovers.php?closing=<?= (int) $p['id'] ?>">View transactions</a></div>
                         </div>
                         <div>
                             <div class="amt">Rs <?= number_format((float) $p['handover_declared'], 0) ?></div>
@@ -471,19 +846,68 @@ require __DIR__ . '/partials/sidebar.php';
 
         <div class="ho-col">
             <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Recently received</h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Completed handovers, newest first. Click a slip number to reprint.</p>
+                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Received handovers</h2>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">
+                    <?php if ($hFiltered): ?>
+                        <?= count($history) ?> matching handover<?= count($history) === 1 ? '' : 's' ?>, newest first. Click a slip to reprint, or View transactions to cross-check it.
+                    <?php else: ?>
+                        The 30 most recent, newest first. Filter by date or cashier to reach older ones.
+                    <?php endif; ?>
+                </p>
+
+                <?php // Reaches the whole archive — without this a handover older than 30 closings was unreachable. ?>
+                <form class="hist-filters" method="GET" action="admin_handovers.php">
+                    <div class="hf-row">
+                        <label class="hf">
+                            <span>From</span>
+                            <input type="date" name="from" value="<?= htmlspecialchars($hFrom) ?>" max="<?= date('Y-m-d') ?>">
+                        </label>
+                        <label class="hf">
+                            <span>To</span>
+                            <input type="date" name="to" value="<?= htmlspecialchars($hTo) ?>" max="<?= date('Y-m-d') ?>">
+                        </label>
+                    </div>
+                    <div class="hf-row">
+                        <label class="hf grow">
+                            <span>Cashier</span>
+                            <select name="cashier">
+                                <option value="0">All cashiers</option>
+                                <?php foreach ($hCashiers as $hc): ?>
+                                    <option value="<?= (int) $hc['id'] ?>" <?= $hCashier === (int) $hc['id'] ? 'selected' : '' ?>><?= htmlspecialchars($hc['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label class="hf grow">
+                            <span>Search</span>
+                            <input type="search" name="hq" value="<?= htmlspecialchars($hQ) ?>" placeholder="Slip no. or cashier">
+                        </label>
+                    </div>
+                    <div class="hf-actions">
+                        <button type="submit" class="btn">Search</button>
+                        <?php if ($hFiltered): ?>
+                            <a class="btn secondary" href="admin_handovers.php">Clear</a>
+                        <?php endif; ?>
+                    </div>
+                </form>
+
                 <div style="overflow-x:auto;">
                 <table class="htable">
                     <tr><th>Date</th><th>Slip</th><th>Cashier</th><th class="num">Declared</th><th class="num">Received</th><th>Status</th></tr>
                     <?php if (!$history): ?>
-                        <tr><td colspan="6" class="empty">Nothing received yet.</td></tr>
+                        <tr><td colspan="6" class="empty">
+                            <?php if ($hFiltered): ?>
+                                No received handover matches these filters. <a class="slip-link" href="admin_handovers.php">Clear them</a> to see the most recent.
+                            <?php else: ?>
+                                Nothing received yet.
+                            <?php endif; ?>
+                        </td></tr>
                     <?php endif; ?>
                     <?php foreach ($history as $h): ?>
                     <?php $disc = round((float) $h['handover_received'] - (float) $h['handover_declared'], 2); ?>
                     <tr>
-                        <td><?= date('D d/m', strtotime($h['closing_date'])) ?></td>
-                        <td><a class="slip-link" href="shift_closing.php?print=1&closing_id=<?= (int) $h['id'] ?>" target="_blank"><?= htmlspecialchars($h['closing_number']) ?></a></td>
+                        <?php // Show the year too: the list now reaches back months, so "Fri 24/07" alone is ambiguous. ?>
+                        <td class="nowrap"><?= date('d/m/y', strtotime($h['closing_date'])) ?></td>
+                        <td class="nowrap"><a class="slip-link" href="shift_closing.php?print=1&closing_id=<?= (int) $h['id'] ?>" target="_blank"><?= htmlspecialchars($h['closing_number']) ?></a></td>
                         <td><?= htmlspecialchars($h['cashier_name']) ?></td>
                         <td class="num"><?= number_format((float) $h['handover_declared'], 0) ?></td>
                         <td class="num"><?= number_format((float) $h['handover_received'], 0) ?></td>
@@ -496,6 +920,8 @@ require __DIR__ . '/partials/sidebar.php';
                             <?php if ((int) ($h['edit_count'] ?? 0) > 0): ?>
                                 <span class="ho-pill amber" title="Cashier edited before receipt; approved at mark-received">edited ×<?= (int) $h['edit_count'] ?></span>
                             <?php endif; ?>
+                            <?php // Filters ride along so "Back to handovers" returns to this same search. ?>
+                            <a class="txn-link" href="admin_handovers.php?closing=<?= (int) $h['id'] ?><?= $histQs ?>">Transactions</a>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -504,8 +930,12 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
         </div>
     </div>
-
+<?php endif; ?>
 </div>
 </div></div><!-- .main + .app -->
+<!-- dd/mm/yyyy display over a hidden yyyy-mm-dd value — the house convention.
+     This page has date inputs on the history filter, so without this the picker
+     reads as mm/dd on a US-English machine. -->
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . '/assets/js/date-picker.js') ?: 1 ?>"></script>
 </body>
 </html>
