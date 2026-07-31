@@ -143,24 +143,53 @@ $revBucket = function (string $start, string $end) use ($pdo) {
     return ['val' => $total, 'doc' => $doc, 'clinic' => max(0.0, $total - $doc)];
 };
 
+// ---- Expense bucket helper: operating expenses for a period ----------------
+// Reuses clinic_operating_expenses() so this panel can never disagree with the
+// P&L. Two consequences of that helper's contract worth stating here:
+//   * It takes inclusive DATE bounds, NOT the datetime windows the revenue
+//     buckets use. That is deliberate and matches the module convention:
+//     drawer/daily figures key on expense_date, which is a DATE. An expense
+//     posted after the business-day cutoff therefore lands on its calendar
+//     date while the revenue beside it lands on the business day — the two
+//     can differ by a few late-night hours. Money, not minutes, is the point.
+//   * ['operating'] EXCLUDES is_disbursement categories (Doctor Shares). The
+//     earned share is already carved out of revenue above as $b['doc']; adding
+//     the paid row as a cost too would understate net by exactly that share.
+$expenseVisible = has_permission('FINANCIAL_VIEW_DAILY_PL');
+$expBucket = function (string $startDate, string $endDate) use ($pdo, $expenseVisible) {
+    if (!$expenseVisible) { return ['exp' => 0.0, 'top' => '']; }
+    try {
+        $e = clinic_operating_expenses($pdo, $startDate, $endDate);
+        // rows are pre-sorted by amount DESC, so the first is the largest.
+        $top = '';
+        foreach ($e['rows'] as $r) { $top = $r['name']; break; }
+        return ['exp' => (float) $e['operating'], 'top' => $top];
+    } catch (Throwable $e) {
+        return ['exp' => 0.0, 'top' => ''];       // migration not run — show zero
+    }
+};
+
 // ---- Weekly revenue: net collections per business day, last 7 days --------
-$weekBars = [];   // [ ['day'=>'Mon', 'val'=>, 'doc'=>, 'clinic'=>], ... ]
+$weekBars = [];   // [ ['day'=>'Mon', 'val'=>, 'doc'=>, 'clinic'=>, 'exp'=>], ... ]
 $weekTotal = 0.0; $weekDocTotal = 0.0; $weekPeakDay = ''; $weekPeakVal = 0.0;
+$weekExpTotal = 0.0;
 try {
     for ($i = 6; $i >= 0; $i--) {
         $d = date('Y-m-d', strtotime($bizToday . " -$i day"));
         [$ws, $we] = business_day_window($pdo, $d);
         $bk = $revBucket($ws, $we);
+        $bk['exp'] = $expBucket($d, $d)['exp'];      // one calendar day
         $bk['day'] = date('D', strtotime($d));
         $weekBars[] = $bk;
-        $weekTotal += $bk['val']; $weekDocTotal += $bk['doc'];
+        $weekTotal += $bk['val']; $weekDocTotal += $bk['doc']; $weekExpTotal += $bk['exp'];
         if ($bk['val'] >= $weekPeakVal) { $weekPeakVal = $bk['val']; $weekPeakDay = date('l', strtotime($d)); }
     }
-} catch (Throwable $e) { $weekBars = []; }
+} catch (Throwable $e) { $weekBars = []; $weekExpTotal = 0.0; }
 $weekAvg = $weekBars ? $weekTotal / count($weekBars) : 0.0;
 
 // ---- Monthly revenue: last 4 calendar weeks (Mon–Sun buckets) --------------
 $monthBars = []; $monthTotal = 0.0; $monthDocTotal = 0.0; $monthPeakLabel = ''; $monthPeakVal = 0.0;
+$monthExpTotal = 0.0;
 try {
     $dow = (int) date('N', strtotime($bizToday));           // 1=Mon..7=Sun
     $thisMon = date('Y-m-d', strtotime($bizToday . ' -' . ($dow - 1) . ' day'));
@@ -168,28 +197,37 @@ try {
         $wkStart = date('Y-m-d', strtotime($thisMon . " -$w week"));
         $wkEnd   = date('Y-m-d', strtotime($wkStart . ' +7 day'));
         $bk = $revBucket($wkStart . ' 00:00:00', $wkEnd . ' 00:00:00');
+        // The revenue window is half-open [start, +7d); the expense range is
+        // INCLUSIVE, so it must end on +6d or neighbouring weeks double-count
+        // the boundary day.
+        $bk['exp'] = $expBucket($wkStart, date('Y-m-d', strtotime($wkStart . ' +6 day')))['exp'];
         $bk['day'] = date('j M', strtotime($wkStart));
         $monthBars[] = $bk;
-        $monthTotal += $bk['val']; $monthDocTotal += $bk['doc'];
+        $monthTotal += $bk['val']; $monthDocTotal += $bk['doc']; $monthExpTotal += $bk['exp'];
         if ($bk['val'] >= $monthPeakVal) { $monthPeakVal = $bk['val']; $monthPeakLabel = 'Wk of ' . $bk['day']; }
     }
-} catch (Throwable $e) { $monthBars = []; }
+} catch (Throwable $e) { $monthBars = []; $monthExpTotal = 0.0; }
 $monthAvg = $monthBars ? $monthTotal / count($monthBars) : 0.0;
 
 // ---- Yearly revenue: last 12 calendar months -------------------------------
 $yearBars = []; $yearTotal = 0.0; $yearDocTotal = 0.0; $yearPeakLabel = ''; $yearPeakVal = 0.0;
+$yearExpTotal = 0.0;
 try {
     $firstOfThisMonth = date('Y-m-01', strtotime($bizToday));
     for ($m = 11; $m >= 0; $m--) {
         $mStart = date('Y-m-01', strtotime($firstOfThisMonth . " -$m month"));
         $mEnd   = date('Y-m-01', strtotime($mStart . ' +1 month'));
         $bk = $revBucket($mStart . ' 00:00:00', $mEnd . ' 00:00:00');
+        // Inclusive end = last day of the month (see the month-loop note).
+        // This is the grouping where period_month matters: a July salary paid in
+        // August is credited back to July by clinic_operating_expenses().
+        $bk['exp'] = $expBucket($mStart, date('Y-m-t', strtotime($mStart)))['exp'];
         $bk['day'] = date('M', strtotime($mStart));
         $yearBars[] = $bk;
-        $yearTotal += $bk['val']; $yearDocTotal += $bk['doc'];
+        $yearTotal += $bk['val']; $yearDocTotal += $bk['doc']; $yearExpTotal += $bk['exp'];
         if ($bk['val'] >= $yearPeakVal) { $yearPeakVal = $bk['val']; $yearPeakLabel = date('F', strtotime($mStart)); }
     }
-} catch (Throwable $e) { $yearBars = []; }
+} catch (Throwable $e) { $yearBars = []; $yearExpTotal = 0.0; }
 $yearAvg = $yearBars ? $yearTotal / count($yearBars) : 0.0;
 
 // ---- Doctor performance today (real; no fake ratings) ---------------------
@@ -399,14 +437,40 @@ $headExtra = <<<CSS
 .rev-panel.active { display: block; }
 .bars { display: flex; align-items: flex-end; gap: 14px; height: 160px; margin-top: 8px; }
 .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
+/* Holds the bar AND the expense marker. The marker is positioned against the
+   FULL plot height, so it needs a full-height stacking context of its own —
+   .bar-fill is only as tall as that period's revenue. */
+.bar-plot { position: relative; width: 100%; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
 .bar-fill {
     position: relative;
-    width: 100%; max-width: 24px; border-radius: 4px 4px 0 0;
+    flex: 0 1 100%; max-width: 24px; border-radius: 4px 4px 0 0;
     background: linear-gradient(180deg, var(--primary), var(--primary-dark)); /* clinic share (base) */
     overflow: hidden;
 }
 /* Doctor share sits on TOP of the stack (visually above clinic). */
 .bar-doctor { position: absolute; top: 0; left: 0; right: 0; background: var(--amber, #F59E0B); }
+/* Expense threshold marker. A dashed RULE, not a filled segment: expenses are a
+   cost measured against the bar, not another slice of it, and the fill colours
+   are already spoken for (clay is reserved for refunds/delete).
+   Width is pinned to 34px — a little wider than the 24px bar so it stays visible
+   when a bar is only a few pixels tall, but NOT full-column: spanning the whole
+   column made a tall marker look like it belonged to the neighbouring bar (or to
+   the legend) instead of its own. */
+.bar-exp {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    width: 34px; height: 0;
+    border-top: 2px dashed var(--text-secondary, #4A574F);
+}
+/* When expenses exceed revenue the marker floats well above its bar, and with
+   nothing joining the two it reads as a stray line. This drops a hairline from
+   the marker down to the bar so the pairing is never ambiguous. */
+.bar-exp::after {
+    content: ''; position: absolute;
+    left: 50%; top: 0; width: 1px; height: var(--exp-drop, 0px);
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, var(--text-secondary, #4A574F), transparent);
+    opacity: .45;
+}
 .bar-day { font-size: 11px; color: var(--text-muted); }
 /* Legend */
 .chart-legend { display: flex; gap: 16px; margin: 4px 0 2px; }
@@ -414,6 +478,11 @@ $headExtra = <<<CSS
 .lg-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .lg-clinic { background: linear-gradient(180deg, var(--primary), var(--primary-dark)); }
 .lg-doctor { background: var(--amber, #F59E0B); }
+/* Matches the dashed rule on the chart rather than a solid block. */
+.lg-expense {
+    background: none; border-radius: 0; height: 0;
+    border-top: 2px dashed var(--text-secondary, #4A574F);
+}
 /* Ledger */
 .ledger-toggle {
     margin-top: 16px; background: none; border: none; padding: 0; cursor: pointer;
@@ -431,6 +500,11 @@ $headExtra = <<<CSS
 .summary-row .label { font-size: 12.5px; color: var(--text-secondary); }
 .summary-row .value { font-size: 15px; font-weight: 700; }
 .summary-row .value.good { color: #047857; }
+.summary-row .value.neg { color: var(--text-secondary); }
+/* A negative net is the one number here that must not be mistaken for a good
+   one, so it takes clay — the palette's "money leaving" hue. */
+.summary-row .value.bad, .ledger-table td.num.bad { color: var(--danger, #9E4E34); }
+.rev-note { margin: 12px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
 
 /* ---------- Snapshot ---------- */
 .snapshot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -580,19 +654,28 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="chart-legend">
                         <span class="lg-item"><span class="lg-swatch lg-clinic"></span>Clinic share</span>
                         <span class="lg-item"><span class="lg-swatch lg-doctor"></span>Doctor share</span>
+                        <?php if ($expenseVisible): ?>
+                        <span class="lg-item"><span class="lg-swatch lg-expense"></span>Expenses</span>
+                        <?php endif; ?>
                     </div>
                     <?php
-                    // range key => [bars, total, docTotal, avg, peakLabel, peakVal, totalLbl, avgLbl, peakRowLbl, periodCol]
+                    // range key => [bars, total, docTotal, avg, peakLabel, peakVal, totalLbl, avgLbl, peakRowLbl, periodCol, expTotal]
                     $revPanels = [
-                        'week'  => [$weekBars,  $weekTotal,  $weekDocTotal,  $weekAvg,  $weekPeakDay,    $weekPeakVal,  '7-day Revenue',   'Daily Average',  'Peak Day',   'Day'],
-                        'month' => [$monthBars, $monthTotal, $monthDocTotal, $monthAvg, $monthPeakLabel, $monthPeakVal, '4-week Revenue',  'Weekly Average', 'Peak Week',  'Week of'],
-                        'year'  => [$yearBars,  $yearTotal,  $yearDocTotal,  $yearAvg,  $yearPeakLabel,  $yearPeakVal,  '12-month Revenue','Monthly Average','Peak Month', 'Month'],
+                        'week'  => [$weekBars,  $weekTotal,  $weekDocTotal,  $weekAvg,  $weekPeakDay,    $weekPeakVal,  '7-day Revenue',   'Daily Average',  'Peak Day',   'Day',     $weekExpTotal],
+                        'month' => [$monthBars, $monthTotal, $monthDocTotal, $monthAvg, $monthPeakLabel, $monthPeakVal, '4-week Revenue',  'Weekly Average', 'Peak Week',  'Week of', $monthExpTotal],
+                        'year'  => [$yearBars,  $yearTotal,  $yearDocTotal,  $yearAvg,  $yearPeakLabel,  $yearPeakVal,  '12-month Revenue','Monthly Average','Peak Month', 'Month',   $yearExpTotal],
                     ];
                     foreach ($revPanels as $rk => $p):
-                        [$bars, $total, $docTotal, $avg, $peakLabel, $peakVal, $totalLbl, $avgLbl, $peakRowLbl, $periodCol] = $p;
+                        [$bars, $total, $docTotal, $avg, $peakLabel, $peakVal, $totalLbl, $avgLbl, $peakRowLbl, $periodCol, $expTotal] = $p;
                         $clinicTotal = max(0.0, $total - $docTotal);
+                        // Net is clinic income less operating cost. The doctor's share is
+                        // NOT a cost here — it was already removed from revenue as $docTotal.
+                        $netTotal = $clinicTotal - $expTotal;
+                        // The expense marker shares the bars' scale, so a period whose
+                        // expenses exceed its revenue must widen the max or the marker
+                        // would sit above the plot area.
                         $barMax = 0;
-                        foreach ($bars as $b) { $barMax = max($barMax, $b['val']); }
+                        foreach ($bars as $b) { $barMax = max($barMax, $b['val'], $b['exp'] ?? 0); }
                     ?>
                     <div class="rev-panel<?= $rk === 'week' ? ' active' : '' ?>" data-range="<?= $rk ?>">
                         <div class="bars">
@@ -603,12 +686,35 @@ require __DIR__ . '/partials/sidebar.php';
                                 $h = $barMax > 0 ? max(2, round(($b['val'] / $barMax) * 100)) : 2;
                                 // Split the stack: doctor portion sits on top of clinic portion.
                                 $docPct = $b['val'] > 0 ? round(($b['doc'] / $b['val']) * 100) : 0;
+                                $bExp   = (float) ($b['exp'] ?? 0);
+                                // Marker height is measured against the whole plot area, which is
+                                // why it hangs off .bar-plot and not .bar-fill — .bar-fill is only
+                                // as tall as that period's revenue.
+                                // Capped at 98, not 100: when a period's expense IS the scale max
+                                // the marker would otherwise sit flush on the plot ceiling and read
+                                // as a border rather than a value.
+                                $expPct = $barMax > 0 ? min(98, round(($bExp / $barMax) * 100)) : 0;
                                 $ttl = htmlspecialchars($b['day']) . ': Rs ' . number_format($b['val'])
                                      . ' (Clinic Rs ' . number_format($b['clinic']) . ' · Doctor Rs ' . number_format($b['doc']) . ')';
+                                if ($expenseVisible) {
+                                    $ttl .= ' · Expenses Rs ' . number_format($bExp)
+                                          . ' · Net Rs ' . number_format($b['clinic'] - $bExp);
+                                }
                             ?>
                             <div class="bar-col">
-                                <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= $ttl ?>">
-                                    <div class="bar-doctor" style="height: <?= $docPct ?>%;"></div>
+                                <div class="bar-plot">
+                                    <div class="bar-fill" style="height: <?= $h ?>%;" title="<?= $ttl ?>">
+                                        <div class="bar-doctor" style="height: <?= $docPct ?>%;"></div>
+                                    </div>
+                                    <?php if ($expenseVisible && $bExp > 0):
+                                        // Connector length = how far the marker sits above the bar top.
+                                        // Zero when the marker is on or below the bar (nothing to join).
+                                        // In PX, not %: the pseudo-element's percentage height would
+                                        // resolve against .bar-exp, which is 0 tall. .bars is 160px.
+                                        $dropPx = round(max(0, $expPct - $h) / 100 * 160);
+                                    ?>
+                                    <div class="bar-exp" style="bottom: <?= $expPct ?>%; --exp-drop: <?= $dropPx ?>px;" title="<?= $ttl ?>"></div>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="bar-day"><?= htmlspecialchars($b['day']) ?></div>
                             </div>
@@ -618,23 +724,48 @@ require __DIR__ . '/partials/sidebar.php';
                             <div class="summary-row"><span class="label"><?= $totalLbl ?></span><span class="value">Rs <?= number_format($total) ?></span></div>
                             <div class="summary-row"><span class="label">Clinic Share</span><span class="value">Rs <?= number_format($clinicTotal) ?></span></div>
                             <div class="summary-row"><span class="label">Doctor Share</span><span class="value">Rs <?= number_format($docTotal) ?></span></div>
+                            <?php if ($expenseVisible): ?>
+                            <div class="summary-row"><span class="label">Expenses</span><span class="value neg">Rs <?= number_format($expTotal) ?></span></div>
+                            <div class="summary-row"><span class="label">Net (Clinic &minus; Expenses)</span><span class="value <?= $netTotal < 0 ? 'bad' : 'good' ?>">Rs <?= number_format($netTotal) ?></span></div>
+                            <?php endif; ?>
                             <div class="summary-row"><span class="label"><?= $avgLbl ?></span><span class="value">Rs <?= number_format($avg) ?></span></div>
                             <div class="summary-row"><span class="label"><?= $peakRowLbl ?></span><span class="value"><?= $peakVal > 0 ? htmlspecialchars($peakLabel) : '—' ?></span></div>
                         </div>
+                        <?php if ($expenseVisible): ?>
+                        <p class="rev-note">
+                            Expenses are operating costs only &mdash; the doctor's share is already
+                            deducted above and is not counted twice.
+                            <?php if ($rk === 'year'): ?>
+                            Monthly costs (salaries, doctor payouts) are matched to the month they
+                            belong to, not the day they were paid.
+                            <?php else: ?>
+                            Month-based costs such as salaries sit in the <strong>Year</strong> view,
+                            which is where they can be matched to their period &mdash; so this
+                            total is lower than the monthly figure.
+                            <?php endif; ?>
+                        </p>
+                        <?php endif; ?>
                         <?php if ($bars): ?>
                         <button type="button" class="ledger-toggle" aria-expanded="false">View ledger details</button>
                         <div class="ledger-wrap" hidden>
                             <table class="ledger-table">
                                 <thead>
-                                    <tr><th><?= htmlspecialchars($periodCol) ?></th><th class="num">Total</th><th class="num">Clinic</th><th class="num">Doctor</th></tr>
+                                    <tr><th><?= htmlspecialchars($periodCol) ?></th><th class="num">Total</th><th class="num">Clinic</th><th class="num">Doctor</th><?php if ($expenseVisible): ?><th class="num">Expenses</th><th class="num">Net</th><?php endif; ?></tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($bars as $b): ?>
+                                    <?php foreach ($bars as $b):
+                                        $bExp = (float) ($b['exp'] ?? 0);
+                                        $bNet = $b['clinic'] - $bExp;
+                                    ?>
                                     <tr>
                                         <td><?= htmlspecialchars($b['day']) ?></td>
                                         <td class="num">Rs <?= number_format($b['val']) ?></td>
                                         <td class="num">Rs <?= number_format($b['clinic']) ?></td>
                                         <td class="num">Rs <?= number_format($b['doc']) ?></td>
+                                        <?php if ($expenseVisible): ?>
+                                        <td class="num">Rs <?= number_format($bExp) ?></td>
+                                        <td class="num <?= $bNet < 0 ? 'bad' : '' ?>">Rs <?= number_format($bNet) ?></td>
+                                        <?php endif; ?>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -644,6 +775,10 @@ require __DIR__ . '/partials/sidebar.php';
                                         <td class="num">Rs <?= number_format($total) ?></td>
                                         <td class="num">Rs <?= number_format($clinicTotal) ?></td>
                                         <td class="num">Rs <?= number_format($docTotal) ?></td>
+                                        <?php if ($expenseVisible): ?>
+                                        <td class="num">Rs <?= number_format($expTotal) ?></td>
+                                        <td class="num <?= $netTotal < 0 ? 'bad' : '' ?>">Rs <?= number_format($netTotal) ?></td>
+                                        <?php endif; ?>
                                     </tr>
                                 </tfoot>
                             </table>
