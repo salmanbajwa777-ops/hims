@@ -366,7 +366,13 @@ function ts_drug_cell(array $o): void {
     <?php endif; ?>
 
     <!-- The persistent "sheet not signed" banner -->
-    <?php if (!$sheetState['cleared'] && $isOpen): ?>
+    <?php if (!($sheetState['available'] ?? true)): ?>
+      <div class="ts-flash ts-flash-err">
+        The treatment sheet tables are not set up yet &mdash; run
+        <b>sql/ipd/add_ipd_treatment_sheet.sql</b>, then
+        <b>sql/ipd/verify_ipd_treatment_sheet.sql</b>. Nothing on this page will save until then.
+      </div>
+    <?php elseif (!$sheetState['cleared'] && $isOpen): ?>
       <div class="ts-nosheet">
         <strong>&#9888; No approved treatment sheet &mdash; treatment cannot start</strong>
         <p>

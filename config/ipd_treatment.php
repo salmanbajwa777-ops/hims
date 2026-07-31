@@ -338,7 +338,17 @@ function can_administer_order(array $order): bool {
  * Returns ['has_orders','approved','pending','rejected','cleared'].
  */
 function ipd_sheet_state(PDO $pdo, int $admissionId): array {
-    $out = ['has_orders' => false, 'approved' => 0, 'pending' => 0, 'rejected' => 0, 'cleared' => false];
+    $out = [
+        'has_orders' => false, 'approved' => 0, 'pending' => 0, 'rejected' => 0,
+        'cleared' => false,
+        // False when the feature's tables do not exist yet. Callers MUST check
+        // this before raising a "no treatment sheet" alarm: code deploys before
+        // the migration is run, and during that window every in-patient would
+        // otherwise light up with a red warning about a chart nobody could
+        // possibly have written. A false alarm on a live ward is not a safe
+        // default — it teaches people to ignore the banner that matters.
+        'available' => true,
+    ];
     try {
         $st = $pdo->prepare("
             SELECT approval_status, COUNT(*) AS n
@@ -356,7 +366,9 @@ function ipd_sheet_state(PDO $pdo, int $admissionId): array {
         $out['has_orders'] = ($out['approved'] + $out['pending'] + $out['rejected']) > 0;
         $out['cleared'] = $out['approved'] > 0;
     } catch (Throwable $e) {
-        // Table missing -> report "not cleared" rather than a false all-clear.
+        // Tables absent (pre-migration). Report "not available" rather than a
+        // false all-clear OR a false alarm.
+        $out['available'] = false;
     }
     return $out;
 }

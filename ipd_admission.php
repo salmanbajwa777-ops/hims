@@ -680,7 +680,11 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="card">
                         <div class="section-title">Treatment sheet</div>
                         <div class="section-sub">
-                            <?php if (!$tsCard['cleared']): ?>
+                            <?php if (!($tsCard['available'] ?? true)): ?>
+                                <?php /* Pre-migration: the tables do not exist yet. Say so
+                                         plainly to an admin rather than alarm a ward. */ ?>
+                                <span style="color:var(--text-muted);">Not set up yet &mdash; run sql/ipd/add_ipd_treatment_sheet.sql</span>
+                            <?php elseif (!$tsCard['cleared']): ?>
                                 <span style="color:var(--warn);font-weight:600;">Not approved &mdash; treatment cannot start</span>
                             <?php elseif ($tsCard['pending']): ?>
                                 <span style="color:var(--warn);font-weight:600;"><?= (int) $tsCard['pending'] ?> order(s) awaiting approval</span>

@@ -27,7 +27,11 @@ $tsOpen  = $isOpen ?? true;
 $tsState = $sheetState ?? ($tsAdmissionId ? ipd_sheet_state($pdo, $tsAdmissionId) : ['cleared' => true, 'pending' => 0, 'has_orders' => false]);
 
 // A closed stay has nothing left to prescribe, so neither piece applies.
-if ($tsAdmissionId && $tsOpen && (!$tsState['cleared'] || $tsState['pending'])):
+// 'available' is false until the migration has run — see ipd_sheet_state().
+// Staying silent in that window is deliberate: warning every in-patient about a
+// chart the database cannot yet hold would be a false alarm on a live ward.
+if ($tsAdmissionId && $tsOpen && ($tsState['available'] ?? true)
+    && (!$tsState['cleared'] || $tsState['pending'])):
 
 // Fire the modal only on the post-admit hop, and only when nothing is signed
 // yet. Re-prompting a doctor who is mid-round would be noise.

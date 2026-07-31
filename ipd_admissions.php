@@ -225,7 +225,10 @@ require __DIR__ . '/partials/sidebar.php';
                                task, and flagging it would train people to ignore the flag. */
                             if ($r['status'] !== 'DISCHARGED' && has_permission('IPD_VIEW_TREATMENT_SHEET')):
                                 $ts = ipd_sheet_state($pdo, (int) $r['admission_id']);
-                                if (!$ts['cleared']): ?>
+                                // 'available' is false pre-migration — stay silent
+                                // rather than flag every bed with a false alarm.
+                                if (!($ts['available'] ?? true)): /* no flag */
+                                elseif (!$ts['cleared']): ?>
                                     <div class="ts-flag ts-flag-none" title="No doctor-approved medication order">&#9888; No treatment sheet</div>
                                 <?php elseif ($ts['pending']): ?>
                                     <div class="ts-flag ts-flag-pend" title="Written but not yet approved by a doctor">&#9203; <?= (int) $ts['pending'] ?> awaiting approval</div>
