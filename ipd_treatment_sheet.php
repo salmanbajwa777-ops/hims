@@ -610,15 +610,25 @@ function ts_drug_cell(array $o): void {
       <?php endif; ?>
 
       <div class="ts-grid">
+        <?php
+        /* Step 1 of the prescribing flow: the doctor types the GENERIC. The
+           datalist lists each molecule ONCE (not once per form) — picking a
+           form is step 2, and only when the molecule actually has several. */
+        $genericNames = [];
+        foreach ($formulary as $d) {
+            $genericNames[mb_strtoupper($d['generic_name'], 'UTF-8')] = $d;
+        }
+        ksort($genericNames);
+        ?>
         <div class="ts-field ts-full">
           <label>Drug (generic) *</label>
           <input list="tsDrugs" name="drug_search" id="tsDrugSearch" autocomplete="off"
                  placeholder="Type to search the formulary, or type any drug name"
                  value="<?= htmlspecialchars($form['drug_search'] ?? '') ?>">
           <datalist id="tsDrugs">
-            <?php foreach ($formulary as $d): ?>
+            <?php foreach ($genericNames as $gname => $d): ?>
               <option value="<?= htmlspecialchars($d['generic_name']) ?>"
-                      label="<?= htmlspecialchars(trim(($d['brand_name'] ? $d['brand_name'] . ' · ' : '') . ($d['drug_class'] ?? ''))) ?>"></option>
+                      label="<?= htmlspecialchars((string) ($d['drug_class'] ?? '')) ?>"></option>
             <?php endforeach; ?>
           </datalist>
           <input type="hidden" name="drug_id" id="tsDrugId" value="<?= (int) ($form['drug_id'] ?? 0) ?>">
@@ -626,11 +636,24 @@ function ts_drug_cell(array $o): void {
           <div class="ts-instr" id="tsDrugInfo"></div>
         </div>
 
-        <div class="ts-field">
-          <label>Brand (optional)</label>
-          <input name="brand_name" id="tsBrand" placeholder="Trade name as dispensed"
-                 value="<?= htmlspecialchars($form['brand_name'] ?? '') ?>">
+        <?php /* Step 2: only shown when the generic has MORE THAN ONE form.
+                 A single-form drug auto-loads its form and route silently. */ ?>
+        <div class="ts-field" id="tsFormWrap" hidden>
+          <label>Dose form *</label>
+          <select id="tsDoseForm"></select>
+          <div class="ts-instr" id="tsFormHint"></div>
         </div>
+
+        <?php /* Step 3: brand auto-loads to the primary, switchable. Falls back
+                 to a free-text box for a drug that is not in the formulary. */ ?>
+        <div class="ts-field">
+          <label>Brand</label>
+          <select name="brand_name" id="tsBrandSelect" hidden></select>
+          <input name="brand_name_free" id="tsBrandFree" placeholder="Trade name as dispensed"
+                 value="<?= htmlspecialchars($form['brand_name'] ?? '') ?>">
+          <div class="ts-instr" id="tsBrandHint"></div>
+        </div>
+        <input type="hidden" name="dose_form" id="tsDoseFormHidden" value="<?= htmlspecialchars($form['dose_form'] ?? '') ?>">
         <div class="ts-field">
           <label>Dose *</label>
           <input name="dose_value" type="number" step="0.001" min="0.001" required
@@ -817,52 +840,25 @@ function ts_drug_cell(array $o): void {
 </dialog>
 
 <script>
-/* Formulary, for the typeahead's id resolution + default pre-fills. Generic and
-   brand stay separate here exactly as they are in the database. */
+/* The formulary, one entry per generic+dose form. Generic, brand and form stay
+   separate here exactly as they are in the database. */
 const TS_DRUGS = <?= json_encode(array_map(fn($d) => [
-    'id'    => (int) $d['id'],
-    'gen'   => $d['generic_name'],
-    'brand' => $d['brand_name'],
-    'cls'   => $d['drug_class'],
-    'hi'    => (int) $d['is_high_alert'],
-    'unit'  => $d['default_dose_unit'],
-    'freqs' => $d['default_frequencies'],
+    'id'     => (int) $d['id'],
+    'gen'    => $d['generic_name'],
+    'form'   => (string) ($d['dose_form'] ?? ''),
+    'stren'  => (string) ($d['strength'] ?? ''),
+    'brands' => ipd_brand_options($d),
+    'cls'    => $d['drug_class'],
+    'hi'     => (int) $d['is_high_alert'],
+    'unit'   => $d['default_dose_unit'],
+    'routes' => (string) ($d['default_routes'] ?? ''),
+    'freqs'  => $d['default_frequencies'],
 ], $formulary), JSON_UNESCAPED_UNICODE) ?>;
 
-const tsSearch = document.getElementById('tsDrugSearch');
-if (tsSearch) {
-    tsSearch.addEventListener('input', function () {
-        const v = this.value.trim().toUpperCase();
-        const hit = TS_DRUGS.find(d => d.gen.toUpperCase() === v);
-        const info = document.getElementById('tsDrugInfo');
-        if (hit) {
-            /* A formulary pick: carry the id so the server uses catalogue data
-               (class, high-alert, allergy group) rather than trusting the text. */
-            document.getElementById('tsDrugId').value = hit.id;
-            document.getElementById('tsDrugManual').value = '';
-            if (hit.brand && !document.getElementById('tsBrand').value) {
-                document.getElementById('tsBrand').value = hit.brand;
-            }
-            if (hit.unit) { document.getElementById('tsUnit').value = hit.unit; }
-            if (hit.freqs) {
-                const first = hit.freqs.split(',')[0].trim();
-                if (first) { document.getElementById('tsFreq').value = first; }
-            }
-            info.textContent = (hit.cls || '') + (hit.hi ? '  ⚠ HIGH-ALERT DRUG' : '');
-            info.style.color = hit.hi ? 'var(--danger)' : '';
-        } else {
-            /* Free-typed: no formulary row, so no class-based checks are possible. */
-            document.getElementById('tsDrugId').value = 0;
-            document.getElementById('tsDrugManual').value = this.value.trim();
-            info.textContent = this.value.trim()
-                ? 'Not in the formulary — allergy checking will match on name only.' : '';
-            info.style.color = '';
-        }
-    });
-    tsSearch.dispatchEvent(new Event('input'));
-}
-
-/* PRN reveals its two mandatory fields. */
+/* PRN reveals its two mandatory fields.
+   Defined BEFORE the prescribing flow below, which calls tsSyncPrn() after
+   auto-selecting a frequency — `const tsFreq` would be in the temporal dead
+   zone if this block still sat at the bottom of the file. */
 const tsFreq = document.getElementById('tsFreq');
 function tsSyncPrn() {
     const isPrn = tsFreq && tsFreq.value === 'PRN';
@@ -874,6 +870,140 @@ function tsSyncPrn() {
     });
 }
 if (tsFreq) { tsFreq.addEventListener('change', tsSyncPrn); tsSyncPrn(); }
+
+/**
+ * Prescribing flow, in the order a doctor actually thinks:
+ *   1. type the GENERIC
+ *   2. one dose form  -> form + route auto-load, the form picker stays hidden
+ *      several forms   -> the form picker appears and drives route/unit/brand
+ *   3. brand auto-loads to the row's primary, switchable from the dropdown
+ */
+const tsEl = id => document.getElementById(id);
+
+/** Every formulary row for a typed generic name. */
+function tsFormsFor(generic) {
+    const v = (generic || '').trim().toUpperCase();
+    if (!v) { return []; }
+    return TS_DRUGS.filter(d => d.gen.toUpperCase() === v);
+}
+
+/** Apply one formulary row: id, routes, unit, frequency, brands, warnings. */
+function tsApplyRow(row) {
+    tsEl('tsDrugId').value = row.id;
+    tsEl('tsDrugManual').value = '';
+    tsEl('tsDoseFormHidden').value = row.form || '';
+
+    /* Route: restrict the select to what this FORM can deliver, so a
+       suppository can never be sent PO. Single route -> selected outright. */
+    const routeSel = document.querySelector('select[name="route"]');
+    const allowed = (row.routes || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (routeSel) {
+        Array.from(routeSel.options).forEach(o => {
+            const ok = !allowed.length || allowed.includes(o.value);
+            o.hidden = !ok;
+            o.disabled = !ok;
+        });
+        if (allowed.length && !allowed.includes(routeSel.value)) { routeSel.value = allowed[0]; }
+    }
+    if (row.unit) { tsEl('tsUnit').value = row.unit; }
+    if (row.freqs) {
+        const first = row.freqs.split(',')[0].trim();
+        if (first) { tsEl('tsFreq').value = first; tsSyncPrn(); }
+    }
+
+    /* Brands: primary first and pre-selected; the doctor can switch. */
+    const sel = tsEl('tsBrandSelect'), free = tsEl('tsBrandFree'), hint = tsEl('tsBrandHint');
+    const brands = row.brands || [];
+    if (brands.length) {
+        sel.innerHTML = '';
+        brands.forEach(b => {
+            const o = document.createElement('option');
+            o.value = b; o.textContent = b;
+            sel.appendChild(o);
+        });
+        sel.value = brands[0];
+        sel.hidden = false; sel.name = 'brand_name';
+        free.hidden = true; free.name = 'brand_name_free';
+        hint.textContent = brands.length > 1
+            ? brands.length + ' brands stocked — change if a different one is dispensed'
+            : '';
+    } else {
+        /* No brand on the row: let the nurse type what was actually dispensed. */
+        sel.hidden = true; sel.name = 'brand_name_unused';
+        free.hidden = false; free.name = 'brand_name';
+        hint.textContent = 'No brand recorded for this product.';
+    }
+
+    const info = tsEl('tsDrugInfo');
+    const bits = [row.cls || ''];
+    if (row.stren) { bits.push(row.stren); }
+    info.textContent = bits.filter(Boolean).join(' · ') + (row.hi ? '   ⚠ HIGH-ALERT DRUG' : '');
+    info.style.color = row.hi ? 'var(--danger)' : '';
+}
+
+/** Free-typed drug: no formulary row, so no class-based checks are possible. */
+function tsApplyManual(text) {
+    tsEl('tsDrugId').value = 0;
+    tsEl('tsDrugManual').value = text;
+    tsEl('tsDoseFormHidden').value = '';
+    tsEl('tsFormWrap').hidden = true;
+
+    const routeSel = document.querySelector('select[name="route"]');
+    if (routeSel) { Array.from(routeSel.options).forEach(o => { o.hidden = false; o.disabled = false; }); }
+
+    const sel = tsEl('tsBrandSelect'), free = tsEl('tsBrandFree');
+    sel.hidden = true; sel.name = 'brand_name_unused';
+    free.hidden = false; free.name = 'brand_name';
+    tsEl('tsBrandHint').textContent = '';
+
+    const info = tsEl('tsDrugInfo');
+    info.textContent = text ? 'Not in the formulary — allergy checking will match on name only.' : '';
+    info.style.color = '';
+}
+
+const tsSearch = tsEl('tsDrugSearch');
+const tsFormSel = tsEl('tsDoseForm');
+
+function tsOnGenericChange() {
+    const typed = tsSearch.value.trim();
+    const rows = tsFormsFor(typed);
+    const wrap = tsEl('tsFormWrap');
+
+    if (!rows.length) { tsApplyManual(typed); return; }
+
+    if (rows.length === 1) {
+        /* ONE form: auto-load it. No extra click — the doctor asked for this. */
+        wrap.hidden = true;
+        tsApplyRow(rows[0]);
+        return;
+    }
+
+    /* SEVERAL forms: ask, because "PARACETAMOL 1 g" is ambiguous until we know
+       whether it is the tablet, the suppository or the infusion. */
+    wrap.hidden = false;
+    tsFormSel.innerHTML = '';
+    rows.forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.id;
+        o.textContent = (r.form || '—') + (r.stren ? ' · ' + r.stren : '')
+                      + (r.routes ? '  (' + r.routes + ')' : '');
+        tsFormSel.appendChild(o);
+    });
+    tsEl('tsFormHint').textContent = rows.length + ' forms available — pick the one being given';
+    tsFormSel.value = rows[0].id;
+    tsApplyRow(rows[0]);
+}
+
+if (tsSearch) {
+    tsSearch.addEventListener('input', tsOnGenericChange);
+    tsFormSel.addEventListener('change', function () {
+        const row = TS_DRUGS.find(d => String(d.id) === String(this.value));
+        if (row) { tsApplyRow(row); }
+    });
+    /* Settle the form's initial state — matters when a blocked save (e.g. an
+       allergy conflict) re-renders the page with a drug already typed. */
+    tsOnGenericChange();
+}
 
 function tsSlot(id, time, drug) {
     document.getElementById('tsSlotId').value = id;

@@ -68,20 +68,33 @@ function ipd_create_med_order(PDO $pdo, int $admissionId, array $in): array {
     // a brand alongside the generic and both are kept.
     if ($drug) {
         $generic     = (string) $drug['generic_name'];
-        $brand       = trim((string) ($in['brand_name'] ?? '')) ?: (string) ($drug['brand_name'] ?? '');
+        $doseForm    = trim((string) ($drug['dose_form'] ?? ''));
         $drugClass   = $drug['drug_class'] ?? null;
         $isHighAlert = (int) $drug['is_high_alert'];
+
+        // The brand must be one this formulary row actually offers. A POST can
+        // name any string, and a brand that does not belong to the product is a
+        // wrong label on a drug chart — so an unrecognised one falls back to the
+        // row's primary rather than being written through.
+        $wanted  = trim((string) ($in['brand_name'] ?? ''));
+        $options = ipd_brand_options($drug);
+        $brand   = (string) ($drug['brand_name'] ?? '');
+        foreach ($options as $opt) {
+            if (mb_strtolower($opt, 'UTF-8') === mb_strtolower($wanted, 'UTF-8')) { $brand = $opt; break; }
+        }
     } else {
         if ($manual === '') {
             $out['error'] = 'Pick a drug from the formulary or type a drug name.';
             return $out;
         }
         $generic     = $manual;
+        $doseForm    = mb_substr(trim((string) ($in['dose_form'] ?? '')), 0, 40);
         $brand       = mb_strtoupper(trim((string) ($in['brand_name'] ?? '')), 'UTF-8');
         $drugClass   = null;
         $isHighAlert = 0;
     }
-    $brand = $brand !== '' ? mb_substr($brand, 0, 150) : null;
+    $brand    = $brand !== '' ? mb_substr($brand, 0, 150) : null;
+    $doseForm = $doseForm !== '' ? $doseForm : null;
     $printable = ipd_display_drug_name($generic, $brand);
 
     // ---- Structured dose / route / frequency ----
@@ -176,7 +189,7 @@ function ipd_create_med_order(PDO $pdo, int $admissionId, array $in): array {
         $pdo->prepare('
             INSERT INTO ipd_medication_orders
                 (admission_id, drug_id, drug_name_manual,
-                 generic_name_snapshot, brand_name_snapshot, drug_name_snapshot,
+                 generic_name_snapshot, brand_name_snapshot, dose_form_snapshot, drug_name_snapshot,
                  drug_class_snapshot, is_high_alert,
                  dose_value, dose_unit, route, frequency, order_type,
                  start_datetime, duration_days, prn_max_per_24h, prn_indication,
@@ -184,11 +197,11 @@ function ipd_create_med_order(PDO $pdo, int $admissionId, array $in): array {
                  prescribed_by_id, prescribed_by_role, prescribed_at,
                  approval_status, approved_by_id, approved_at,
                  allergy_override, allergy_override_reason, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ' .
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ' .
                  ($selfApproves ? 'NOW()' : 'NULL') . ', ?, ?, \'ACTIVE\')
         ')->execute([
             $admissionId, $drugId, $drug ? null : $manual,
-            $generic, $brand, $printable,
+            $generic, $brand, $doseForm, $printable,
             $drugClass, $isHighAlert,
             $doseValue, $doseUnit, $route, $frequency, $orderType,
             $startDt, $duration, $prnMax, $prnInd,

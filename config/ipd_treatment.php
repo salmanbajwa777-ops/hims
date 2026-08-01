@@ -171,6 +171,58 @@ function ipd_all_brand_names(array $drug): array {
 }
 
 /**
+ * The brand PICK LIST for a formulary row, in original case: the primary first,
+ * then alternates, capped at IPD_MAX_BRANDS.
+ *
+ * Separate from ipd_all_brand_names() on purpose. That one uppercases and is for
+ * allergy MATCHING, where case is noise. This one preserves what the admin
+ * typed, because it populates the brand dropdown the doctor reads and what gets
+ * printed on the chart.
+ */
+const IPD_MAX_BRANDS = 6;
+
+function ipd_brand_options(array $drug): array {
+    $out = [];
+    $primary = trim((string) ($drug['brand_name'] ?? ''));
+    if ($primary !== '') { $out[] = $primary; }
+    foreach (explode(',', (string) ($drug['brand_names'] ?? '')) as $b) {
+        $b = trim($b);
+        // Case-insensitive de-dupe so "Rocephin" listed in both columns
+        // does not appear twice in the dropdown.
+        if ($b !== '' && !in_array(mb_strtolower($b, 'UTF-8'), array_map(fn($x) => mb_strtolower($x, 'UTF-8'), $out), true)) {
+            $out[] = $b;
+        }
+    }
+    return array_slice($out, 0, IPD_MAX_BRANDS);
+}
+
+/**
+ * Formulary rows grouped by generic name, for the prescribing flow.
+ *
+ * The doctor picks the GENERIC first, so the order form needs to answer "how
+ * many forms does this molecule have?" before it can decide whether to
+ * auto-load a form/route or ask. Returns [GENERIC => [row, row, ...]].
+ */
+function ipd_formulary_by_generic(array $formulary): array {
+    $out = [];
+    foreach ($formulary as $d) {
+        $out[mb_strtoupper($d['generic_name'], 'UTF-8')][] = $d;
+    }
+    return $out;
+}
+
+/**
+ * The dose forms a clinic is likely to stock. Free text in the DB (a clinic may
+ * type anything), so this only seeds the datalist on the formulary screen.
+ */
+const IPD_DOSE_FORMS = [
+    'Tablet', 'Capsule', 'Syrup', 'Suspension', 'Drops',
+    'Injection', 'Infusion', 'Suppository', 'Pessary',
+    'Nebuliser solution', 'Inhaler', 'Cream', 'Ointment', 'Gel',
+    'Eye drops', 'Ear drops', 'Patch', 'Sachet', 'Topical',
+];
+
+/**
  * The printable name for an order: "GENERIC (BRAND)", or just the generic when
  * no brand is known. Used to build drug_name_snapshot at order time and to
  * re-derive a label for legacy rows.
@@ -634,15 +686,33 @@ function ipd_load_prn_log(PDO $pdo, int $admissionId, ?string $day = null): arra
 /** Formulary rows for the typeahead. */
 function ipd_formulary(PDO $pdo): array {
     try {
+        // dose_form / strength come from sql/ipd/add_formulary_dose_forms.sql.
         return $pdo->query('
-            SELECT id, generic_name, brand_name, brand_names, drug_class, allergy_group,
-                   is_high_alert, default_routes, default_frequencies, default_dose_unit
+            SELECT id, generic_name, dose_form, strength, brand_name, brand_names,
+                   drug_class, allergy_group, is_high_alert,
+                   default_routes, default_frequencies, default_dose_unit
             FROM ipd_drug_formulary
             WHERE is_enabled = 1
-            ORDER BY generic_name
+            ORDER BY generic_name, dose_form
         ')->fetchAll();
     } catch (Throwable $e) {
-        return [];
+        // dose_form/strength missing -> the dose-form migration has not run yet.
+        // Fall back to the pre-migration columns rather than returning [], which
+        // would empty the drug picker entirely and read as "the formulary is
+        // broken" instead of "one migration is outstanding".
+        try {
+            $rows = $pdo->query('
+                SELECT id, generic_name, brand_name, brand_names, drug_class, allergy_group,
+                       is_high_alert, default_routes, default_frequencies, default_dose_unit
+                FROM ipd_drug_formulary
+                WHERE is_enabled = 1
+                ORDER BY generic_name
+            ')->fetchAll();
+            foreach ($rows as &$r) { $r['dose_form'] = ''; $r['strength'] = null; }
+            return $rows;
+        } catch (Throwable $e2) {
+            return [];
+        }
     }
 }
 
@@ -697,6 +767,11 @@ function ipd_order_line(array $o): string {
     $name = $generic !== ''
         ? ipd_display_drug_name($generic, $o['brand_name_snapshot'] ?? null)
         : (string) ($o['drug_name_snapshot'] ?? '');
+    // The dose form disambiguates the product where the route alone cannot:
+    // paracetamol 1 g IV and paracetamol 1 g PR are different things a nurse
+    // physically picks up. Omitted when unknown (pre-migration rows).
+    $form = trim((string) ($o['dose_form_snapshot'] ?? ''));
+    if ($form !== '') { $name .= ' ' . $form; }
     return $name . ' ' . ipd_dose_line($o);
 }
 
