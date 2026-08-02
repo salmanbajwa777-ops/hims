@@ -36,6 +36,32 @@ $canApprove = has_permission('FINANCIAL_APPROVE_EXPENSES');
 $error = '';
 $success = '';
 
+// The listing filters (from/to/cat) live in the query string. Every row action
+// POSTs back to this page, so without carrying them through the redirect the
+// admin was thrown back to today/all-categories after each Approve — losing the
+// range they were working through. Each action form posts the filter it was
+// rendered under; this rebuilds that query string for the PRG redirect.
+function expense_filter_qs(array $src): string {
+    $qs = [];
+    foreach (['from', 'to'] as $k) {
+        $v = trim((string) ($src[$k] ?? ''));
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) { $qs[$k] = $v; }
+    }
+    $cat = (int) ($src['cat'] ?? 0);
+    if ($cat > 0) { $qs['cat'] = $cat; }
+    return $qs ? '?' . http_build_query($qs) : '';
+}
+
+// PRG back to the SAME filtered view, carrying a one-shot flash message. A plain
+// re-render would also work, but the redirect stops a refresh from replaying the
+// approve/void POST.
+function expense_redirect_back(array $src, string $type, string $message): void {
+    $qs = expense_filter_qs($src);
+    $_SESSION['expense_flash'] = ['type' => $type, 'message' => $message];
+    header('Location: expenses.php' . $qs);
+    exit;
+}
+
 // Yearly expense voucher number, e.g. "EXP-2026-0014". Same race-safe pattern
 // as generate_refund_number() (config/billing.php): we do NOT trust
 // LAST_INSERT_ID() on an ON DUPLICATE KEY *update* — its return value is
@@ -124,7 +150,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
         ? require_month_open($pdo, $isPeriodBased && $periodMonth !== '' ? $periodMonth . '-01' : date('Y-m-d'))
         : null;
 
-    if ($isAdminOnly && !$isAdmin) {
+    // IMPERSONATION MONEY BRAKE — CASH_COUNTER only.
+    //
+    // A counter expense is petty cash leaving the drawer, and it reduces the
+    // target's expected_cash exactly as a refund does, so while impersonating
+    // it is a way to empty someone else's drawer under their name. The brake
+    // covered refund/void/close-day/take-payment and missed this one. BANK and
+    // OWNER sources touch no drawer, so they are deliberately not gated —
+    // making an admin re-affirm a bank salary posting would be noise that
+    // teaches people to tick past the warning.
+    $impBlock = $source === 'CASH_COUNTER' ? imp_block_money_action('Posting this counter expense') : '';
+
+    if ($impBlock !== '') {
+        $error = $impBlock;
+    } elseif ($isAdminOnly && !$isAdmin) {
         $error = 'Only an admin may post under that category.';
     } elseif ($isPeriodBased && !preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
         $error = 'Pick the month this payment is for.';
@@ -334,25 +373,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
     } else {
         $error = 'A void needs a reason.';
     }
+    expense_redirect_back($_POST, $error !== '' ? 'error' : 'success', $error !== '' ? $error : $success);
 }
 
-// ---- Approve / reject a pending expense (in-app; approvers only) ----
+// ---- Approve / reject pending expenses (in-app; approvers only) ----
+//
+// Handles BOTH the single-row buttons and the bulk tick-box form — a bulk run is
+// just a loop over the same decide_expense(), one row-locked transaction each, so
+// a row someone else decided in the meantime is skipped rather than sinking the
+// whole batch. Deliberately not one big transaction: approving 12 of 13 is a
+// better outcome than rolling all 13 back because one was already handled.
 if ($_SERVER['REQUEST_METHOD'] === 'POST'
     && in_array($_POST['action'] ?? '', ['approve_expense', 'reject_expense'], true)) {
     if (!$canApprove) {
         http_response_code(403);
         exit('You do not have permission to approve expenses.');
     }
-    $id       = (int) ($_POST['expense_id'] ?? 0);
-    $approve  = ($_POST['action'] === 'approve_expense');
-    $reason   = trim($_POST['reject_reason'] ?? '');
-    $result   = decide_expense($pdo, $id, $approve, $userId, $reason);
-    if ($result['ok']) {
-        notify_expense_decided($pdo, $id);   // best-effort, after commit
-        $success = $result['message'];
-    } else {
-        $error = $result['message'];
+    $approve = ($_POST['action'] === 'approve_expense');
+    $reason  = trim($_POST['reject_reason'] ?? '');
+
+    // Single row posts expense_id; the bulk form posts expense_ids[].
+    $ids = [];
+    if (isset($_POST['expense_ids']) && is_array($_POST['expense_ids'])) {
+        foreach ($_POST['expense_ids'] as $raw) {
+            $n = (int) $raw;
+            if ($n > 0) { $ids[$n] = $n; }
+        }
+        $ids = array_values($ids);
+    } elseif ((int) ($_POST['expense_id'] ?? 0) > 0) {
+        $ids = [(int) $_POST['expense_id']];
     }
+
+    if (!$ids) {
+        $error = 'Tick at least one expense first.';
+    } elseif (count($ids) === 1) {
+        $result = decide_expense($pdo, $ids[0], $approve, $userId, $reason);
+        if ($result['ok']) {
+            notify_expense_decided($pdo, $ids[0]);   // best-effort, after commit
+            $success = $result['message'];
+        } else {
+            $error = $result['message'];
+        }
+    } else {
+        $done = 0;
+        $skipped = [];
+        foreach ($ids as $id) {
+            $result = decide_expense($pdo, $id, $approve, $userId, $reason);
+            if ($result['ok']) {
+                $done++;
+                notify_expense_decided($pdo, $id);   // best-effort, after commit
+            } else {
+                $skipped[] = $result['message'];
+            }
+        }
+        $verb = $approve ? 'approved' : 'rejected';
+        if ($done > 0) {
+            $success = $done . ' ' . ($done === 1 ? 'expense' : 'expenses') . ' ' . $verb . '.';
+            if ($skipped) {
+                $success .= ' ' . count($skipped) . ' skipped — ' . implode(' ', $skipped);
+            }
+        } else {
+            $error = 'Nothing was ' . $verb . '. ' . implode(' ', $skipped);
+        }
+    }
+    expense_redirect_back($_POST, $error !== '' ? 'error' : 'success', $error !== '' ? $error : $success);
+}
+
+// One-shot flash from a row action's PRG redirect (approve / reject / void).
+if (!empty($_SESSION['expense_flash'])) {
+    $flash = $_SESSION['expense_flash'];
+    unset($_SESSION['expense_flash']);
+    // $success is echoed unescaped (the posted= message below carries markup), so
+    // escape here — a void reason is free text typed by the admin.
+    if (($flash['type'] ?? '') === 'error') { $error = (string) $flash['message']; }
+    else { $success = htmlspecialchars((string) $flash['message']); }
 }
 
 if (isset($_GET['posted'])) {
@@ -450,6 +544,21 @@ $listStmt = $pdo->prepare('
 $listStmt->execute($params);
 $rows = $listStmt->fetchAll();
 
+// Hidden inputs every row/bulk action form carries, so the PRG redirect can put
+// the admin back on the exact range + category they were working through.
+$filterFields = '<input type="hidden" name="from" value="' . htmlspecialchars($filterFrom) . '">'
+              . '<input type="hidden" name="to" value="' . htmlspecialchars($filterTo) . '">'
+              . '<input type="hidden" name="cat" value="' . (int) $filterCat . '">';
+
+// Rows the bulk bar can act on: pending, not voided, inside the current filter.
+// Counted from $rows so the tick-all box can never select something off-screen.
+$pendingIds = [];
+foreach ($rows as $r) {
+    if ($r['voided_at'] === null && ($r['approval_status'] ?? 'PENDING') === 'PENDING') {
+        $pendingIds[] = (int) $r['id'];
+    }
+}
+
 // A rejected expense returned its cash to the drawer, so — like a voided one —
 // it drops out of every total. Pending still counts (the cash is already out).
 $rangeTotal = 0.0;
@@ -529,6 +638,20 @@ $headExtra = <<<CSS
 .total-chip { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; }
 .total-chip strong { color: var(--text); font-variant-numeric: tabular-nums; }
 .muted-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+/* Bulk approve bar. Sits above the table and stays put while the list scrolls
+   under it, so a long pending run does not mean scrolling back up to act. */
+.bulk-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+            background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+            padding: 10px 14px; margin-bottom: 12px; }
+.bulk-bar .bulk-all { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text); cursor: pointer; }
+.bulk-bar .bulk-count { font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.bulk-bar .bulk-actions { margin-left: auto; display: flex; gap: 8px; }
+.bulk-bar button[disabled] { opacity: .45; cursor: not-allowed; }
+.bulk-bar.has-sel { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.10); }
+.btn.ghost { background: none; color: var(--red-text, #b3261e); border: 1px solid rgba(225,29,72,.30); }
+input.bulk-pick, #bulkAll { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+tr.row-sel td { background: rgba(26,127,126,.055); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -654,6 +777,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <label>Paid to <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
                             <input type="text" name="paid_to" maxlength="120" placeholder="Vendor / rider / staff name">
                         </div>
+                        <?= imp_confirm_field('Post this counter expense') ?>
                         <button type="submit" class="btn" style="width:100%;">Post Expense</button>
                         <div class="muted-note">Keep the receipt with the counter cash for the shift tally.</div>
                     </form>
@@ -688,10 +812,45 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php endforeach; ?>
                     </div>
 
+                    <?php if ($canApprove && $pendingIds): ?>
+                    <!-- Bulk bar. Ticking rows enables it; the buttons submit the
+                         same handler as the per-row forms, which decides each id
+                         in its own transaction. Hidden without JS-selected rows
+                         so it can never fire on an empty selection. -->
+                    <div class="bulk-bar" id="bulkBar">
+                        <label class="bulk-all">
+                            <input type="checkbox" id="bulkAll">
+                            Select all <?= count($pendingIds) ?> awaiting approval
+                        </label>
+                        <span class="bulk-count" id="bulkCount">None selected</span>
+                        <span class="bulk-actions">
+                            <button type="submit" form="bulkForm" name="action" value="approve_expense"
+                                    class="btn small" id="bulkApprove" disabled
+                                    style="padding:7px 14px;font-size:12.5px;">Approve selected</button>
+                            <button type="submit" form="bulkForm" name="action" value="reject_expense"
+                                    class="btn small ghost" id="bulkReject" disabled
+                                    style="padding:7px 14px;font-size:12.5px;">Reject selected</button>
+                        </span>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- The bulk form wraps nothing itself: the row tick-boxes and
+                         the bar's buttons both point at it by id, because a <form>
+                         cannot legally wrap <tr>s that also contain the per-row
+                         action forms (nested forms are dropped by the parser). -->
+                    <?php if ($canApprove && $pendingIds): ?>
+                    <form method="POST" action="expenses.php" id="bulkForm"
+                          onsubmit="return bulkConfirm(this, event);">
+                        <input type="hidden" name="reject_reason" value="">
+                        <?= $filterFields ?>
+                    </form>
+                    <?php endif; ?>
+
                     <div style="overflow-x:auto;">
                     <table>
                         <thead>
                             <tr>
+                                <?php if ($canApprove && $pendingIds): ?><th style="width:34px;"></th><?php endif; ?>
                                 <th>Voucher</th>
                                 <?php if ($isAdmin): ?><th>Date</th><?php endif; ?>
                                 <th>Category</th>
@@ -705,12 +864,25 @@ require __DIR__ . '/partials/sidebar.php';
                         </thead>
                         <tbody>
                             <?php if (!$rows): ?>
-                            <?php $emptyCols = ($isAdmin ? 8 : 7) + (($isAdmin || $canApprove) ? 1 : 0); ?>
+                            <?php $emptyCols = ($isAdmin ? 8 : 7) + (($isAdmin || $canApprove) ? 1 : 0)
+                                             + (($canApprove && $pendingIds) ? 1 : 0); ?>
                             <tr><td colspan="<?= $emptyCols ?>" class="muted" style="padding:20px 10px;">No expenses<?= $isAdmin ? ' in this range' : ' posted this shift yet' ?>.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($rows as $r): ?>
-                            <?php $voided = $r['voided_at'] !== null; ?>
+                            <?php
+                                $voided = $r['voided_at'] !== null;
+                                $rowPending = !$voided && ($r['approval_status'] ?? 'PENDING') === 'PENDING';
+                            ?>
                             <tr class="<?= $voided ? 'row-voided' : '' ?>">
+                                <?php if ($canApprove && $pendingIds): ?>
+                                <td>
+                                    <?php if ($rowPending): ?>
+                                    <input type="checkbox" class="bulk-pick" form="bulkForm"
+                                           name="expense_ids[]" value="<?= (int) $r['id'] ?>"
+                                           aria-label="Select <?= htmlspecialchars($r['expense_number']) ?>">
+                                    <?php endif; ?>
+                                </td>
+                                <?php endif; ?>
                                 <td>
                                     <span class="exp-no"><?= htmlspecialchars($r['expense_number']) ?></span>
                                     <?php if ($voided): ?><br><span class="void-chip" title="<?= htmlspecialchars('By ' . ($r['voided_by_name'] ?? '') . ': ' . ($r['void_reason'] ?? '')) ?>">VOID</span><?php endif; ?>
@@ -744,6 +916,7 @@ require __DIR__ . '/partials/sidebar.php';
                                     <form method="POST" action="expenses.php" style="margin:0 0 4px;">
                                         <input type="hidden" name="action" value="approve_expense">
                                         <input type="hidden" name="expense_id" value="<?= (int) $r['id'] ?>">
+                                        <?= $filterFields ?>
                                         <button type="submit" class="link-btn">Approve</button>
                                     </form>
                                     <form method="POST" action="expenses.php" style="margin:0 0 4px;"
@@ -751,6 +924,7 @@ require __DIR__ . '/partials/sidebar.php';
                                         <input type="hidden" name="action" value="reject_expense">
                                         <input type="hidden" name="expense_id" value="<?= (int) $r['id'] ?>">
                                         <input type="hidden" name="reject_reason" value="">
+                                        <?= $filterFields ?>
                                         <button type="submit" class="link-btn warn">Reject</button>
                                     </form>
                                     <?php endif; ?>
@@ -760,6 +934,7 @@ require __DIR__ . '/partials/sidebar.php';
                                         <input type="hidden" name="action" value="void_expense">
                                         <input type="hidden" name="expense_id" value="<?= (int) $r['id'] ?>">
                                         <input type="hidden" name="void_reason" value="">
+                                        <?= $filterFields ?>
                                         <button type="submit" class="link-btn warn">Void</button>
                                     </form>
                                     <?php endif; ?>
@@ -776,6 +951,69 @@ require __DIR__ . '/partials/sidebar.php';
     </div>
 </div>
 <script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
+<?php if ($canApprove && $pendingIds): ?>
+<script>
+// Bulk approve/reject. The tick-boxes and the bar's buttons all belong to
+// #bulkForm via form=, so the browser gathers expense_ids[] for us — this only
+// drives the select-all box, the live count, and the confirm.
+(function () {
+    var bar   = document.getElementById('bulkBar');
+    var all   = document.getElementById('bulkAll');
+    var count = document.getElementById('bulkCount');
+    var okBtn = document.getElementById('bulkApprove');
+    var noBtn = document.getElementById('bulkReject');
+    var picks = Array.prototype.slice.call(document.querySelectorAll('.bulk-pick'));
+    if (!bar || !all || !picks.length) return;
+
+    function selected() { return picks.filter(function (p) { return p.checked; }); }
+
+    function refresh() {
+        var n = selected().length;
+        count.textContent = n ? (n + ' selected') : 'None selected';
+        okBtn.disabled = noBtn.disabled = (n === 0);
+        bar.classList.toggle('has-sel', n > 0);
+        // Indeterminate keeps the header box honest on a partial selection.
+        all.checked = (n === picks.length);
+        all.indeterminate = (n > 0 && n < picks.length);
+        picks.forEach(function (p) {
+            var tr = p.closest('tr');
+            if (tr) { tr.classList.toggle('row-sel', p.checked); }
+        });
+    }
+
+    all.addEventListener('change', function () {
+        picks.forEach(function (p) { p.checked = all.checked; });
+        refresh();
+    });
+    picks.forEach(function (p) { p.addEventListener('change', refresh); });
+
+    // Which button was pressed. SubmitEvent.submitter is not in older WebViews
+    // (the Android wrapper), so record the click ourselves and use submitter only
+    // as a cross-check — without it a bulk Reject would skip its reason prompt.
+    var lastAction = '';
+    [okBtn, noBtn].forEach(function (b) {
+        if (b) { b.addEventListener('click', function () { lastAction = b.value; }); }
+    });
+
+    // Named globally because the form's onsubmit attribute calls it.
+    window.bulkConfirm = function (form, ev) {
+        var n = selected().length;
+        if (!n) { return false; }
+        var act = (ev && ev.submitter && ev.submitter.value) || lastAction;
+        if (act === 'reject_expense') {
+            var r = prompt('Reason for rejecting ' + n + ' expense' + (n === 1 ? '' : 's')
+                         + ' (cash to be returned). The same reason is recorded on each:');
+            if (!r) { return false; }
+            form.reject_reason.value = r;
+            return true;
+        }
+        return window.confirm('Approve ' + n + ' expense' + (n === 1 ? '' : 's') + '?');
+    };
+
+    refresh();
+})();
+</script>
+<?php endif; ?>
 <script>
 // Month picker toggle. Salaries and Doctor Shares are paid in a LATER month than
 // they belong to, so those categories must capture which month — everything else
