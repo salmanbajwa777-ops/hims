@@ -846,7 +846,6 @@ const TS_DRUGS = <?= json_encode(array_map(fn($d) => [
     'id'     => (int) $d['id'],
     'gen'    => $d['generic_name'],
     'form'   => (string) ($d['dose_form'] ?? ''),
-    'stren'  => (string) ($d['strength'] ?? ''),
     'brands' => ipd_brand_options($d),
     'cls'    => $d['drug_class'],
     'hi'     => (int) $d['is_high_alert'],
@@ -936,7 +935,6 @@ function tsApplyRow(row) {
 
     const info = tsEl('tsDrugInfo');
     const bits = [row.cls || ''];
-    if (row.stren) { bits.push(row.stren); }
     info.textContent = bits.filter(Boolean).join(' · ') + (row.hi ? '   ⚠ HIGH-ALERT DRUG' : '');
     info.style.color = row.hi ? 'var(--danger)' : '';
 }
@@ -985,8 +983,7 @@ function tsOnGenericChange() {
     rows.forEach(r => {
         const o = document.createElement('option');
         o.value = r.id;
-        o.textContent = (r.form || '—') + (r.stren ? ' · ' + r.stren : '')
-                      + (r.routes ? '  (' + r.routes + ')' : '');
+        o.textContent = (r.form || '—') + (r.routes ? '  (' + r.routes + ')' : '');
         tsFormSel.appendChild(o);
     });
     tsEl('tsFormHint').textContent = rows.length + ' forms available — pick the one being given';

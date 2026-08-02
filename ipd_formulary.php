@@ -32,7 +32,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     $id      = (int) ($_POST['id'] ?? 0);
     $generic = mb_strtoupper(trim($_POST['generic_name'] ?? ''), 'UTF-8');
     $form    = trim($_POST['dose_form'] ?? '');
-    $stren   = trim($_POST['strength'] ?? '');
     $brand   = trim($_POST['brand_name'] ?? '');
 
     // Brands arrive as up to 5 alternate boxes (primary + 5 = IPD_MAX_BRANDS).
@@ -53,9 +52,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     $group   = mb_strtoupper(trim($_POST['allergy_group'] ?? ''), 'UTF-8');
     $high    = !empty($_POST['is_high_alert']) ? 1 : 0;
     $unit    = trim($_POST['default_dose_unit'] ?? '');
-    $routes  = strtoupper(trim($_POST['default_routes'] ?? ''));
-    $freqs   = strtoupper(trim($_POST['default_frequencies'] ?? ''));
-    $enabled = !empty($_POST['is_enabled']) ? 1 : 0;
+
+    // Routes are tick-boxes now. Whitelisted against IPD_ROUTES rather than
+    // trusted, because this string RESTRICTS the doctor's route dropdown at
+    // prescribing time — an unknown code here would filter it down to nothing
+    // and read as "this drug has no route", which is the sort of silent
+    // dead-end a ward has no way to diagnose.
+    $routeList = [];
+    foreach ((array) ($_POST['default_routes'] ?? []) as $r) {
+        $r = strtoupper(trim((string) $r));
+        if ($r !== '' && isset(IPD_ROUTES[$r]) && !in_array($r, $routeList, true)) {
+            $routeList[] = $r;
+        }
+    }
+    $routes = implode(',', $routeList);
+
+    // Frequency: one code from the dropdown, or whatever "Other" carried.
+    $freqs = strtoupper(trim($_POST['default_frequencies'] ?? ''));
+    if ($freqs === '__OTHER') {
+        $freqs = strtoupper(trim($_POST['default_frequencies_other'] ?? ''));
+    }
 
     if ($generic === '') {
         $err = 'The generic (molecule) name is required.';
@@ -65,17 +81,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $err = 'The dose form is required — it is what separates the tablet from the injection.';
     } elseif ($unit !== '' && !in_array($unit, IPD_DOSE_UNITS, true)) {
         $err = 'Pick a valid default dose unit.';
+    } elseif ($freqs !== '' && !isset(ipd_frequency_map($pdo)[$freqs])) {
+        // Checked against the LIVE map, not a constant: the frequency table is
+        // site-configurable, so a clinic that added its own code must be able to
+        // use it here. A code the map does not know would silently fail to
+        // pre-select anything on the order form.
+        $err = 'Unknown frequency "' . htmlspecialchars($freqs) . '". Use one of: '
+             . implode(', ', array_keys(ipd_frequency_map($pdo))) . '.';
     } else {
         try {
             if ($id > 0) {
                 $pdo->prepare('
                     UPDATE ipd_drug_formulary
-                    SET generic_name = ?, dose_form = ?, strength = ?, brand_name = ?, brand_names = ?,
+                    SET generic_name = ?, dose_form = ?, brand_name = ?, brand_names = ?,
                         drug_class = ?, allergy_group = ?,
                         is_high_alert = ?, default_dose_unit = ?, default_routes = ?, default_frequencies = ?, is_enabled = ?
                     WHERE id = ?
                 ')->execute([
-                    $generic, $form, $stren ?: null, $brand ?: null, $alts ?: null,
+                    $generic, $form, $brand ?: null, $alts ?: null,
                     $class ?: null, $group ?: null,
                     $high, $unit ?: null, $routes ?: null, $freqs ?: null, $enabled, $id,
                 ]);
@@ -84,11 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             } else {
                 $pdo->prepare('
                     INSERT INTO ipd_drug_formulary
-                        (generic_name, dose_form, strength, brand_name, brand_names, drug_class, allergy_group,
+                        (generic_name, dose_form, brand_name, brand_names, drug_class, allergy_group,
                          is_high_alert, default_dose_unit, default_routes, default_frequencies, is_enabled, created_by_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ')->execute([
-                    $generic, $form, $stren ?: null, $brand ?: null, $alts ?: null,
+                    $generic, $form, $brand ?: null, $alts ?: null,
                     $class ?: null, $group ?: null,
                     $high, $unit ?: null, $routes ?: null, $freqs ?: null, $enabled, $uid,
                 ]);
@@ -149,6 +172,22 @@ $headExtra = <<<'CSS'
 .fm-field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .fm-field input, .fm-field select { width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); font: inherit; font-size: var(--fs-cell); background: var(--card); color: var(--text); }
 .fm-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
+.fm-opt { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text-muted); font-size: 11px; }
+/* The route ticks need more room than a 160px grid cell; span the full row so
+   all eight sit on one line on a desktop and wrap cleanly on a phone. */
+.fm-field-wide { grid-column: 1 / -1; }
+/* Deliberately NOT a flex container. As flex items the chips were stretched and
+   the label wrapped under its own tick at 390px; plain inline-block chips in
+   normal inline flow wrap as whole units, which is the behaviour wanted. */
+.fm-checks { padding: 2px 0; margin: 0 -7px; }
+/* `.fm-field label { display:block }` above is 0-1-1 and would win over a bare
+   `.fm-check`, stacking every tick on its own line. Matching that specificity is
+   what keeps the chips inline — this is not redundant nesting. */
+.fm-field .fm-check { display: inline-block; margin: 3px 0; padding: 0 7px; font-size: var(--fs-cell); font-weight: 500; color: var(--text); white-space: nowrap; cursor: pointer; }
+/* The explicit width beats `.fm-field input { width: 100% }` above, which would
+   otherwise make each tick claim the full row. vertical-align keeps the box on
+   the text baseline without a flex context. */
+.fm-check input[type="checkbox"] { width: 15px; min-width: 15px; height: 15px; margin: 0 6px 0 0; vertical-align: middle; position: relative; top: -1px; }
 table.fm { width: 100%; border-collapse: collapse; font-size: var(--fs-cell); }
 table.fm th { text-align: left; background: var(--card-alt); padding: 8px 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
 table.fm td { padding: 8px 10px; border-bottom: 1px solid var(--row-line); }
@@ -195,11 +234,6 @@ include __DIR__ . '/partials/sidebar.php';
           <div class="fm-hint">Tablet / Injection / Suppository&hellip; The same generic can have one row per form.</div>
         </div>
         <div class="fm-field">
-          <label>Strength</label>
-          <input name="strength" value="<?= htmlspecialchars($edit['strength'] ?? '') ?>" placeholder="500 mg">
-          <div class="fm-hint">Optional. Shown when picking the form.</div>
-        </div>
-        <div class="fm-field">
           <label>Brand (primary)</label>
           <input name="brand_name" value="<?= htmlspecialchars($edit['brand_name'] ?? '') ?>" placeholder="Amoxil">
           <div class="fm-hint">Auto-loads when a doctor picks this drug.</div>
@@ -218,17 +252,17 @@ include __DIR__ . '/partials/sidebar.php';
           </div>
         <?php endfor; ?>
         <div class="fm-field">
-          <label>Therapeutic class</label>
+          <label>Therapeutic class <span class="fm-opt">optional</span></label>
           <input name="drug_class" value="<?= htmlspecialchars($edit['drug_class'] ?? '') ?>" placeholder="Penicillin antibiotic">
           <div class="fm-hint">Drives duplicate-therapy warnings.</div>
         </div>
         <div class="fm-field">
-          <label>Allergy / cross-reactivity group</label>
+          <label>Allergy / cross-reactivity group <span class="fm-opt">optional</span></label>
           <input name="allergy_group" value="<?= htmlspecialchars($edit['allergy_group'] ?? '') ?>" placeholder="PENICILLIN">
           <div class="fm-hint">Drugs sharing this group cross-react.</div>
         </div>
         <div class="fm-field">
-          <label>Default dose unit</label>
+          <label>Default dose unit <span class="fm-opt">optional</span></label>
           <select name="default_dose_unit">
             <option value="">—</option>
             <?php foreach (IPD_DOSE_UNITS as $u): ?>
@@ -236,23 +270,62 @@ include __DIR__ . '/partials/sidebar.php';
             <?php endforeach; ?>
           </select>
         </div>
-        <div class="fm-field">
-          <label>Default routes</label>
-          <input name="default_routes" value="<?= htmlspecialchars($edit['default_routes'] ?? '') ?>" placeholder="PO,IV">
+        <?php
+        /* Routes are multi-select, not a single pick: one product often has more
+           than one legitimate route (an injection may go IV or IM), and the
+           order form uses this set to RESTRICT the doctor's route dropdown.
+           Leaving it empty means "no restriction", which is why it is optional. */
+        $selRoutes = array_values(array_filter(array_map('trim', explode(',', (string) ($edit['default_routes'] ?? '')))));
+        ?>
+        <div class="fm-field fm-field-wide">
+          <label>Default route(s) <span class="fm-opt">optional</span></label>
+          <div class="fm-checks">
+            <?php foreach (IPD_FORMULARY_ROUTES as $rc): ?>
+              <label class="fm-check">
+                <input type="checkbox" name="default_routes[]" value="<?= $rc ?>"
+                       <?= in_array($rc, $selRoutes, true) ? 'checked' : '' ?>>
+                <?= htmlspecialchars(IPD_ROUTES[$rc] ?? $rc) ?>
+              </label>
+            <?php endforeach; ?>
+          </div>
+          <div class="fm-hint">Tick every route this product can be given by. The doctor's route list is limited to these. Leave all clear to allow any.</div>
         </div>
+        <?php
+        /* The default frequency pre-selects the doctor's dropdown; it is only a
+           starting point, never a limit. "Other" carries the codes outside the
+           everyday four (Q6H, Q8H, PRN, STAT) without cluttering the list. */
+        $curFreq   = trim((string) ($edit['default_frequencies'] ?? ''));
+        $freqKnown = $curFreq === '' || in_array($curFreq, IPD_FORMULARY_FREQS, true);
+        ?>
         <div class="fm-field">
-          <label>Default frequencies</label>
-          <input name="default_frequencies" value="<?= htmlspecialchars($edit['default_frequencies'] ?? '') ?>" placeholder="TDS,BD">
+          <label>Default frequency <span class="fm-opt">optional</span></label>
+          <select name="default_frequencies" id="fmFreq">
+            <option value="">—</option>
+            <?php foreach (IPD_FORMULARY_FREQS as $fc): ?>
+              <option value="<?= $fc ?>" <?= $curFreq === $fc ? 'selected' : '' ?>>
+                <?= $fc ?> &mdash; <?= htmlspecialchars(ipd_frequency_label($pdo, $fc)) ?>
+              </option>
+            <?php endforeach; ?>
+            <option value="__other" <?= !$freqKnown ? 'selected' : '' ?>>Other&hellip;</option>
+          </select>
+          <input name="default_frequencies_other" id="fmFreqOther" style="margin-top:6px;"
+                 placeholder="e.g. Q6H" <?= $freqKnown ? 'hidden' : '' ?>
+                 value="<?= $freqKnown ? '' : htmlspecialchars($curFreq) ?>">
+          <div class="fm-hint">Pre-selects the doctor's frequency. They can still change it.</div>
         </div>
-        <div class="fm-field" style="display:flex;flex-direction:column;justify-content:flex-end;gap:8px;">
-          <label style="display:flex;align-items:center;gap:7px;font-weight:600;">
-            <input type="checkbox" name="is_high_alert" value="1" style="width:auto;" <?= !empty($edit['is_high_alert']) ? 'checked' : '' ?>>
-            High-alert drug
-          </label>
-          <label style="display:flex;align-items:center;gap:7px;font-weight:600;">
-            <input type="checkbox" name="is_enabled" value="1" style="width:auto;" <?= (!$edit || !empty($edit['is_enabled'])) ? 'checked' : '' ?>>
-            Available to prescribe
-          </label>
+        <?php /* Own row: the wide route block above breaks the grid flow, which
+                 left these two floating mid-row against the frequency hint. */ ?>
+        <div class="fm-field fm-field-wide">
+          <div class="fm-checks" style="margin-left:-11px;">
+            <label class="fm-check" style="font-weight:600;padding:0 11px;">
+              <input type="checkbox" name="is_high_alert" value="1" <?= !empty($edit['is_high_alert']) ? 'checked' : '' ?>>
+              High-alert drug
+            </label>
+            <label class="fm-check" style="font-weight:600;padding:0 11px;">
+              <input type="checkbox" name="is_enabled" value="1" <?= (!$edit || !empty($edit['is_enabled'])) ? 'checked' : '' ?>>
+              Available to prescribe
+            </label>
+          </div>
         </div>
       </div>
       <div style="margin-top:14px;display:flex;gap:8px;">
@@ -290,10 +363,7 @@ include __DIR__ . '/partials/sidebar.php';
               <?php if (!empty($d['is_high_alert'])): ?><span class="fm-hi">HIGH ALERT</span><?php endif; ?>
               <?php if (empty($d['is_enabled'])): ?><div class="fm-brand">(not available)</div><?php endif; ?>
             </td>
-            <td>
-              <b><?= htmlspecialchars($d['dose_form'] ?? '—') ?></b>
-              <?php if (!empty($d['strength'])): ?><div class="fm-brand"><?= htmlspecialchars($d['strength']) ?></div><?php endif; ?>
-            </td>
+            <td><b><?= htmlspecialchars($d['dose_form'] ?? '—') ?></b></td>
             <td class="fm-brand">
               <?php if ($d['brand_name']): ?><b><?= htmlspecialchars($d['brand_name']) ?></b><?php endif; ?>
               <?php if ($d['brand_names']): ?><div><?= htmlspecialchars($d['brand_names']) ?></div><?php endif; ?>
@@ -313,5 +383,22 @@ include __DIR__ . '/partials/sidebar.php';
     </div>
   </div>
 </main>
+<script>
+/* "Other…" reveals the free-text frequency box. The box is only NAMED into the
+   POST while it is visible, so switching back to OD after typing something in
+   it cannot leave a stale value behind to be saved. */
+(function () {
+    var sel = document.getElementById('fmFreq'), other = document.getElementById('fmFreqOther');
+    if (!sel || !other) { return; }
+    function sync() {
+        var isOther = sel.value === '__other';
+        other.hidden = !isOther;
+        other.name = isOther ? 'default_frequencies_other' : '';
+        if (!isOther) { other.value = ''; }
+    }
+    sel.addEventListener('change', sync);
+    sync();
+})();
+</script>
 </body>
 </html>

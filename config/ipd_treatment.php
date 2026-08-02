@@ -42,18 +42,41 @@ require_once __DIR__ . '/permissions.php';   // audit_log()
 // default_routes / default_frequencies only pre-filter the dropdowns.
 // -----------------------------------------------------------------------------
 
+// The CODE is what gets stored and what every downstream check compares on, so
+// it never changes once orders exist — 'PO' stays 'PO' even though the label
+// reads "Oral". Relabelling is free; recoding would orphan every historical
+// order's route.
 const IPD_ROUTES = [
-    'PO'  => 'PO — by mouth',
+    'PO'  => 'Oral',
     'IV'  => 'IV — intravenous',
     'IM'  => 'IM — intramuscular',
-    'SC'  => 'SC — subcutaneous',
     'PR'  => 'PR — rectal',
+    'IO'  => 'IO — intraosseous',
     'PV'  => 'PV — vaginal',
+    'SC'  => 'SC — subcutaneous',
+    'NEB' => 'Nebulise',
     'TOP' => 'TOP — topical',
-    'NEB' => 'NEB — nebulised',
     'SL'  => 'SL — sublingual',
     'NG'  => 'NG — nasogastric',
 ];
+
+/**
+ * The routes offered on the FORMULARY screen, in the clinic's preferred order.
+ *
+ * A subset of IPD_ROUTES by design: the formulary sets a drug's usual routes,
+ * while the order form must still be able to express the unusual one. Keys are
+ * IPD_ROUTES codes — anything else here would filter the doctor's route picker
+ * down to nothing at prescribing time.
+ */
+const IPD_FORMULARY_ROUTES = ['PO', 'IV', 'IM', 'PR', 'IO', 'PV', 'SC', 'NEB'];
+
+/**
+ * The frequencies offered as a one-click default on the formulary screen.
+ *
+ * The everyday four. Anything else (Q6H, Q8H, STAT, PRN) is reachable through
+ * the "Other" box, which validates against the live frequency map.
+ */
+const IPD_FORMULARY_FREQS = ['OD', 'BD', 'TDS', 'QID'];
 
 const IPD_ORDER_TYPES = ['SCHEDULED', 'PRN', 'STAT'];
 
@@ -686,9 +709,11 @@ function ipd_load_prn_log(PDO $pdo, int $admissionId, ?string $day = null): arra
 /** Formulary rows for the typeahead. */
 function ipd_formulary(PDO $pdo): array {
     try {
-        // dose_form / strength come from sql/ipd/add_formulary_dose_forms.sql.
+        // dose_form comes from sql/ipd/add_formulary_dose_forms.sql. The strength
+        // column still exists but is no longer captured or displayed — the dose is
+        // typed at prescribing time, which is the only moment it is actually known.
         return $pdo->query('
-            SELECT id, generic_name, dose_form, strength, brand_name, brand_names,
+            SELECT id, generic_name, dose_form, brand_name, brand_names,
                    drug_class, allergy_group, is_high_alert,
                    default_routes, default_frequencies, default_dose_unit
             FROM ipd_drug_formulary
@@ -696,7 +721,7 @@ function ipd_formulary(PDO $pdo): array {
             ORDER BY generic_name, dose_form
         ')->fetchAll();
     } catch (Throwable $e) {
-        // dose_form/strength missing -> the dose-form migration has not run yet.
+        // dose_form missing -> the dose-form migration has not run yet.
         // Fall back to the pre-migration columns rather than returning [], which
         // would empty the drug picker entirely and read as "the formulary is
         // broken" instead of "one migration is outstanding".
@@ -708,7 +733,7 @@ function ipd_formulary(PDO $pdo): array {
                 WHERE is_enabled = 1
                 ORDER BY generic_name
             ')->fetchAll();
-            foreach ($rows as &$r) { $r['dose_form'] = ''; $r['strength'] = null; }
+            foreach ($rows as &$r) { $r['dose_form'] = ''; }
             return $rows;
         } catch (Throwable $e2) {
             return [];
