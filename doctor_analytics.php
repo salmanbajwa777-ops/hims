@@ -10,7 +10,10 @@
  *   patients   — "Consultations & Revisits": filterable consultation table
  *                (fee-type column covers Full + every revisit tier) + a revisit
  *                summary strip (rate + per-tier counts) + CSV export
- *   procedures — placeholder; procedure billing lands in a later phase
+ *   procedures — per-LINE ledger of procedures this doctor performed and what
+ *                they earned on each, summed through doctor_split_sql() (the
+ *                same helper as the P&L / Doctor Share Statement) + CSV export.
+ *                CASH BASIS on procedure_bills.paid_at — see the block below.
  *
  * (The old standalone 'revisits' tab was folded into 'patients'; 'admissions'
  * was dropped from doctor analytics — that block is kept but unreachable via
@@ -178,6 +181,119 @@ if ($view === 'patients') {
                 number_format((float) ($r['grand_total'] ?? $r['fee']), 2, '.', ''),
                 $payLabel,
                 $r['fee_overridden'] ? 'yes' : '',
+            ]);
+        }
+        fclose($out);
+        exit;
+    }
+}
+
+// ============================================================================
+// VIEW: procedures — per-LINE ledger of what this doctor performed and earned
+//                    (+ CSV export takes over the response)
+//
+// Two things make this view read differently from Consultations above, and both
+// are deliberate:
+//
+//  1. DATED BY pb.paid_at. procedure_bills has no visit_id and no visit_date,
+//     so paid_at is the only date a line has. That is not a compromise here:
+//     the clinic raises, collects and performs a procedure in ONE same-day
+//     transaction, and procedure_bill.php enforces it — the INSERT writes
+//     status='paid' with paid_at = NOW() in the same statement that creates the
+//     bill, and there is no draft state or later settlement path. So paid_at IS
+//     the procedure date; there is no next-morning payment to skew a range.
+//     It also keeps this on the same cash basis as every other money figure in
+//     the app, which is what makes it agree with the day-closing tallies.
+//
+//  2. PER-LINE SHARE. There is no single rate on the users row to join: each
+//     item carries its own snapshot (doctor_share_pct / has_tax / tax_percent)
+//     of the deal agreed for THAT procedure. The split is therefore summed
+//     line-by-line through doctor_split_sql() — the SAME helper the P&L and the
+//     Doctor Share Statement use. Never a local copy of the formula: a doctor's
+//     own report and the clinic's statement disagreeing is the exact failure
+//     that helper exists to prevent.
+//
+// Voided bills are excluded (voided_at IS NULL) like every money read.
+// ============================================================================
+if ($view === 'procedures') {
+    $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '') ? $_GET['from'] : date('Y-m-01');
+    $to   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '') ? $_GET['to'] : date('Y-m-d');
+    if ($to < $from) { [$from, $to] = [$to, $from]; }
+    // Exclusive upper bound so a payment at 23:59 on the last day still counts.
+    $procFrom   = $from . ' 00:00:00';
+    $procToExcl = date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00';
+
+    // $procLive stays false when the billing tables aren't installed, so the
+    // view can say "not billed yet" instead of showing a misleading zero.
+    $procLive = false;
+    $procRows = [];
+    $procTot  = ['gross' => 0.0, 'disposables' => 0.0, 'tax' => 0.0, 'doctor' => 0.0, 'n' => 0, 'bills' => 0];
+
+    try {
+        // Degrades to the literal '0' when add_procedure_disposables.sql hasn't
+        // been run — the arithmetic then reduces to the pre-disposables rule.
+        $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
+        $splitArgs = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
+        $docExpr  = doctor_split_sql(...[...$splitArgs, 'doctor',      $dispCol]);
+        $taxExpr  = doctor_split_sql(...[...$splitArgs, 'tax',         $dispCol]);
+        $dispExpr = doctor_split_sql(...[...$splitArgs, 'disposables', $dispCol]);
+
+        $pq = $pdo->prepare("
+            SELECT pb.invoice_number, pb.paid_at, pb.payment_method, pb.status,
+                   p.name AS patient_name, p.mrn,
+                   i.description, i.quantity, i.unit_rate, i.amount,
+                   i.doctor_share_pct, i.has_tax, i.tax_percent,
+                   $dispExpr AS disposables_amt,
+                   $taxExpr  AS tax_amt,
+                   $docExpr  AS doctor_amt
+            FROM procedure_bill_items i
+            JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
+            JOIN patients p         ON p.id = pb.patient_id
+            WHERE pb.doctor_id = ?
+              AND pb.status = 'paid'
+              AND pb.voided_at IS NULL
+              AND pb.paid_at >= ? AND pb.paid_at < ?
+            ORDER BY pb.paid_at DESC, pb.id DESC, i.id ASC
+        ");
+        $pq->execute([$doctorId, $procFrom, $procToExcl]);
+        $procRows = $pq->fetchAll();
+        $procLive = true;
+
+        $seenBills = [];
+        foreach ($procRows as $r) {
+            $procTot['gross']       += (float) $r['amount'];
+            $procTot['disposables'] += (float) $r['disposables_amt'];
+            $procTot['tax']         += (float) $r['tax_amt'];
+            $procTot['doctor']      += (float) $r['doctor_amt'];
+            $procTot['n']++;
+            $seenBills[$r['invoice_number']] = true;
+        }
+        $procTot['bills'] = count($seenBills);
+    } catch (PDOException $e) {
+        // Tables absent = procedure billing not migrated on this database.
+        $procLive = false;
+    }
+
+    if ($procLive && ($_GET['export'] ?? '') === 'csv') {
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="procedures_' . $from . '_' . $to . '.csv"');
+        $out = fopen('php://output', 'w');
+        fputcsv($out, ['Date paid', 'Invoice', 'Patient', 'MRN', 'Procedure', 'Qty',
+                       'Billed (PKR)', 'Supplies (PKR)', 'Tax withheld (PKR)',
+                       'Your share %', 'You earned (PKR)']);
+        foreach ($procRows as $r) {
+            fputcsv($out, [
+                date('Y-m-d', strtotime($r['paid_at'])),
+                $r['invoice_number'],
+                $r['patient_name'],
+                $r['mrn'],
+                $r['description'],
+                (int) $r['quantity'],
+                number_format((float) $r['amount'], 2, '.', ''),
+                number_format((float) $r['disposables_amt'], 2, '.', ''),
+                number_format((float) $r['tax_amt'], 2, '.', ''),
+                rtrim(rtrim(number_format((float) $r['doctor_share_pct'], 2), '0'), '.'),
+                number_format((float) $r['doctor_amt'], 2, '.', ''),
             ]);
         }
         fclose($out);
@@ -719,17 +835,90 @@ require __DIR__ . '/partials/head.php';
 
 <?php else: /* procedures */ ?>
             <div class="card">
+<?php if (!$procLive): ?>
+                <?php /* Tables not migrated on this database. Say so plainly —
+                         a zero here would read as "you performed none". */ ?>
                 <div class="proc-placeholder">
                     <div class="proc-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
                     </div>
-                    <div class="section-title" style="font-size:17px">Procedures — coming soon</div>
+                    <div class="section-title" style="font-size:17px">Procedure billing isn't set up yet</div>
                     <div class="section-sub" style="margin:6px 0 0">
-                        One-time procedure billing (e.g. ear piercing, minor OPD procedures) isn't
-                        built yet. When it lands, your performed procedures and their billed amounts
-                        will show here alongside consultations.
+                        This clinic's database doesn't have the procedure billing tables installed,
+                        so there is nothing to report here yet. This is not the same as having
+                        performed no procedures — ask your administrator.
                     </div>
                 </div>
+<?php else: ?>
+                <form class="filters" method="GET" action="doctor_analytics.php" style="margin-bottom:18px">
+                    <input type="hidden" name="view" value="procedures">
+                    <?php if ($isAdmin): ?><input type="hidden" name="doctor_id" value="<?= $doctorId ?>"><?php endif; ?>
+                    <div class="f-field"><label for="p-from">From</label><input id="p-from" type="date" name="from" value="<?= htmlspecialchars($from) ?>"></div>
+                    <div class="f-field"><label for="p-to">To</label><input id="p-to" type="date" name="to" value="<?= htmlspecialchars($to) ?>"></div>
+                    <button class="btn small" type="submit">Apply</button>
+                    <a class="btn secondary small" href="<?= qs_view('procedures') ?>">This month</a>
+                    <?php /* One click to the payout period doctors actually ask about. */ ?>
+                    <a class="btn secondary small" href="<?= qs_view('procedures', ['from' => date('Y-m-01', strtotime('-1 month')), 'to' => date('Y-m-t', strtotime('-1 month'))]) ?>">Last month</a>
+                    <a class="btn secondary small" href="<?= qs_view('procedures', ['from' => $from, 'to' => $to, 'export' => 'csv']) ?>">Export CSV</a>
+                </form>
+
+                <div class="sum-grid" style="margin-bottom:18px">
+                    <div class="sum">
+                        <div class="lab"><span class="dotk" style="background:var(--primary)"></span>You earned</div>
+                        <div class="val tnum"><?= fmt_amt($procTot['doctor']) ?> PKR</div>
+                        <div class="cnt tnum"><?= $procTot['n'] ?> procedure<?= $procTot['n'] === 1 ? '' : 's' ?> on <?= $procTot['bills'] ?> bill<?= $procTot['bills'] === 1 ? '' : 's' ?></div>
+                    </div>
+                    <div class="sum">
+                        <div class="lab"><span class="dotk" style="background:#0891B2"></span>Billed to patients</div>
+                        <div class="val tnum"><?= fmt_amt($procTot['gross']) ?> PKR</div>
+                        <div class="cnt tnum">Gross, before the split</div>
+                    </div>
+                    <div class="sum">
+                        <div class="lab"><span class="dotk" style="background:#D97706"></span>Tax withheld</div>
+                        <div class="val tnum"><?= fmt_amt($procTot['tax']) ?> PKR</div>
+                        <div class="cnt tnum">Taken off before your share</div>
+                    </div>
+                    <?php if ($procTot['disposables'] > 0): ?>
+                    <?php /* Only shown when supplies were actually recovered — an
+                             always-visible "0 PKR supplies" card is noise. */ ?>
+                    <div class="sum">
+                        <div class="lab"><span class="dotk" style="background:var(--text-muted)"></span>Supplies</div>
+                        <div class="val tnum"><?= fmt_amt($procTot['disposables']) ?> PKR</div>
+                        <div class="cnt tnum">Clinic cost, off the top</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="tbl-wrap">
+                <table class="rep">
+                    <thead><tr>
+                        <th>Date paid</th><th>Invoice</th><th>Patient</th><th>Procedure</th>
+                        <th class="r">Billed</th><th class="r">Tax</th><th class="r">Share</th><th class="r">You earned</th>
+                    </tr></thead>
+                    <tbody>
+                    <?php if (!$procRows): ?>
+                        <tr><td colspan="8"><div class="empty-state">No procedures paid in this range.</div></td></tr>
+                    <?php else: foreach ($procRows as $r): ?>
+                        <tr>
+                            <td class="tnum"><?= date('d/m', strtotime($r['paid_at'])) ?>, <?= date('g:i A', strtotime($r['paid_at'])) ?></td>
+                            <td class="mrn"><?= htmlspecialchars($r['invoice_number']) ?></td>
+                            <td><a class="plink" href="patients.php?q=<?= urlencode($r['mrn']) ?>"><?= htmlspecialchars($r['patient_name']) ?></a> <span class="mrn"><?= htmlspecialchars($r['mrn']) ?></span></td>
+                            <td><?= htmlspecialchars($r['description']) ?><?php if ((int) $r['quantity'] > 1): ?> <span class="status-pill grey">&times;<?= (int) $r['quantity'] ?></span><?php endif; ?></td>
+                            <td class="amt tnum"><?= fmt_amt($r['amount']) ?></td>
+                            <td class="amt tnum"><?= (float) $r['tax_amt'] > 0 ? fmt_amt($r['tax_amt']) : '—' ?></td>
+                            <td class="r tnum"><?= rtrim(rtrim(number_format((float) $r['doctor_share_pct'], 2), '0'), '.') ?>%</td>
+                            <td class="amt tnum"><?= fmt_amt($r['doctor_amt']) ?></td>
+                        </tr>
+                    <?php endforeach; endif; ?>
+                    </tbody>
+                </table>
+                </div>
+                <div class="section-sub" style="margin-top:12px;margin-bottom:0">
+                    Your earned share per procedure — supplies come off the top, then tax, then your
+                    agreed share % of the remainder. The share % is the one snapshotted when the
+                    procedure was billed, so re-pricing it later never changes what you already earned.
+                </div>
+<?php endif; ?>
             </div>
 <?php endif; ?>
 
