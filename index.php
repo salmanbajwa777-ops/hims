@@ -45,11 +45,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        if ($user && password_verify($password, $user['password']) && (int) ($user['is_active'] ?? 1) === 0) {
-            // Account exists and the password is correct, but an admin has
-            // deactivated it. Don't reveal the credentials were valid.
-            $error = 'This account has been deactivated. Please contact an administrator.';
+        if ($user && (int) ($user['is_active'] ?? 1) === 0) {
+            // Deactivated. Checked BEFORE password_verify() and answered with
+            // the same message as a bad password, deliberately.
+            //
+            // The old code verified the password first and then returned a
+            // DISTINCT "this account has been deactivated" message — which,
+            // despite its own comment saying otherwise, confirmed to anyone
+            // guessing that they had just found a correct password. That is a
+            // credential oracle for exactly the accounts nobody is watching any
+            // more. Ordering the check first also means a disabled account
+            // costs no bcrypt work.
+            $error = 'Invalid credentials.';
         } elseif ($user && password_verify($password, $user['password'])) {
+            // Fixation: the visitor arrived with a session id chosen before
+            // they authenticated. Issue a NEW one now that the session carries
+            // privilege, so an id captured or planted pre-login is worthless.
+            session_regenerate_id(true);
+
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['base_role'] = $user['base_role'];
             $_SESSION['must_change_password'] = (bool) $user['must_change_password'];

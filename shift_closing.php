@@ -298,7 +298,33 @@ $editMode = $closing && isset($_GET['edit'])
 // The form serves both modes; in edit mode expected cash comes from the
 // snapshot (the shift's money is locked, so the system side cannot change).
 $formExpected = $editMode ? (float) $closing['expected_cash'] : $tally['expected_cash'];
-$suggestedHandover = $editMode ? (float) $closing['handover_declared'] : max(0, $tally['expected_cash']);
+
+// SUGGESTED HANDOVER — must never exceed the count, because the server refuses
+// exactly that ("You cannot hand over more than the Rs N counted").
+//
+// This was max(0, expected_cash), which contradicts that rule on every SHORT
+// day: counted < expected, so the prefilled figure is larger than the count and
+// the form is rejected server-side. Because mutations end in POST-redirect-GET
+// the page state is then gone, and the cashier re-enters the count, the
+// variance note and the handover — on the day the drawer is already short and
+// they are already under pressure.
+//
+// It is also the second instance of one class of bug: prefilling −2,000 into a
+// min="0" input once made a shift impossible to close. A prefill that its own
+// validator rejects is not a convenience.
+//
+// On the first render there is no count yet, so fall back to expected; the JS
+// below re-derives this against the count as soon as one is typed, and the
+// server clamps again on submit.
+$countedSoFar = isset($_POST['counted_cash'])
+    ? round(max(0.0, (float) str_replace(',', '', (string) $_POST['counted_cash'])), 2)
+    : null;
+
+$suggestedHandover = $editMode
+    ? (float) $closing['handover_declared']
+    : ($countedSoFar !== null
+        ? min($countedSoFar, max(0, $tally['expected_cash']))
+        : max(0, $tally['expected_cash']));
 $showForm = !$closing || $editMode;
 
 $meStmt = $pdo->prepare('SELECT name FROM users WHERE id = ?');
@@ -718,15 +744,29 @@ function toggleExpenses(btn) {
             amtEl.textContent = '+ Rs ' + fmt(variance) + ' over';
         }
 
-        // Suggested handover follows the count until the cashier edits it.
+        // Suggested handover follows the count until the cashier edits it, and
+        // never exceeds it — the server refuses a handover larger than the
+        // count, so a suggestion above it is a guaranteed rejection.
         var ho = document.getElementById('handover_declared');
         if (ho && !ho.dataset.touched) {
-            ho.value = Math.max(0, total);
+            ho.value = Math.min(Math.max(0, total), Math.max(0, expected));
+        }
+
+        // Once the cashier HAS typed their own figure, don't silently rewrite
+        // it — warn instead, so the rejection is visible here rather than after
+        // a submit that discards the whole form.
+        if (ho) {
+            var over = (parseFloat(ho.value) || 0) - total > 0.009;
+            ho.setCustomValidity(over
+                ? 'You cannot hand over more than the ' + fmt(total) + ' counted.'
+                : '');
         }
     }
 
     var ho = document.getElementById('handover_declared');
-    if (ho) ho.addEventListener('input', function () { ho.dataset.touched = '1'; });
+    // Re-run recalc on handover edits too, so the "more than counted" warning
+    // appears as it is typed rather than only when the count changes.
+    if (ho) ho.addEventListener('input', function () { ho.dataset.touched = '1'; recalc(); });
 
     counted.addEventListener('input', recalc);
     recalc();

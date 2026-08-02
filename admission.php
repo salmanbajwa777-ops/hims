@@ -85,6 +85,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
         $s = $svc->fetch();
         if (!$s) {
             $err = 'That service is not available.';
+        } elseif ($s['charge_type'] === 'HOURLY' && (!$dur || $dur < 1)) {
+            // Without this an hourly service silently bills Rs 0 (rate x 0/60).
+            //
+            // This guard existed on the IPD route (ipd_admission.php) and not
+            // here, so the same mistake cost nothing there and Rs 0 here. The
+            // leak is invisible by construction: the patient will not query a
+            // free line, the discharge total still looks plausible, and the
+            // shift closes clean because Rs 0 collected matches Rs 0 expected.
+            // Kept as a copy rather than a shared helper because the two
+            // handlers write to different tables with different column sets;
+            // if that changes, lift this and admission_service_charge()
+            // together.
+            $err = 'Enter how many minutes for an hourly service.';
         } else {
             // Optional clinical detail — drug & strength, fluid volume, times, etc.
             // Descriptive only; never affects the charge. '' -> null.

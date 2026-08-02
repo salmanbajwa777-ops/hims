@@ -5,9 +5,46 @@ require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/tokens.php';
 require_once __DIR__ . '/config/staff_documents.php';
 
-// Three base roles: pick the identity, then grant capabilities on the
-// Permissions tab / per-person overrides. STAFF covers every desk/bedside worker.
-$roles = ['STAFF', 'MANAGER', 'DOCTOR', 'ADMIN'];
+// Base roles: pick the identity, then grant capabilities on the Permissions tab
+// / per-person overrides. STAFF covers every desk/bedside worker.
+//
+// THE LIST IS READ FROM THE COLUMN, NOT HARDCODED. MANAGER is offered by the
+// UI but only exists if add_manager_role.sql has been applied, and MySQL in
+// non-strict mode COERCES an out-of-ENUM value to '' rather than erroring. So
+// on a database where that migration has not run, promoting someone to MANAGER
+// wrote '' — load_permissions() then matched WHERE base_role = '', found zero
+// role defaults, and silently stripped the user of FINANCIAL_APPROVE_EXPENSES,
+// FINANCIAL_VOID_BILL, ADMISSION_APPROVE_WRITEOFF, ADMIN_RECEIVE_HANDOVER and
+// RECEPTION_CLOSE_DAY in one click, with no error shown. The admin's natural
+// reading is "the account is broken, make them an ADMIN instead", which is
+// exactly the privilege creep the RBAC work exists to prevent.
+//
+// Asking information_schema means the dropdown can never offer a value the
+// column will not store. Falls back to the three roles that have always
+// existed if the probe fails, so a permissions-restricted DB user degrades to
+// the old behaviour minus the coercion hazard.
+$roles = (function (PDO $pdo): array {
+    $fallback = ['STAFF', 'DOCTOR', 'ADMIN'];
+    try {
+        $type = $pdo->query("
+            SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'users' AND COLUMN_NAME = 'base_role'
+             LIMIT 1
+        ")->fetchColumn();
+        if (!$type || !preg_match_all("/'([^']+)'/", (string) $type, $m)) {
+            return $fallback;
+        }
+        // Preserve the UI's intended ordering (least to most privileged), then
+        // append anything the column allows that this list does not anticipate.
+        $preferred = ['STAFF', 'MANAGER', 'DOCTOR', 'ADMIN'];
+        $live = $m[1];
+        $ordered = array_values(array_intersect($preferred, $live));
+        return array_values(array_unique(array_merge($ordered, array_diff($live, $preferred))));
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+})($pdo);
 // Doctor specialty categories. Only DENTAL prints the tooth logo on invoices;
 // every other value falls through to the general logo (see *_print_partial.php).
 // Keys must match the users.specialty ENUM (add_doctor_specialty_categories.sql).

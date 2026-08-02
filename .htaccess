@@ -1,0 +1,103 @@
+# ============================================================================
+# HIMS web-root access guard
+#
+# The whole repository is FTP-synced into public_html/hims/, and there is no
+# router — every file that exists on disk is directly addressable over HTTP
+# (see the architecture notes: "Every page is a directly-addressable .php file
+# at the web root"). That means sql/, tools/, docs/ and cron/ are all reachable
+# by URL unless something says otherwise. This file is that something.
+#
+# Deny by DIRECTORY and by EXTENSION, never per-file: a per-file rule protects
+# only the files someone remembered, and the next migration added to sql/ is
+# unprotected the moment it lands.
+#
+# Apache 2.4 syntax (Require) with a 2.2 fallback (Order/Deny), because the
+# host's LiteSpeed build honours both and mod_authz_core may not be present.
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# 1. Deploy state — the file inventory
+# ---------------------------------------------------------------------------
+# .ftp-deploy-sync-state.json lists every deployed path with a per-file sha256.
+# Served publicly it is a complete map of the web root, which removes any need
+# for an attacker to probe for a file like the old login_fix.php. It is written
+# by the deploy action into the web root, so it is NOT in the repository and
+# cannot be protected by simply not committing it.
+<FilesMatch "^\.ftp-deploy-sync-state\.json$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Dotfiles generally (.git, .env, .gitignore, this file itself).
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+
+# ---------------------------------------------------------------------------
+# 2. Migrations and diagnostics by extension
+# ---------------------------------------------------------------------------
+# A .sql file names every table, column, ENUM value and seeded permission key —
+# the full schema, handed over without a single query. .md carries the system
+# documentation. Extension rules survive a new file being added to sql/.
+<FilesMatch "\.(sql|md|log|bak|old|orig|dist|ini|sh)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+
+# ---------------------------------------------------------------------------
+# 3. Whole directories that must never answer over HTTP
+# ---------------------------------------------------------------------------
+# RedirectMatch 404 rather than a Deny: it returns "not found" instead of
+# "forbidden", so the response does not confirm that the directory exists.
+#
+# cron/ is included deliberately. The cron scripts run from hPanel over CLI
+# ("CLI runs freely"), so denying HTTP costs nothing operationally — while
+# leaving it open means /cron/daily_summary.php?key=... is an unauthenticated
+# endpoint that does real bookkeeping, and its key falls back to a published
+# default ('hims-daily-2026') whenever config/mail.php lacks cron_key.
+RedirectMatch 404 ^/hims/(sql|tools|docs|hims-android)(/|$)
+RedirectMatch 404 ^/hims/cron(/|$)
+
+# Same rules when the app is served from the domain root rather than /hims/.
+RedirectMatch 404 ^/(sql|tools|docs|hims-android)(/|$)
+RedirectMatch 404 ^/cron(/|$)
+
+
+# ---------------------------------------------------------------------------
+# 4. Private uploads
+# ---------------------------------------------------------------------------
+# uploads/ holds staff CNIC scans and signed patient consent scans. It carries
+# its own deny-all .htaccess, but that file is written AT RUNTIME by
+# config/staff_documents.php — and uploads/ is gitignored, so a committed guard
+# can never reach it and a failed runtime write leaves the directory open with
+# no error. This block is the belt to that braces: it lives in a tracked file,
+# so it deploys with the code and does not depend on any page having been
+# loaded. Scans stay reachable through document.php / dental_consent_file.php,
+# which check a permission first.
+RedirectMatch 404 ^/hims/uploads(/|$)
+RedirectMatch 404 ^/uploads(/|$)
+
+
+# ---------------------------------------------------------------------------
+# 5. Directory listings
+# ---------------------------------------------------------------------------
+Options -Indexes

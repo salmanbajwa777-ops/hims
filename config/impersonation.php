@@ -206,6 +206,40 @@ function imp_start(PDO $pdo, int $targetId): string
         return 'You cannot view the app as another administrator.';
     }
 
+    // The rail above tests one literal string, and the rule it is enforcing is
+    // "do not launder an elevated action into someone else's name". Those are
+    // not the same test: a MANAGER is not the string 'ADMIN' but holds
+    // FINANCIAL_VOID_BILL, ADMIN_RECEIVE_HANDOVER, RECEPTION_CLOSE_DAY,
+    // FINANCIAL_APPROVE_EXPENSES and ADMISSION_APPROVE_WRITEOFF — so
+    // impersonating one gives exactly the laundering the rail exists to stop.
+    // The same hole opens for any STAFF user granted one of these keys as a
+    // per-user override.
+    //
+    // So test what the target can actually DO, via the same resolver the app
+    // uses, rather than what their role is called. Fails soft: if the
+    // permission tables cannot be read we fall back to the role check above
+    // rather than blocking a legitimate support action.
+    if (function_exists('load_permissions')) {
+        try {
+            $elevated = [
+                'FINANCIAL_VOID_BILL',
+                'FINANCIAL_APPROVE_EXPENSES',
+                'ADMISSION_APPROVE_WRITEOFF',
+                'ADMIN_RECEIVE_HANDOVER',
+                'RECEPTION_CLOSE_DAY',
+            ];
+            $held = load_permissions($pdo, (int) $target['id'], (string) $target['base_role']);
+            $hits = array_values(array_intersect($elevated, $held));
+            if ($hits) {
+                return 'You cannot view the app as ' . $target['name'] . ': they hold '
+                     . implode(', ', $hits) . '. Acting as them would record an elevated '
+                     . 'action under their name.';
+            }
+        } catch (Throwable $e) {
+            // fall through to the role check already performed above
+        }
+    }
+
     // Park the real identity. These keys existing IS the impersonation flag.
     $_SESSION['imp_admin_id']    = $adminId;
     $_SESSION['imp_admin_name']  = (string) $admin['name'];

@@ -1326,7 +1326,13 @@ function day_uncounted_rows(PDO $pdo, string $date, int $userId): array {
 function column_exists(PDO $pdo, string $table, string $column): bool {
     static $cache = [];
     $key = $table . '.' . $column;
-    if (isset($cache[$key])) {
+    // array_key_exists, NOT isset: isset() is false for a cached `false`, so a
+    // column that does NOT exist was re-probed on every call — and a missing
+    // column is precisely the migration-pending case this function exists for,
+    // i.e. the one that ran hottest. information_schema is materialised at
+    // query time by opening table definitions, so on shared hosting each of
+    // those probes is expensive and they land on the money pages.
+    if (array_key_exists($key, $cache)) {
         return $cache[$key];
     }
     try {
@@ -1798,6 +1804,10 @@ function doctor_split(float $amount, float $sharePct, bool $hasTax, float $taxPc
 //
 // Keep this in lockstep with doctor_split() above. If the rule ever changes,
 // both must change together — that is the price of having a SQL form at all.
+// The two DID drift once (this form clamped only $disposables while the PHP
+// form clamped all four inputs), which put the Doctor Share Statement and the
+// P&L quietly at odds on identical rows. tools/diag_doctor_split_parity.php
+// now asserts the two agree over live rows; run it after touching either.
 // $disposables is an optional 5th COLUMN EXPRESSION (procedures only). It is
 // LAST and defaulted to the literal '0' so all pre-existing 4-argument call
 // sites keep their exact previous behaviour — with '0' the arithmetic below
@@ -1807,12 +1817,74 @@ function doctor_split(float $amount, float $sharePct, bool $hasTax, float $taxPc
 // 'clinic' INCLUDES the recovered cost (mirrors doctor_split()'s 'clinic');
 // 'clinic_net' excludes it. disposables + tax + doctor + clinic_net == amt.
 function doctor_split_sql(string $amt, string $share, string $hasTax, string $tax, string $part = 'doctor', string $disposables = '0'): string {
+    // ------------------------------------------------------------------
+    // The arguments are interpolated straight into SQL, so validate them.
+    // ------------------------------------------------------------------
+    // Every legitimate call site passes a hardcoded column expression, and the
+    // comment above has said "never pass user input here" since this function
+    // was written. A comment is not an enforcement mechanism: one refactor that
+    // plumbs a report parameter (a $from/$to/$doctorId off the query string)
+    // into any of these arguments is SQL injection against a database holding
+    // every patient record and the whole money trail — and because the fragment
+    // is built BEFORE the enclosing statement is prepared, the surrounding
+    // prepared statement offers no protection at all.
+    //
+    // The allow-list is a character class plus a keyword check rather than a
+    // list of known column names: the legitimate inputs include qualified
+    // names, numeric literals, COALESCE(...) wrappers and arithmetic, and
+    // enumerating those would break a valid call site the first time a report
+    // grew a new column.
+    //
+    // A character class ALONE is not enough, and it is worth being explicit
+    // about why. Column expressions legitimately need spaces and '-' (for
+    // "COALESCE(a, 0) - b"), but allowing both is also all that
+    // "1 UNION SELECT password FROM users" and the "--" comment marker need.
+    // So the class excludes quotes, semicolons, backslashes and '#', and the
+    // two checks after it reject SQL comment markers and statement keywords
+    // that have no business in an arithmetic fragment.
+    foreach (['amt' => $amt, 'share' => $share, 'hasTax' => $hasTax, 'tax' => $tax, 'disposables' => $disposables] as $name => $expr) {
+        $bad = !preg_match('/^[A-Za-z0-9_.,()`* \/+-]+$/', $expr)
+            // Comment markers: -- and /* */ both let the rest of the statement
+            // be commented away. Note '-' and '/' stay legal on their own.
+            || preg_match('/--|\/\*|\*\//', $expr)
+            // Statement keywords. \b anchors so a column named "unionised_fee"
+            // or "selected_rate" is still accepted.
+            || preg_match('/\b(UNION|SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|EXEC|INTO|FROM|WHERE|JOIN|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE)\b/i', $expr);
+
+        if ($bad) {
+            throw new InvalidArgumentException(
+                "doctor_split_sql(): \$$name is not a column expression. "
+                . 'These arguments are interpolated directly into SQL and must be hardcoded column names, never user input.'
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Clamps — these MUST mirror doctor_split() above, expression for expression.
+    // ------------------------------------------------------------------
+    // This function previously clamped only $disposables while the PHP form
+    // clamped all four inputs, so the two returned different money for the same
+    // rows: the Doctor Share Statement (which sums this SQL over the per-line
+    // snapshot columns) and the P&L / doctor-facing exposure figure (which uses
+    // the PHP form) disagreed, and the per-line exactness the share statement
+    // depends on was quietly broken.
+    //
+    // COALESCE is as important as the range clamp here. These read per-line
+    // snapshot columns, and a NULL tax_percent or a NULL disposables would make
+    // the WHOLE arithmetic expression NULL in SQL — silently zeroing a doctor's
+    // share for that line rather than erroring. PHP has no equivalent trap,
+    // which is exactly why the two forms drifted without anyone noticing.
+    $amtC   = "GREATEST(0, COALESCE($amt, 0))";
+    $shareC = "LEAST(100, GREATEST(0, COALESCE($share, 0)))";
+    $taxC   = "LEAST(100, GREATEST(0, COALESCE($tax, 0)))";
     // Clamp the cost to the collected amount, mirroring the PHP guard: a
     // mis-keyed supply cost must never produce a negative divisible base.
-    $disp      = "LEAST($amt, GREATEST(0, $disposables))";
-    $divisible = "($amt - $disp)";                                                    // step 1
-    $taxExpr   = "(CASE WHEN $hasTax = 1 THEN $divisible * $tax / 100 ELSE 0 END)";   // step 2
+    $disp      = "LEAST($amtC, GREATEST(0, COALESCE($disposables, 0)))";
+    $divisible = "($amtC - $disp)";                                                    // step 1
+    $taxExpr   = "(CASE WHEN $hasTax = 1 THEN $divisible * $taxC / 100 ELSE 0 END)";   // step 2
     $remainder = "($divisible - $taxExpr)";
+    // From here on $share is used only through $shareC.
+    $share     = $shareC;
     switch ($part) {
         case 'tax':
             return $taxExpr;

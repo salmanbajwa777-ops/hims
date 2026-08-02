@@ -74,11 +74,84 @@ function load_permissions(PDO $pdo, int $userId, string $baseRole): array {
     return array_keys($effective);
 }
 
+/**
+ * Re-establish who this session is, on every request.
+ *
+ * This used to refresh only the permission KEYS, which meant the system
+ * advertised instant revocation while two higher-privilege facts stayed frozen
+ * at login:
+ *
+ *   - is_active was checked once, at login, and never again. Setting
+ *     is_active = 0 — the documented way to disable a departed employee — had
+ *     NO effect on an open session. With the Android WebView wrapper never
+ *     logging out, a dismissed receptionist kept taking payments and reading
+ *     patient records indefinitely.
+ *
+ *   - base_role was a session snapshot, and load_permissions() takes the role
+ *     as a PARAMETER and trusts it. So an ADMIN demoted to STAFF kept every
+ *     guard_admin.php screen, and this function re-minted ADMIN role defaults
+ *     on every single request because it was handed the stale role.
+ *
+ * imp_stop() already learned this lesson on the impersonation exit path — it
+ * re-reads the row instead of trusting session memory, precisely because "a
+ * base_role in the session is a memory of what was true when this began, not a
+ * fact". This applies the same standard to the ordinary request path.
+ *
+ * Cost is nil: this is one extra column list on a query that already runs, and
+ * it replaces the role the permission load was going to use anyway.
+ *
+ * IMPERSONATION: $_SESSION['user_id'] is the TARGET while impersonating (the
+ * admin's real identity is parked in imp_admin_*), so re-reading that row is
+ * correct in both modes — an admin impersonating a user who is deactivated
+ * mid-session correctly loses the impersonated rights, and imp_stop() still
+ * re-verifies the admin independently before handing anything back.
+ */
 function refresh_session_permissions(PDO $pdo): void {
     if (empty($_SESSION['user_id'])) {
         return;
     }
-    $_SESSION['permissions'] = load_permissions($pdo, (int) $_SESSION['user_id'], $_SESSION['base_role'] ?? '');
+    $userId = (int) $_SESSION['user_id'];
+
+    // Fail SOFT on a query error, not open: if the users table cannot be read
+    // we keep the session's existing role rather than blanking it, because a
+    // blank role would silently strip every role default (see the ENUM
+    // coercion note in the base_role handler) and look like a broken account.
+    $live = null;
+    try {
+        $stmt = $pdo->prepare('SELECT base_role, is_active FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+        $live = $stmt->fetch();
+    } catch (PDOException $e) {
+        $live = null;
+    }
+
+    if ($live) {
+        // The account was disabled (or deleted) while this session was open.
+        // End it here rather than on the next login attempt that never comes.
+        // is_active is compared loosely against 0 so a legacy NULL — which
+        // predates the column's default — reads as ACTIVE and does not lock
+        // out an entire existing user base on deploy.
+        $inactive = array_key_exists('is_active', $live) && $live['is_active'] !== null
+            && (int) $live['is_active'] === 0;
+
+        if ($inactive) {
+            $_SESSION = [];
+            if (ini_get('session.use_cookies')) {
+                setcookie(session_name(), '', time() - 42000, '/');
+            }
+            session_destroy();
+            header('Location: /index.php?deactivated=1');
+            exit;
+        }
+
+        // Re-read, never trust. This is what load_permissions() consumes below,
+        // and what guard_admin.php checks.
+        if (($live['base_role'] ?? '') !== '') {
+            $_SESSION['base_role'] = (string) $live['base_role'];
+        }
+    }
+
+    $_SESSION['permissions'] = load_permissions($pdo, $userId, $_SESSION['base_role'] ?? '');
 }
 
 function has_permission(string $key): bool {

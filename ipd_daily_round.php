@@ -21,6 +21,11 @@ require_once __DIR__ . '/config/auth.php';
 require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
+// business_day() / business_day_window() — the chargeability check below must
+// use the business day, not the calendar day, or a round at 23:50 and another
+// at 00:10 on the same night both bill. This page did NOT previously pull
+// billing.php, so the require is part of that fix, not incidental.
+require_once __DIR__ . '/config/billing.php';
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -109,9 +114,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         try {
             $pdo->beginTransaction();
 
-            // is_paid: 1 if this is the first note of TODAY for this admission.
-            $cnt = $pdo->prepare('SELECT COUNT(*) FROM ipd_doctor_visits WHERE admission_id = ? AND DATE(visited_at) = CURDATE()');
-            $cnt->execute([$admissionId]);
+            // is_paid: 1 if this is the first note of this BUSINESS DAY for
+            // this admission.
+            //
+            // This used to read DATE(visited_at) = CURDATE(), i.e. the calendar
+            // day, which broke at midnight in the one way that costs money: a
+            // consultant rounding at 23:50 and called back to the same patient
+            // at 00:10 — one continuous night — produced two rows both flagged
+            // is_paid = 1. The discharge assembler sums visit_charge WHERE
+            // is_paid = 1, so the patient was billed two round fees for one
+            // night and the doctor's share was over-credited on the same money.
+            // Round fees are frozen per note and cannot be retro-fixed.
+            //
+            // business_day_window() is the system's own rule for this (a late
+            // shift past midnight is ONE business day, cutoff-hour aware) and
+            // is what every tally query already uses. It also makes the
+            // predicate sargable: DATE(visited_at) wrapped the column and could
+            // never use an index, and this COUNT runs inside the write
+            // transaction on every round note.
+            [$bdStart, $bdEnd] = business_day_window($pdo, business_day($pdo));
+            $cnt = $pdo->prepare('SELECT COUNT(*) FROM ipd_doctor_visits
+                                   WHERE admission_id = ? AND visited_at >= ? AND visited_at < ?');
+            $cnt->execute([$admissionId, $bdStart, $bdEnd]);
             $isPaid = ((int) $cnt->fetchColumn() === 0) ? 1 : 0;
 
             $pdo->prepare('

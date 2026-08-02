@@ -181,6 +181,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply
 
 // ---------------- Settle (take payment) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settle' && $bill && !$locked && $canFinalize) {
+    // IMPERSONATION MONEY BRAKE.
+    //
+    // Settling takes cash in under the target's name, and when advances exceed
+    // the bill it also hands cash BACK — an ipd_advances direction='REFUND' row
+    // that empties the drawer exactly as a refund does (the tally folds it in
+    // negative). The brake covered refund/void/close-day/take-payment but not
+    // this path, so it was a way to move money in someone else's name without
+    // the re-affirmation the other four require.
+    $impBlock = imp_block_money_action('Settling this discharge');
+
     $method = pay_method_in($_POST['payment_method'] ?? null);
     $paid = max(0, (float) ($_POST['paid_amount'] ?? 0));
     $grand = (float) $bill['grand_total'];
@@ -206,7 +216,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
         $returnMethod = pay_method_in($_POST['return_method'] ?? null);
     }
 
-    if ($shortfall > 0.009 && !$canApproveWriteoff) {
+    if ($impBlock !== '') {
+        // Checked before anything is written: see the money-brake note above.
+        $err = $impBlock;
+    } elseif ($shortfall > 0.009 && !$canApproveWriteoff) {
         $err = 'Short payment needs an admin to approve the write-off.';
     } else {
         $writeOff = $shortfall > 0.009 ? $shortfall : 0;
@@ -573,6 +586,7 @@ require __DIR__ . '/partials/sidebar.php';
                                        name="return_amount" value="<?= number_format($sReturnDue, 2, '.', '') ?>"
                                        style="font-weight:700;font-variant-numeric:tabular-nums;">
                             </div>
+                            <?= imp_confirm_field('Return this advance') ?>
                             <button type="submit" class="btn">Return Rs <?= number_format($sReturnDue) ?> &amp; discharge</button>
                             <div class="muted" style="font-size:11.5px;">Prints an ADV return receipt alongside the discharge invoice.</div>
                         </form>
@@ -590,6 +604,7 @@ require __DIR__ . '/partials/sidebar.php';
                                 <input type="number" step="0.01" min="0" name="paid_amount"
                                        value="<?= number_format($sBalance, 2, '.', '') ?>">
                             </div>
+                            <?= imp_confirm_field('Settle this discharge') ?>
                             <button type="submit" class="btn">Settle &amp; discharge</button>
                             <?php if ($sApplied > 0.009): ?><div class="muted" style="font-size:11.5px;">Pre-filled with the balance after advances.</div><?php endif; ?>
                             <?php if (!$canApproveWriteoff): ?><div class="muted" style="font-size:11.5px;">A short payment needs an admin to approve the write-off.</div><?php endif; ?>

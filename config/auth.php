@@ -3,6 +3,30 @@
 date_default_timezone_set('Asia/Karachi');
 
 if (session_status() === PHP_SESSION_NONE) {
+    // Harden the session cookie BEFORE it is issued — these have no effect
+    // once session_start() has run.
+    //
+    //   httponly  the cookie is the credential and no script needs to read it;
+    //             this keeps an injected script from exfiltrating it.
+    //   samesite  Lax stops the cookie riding along on a cross-site POST, which
+    //             is a partial mitigation for the app-wide lack of CSRF tokens.
+    //             Lax rather than Strict so an ordinary link into the app from
+    //             an email still lands logged in.
+    //   secure    only when the request actually arrived over HTTPS, so a
+    //             plain-HTTP local or staging run does not silently fail to set
+    //             a cookie at all and lock everyone out.
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')
+        || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path'     => '/',
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure'   => $https,
+    ]);
+
     session_start();
 }
 

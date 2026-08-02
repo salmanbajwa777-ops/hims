@@ -278,10 +278,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
     $total = (float) $bill['grand_total'];
     $paid = (float) ($bill['paid_amount'] ?? 0);
     $short = round($total - $paid, 2);
-    // The approval flips the bill to 'paid' with today's paid_at, landing the
-    // partial cash on the COLLECTOR's shift today — so if that receptionist
-    // has already closed, block until tomorrow.
-    $dayLock = require_day_open($pdo, null, (int) ($bill['finalized_by_id'] ?? 0) ?: null);
+    // DAY LOCK, BUT ONLY WHEN THIS APPROVAL ACTUALLY BOOKS CASH.
+    //
+    // The old comment here said the approval "flips the bill to 'paid' with
+    // today's paid_at", and blocked whenever the collector's day was signed.
+    // That was wrong on both halves, and it made the feature impossible to use:
+    //
+    //   - The UPDATE below is paid_at = COALESCE(paid_at, NOW()). When the
+    //     partial payment already stamped paid_at, the approval moves NO money
+    //     onto a signed day; it only changes status and the unpaid_* counters.
+    //   - A partial payment stamps paid_at at discharge and the write-off is
+    //     approved "possibly days later" — by which time the collector's day is
+    //     signed BY DEFINITION. So the gate refused every approval it was ever
+    //     asked about, the bill never reached 'paid', and the patient's
+    //     unpaid_* counters never rolled. Permanently stranded.
+    //
+    // So gate on whether this approval is the first thing to book the cash. If
+    // paid_at is NULL the money lands now, on the collector's day, and the lock
+    // is the correct control. If it is already stamped there is nothing to lock.
+    $dayLock = empty($bill['paid_at'])
+        ? require_day_open($pdo, null, (int) ($bill['finalized_by_id'] ?? 0) ?: null)
+        : null;
     if ($dayLock) {
         $err = $dayLock;
     } elseif ($short <= 0) {
