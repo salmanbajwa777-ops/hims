@@ -38,16 +38,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'create_payout') {
         $docId = (int) ($_POST['doctor_id'] ?? 0);
-        // The period is now a MONTH, not a free date pair: a payout runs 1st to
-        // last day, and typing the bounds by hand let a short month end on the
-        // 30th and silently drop a day's earnings. date('Y-m-t') derives the
-        // last day, so February and 31-day months are both right.
-        $month = preg_match('/^\d{4}-\d{2}$/', $_POST['month'] ?? '') ? $_POST['month'] : '';
-        $from  = $month ? $month . '-01' : '';
-        $to    = $month ? date('Y-m-t', strtotime($from)) : '';
-        if (!$docId || !$month) {
-            $error = 'Pick a doctor and a month.';
+        // Two ways to set the period. MONTH is the default and the safe one: it
+        // derives the last day with date('Y-m-t'), so a short month cannot end on
+        // the 30th and silently drop a day's earnings the way a hand-typed pair
+        // could. CUSTOM stays available for the off-cycle cases — a mid-month
+        // joiner, a doctor leaving, a part-period catch-up.
+        $mode = ($_POST['period_mode'] ?? 'month') === 'custom' ? 'custom' : 'month';
+
+        if ($mode === 'custom') {
+            $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['from'] ?? '') ? $_POST['from'] : '';
+            $to   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['to'] ?? '')   ? $_POST['to']   : '';
+            if (!$docId || !$from || !$to) {
+                $error = 'Pick a doctor and both dates.';
+            } elseif ($from > $to) {
+                // create_payout() rejects this too, but its message is generic —
+                // say which field is wrong while the user is still looking at it.
+                $error = 'The "from" date is after the "to" date.';
+            }
         } else {
+            $month = preg_match('/^\d{4}-\d{2}$/', $_POST['month'] ?? '') ? $_POST['month'] : '';
+            $from  = $month ? $month . '-01' : '';
+            $to    = $month ? date('Y-m-t', strtotime($from)) : '';
+            if (!$docId || !$month) {
+                $error = 'Pick a doctor and a month.';
+            }
+        }
+
+        if (!$error) {
             [$id, $err] = create_payout($pdo, $docId, $from, $to, $userId);
             if ($err) { $error = $err; } else { $success = 'Draft payout created — review the lines, then settle.'; $viewId = $id; }
         }
@@ -160,6 +177,21 @@ $headExtra = <<<CSS
 .f-row { display: flex; gap: 10px; }
 .f-row .f-group { flex: 1; }
 
+/* Month | Custom dates segmented control. The radio itself is hidden but stays
+   focusable, so keyboard and screen-reader behaviour is the native one. */
+.seg { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seg-opt { flex: 1; margin: 0; text-align: center; font-size: 13px; font-weight: 600;
+           padding: 9px 8px; cursor: pointer; background: #fff; color: var(--text-muted);
+           transition: background .12s, color .12s; }
+.seg-opt + .seg-opt { border-left: 1px solid var(--border); }
+.seg-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+/* .is-on is set by pmToggle(); :has() is the progressive enhancement. Without
+   the class fallback, a browser lacking :has() shows no selected state at all
+   and the control looks broken. */
+.seg-opt.is-on,
+.seg-opt:has(input:checked) { background: var(--primary); color: #fff; }
+.seg-opt:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: -2px; }
+
 /* Filter bar: wraps to one control per row on a phone rather than squeezing
    three selects into an unusable strip. */
 .filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 4px 0 16px; }
@@ -271,8 +303,22 @@ $periodLabel = function ($start, $end) {
                             </select>
                         </div>
                         <div class="f-group">
+                            <label>Period</label>
+                            <div class="seg" role="group">
+                                <label class="seg-opt">
+                                    <input type="radio" name="period_mode" value="month" checked
+                                           onchange="pmToggle()"> Month
+                                </label>
+                                <label class="seg-opt">
+                                    <input type="radio" name="period_mode" value="custom"
+                                           onchange="pmToggle()"> Custom dates
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="f-group" id="pm-month">
                             <label>Month</label>
-                            <select name="month" required>
+                            <select name="month">
                                 <?php foreach ($monthOptions as $val => $lbl): ?>
                                 <option value="<?= htmlspecialchars($val) ?>"<?= $val === $defMonth ? ' selected' : '' ?>>
                                     <?= htmlspecialchars($lbl) ?>
@@ -281,6 +327,23 @@ $periodLabel = function ($start, $end) {
                             </select>
                             <div class="muted-note" style="margin-top:6px;">
                                 Runs the 1st to the last day of that month.
+                            </div>
+                        </div>
+
+                        <div id="pm-custom" hidden>
+                            <div class="f-row">
+                                <div class="f-group">
+                                    <label>From</label>
+                                    <input type="date" name="from" value="<?= htmlspecialchars($defMonth . '-01') ?>">
+                                </div>
+                                <div class="f-group">
+                                    <label>To</label>
+                                    <input type="date" name="to" value="<?= htmlspecialchars(date('Y-m-t', strtotime($defMonth . '-01'))) ?>">
+                                </div>
+                            </div>
+                            <div class="muted-note" style="margin-top:-6px;margin-bottom:14px;">
+                                For off-cycle runs. A part month is fine — it is recorded as the exact
+                                dates, not rounded to a whole month.
                             </div>
                         </div>
                         <button type="submit" class="btn" style="width:100%;">Create draft</button>
@@ -469,6 +532,30 @@ $periodLabel = function ($start, $end) {
         </div>
     </div>
 </div>
+<script>
+// Month <-> custom-date toggle on the New Payout form.
+//
+// `required` is moved with the visibility rather than being left on both: a
+// hidden required input fails constraint validation with a browser message
+// pointing at an element nobody can see, and the form then refuses to submit
+// with no visible reason. The server re-validates either way — this only stops
+// an empty submit.
+function pmToggle() {
+    var custom  = document.querySelector('input[name="period_mode"][value="custom"]').checked;
+    var mBox    = document.getElementById('pm-month');
+    var cBox    = document.getElementById('pm-custom');
+    mBox.hidden = custom;
+    cBox.hidden = !custom;
+    mBox.querySelector('select[name="month"]').required = !custom;
+    cBox.querySelector('input[name="from"]').required   = custom;
+    cBox.querySelector('input[name="to"]').required     = custom;
+    // Selected-state fallback for browsers without :has().
+    document.querySelectorAll('.seg-opt').forEach(function (el) {
+        el.classList.toggle('is-on', el.querySelector('input').checked);
+    });
+}
+document.addEventListener('DOMContentLoaded', pmToggle);
+</script>
 <script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>
