@@ -19,6 +19,50 @@
  *  in the table, so a restore or manual insert cannot re-issue a number. */
 
 require_once __DIR__ . '/permissions.php';   // audit_log(), has_permission()
+// doctor_split(), doctor_split_sql(), procedure_disposables_column(). The one
+// caller already includes this first, but the procedure lines below fatal
+// without it — an include_once here costs nothing and removes the ordering trap.
+require_once __DIR__ . '/billing.php';
+
+/**
+ * Has sql/add_procedure_payout_lines.sql been applied — i.e. does
+ * doctor_payout_lines.source_type accept 'PROCEDURE'?
+ *
+ * This exists because the failure without it is SILENT and destructive rather
+ * than loud. Inserting 'PROCEDURE' into the old ENUM('OPD','IPD') does not error
+ * on a default Hostinger connection: MySQL writes '' and raises a warning nobody
+ * reads. The UNIQUE key is (source_type, source_id, line_kind), so a month of
+ * procedure lines all collapse onto '' and collide with each other — the admin
+ * sees "already on another payout" for bills that were never on one, and a
+ * single-line month would SUCCEED, permanently occupying ('', id, 'EARNING')
+ * where no clawback or re-run can ever match it again.
+ *
+ * So the code refuses to write procedure lines until the column can hold them.
+ * That makes the deploy order-independent: pushing this before the migration
+ * degrades to the old OPD+IPD behaviour with a clear message, instead of
+ * corrupting the payout ledger.
+ *
+ * Cached per request — the schema cannot change mid-request.
+ */
+function payout_procedures_ready(PDO $pdo): bool {
+    static $ready = null;
+    if ($ready !== null) {
+        return $ready;
+    }
+    try {
+        $t = $pdo->query("
+            SELECT column_type FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name   = 'doctor_payout_lines'
+              AND column_name  = 'source_type'
+        ")->fetchColumn();
+        $ready = $t !== false && stripos((string) $t, 'PROCEDURE') !== false;
+    } catch (PDOException $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
 function generate_payout_number(PDO $pdo): string {
     $year = (int) date('Y');
     $stmt = $pdo->prepare("
@@ -90,6 +134,10 @@ function payout_earning_lines(PDO $pdo, int $doctorId, string $start, string $en
         $q->execute([$doctorId, $from, $to]);
         foreach ($q->fetchAll() as $r) {
             $s = doctor_split((float) $r['paid_amount'], $rates['share_pct'], (bool) $rates['has_tax'], $rates['tax_pct']);
+            // Zero share = the doctor has no consult rate set. Freezing a Rs 0
+            // line would consume this bill's UNIQUE key permanently, so once the
+            // rate is corrected it could never be paid. Skip and leave it open.
+            if ($s['doctor'] <= 0) { continue; }
             $lines[] = [
                 'source_type' => 'OPD', 'source_id' => (int) $r['id'],
                 'occurred_on' => $r['on_date'], 'patient_name' => $r['patient'],
@@ -119,6 +167,7 @@ function payout_earning_lines(PDO $pdo, int $doctorId, string $start, string $en
         $q->execute([$doctorId, $from, $to]);
         foreach ($q->fetchAll() as $r) {
             $s = doctor_split((float) $r['visit_charge'], $rates['share_pct'], (bool) $rates['has_tax'], $rates['tax_pct']);
+            if ($s['doctor'] <= 0) { continue; }   // see the OPD note above
             $lines[] = [
                 'source_type' => 'IPD', 'source_id' => (int) $r['id'],
                 'occurred_on' => $r['on_date'], 'patient_name' => $r['patient'],
@@ -126,6 +175,61 @@ function payout_earning_lines(PDO $pdo, int $doctorId, string $start, string $en
             ];
         }
     } catch (PDOException $e) { /* IPD module absent */ }
+
+    // ---- PROCEDURES ----
+    // One line per procedure_bill_items ROW, not per bill: each item carries its
+    // own doctor_share_pct / has_tax / tax_percent snapshot, taken from
+    // doctor_procedures at billing time. A doctor can be on 40% for one
+    // procedure and 60% for another on the SAME invoice, so these deliberately
+    // do NOT go through $rates — the payout's frozen consult rate is the wrong
+    // number here, and using it would silently re-price every procedure.
+    //
+    // Disposables are a clinic cost taken off the top before tax and before the
+    // split (see doctor_split()), so the gross recorded on the line is the
+    // divisible amount, not the sticker price — otherwise the payout's gross
+    // column would not re-sum to its own doctor/tax figures.
+    try {
+        // Migration not applied = do not write these lines at all. See
+        // payout_procedures_ready(): the old ENUM accepts them as '' and the
+        // UNIQUE key then makes them unrecoverable.
+        if (!payout_procedures_ready($pdo)) { throw new PDOException('procedure payout lines not migrated'); }
+        $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
+        $args    = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
+        $docSql  = doctor_split_sql(...[...$args, 'doctor',      $dispCol]);
+        $taxSql  = doctor_split_sql(...[...$args, 'tax',         $dispCol]);
+        $dispSql = doctor_split_sql(...[...$args, 'disposables', $dispCol]);
+
+        $q = $pdo->prepare("
+            SELECT i.id,
+                   i.amount - ($dispSql) AS divisible,
+                   ($taxSql)             AS tax,
+                   ($docSql)             AS doctor,
+                   DATE(pb.paid_at)      AS on_date,
+                   p.name                AS patient
+            FROM procedure_bill_items i
+            JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
+            LEFT JOIN patients p    ON p.id = pb.patient_id
+            WHERE pb.doctor_id = ? AND pb.status = 'paid' AND pb.voided_at IS NULL
+              AND pb.paid_at >= ? AND pb.paid_at < ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM doctor_payout_lines l
+                  WHERE l.source_type = 'PROCEDURE' AND l.source_id = i.id AND l.line_kind = 'EARNING'
+              )
+            ORDER BY pb.paid_at, i.id
+        ");
+        $q->execute([$doctorId, $from, $to]);
+        foreach ($q->fetchAll() as $r) {
+            // A 0% line (share not configured) earns nothing — skip it rather
+            // than freeze a zero row that can never be corrected later.
+            if ((float) $r['doctor'] <= 0) { continue; }
+            $lines[] = [
+                'source_type' => 'PROCEDURE', 'source_id' => (int) $r['id'],
+                'occurred_on' => $r['on_date'], 'patient_name' => $r['patient'],
+                'gross' => (float) $r['divisible'], 'tax' => (float) $r['tax'],
+                'doctor_share' => (float) $r['doctor'],
+            ];
+        }
+    } catch (PDOException $e) { /* procedure module absent */ }
 
     return $lines;
 }
@@ -242,6 +346,41 @@ function payout_clawback_lines(PDO $pdo, int $doctorId): array {
         }
     } catch (PDOException $e) { /* IPD module absent */ }
 
+    // ---- PROCEDURE: the bill voided after payout ----
+    // Reversed at the ORIGINALLY PAID figures like every other clawback. The
+    // join is through the ITEM to its bill, because a procedure line's source_id
+    // is procedure_bill_items.id — voiding one invoice claws back each of its
+    // lines separately, which is what the per-line UNIQUE key expects.
+    try {
+        if (!payout_procedures_ready($pdo)) { throw new PDOException('procedure payout lines not migrated'); }
+        $q = $pdo->prepare("
+            SELECT l.source_id, l.gross, l.tax, l.doctor_share, l.occurred_on,
+                   l.patient_name, l.payout_id, pay.payout_number
+            FROM doctor_payout_lines l
+            JOIN doctor_payouts pay      ON pay.id = l.payout_id
+            JOIN procedure_bill_items i  ON i.id = l.source_id
+            JOIN procedure_bills pb      ON pb.id = i.procedure_bill_id
+            WHERE pay.doctor_id = ? AND pay.status = 'paid'
+              AND l.source_type = 'PROCEDURE' AND l.line_kind = 'EARNING'
+              AND pb.voided_at IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM doctor_payout_lines c
+                  WHERE c.source_type = 'PROCEDURE' AND c.source_id = l.source_id AND c.line_kind = 'CLAWBACK'
+              )
+        ");
+        $q->execute([$doctorId]);
+        foreach ($q->fetchAll() as $r) {
+            $lines[] = [
+                'source_type' => 'PROCEDURE', 'source_id' => (int) $r['source_id'],
+                'occurred_on' => $r['occurred_on'], 'patient_name' => $r['patient_name'],
+                'gross' => -(float) $r['gross'], 'tax' => -(float) $r['tax'],
+                'doctor_share' => -(float) $r['doctor_share'],
+                'clawback_of_payout_id' => (int) $r['payout_id'],
+                'clawback_reason' => 'Procedure bill voided after payout ' . $r['payout_number'],
+            ];
+        }
+    } catch (PDOException $e) { /* procedure module absent */ }
+
     return $lines;
 }
 
@@ -275,9 +414,11 @@ function create_payout(PDO $pdo, int $doctorId, string $start, string $end, int 
         'has_tax'   => (int) ($doc['consult_has_tax'] ?? 0),
         'tax_pct'   => (float) ($doc['consult_tax_pct'] ?? 0),
     ];
-    if ($rates['share_pct'] <= 0) {
-        return [null, 'That doctor has no share percentage set. Set it on Staff & Doctors first.'];
-    }
+    // NOT an early return. A doctor who only performs procedures legitimately has
+    // no CONSULT share — procedure lines are split at their own per-line rates,
+    // so refusing here would make their earnings unpayable. Bailing out only when
+    // there is genuinely nothing to pay is handled below.
+    $noConsultRate = $rates['share_pct'] <= 0;
 
     $earnings  = payout_earning_lines($pdo, $doctorId, $start, $end, $rates);
     $clawbacks = payout_clawback_lines($pdo, $doctorId);
@@ -286,7 +427,9 @@ function create_payout(PDO $pdo, int $doctorId, string $start, string $end, int 
     $carriedIn = $last ? (float) $last['carried_out'] : 0.0;
 
     if (!$earnings && !$clawbacks && $carriedIn <= 0) {
-        return [null, 'Nothing to pay for that period — no new earnings, no adjustments, no balance brought forward.'];
+        return [null, $noConsultRate
+            ? 'Nothing to pay for that period, and this doctor has no consultation share set — if they should earn on consultations, set it on Staff & Doctors first.'
+            : 'Nothing to pay for that period — no new earnings, no adjustments, no balance brought forward.'];
     }
 
     $gross = $tax = $earned = 0.0;

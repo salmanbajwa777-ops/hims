@@ -38,10 +38,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'create_payout') {
         $docId = (int) ($_POST['doctor_id'] ?? 0);
-        $from  = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['from'] ?? '') ? $_POST['from'] : '';
-        $to    = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['to'] ?? '')   ? $_POST['to']   : '';
-        if (!$docId || !$from || !$to) {
-            $error = 'Pick a doctor and a period.';
+        // The period is now a MONTH, not a free date pair: a payout runs 1st to
+        // last day, and typing the bounds by hand let a short month end on the
+        // 30th and silently drop a day's earnings. date('Y-m-t') derives the
+        // last day, so February and 31-day months are both right.
+        $month = preg_match('/^\d{4}-\d{2}$/', $_POST['month'] ?? '') ? $_POST['month'] : '';
+        $from  = $month ? $month . '-01' : '';
+        $to    = $month ? date('Y-m-t', strtotime($from)) : '';
+        if (!$docId || !$month) {
+            $error = 'Pick a doctor and a month.';
         } else {
             [$id, $err] = create_payout($pdo, $docId, $from, $to, $userId);
             if ($err) { $error = $err; } else { $success = 'Draft payout created — review the lines, then settle.'; $viewId = $id; }
@@ -87,15 +92,35 @@ try {
                             FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name")->fetchAll();
 } catch (PDOException $e) { /* leave empty */ }
 
+// ---- Past payouts, filterable ------------------------------------------------
+// The old fixed "LIMIT 60, newest first" answered "what did we just run?" but
+// not "what did we pay Dr X in March?" — which is the question anyone asks when
+// a doctor queries a settlement months later.
+$fDoctor = (int) ($_GET['f_doctor'] ?? 0);
+$fMonth  = preg_match('/^\d{4}-\d{2}$/', $_GET['f_month'] ?? '') ? $_GET['f_month'] : '';
+$fStatus = in_array($_GET['f_status'] ?? '', ['draft', 'paid', 'voided'], true) ? $_GET['f_status'] : '';
+
 $payouts = [];
 $tablesReady = true;
 try {
-    $payouts = $pdo->query("
-        SELECT p.*, u.name AS doctor_name
-        FROM doctor_payouts p JOIN users u ON u.id = p.doctor_id
-        ORDER BY p.created_at DESC LIMIT 60
-    ")->fetchAll();
+    $where = [];
+    $bind  = [];
+    if ($fDoctor > 0) { $where[] = 'p.doctor_id = ?';  $bind[] = $fDoctor; }
+    if ($fStatus)     { $where[] = 'p.status = ?';     $bind[] = $fStatus; }
+    // A payout belongs to the month its period ENDS in — period_start is the 1st
+    // of the same month for every payout the month picker creates, but matching
+    // on period_end also catches the legacy free-date rows correctly.
+    if ($fMonth)      { $where[] = "DATE_FORMAT(p.period_end, '%Y-%m') = ?"; $bind[] = $fMonth; }
+    $sql = 'SELECT p.*, u.name AS doctor_name
+            FROM doctor_payouts p JOIN users u ON u.id = p.doctor_id'
+         . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+         . ' ORDER BY p.period_end DESC, p.created_at DESC LIMIT 200';
+    $q = $pdo->prepare($sql);
+    $q->execute($bind);
+    $payouts = $q->fetchAll();
 } catch (PDOException $e) { $tablesReady = false; }
+
+$filtered = ($fDoctor > 0 || $fMonth !== '' || $fStatus !== '');
 
 $view = null; $viewLines = [];
 if ($viewId > 0 && $tablesReady) {
@@ -112,8 +137,15 @@ if ($viewId > 0 && $tablesReady) {
 }
 
 // Default period: the month just gone, the usual payout cycle.
-$defFrom = date('Y-m-01', strtotime('-1 month'));
-$defTo   = date('Y-m-t', strtotime('-1 month'));
+$defMonth = date('Y-m', strtotime('first day of last month'));
+
+// 24 months back, newest first — a payout is never run for a future month, and
+// two years covers every late settlement anyone has asked for.
+$monthOptions = [];
+for ($i = 0; $i < 24; $i++) {
+    $ts = strtotime("first day of -$i month");
+    $monthOptions[date('Y-m', $ts)] = date('F Y', $ts);
+}
 
 $pageTitle = 'Doctor Payouts';
 $headExtra = <<<CSS
@@ -127,6 +159,14 @@ $headExtra = <<<CSS
 .f-group input:focus, .f-group select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
 .f-row { display: flex; gap: 10px; }
 .f-row .f-group { flex: 1; }
+
+/* Filter bar: wraps to one control per row on a phone rather than squeezing
+   three selects into an unusable strip. */
+.filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 4px 0 16px; }
+.filter-bar .f-group { flex: 1 1 150px; margin-bottom: 0; }
+.filter-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.filter-actions .btn { white-space: nowrap; }
+@media (max-width: 560px) { .filter-bar .f-group { flex-basis: 100%; } }
 
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .neg { color: #b42318; }
@@ -166,6 +206,17 @@ $navActive = 'doctor_payouts';
 require __DIR__ . '/partials/sidebar.php';
 
 $money = function ($n) { return 'Rs ' . number_format($n); };
+
+// A payout that runs exactly 1st-to-last of one month reads as "July 2026".
+// Anything else (the legacy free-date rows) keeps the explicit range, so a part
+// month is never mislabelled as a whole one.
+$periodLabel = function ($start, $end) {
+    $isWholeMonth = $start === date('Y-m-01', strtotime($start))
+                 && $end   === date('Y-m-t',  strtotime($start));
+    return $isWholeMonth
+        ? date('F Y', strtotime($start))
+        : date('d/m/Y', strtotime($start)) . ' – ' . date('d/m/Y', strtotime($end));
+};
 ?>
         <?php /* The page's own mini-header (title + date + Logout) is gone: the
                  shared app bar above carries date and Logout on every page,
@@ -181,6 +232,17 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
 
             <?php if ($success): ?><div class="alert ok"><?= htmlspecialchars($success) ?></div><?php endif; ?>
             <?php if ($error): ?><div class="alert err"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+
+            <?php if ($tablesReady && !payout_procedures_ready($pdo)): ?>
+            <div class="warn-note">
+                <strong>Procedure shares are NOT being paid.</strong>
+                Run <code>sql/add_procedure_payout_lines.sql</code> in phpMyAdmin, then create the
+                payouts. Until it is applied, a payout covers consultations and daily rounds only —
+                exactly the gap this migration fixes. Nothing is lost meanwhile: run
+                <code>tools/diag_unpaid_procedure_shares.php</code> afterwards to see and clear the
+                backlog.
+            </div>
+            <?php endif; ?>
 
             <?php if (!$tablesReady): ?>
             <div class="warn-note">
@@ -208,20 +270,24 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="f-row">
-                            <div class="f-group">
-                                <label>From</label>
-                                <input type="date" name="from" value="<?= htmlspecialchars($defFrom) ?>" required>
-                            </div>
-                            <div class="f-group">
-                                <label>To</label>
-                                <input type="date" name="to" value="<?= htmlspecialchars($defTo) ?>" required>
+                        <div class="f-group">
+                            <label>Month</label>
+                            <select name="month" required>
+                                <?php foreach ($monthOptions as $val => $lbl): ?>
+                                <option value="<?= htmlspecialchars($val) ?>"<?= $val === $defMonth ? ' selected' : '' ?>>
+                                    <?= htmlspecialchars($lbl) ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="muted-note" style="margin-top:6px;">
+                                Runs the 1st to the last day of that month.
                             </div>
                         </div>
                         <button type="submit" class="btn" style="width:100%;">Create draft</button>
                         <div class="muted-note" style="margin-top:8px;">
-                            Bills already on another payout are skipped, so overlapping periods
-                            cannot pay for the same work twice.
+                            Covers consultations, in-door daily rounds and procedures. Bills already
+                            on another payout are skipped, so re-running a month cannot pay for the
+                            same work twice.
                         </div>
                     </form>
                 </div>
@@ -236,9 +302,9 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
                         </div>
                         <div class="section-sub">
                             <?= htmlspecialchars($view['doctor_name']) ?> ·
-                            <?= date('d/m/Y', strtotime($view['period_start'])) ?> – <?= date('d/m/Y', strtotime($view['period_end'])) ?>
-                            · split <?= number_format((float) $view['share_pct'], 0) ?>%<?= (int) $view['has_tax'] === 1 ? ', tax ' . number_format((float) $view['tax_pct'], 0) . '%' : ', no tax' ?>
-                            <small>(rates frozen when this payout was created)</small>
+                            <?= htmlspecialchars($periodLabel($view['period_start'], $view['period_end'])) ?>
+                            · consultations at <?= number_format((float) $view['share_pct'], 0) ?>%<?= (int) $view['has_tax'] === 1 ? ', tax ' . number_format((float) $view['tax_pct'], 0) . '%' : ', no tax' ?>
+                            <small>(rates frozen when this payout was created; procedures use their own per-procedure rates)</small>
                         </div>
 
                         <ul class="ladder">
@@ -297,7 +363,8 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
                     <div class="card">
                         <div class="section-title">Lines</div>
                         <div class="section-sub">
-                            Every bill and daily round this payout covers, frozen at the figures paid.
+                            Every consultation, daily round and procedure this payout covers, frozen at
+                            the figures paid.
                             Adjustments are reversed at their ORIGINAL amounts, not recomputed — a later
                             rate change never alters what was already paid.
                         </div>
@@ -330,8 +397,49 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
                 <?php endif; ?>
 
                     <div class="card no-print">
-                        <div class="section-title">Recent Payouts</div>
+                        <div class="section-title">Past Payouts</div>
                         <div class="section-sub">Newest first. Click one to see its lines.</div>
+
+                        <form method="GET" action="doctor_payouts.php" class="filter-bar">
+                            <div class="f-group">
+                                <label>Doctor</label>
+                                <select name="f_doctor">
+                                    <option value="">All doctors</option>
+                                    <?php foreach ($doctors as $d): ?>
+                                    <option value="<?= (int) $d['id'] ?>"<?= $fDoctor === (int) $d['id'] ? ' selected' : '' ?>>
+                                        <?= htmlspecialchars($d['name']) ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="f-group">
+                                <label>Month</label>
+                                <select name="f_month">
+                                    <option value="">All months</option>
+                                    <?php foreach ($monthOptions as $val => $lbl): ?>
+                                    <option value="<?= htmlspecialchars($val) ?>"<?= $fMonth === $val ? ' selected' : '' ?>>
+                                        <?= htmlspecialchars($lbl) ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="f-group">
+                                <label>Status</label>
+                                <select name="f_status">
+                                    <option value="">All</option>
+                                    <?php foreach (['paid' => 'Paid', 'draft' => 'Draft', 'voided' => 'Voided'] as $val => $lbl): ?>
+                                    <option value="<?= $val ?>"<?= $fStatus === $val ? ' selected' : '' ?>><?= $lbl ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="filter-actions">
+                                <button type="submit" class="btn secondary">Filter</button>
+                                <?php if ($filtered): ?>
+                                <a href="doctor_payouts.php" class="btn secondary">Clear</a>
+                                <?php endif; ?>
+                            </div>
+                        </form>
+
                         <div style="overflow-x:auto;">
                         <table>
                             <thead>
@@ -342,13 +450,15 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
                                 <tr>
                                     <td><a href="doctor_payouts.php?view=<?= (int) $p['id'] ?>"><?= htmlspecialchars($p['payout_number']) ?></a></td>
                                     <td><?= htmlspecialchars($p['doctor_name']) ?></td>
-                                    <td><?= date('d/m/Y', strtotime($p['period_start'])) ?> – <?= date('d/m/Y', strtotime($p['period_end'])) ?></td>
+                                    <td><?= htmlspecialchars($periodLabel($p['period_start'], $p['period_end'])) ?></td>
                                     <td class="num"><?= $money($p['net_paid']) ?><?= (float) $p['carried_out'] > 0 ? '<br><small class="muted neg">+' . $money($p['carried_out']) . ' carried</small>' : '' ?></td>
                                     <td><span class="pill <?= htmlspecialchars($p['status']) ?>"><?= htmlspecialchars($p['status']) ?></span></td>
                                 </tr>
                                 <?php endforeach; ?>
                                 <?php if (!$payouts): ?>
-                                <tr><td colspan="5" class="muted" style="padding:18px 10px;">No payouts yet.</td></tr>
+                                <tr><td colspan="5" class="muted" style="padding:18px 10px;">
+                                    <?= $filtered ? 'No payouts match that filter.' : 'No payouts yet.' ?>
+                                </td></tr>
                                 <?php endif; ?>
                             </tbody>
                         </table>
