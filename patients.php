@@ -82,14 +82,17 @@ $admitFormAction = 'patients.php';
 // Procedure billing (procedure_bill.php) — the row button links straight there
 // with the patient pre-selected. Doctors never bill, so it's off for them.
 $canRaiseProcedure = !$isDoctorReadonly && has_permission('RECEPTION_RAISE_PROCEDURE_BILL');
-// Dental charting is a clinical action, so unlike the billing buttons it stays
-// available to a doctor viewing this list — a dentist reaches the chair-side
-// record from here.
-$canRecordDental = has_permission('DENTAL_RECORD_TREATMENT');
-// Past stays are reachable from the patient row: a discharged admission drops
-// off the live admissions board the next day, so this is the by-patient way
-// back to it. Read-only lookup, so it mirrors the admissions page's own gate.
-$canViewStays = has_permission('RECEPTION_REGISTER_PATIENTS') || has_permission('NURSING_RECORD_ADMISSIONS');
+// ER-Direct: a registered patient walking in for a one-off service (IM injection,
+// nebulization, dressing) with NO admission — so no room, no per-hour rate, no
+// stay clock. Dental is deliberately NOT a button here: a dental case reaches the
+// chair-side record via its own doctor on the invoice, or via Procedure.
+$canRaiseER = !$isDoctorReadonly && has_permission('RECEPTION_RAISE_ER_BILL');
+// "Past" — the patient's whole billing history across all five streams
+// (patient_past.php). Replaces the old "Stays" link, which pointed at
+// admissions.php?q=<MRN> with no tab parameter and so landed on "Currently
+// admitted" — an EMPTY table for any patient not admitted right this minute.
+// Read-only lookup, so it keeps the admissions page's own gate.
+$canViewPast = has_permission('RECEPTION_REGISTER_PATIENTS') || has_permission('NURSING_RECORD_ADMISSIONS');
 
 // ---------------- AJAX: quick-add area (used from the registration panel) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_add_area') {
@@ -1222,16 +1225,19 @@ require __DIR__ . '/partials/sidebar.php';
                                          procedures assigned. -->
                                     <a class="qa" href="procedure_bill.php?patient_id=<?= (int) $p['id'] ?><?= ($p['last_doctor_id'] ?? 0) ? '&doctor_id=' . (int) $p['last_doctor_id'] : '' ?>">Procedure</a>
                                     <?php endif; ?>
-                                    <?php if ($canRecordDental): ?>
-                                    <!-- Dental goes to the CHAIR-SIDE record, not to a bill: dental work is
-                                         charted first (tooth-wise), and only then billed — same-visit on the
-                                         procedure bill, or added to a multi-visit package account. -->
-                                    <a class="qa" href="dental_treatment.php?patient_id=<?= (int) $p['id'] ?>">Dental</a>
+                                    <?php if ($canRaiseER): ?>
+                                    <!-- ER-Direct: prepaid walk-in service bill (injection, nebulization,
+                                         dressing) for an already-registered patient. NOT an admission — no
+                                         room charge, no per-hour rate, nothing left open. Carries the last
+                                         treating doctor across as the attending-doctor default. -->
+                                    <a class="qa" href="er_bill.php?patient_id=<?= (int) $p['id'] ?>">ER-Direct</a>
                                     <?php endif; ?>
-                                    <?php if ($canViewStays): ?>
-                                    <!-- Searches the admissions page by MRN, which is unique — a name
-                                         search could pull in a second patient with the same name. -->
-                                    <a class="qa" href="admissions.php?q=<?= urlencode($p['mrn']) ?>">Stays</a>
+                                    <?php if ($canViewPast): ?>
+                                    <!-- Every slip this patient has been issued — consultations, ER
+                                         services, admissions, in-door stays and procedures — with what
+                                         was paid against each. Keyed by patient id, not MRN: it is the
+                                         primary key, so no lookup can drift onto a same-named patient. -->
+                                    <a class="qa" href="patient_past.php?id=<?= (int) $p['id'] ?>">Past</a>
                                     <?php endif; ?>
                                 </div>
                             </td>
