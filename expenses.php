@@ -550,6 +550,21 @@ $filterFields = '<input type="hidden" name="from" value="' . htmlspecialchars($f
               . '<input type="hidden" name="to" value="' . htmlspecialchars($filterTo) . '">'
               . '<input type="hidden" name="cat" value="' . (int) $filterCat . '">';
 
+// Vehicle cost panel under pending vehicle rows. Only load the partial if the
+// migration has actually run — before that, expenses.vehicle_id does not exist
+// and the panel would query columns that are not there. $rows comes from
+// SELECT e.*, so the key is simply absent pre-migration.
+$vehiclePanelReady = false;
+if ($canApprove && is_file(__DIR__ . '/partials/vehicle_cost_panel.php')) {
+    foreach ($rows as $probe) {
+        if (array_key_exists('vehicle_id', $probe)) {
+            require_once __DIR__ . '/partials/vehicle_cost_panel.php';
+            $vehiclePanelReady = true;
+        }
+        break;   // one row is enough to know the column shape
+    }
+}
+
 // Rows the bulk bar can act on: pending, not voided, inside the current filter.
 // Counted from $rows so the tick-all box can never select something off-screen.
 $pendingIds = [];
@@ -558,6 +573,13 @@ foreach ($rows as $r) {
         $pendingIds[] = (int) $r['id'];
     }
 }
+
+// Column count for the full-width vehicle-cost sub-row, kept in step with the
+// header. Defined AFTER $pendingIds, since the tick-box column only exists when
+// there is something pending to tick.
+$rowCols = ($isAdmin ? 8 : 7)
+         + (($isAdmin || $canApprove) ? 1 : 0)
+         + (($canApprove && $pendingIds) ? 1 : 0);
 
 // A rejected expense returned its cash to the drawer, so — like a voided one —
 // it drops out of every total. Pending still counts (the cash is already out).
@@ -941,6 +963,21 @@ require __DIR__ . '/partials/sidebar.php';
                                 </td>
                                 <?php endif; ?>
                             </tr>
+                            <?php
+                            // Vehicle running cost, inline under a PENDING vehicle
+                            // expense, so the approver sees cost per km at the
+                            // moment of deciding rather than later in a report.
+                            // Only for rows an approver can actually act on —
+                            // decided rows would just be noise.
+                            if ($canApprove && $rowPending && $vehiclePanelReady
+                                && !empty($r['vehicle_id'])):
+                            ?>
+                            <tr class="veh-costrow">
+                                <td colspan="<?= $rowCols ?>" style="padding-top:0;">
+                                    <?php vehicle_cost_panel($pdo, (int) $r['id']); ?>
+                                </td>
+                            </tr>
+                            <?php endif; ?>
                             <?php endforeach; ?>
                         </tbody>
                     </table>

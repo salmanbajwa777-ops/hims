@@ -253,6 +253,8 @@ $sbGroups = [
                  'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
                 ['slug' => 'expense_report', 'label' => 'Expense Report', 'icon' => 'chart', 'href' => 'expense_report.php',
                  'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
+                ['slug' => 'vehicle_report', 'label' => 'Vehicle Report', 'icon' => 'chart', 'href' => 'vehicle_report.php',
+                 'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
                 ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
                 ['slug' => 'reports', 'label' => 'More Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
             ]],

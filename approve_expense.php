@@ -180,6 +180,17 @@ require __DIR__ . '/partials/head.php';
                     <?php endif; ?>
                 </table>
 
+                <?php
+                // Vehicle running cost, when this expense names a vehicle — the
+                // approver should see cost per km while deciding, not later in a
+                // report. Renders nothing for a non-vehicle expense or before the
+                // migration has run.
+                if (is_file(__DIR__ . '/partials/vehicle_cost_panel.php')) {
+                    require_once __DIR__ . '/partials/vehicle_cost_panel.php';
+                    vehicle_cost_panel($pdo, (int) $expense['id']);
+                }
+                ?>
+
                 <?php if ($showForm): ?>
                     <form method="POST" action="approve_expense.php" style="margin:0;"
                           onsubmit="if(this.decision.value==='reject'){var r=prompt('Reason for rejecting (the cash should be returned to the drawer):');if(!r){return false;}this.reject_reason.value=r;}return true;">
