@@ -87,6 +87,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     }
 }
 
+// ---- Vehicles: add / save / deactivate ----
+// Lives here rather than on its own page because a vehicle is part of the same
+// "what may cash be spent on" catalogue an admin already comes here to manage.
+$vehiclesReady = false;
+try {
+    $pdo->query('SELECT 1 FROM vehicles LIMIT 1');
+    $vehiclesReady = true;
+} catch (PDOException $e) { /* add_vehicle_expenses.sql not run yet */ }
+
+if ($vehiclesReady && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_vehicle') {
+    $vName = trim($_POST['v_name'] ?? '');
+    $vReg  = strtoupper(trim($_POST['v_reg'] ?? ''));
+    $vType = trim($_POST['v_type'] ?? '');
+    if ($vName === '' || $vReg === '') {
+        $error = 'A vehicle needs a name and a registration number.';
+    } else {
+        try {
+            $pdo->prepare('INSERT INTO vehicles (name, registration, vehicle_type, created_by_id)
+                           VALUES (?, ?, ?, ?)
+                           ON DUPLICATE KEY UPDATE name = VALUES(name), vehicle_type = VALUES(vehicle_type), is_active = 1')
+                ->execute([$vName, $vReg, $vType !== '' ? $vType : null, $_SESSION['user_id']]);
+            audit_log($pdo, 'vehicle_saved', "Saved vehicle \"$vName\" ($vReg)", $_SESSION['user_id']);
+            $success = "Vehicle \"$vName\" saved.";
+        } catch (PDOException $e) {
+            $error = 'Could not save that vehicle. The registration may already be in use.';
+        }
+    }
+}
+
+if ($vehiclesReady && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_vehicles') {
+    $vn = $_POST['v_name_e'] ?? [];
+    $vt = $_POST['v_type_e'] ?? [];
+    $va = $_POST['v_active'] ?? [];
+    $upd = $pdo->prepare('UPDATE vehicles SET name = ?, vehicle_type = ?, is_active = ? WHERE id = ?');
+    $saved = 0;
+    foreach ($vn as $id => $rawName) {
+        $id = (int) $id; $nm = trim($rawName);
+        if ($id <= 0 || $nm === '') { continue; }
+        $ty = trim($vt[$id] ?? '');
+        $upd->execute([$nm, $ty !== '' ? $ty : null, isset($va[$id]) ? 1 : 0, $id]);
+        $saved++;
+    }
+    if ($saved > 0) {
+        audit_log($pdo, 'vehicles_saved', "Bulk-saved $saved vehicle(s)", $_SESSION['user_id']);
+        $success = "Saved $saved vehicle" . ($saved === 1 ? '' : 's') . '.';
+    }
+}
+
+$vehicles = [];
+if ($vehiclesReady) {
+    try {
+        $vehicles = $pdo->query('
+            SELECT v.*,
+                   (SELECT COUNT(*) FROM expenses e WHERE e.vehicle_id = v.id) AS expense_count,
+                   (SELECT MAX(e.meter_reading) FROM expenses e
+                     WHERE e.vehicle_id = v.id AND e.voided_at IS NULL) AS last_meter
+              FROM vehicles v ORDER BY v.is_active DESC, v.name
+        ')->fetchAll();
+    } catch (PDOException $e) { $vehicles = []; }
+}
+
 // ---- Save the overall per-shift limit ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_shift_limit') {
     $limit = ec_amt($_POST['shift_limit_total'] ?? 0);
@@ -212,6 +273,84 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
                 </form>
             </div>
+
+            <!-- Vehicles. Only rendered once add_vehicle_expenses.sql has run;
+                 the fuel/maintenance/repairs sub-categories are seeded by that
+                 migration and are not editable here (they drive report logic). -->
+            <?php if ($vehiclesReady): ?>
+            <div class="card">
+                <div class="section-title">Vehicles</div>
+                <div class="section-sub">
+                    Any number of vehicles. These appear on the posting form for
+                    <b>Transport &amp; Fuel</b>, and drive the
+                    <a href="vehicle_report.php" style="font-weight:600;">Vehicle Report</a>'s
+                    cost-per-km figures. Deactivate rather than delete — history stays intact.
+                </div>
+
+                <form method="POST" action="expense_categories.php" style="margin-bottom:18px;">
+                    <input type="hidden" name="action" value="add_vehicle">
+                    <div class="add-row" style="grid-template-columns:2fr 1.2fr 1.2fr auto;">
+                        <div>
+                            <label>Vehicle name</label>
+                            <input type="text" name="v_name" placeholder="e.g. Suzuki Bolan" required>
+                        </div>
+                        <div>
+                            <label>Registration</label>
+                            <input type="text" name="v_reg" placeholder="e.g. LES 4471" required
+                                   style="text-transform:uppercase;">
+                        </div>
+                        <div>
+                            <label>Type (optional)</label>
+                            <input type="text" name="v_type" placeholder="Ambulance / Bike">
+                        </div>
+                        <button type="submit" class="btn">Add</button>
+                    </div>
+                </form>
+
+                <form method="POST" action="expense_categories.php">
+                <input type="hidden" name="action" value="save_vehicles">
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Vehicle</th>
+                            <th style="width:150px;">Registration</th>
+                            <th style="width:160px;">Type</th>
+                            <th style="width:130px;">Last meter</th>
+                            <th style="width:110px;">Expenses</th>
+                            <th style="width:90px;">Active</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$vehicles): ?>
+                        <tr><td colspan="6" class="muted" style="padding:20px 10px;">
+                            No vehicles yet — add one above so reception can post fuel against it.
+                        </td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($vehicles as $v): $vid = (int) $v['id']; ?>
+                        <tr class="<?= $v['is_active'] ? '' : 'row-inactive' ?>">
+                            <td><input type="text" name="v_name_e[<?= $vid ?>]" class="row-inp"
+                                       style="font-weight:600;width:100%;" value="<?= htmlspecialchars($v['name']) ?>"></td>
+                            <td><span class="count-chip"><?= htmlspecialchars($v['registration']) ?></span></td>
+                            <td><input type="text" name="v_type_e[<?= $vid ?>]" class="row-inp" style="width:100%;"
+                                       value="<?= htmlspecialchars($v['vehicle_type'] ?? '') ?>"></td>
+                            <td><span class="count-chip"><?= $v['last_meter'] !== null ? number_format((int) $v['last_meter']) . ' km' : '—' ?></span></td>
+                            <td><span class="count-chip"><?= (int) $v['expense_count'] ?> posted</span></td>
+                            <td><label class="active-toggle"><input type="checkbox" name="v_active[<?= $vid ?>]" value="1"
+                                       <?= $v['is_active'] ? 'checked' : '' ?>><span></span></label></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php if ($vehicles): ?>
+                <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                    <button type="submit" class="btn">Save vehicles</button>
+                </div>
+                <?php endif; ?>
+                </form>
+            </div>
+            <?php endif; ?>
 
             <!-- Category list — one form, one Save all changes button. Delete
                  stays a separate per-row action (its <form>s live after the table

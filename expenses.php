@@ -115,23 +115,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
     // What kind of category is this? Decides the month picker, the drawer
     // lock and the limit checks. Read before validation so the rules can
     // branch on it; the authoritative re-read happens under FOR UPDATE below.
-    $catMeta = ['is_period_based' => 0, 'is_admin_only' => 0, 'needs_doctor' => 0];
+    $catMeta = ['is_period_based' => 0, 'is_admin_only' => 0, 'needs_doctor' => 0, 'needs_vehicle' => 0];
     if ($categoryId > 0) {
         try {
-            $cm = $pdo->prepare('SELECT is_period_based, is_admin_only, needs_doctor FROM expense_categories WHERE id = ?');
+            $cm = $pdo->prepare('SELECT is_period_based, is_admin_only, needs_doctor, needs_vehicle FROM expense_categories WHERE id = ?');
             $cm->execute([$categoryId]);
             $catMeta = $cm->fetch() ?: $catMeta;
         } catch (PDOException $e) {
             try {
-                $cm = $pdo->prepare('SELECT is_period_based, is_admin_only FROM expense_categories WHERE id = ?');
+                // needs_vehicle absent (add_vehicle_expenses.sql not run) — step down.
+                $cm = $pdo->prepare('SELECT is_period_based, is_admin_only, needs_doctor FROM expense_categories WHERE id = ?');
                 $cm->execute([$categoryId]);
                 $catMeta = $cm->fetch() ?: $catMeta;
-            } catch (PDOException $e2) { /* pre-migration: flags absent, treat as plain */ }
+            } catch (PDOException $e3) {
+                try {
+                    $cm = $pdo->prepare('SELECT is_period_based, is_admin_only FROM expense_categories WHERE id = ?');
+                    $cm->execute([$categoryId]);
+                    $catMeta = $cm->fetch() ?: $catMeta;
+                } catch (PDOException $e2) { /* pre-migration: flags absent, treat as plain */ }
+            }
         }
     }
     $isPeriodBased = (bool) ($catMeta['is_period_based'] ?? 0);
     $isAdminOnly   = (bool) ($catMeta['is_admin_only'] ?? 0);
     $needsDoctor   = (bool) ($catMeta['needs_doctor'] ?? 0);
+    $needsVehicle  = (bool) ($catMeta['needs_vehicle'] ?? 0);
+
+    // Vehicle fields. Forced NULL unless the category is vehicle-tracked, so a
+    // stale form field can never attach a vehicle to an unrelated expense.
+    $vehicleId     = $needsVehicle ? (int) ($_POST['vehicle_id'] ?? 0) : 0;
+    $subcategoryId = $needsVehicle ? (int) ($_POST['subcategory_id'] ?? 0) : 0;
+    $meterRaw      = trim($_POST['meter_reading'] ?? '');
+    $litresRaw     = trim($_POST['litres'] ?? '');
+    $meterReading  = ($needsVehicle && $meterRaw !== '')  ? (int) $meterRaw : null;
+    $litres        = ($needsVehicle && $litresRaw !== '') ? round((float) $litresRaw, 2) : null;
+    if ($meterReading !== null && $meterReading < 0) { $meterReading = null; }
+    if ($litres !== null && $litres <= 0) { $litres = null; }
 
     // Who the disbursement was paid to. Only meaningful for needs_doctor
     // categories; forced NULL otherwise so an ordinary expense can never carry
@@ -169,6 +188,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
         $error = 'Pick the month this payment is for.';
     } elseif ($needsDoctor && $paidToDoctorId <= 0) {
         $error = 'Pick the doctor this payment is for.';
+    } elseif ($needsVehicle && $vehicleId <= 0) {
+        $error = 'Pick the vehicle this spend is for.';
+    } elseif ($needsVehicle && $subcategoryId <= 0) {
+        $error = 'Choose Fuel, Maintenance or Repairs.';
     } elseif ($monthLock) {
         $error = $monthLock;
     } elseif ($dayLock) {
@@ -253,6 +276,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             // 'YYYY-MM' -> first of that month; NULL for running-month costs.
             $periodValue = $isPeriodBased && $periodMonth !== '' ? $periodMonth . '-01' : null;
             $doctorValue = $paidToDoctorId > 0 ? $paidToDoctorId : null;
+            $vehicleValue = $vehicleId > 0 ? $vehicleId : null;
+            $subcatValue  = $subcategoryId > 0 ? $subcategoryId : null;
+            try {
+                // Newest shape: vehicle columns present.
+                $pdo->prepare('
+                    INSERT INTO expenses
+                        (expense_number, category_id, subcategory_id, vehicle_id, meter_reading, litres,
+                         amount, description, paid_to, paid_to_doctor_id,
+                         expense_date, period_month, source,
+                         posted_by_id, approval_status, over_limit, limit_note, approved_by_id, approved_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                ')->execute([
+                    $expenseNumber, $categoryId, $subcatValue, $vehicleValue, $meterReading, $litres,
+                    $amount, $description,
+                    $paidTo !== '' ? $paidTo : null, $doctorValue,
+                    $periodValue, $source,
+                    $userId, $status,
+                    $overLimit ? 1 : 0, $limitNote,
+                    $isAdmin ? $userId : null,
+                ]);
+            } catch (PDOException $eVeh) {
             try {
                 $pdo->prepare('
                     INSERT INTO expenses
@@ -299,6 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                     ]);
                 }
             }
+            }   // end vehicle-columns fallback
             $expenseId = (int) $pdo->lastInsertId();
 
             // Mint the single-use magic-link token in the SAME transaction, so a
@@ -467,6 +512,13 @@ if (isset($_GET['posted'])) {
 // original column list.
 try {
     $categories = $pdo->query(
+        'SELECT id, name, shift_limit, is_period_based, is_admin_only, needs_doctor, needs_vehicle
+           FROM expense_categories WHERE is_active = 1' . ($isAdmin ? '' : ' AND is_admin_only = 0') . '
+          ORDER BY name'
+    )->fetchAll();
+} catch (PDOException $eNv) {
+try {
+    $categories = $pdo->query(
         'SELECT id, name, shift_limit, is_period_based, is_admin_only, needs_doctor
            FROM expense_categories WHERE is_active = 1' . ($isAdmin ? '' : ' AND is_admin_only = 0') . '
           ORDER BY name'
@@ -482,6 +534,23 @@ try {
         $categories = $pdo->query('SELECT id, name, shift_limit FROM expense_categories WHERE is_active = 1 ORDER BY name')->fetchAll();
     }
 }
+}   // end needs_vehicle fallback
+
+// Vehicles + sub-categories for the vehicle-tracked categories. Both are absent
+// before add_vehicle_expenses.sql runs, so the form simply omits those fields.
+$vehiclesList = [];
+$subcatsByCat = [];
+try {
+    $vehiclesList = $pdo->query(
+        'SELECT id, name, registration, vehicle_type FROM vehicles WHERE is_active = 1 ORDER BY name'
+    )->fetchAll();
+    foreach ($pdo->query(
+        'SELECT id, category_id, name, tracks_fuel FROM expense_subcategories
+          WHERE is_active = 1 ORDER BY sort_order, name'
+    )->fetchAll() as $sc) {
+        $subcatsByCat[(int) $sc['category_id']][] = $sc;
+    }
+} catch (PDOException $e) { /* pre-migration: no vehicle fields offered */ }
 
 // Doctors for the disbursement picker. Admin-only screen concern, but the list
 // is cheap and the <select> is hidden for everyone else anyway.
@@ -661,6 +730,31 @@ $headExtra = <<<CSS
 .total-chip strong { color: var(--text); font-variant-numeric: tabular-nums; }
 .muted-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 
+/* Vehicle block on the posting form — sub-category segmented control, vehicle
+   picker and meter reading. Shown only for needs_vehicle categories. */
+.sub-seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.sub-btn { flex: 1; min-width: 84px; padding: 9px 8px; border-radius: 9px; border: 1px solid var(--border-strong);
+           background: #fff; color: var(--text-secondary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.sub-btn:hover { border-color: var(--primary); }
+.sub-btn.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.sub-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(63,122,99,.28); }
+.meter-box { border: 1px solid var(--border); border-radius: 11px; padding: 12px 13px; background: var(--bg); margin-bottom: 13px; }
+.meter-head { font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;
+              letter-spacing: .06em; margin-bottom: 9px; }
+.meter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.meter-grid label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
+.meter-grid input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px;
+                    font: inherit; font-size: 13.5px; background: #fff; font-variant-numeric: tabular-nums; }
+.meter-grid input:disabled { background: var(--bg); color: var(--text-muted); }
+.meter-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(63,122,99,.18); }
+.meter-calc { margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border-strong);
+              font-size: 12.5px; color: var(--text-secondary); }
+.meter-calc .mc-row { display: flex; justify-content: space-between; gap: 10px; }
+.meter-calc b { color: var(--text); font-variant-numeric: tabular-nums; }
+.meter-warn { margin-top: 9px; border-radius: 9px; padding: 9px 11px; font-size: 12.3px; font-weight: 600; line-height: 1.5; }
+.meter-warn.bad  { background: var(--red-bg); border: 1px solid rgba(225,29,72,.28); color: var(--red-text); }
+.meter-warn.warn { background: var(--amber-bg); border: 1px solid rgba(245,158,11,.34); color: var(--amber-text); }
+
 /* Bulk approve bar. Sits above the table and stays put while the list scrolls
    under it, so a long pending run does not mean scrolling back up to act. */
 .bulk-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -733,7 +827,8 @@ require __DIR__ . '/partials/sidebar.php';
                                         data-cat-spent="<?= htmlspecialchars((string) ($catSpentToday[(int) $c['id']] ?? 0)) ?>"
                                         data-cat-name="<?= htmlspecialchars($c['name']) ?>"
                                         data-period-based="<?= (int) ($c['is_period_based'] ?? 0) ?>"
-                                        data-needs-doctor="<?= (int) ($c['needs_doctor'] ?? 0) ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
+                                        data-needs-doctor="<?= (int) ($c['needs_doctor'] ?? 0) ?>"
+                                        data-needs-vehicle="<?= (int) ($c['needs_vehicle'] ?? 0) ?>"><?= htmlspecialchars($c['name']) ?><?= (float) $c['shift_limit'] > 0 ? ' — limit Rs ' . number_format((float) $c['shift_limit']) . '/shift' : '' ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -768,6 +863,66 @@ require __DIR__ . '/partials/sidebar.php';
                                  BEFORE the button is pressed. -->
                             <div id="earnedBox" class="earned-box" style="display:none;"></div>
                         </div>
+                        <!-- Vehicle block: sub-category, vehicle and meter reading.
+                             Shown only for categories flagged needs_vehicle, and
+                             only once add_vehicle_expenses.sql has run (no
+                             vehicles list = no fields). Feeds the per-vehicle
+                             cost-per-km reports and the approval cost panel. -->
+                        <?php if ($vehiclesList): ?>
+                        <div id="vehicleGroup" style="display:none;">
+                            <div class="f-group">
+                                <label>Type of spend</label>
+                                <div class="sub-seg" id="subSeg">
+                                    <?php
+                                    // Rendered per category so a future vehicle
+                                    // category brings its own sub-categories.
+                                    $allSubs = [];
+                                    foreach ($subcatsByCat as $catId => $subs) {
+                                        foreach ($subs as $sc) { $allSubs[] = ['cat' => $catId] + $sc; }
+                                    }
+                                    foreach ($allSubs as $sc): ?>
+                                    <button type="button" class="sub-btn"
+                                            data-cat="<?= (int) $sc['cat'] ?>"
+                                            data-sub="<?= (int) $sc['id'] ?>"
+                                            data-fuel="<?= (int) $sc['tracks_fuel'] ?>"><?= htmlspecialchars($sc['name']) ?></button>
+                                    <?php endforeach; ?>
+                                </div>
+                                <input type="hidden" name="subcategory_id" id="expSubcat" value="">
+                            </div>
+
+                            <div class="f-group">
+                                <label>Vehicle</label>
+                                <select name="vehicle_id" id="expVehicle">
+                                    <option value="">Select a vehicle&hellip;</option>
+                                    <?php foreach ($vehiclesList as $v): ?>
+                                    <option value="<?= (int) $v['id'] ?>"><?= htmlspecialchars($v['name']) ?> — <?= htmlspecialchars($v['registration']) ?><?= $v['vehicle_type'] ? ' (' . htmlspecialchars($v['vehicle_type']) . ')' : '' ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="meter-box">
+                                <div class="meter-head">Meter reading</div>
+                                <div class="meter-grid">
+                                    <div>
+                                        <label>Previous (km)</label>
+                                        <input type="text" id="expPrevMeter" value="—" disabled>
+                                    </div>
+                                    <div>
+                                        <label>Current (km)</label>
+                                        <input type="number" name="meter_reading" id="expMeter" min="0" step="1" placeholder="0">
+                                    </div>
+                                </div>
+                                <div class="meter-calc" id="meterCalc" style="display:none;"></div>
+                                <div class="meter-warn" id="meterWarn" style="display:none;"></div>
+                            </div>
+
+                            <div class="f-group" id="litresGroup" style="display:none;">
+                                <label>Litres</label>
+                                <input type="number" name="litres" id="expLitres" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
                         <div class="f-group">
                             <label>Amount (Rs)</label>
                             <input type="number" name="amount" id="expAmount" step="0.01" min="1" placeholder="0" required>
@@ -1185,6 +1340,135 @@ require __DIR__ . '/partials/sidebar.php';
     if (docSel) { docSel.addEventListener('change', loadEarned); }
     inp.addEventListener('change', loadEarned);
     sync();
+
+    // ---- Vehicle block ----------------------------------------------------
+    // Sub-category buttons, vehicle picker, and the live meter-reading check.
+    // The rollback warning is shown here, at typing time, so the mistake is
+    // caught by the person who can still fix it rather than by the approver.
+    var vehGrp  = document.getElementById('vehicleGroup');
+    var vehSel  = document.getElementById('expVehicle');
+    var subHid  = document.getElementById('expSubcat');
+    var meter   = document.getElementById('expMeter');
+    var prevInp = document.getElementById('expPrevMeter');
+    var calc    = document.getElementById('meterCalc');
+    var mWarn   = document.getElementById('meterWarn');
+    var litGrp  = document.getElementById('litresGroup');
+    var litres  = document.getElementById('expLitres');
+    var subBtns = vehGrp ? [].slice.call(vehGrp.querySelectorAll('.sub-btn')) : [];
+
+    if (vehGrp) {
+        var prevMeter = null, maxGap = 5000;
+
+        function fmt(n) { return Number(n).toLocaleString('en-US'); }
+
+        function refreshCalc() {
+            var cur = parseInt(meter.value || '', 10);
+            calc.style.display = 'none';
+            mWarn.style.display = 'none';
+            if (isNaN(cur) || prevMeter === null) { return; }
+
+            var delta = cur - prevMeter;
+            if (delta <= 0) {
+                mWarn.className = 'meter-warn bad';
+                mWarn.textContent = 'That is ' + fmt(Math.abs(delta)) + ' km LOWER than this vehicle’s '
+                    + 'last reading (' + fmt(prevMeter) + '). Check the meter — you can still post it, '
+                    + 'but it goes for approval and no cost per km can be worked out.';
+                mWarn.style.display = '';
+                return;
+            }
+            if (delta > maxGap) {
+                mWarn.className = 'meter-warn warn';
+                mWarn.textContent = 'That is a jump of ' + fmt(delta) + ' km since the last reading — '
+                    + 'larger than ' + fmt(maxGap) + ' km, so a posting may have been missed.';
+                mWarn.style.display = '';
+                return;
+            }
+
+            var html = '<div class="mc-row"><span>Distance since last reading</span><b>' + fmt(delta) + ' km</b></div>';
+            var L = parseFloat(litres && litres.value ? litres.value : '');
+            if (!isNaN(L) && L > 0) {
+                html += '<div class="mc-row" style="margin-top:4px;"><span>Fuel economy this fill</span><b>'
+                      + (delta / L).toFixed(2) + ' km/L</b></div>';
+            }
+            var amt = parseFloat(amount && amount.value ? amount.value : '');
+            if (!isNaN(amt) && amt > 0) {
+                html += '<div class="mc-row" style="margin-top:4px;"><span>Cost per km</span><b>Rs '
+                      + (amt / delta).toFixed(2) + '</b></div>';
+            }
+            calc.innerHTML = html;
+            calc.style.display = '';
+        }
+
+        function loadPrev() {
+            prevMeter = null;
+            prevInp.value = '—';
+            refreshCalc();
+            if (!vehSel.value) { return; }
+            fetch('vehicle_last_meter.php?vehicle_id=' + encodeURIComponent(vehSel.value),
+                  { headers: { 'Accept': 'application/json' } })
+                .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function (d) {
+                    if (d && d.ok && d.meter !== null) {
+                        prevMeter = d.meter;
+                        maxGap = d.max_gap || maxGap;
+                        prevInp.value = fmt(d.meter) + (d.date ? '  (' + d.date + ')' : '');
+                    } else {
+                        prevInp.value = 'first reading';
+                    }
+                    refreshCalc();
+                })
+                .catch(function () { prevInp.value = '—'; });
+        }
+
+        function pickSub(btn) {
+            subBtns.forEach(function (b) { b.classList.remove('on'); });
+            btn.classList.add('on');
+            subHid.value = btn.getAttribute('data-sub');
+            // Litres only make sense for a fuel sub-category.
+            var isFuel = btn.getAttribute('data-fuel') === '1';
+            litGrp.style.display = isFuel ? '' : 'none';
+            if (!isFuel && litres) { litres.value = ''; }
+            refreshCalc();
+        }
+        subBtns.forEach(function (b) {
+            b.addEventListener('click', function () { pickSub(b); });
+        });
+
+        vehSel.addEventListener('change', loadPrev);
+        meter.addEventListener('input', refreshCalc);
+        if (litres) { litres.addEventListener('input', refreshCalc); }
+        if (amount) { amount.addEventListener('input', refreshCalc); }
+
+        // Show/hide the whole block with the category, and scope the
+        // sub-category buttons to the chosen category.
+        var vehSync = function () {
+            var opt = cat.options[cat.selectedIndex];
+            var on = !!(opt && opt.getAttribute('data-needs-vehicle') === '1');
+            vehGrp.style.display = on ? '' : 'none';
+            vehSel.required = on;
+            if (!on) {
+                vehSel.value = ''; subHid.value = ''; meter.value = '';
+                if (litres) { litres.value = ''; }
+                subBtns.forEach(function (b) { b.classList.remove('on'); });
+                litGrp.style.display = 'none';
+                calc.style.display = 'none';
+                mWarn.style.display = 'none';
+                return;
+            }
+            // Only this category's sub-categories are offered; default to the
+            // first (Fuel) so the common case is one click shorter.
+            var catId = opt.value, first = null;
+            subBtns.forEach(function (b) {
+                var mine = b.getAttribute('data-cat') === catId;
+                b.style.display = mine ? '' : 'none';
+                if (mine && !first) { first = b; }
+            });
+            if (first && !subHid.value) { pickSub(first); }
+            loadPrev();
+        };
+        cat.addEventListener('change', vehSync);
+        vehSync();
+    }
 })();
 </script>
 <?php if (!$isAdmin): ?>
