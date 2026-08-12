@@ -12,6 +12,10 @@
  * Both are enforced server-side in expenses.php at posting time; admin's own
  * postings bypass them. Deactivating a category hides it from the posting form
  * without touching its history.
+ *
+ * Also holds the VEHICLES register (added 2026-08-11) — vehicles are part of the
+ * same "what may cash be spent on" catalogue an admin comes here to manage, and
+ * they feed the per-vehicle cost-per-km figures on vehicle_report.php.
  */
 require_once __DIR__ . '/config/guard_admin.php';
 
