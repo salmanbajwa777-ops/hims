@@ -33,8 +33,16 @@ if ($baseRole !== 'DOCTOR' && $baseRole !== 'ADMIN') {
     exit('Forbidden — doctor console only.');
 }
 $doctorId = (int) $user['id'];
+$targetDoctorName = $user['name'];
 if ($baseRole === 'ADMIN' && (int) ($_GET['doctor_id'] ?? 0) > 0) {
     $doctorId = (int) $_GET['doctor_id'];
+    $tgtStmt = $pdo->prepare('SELECT name FROM users WHERE id = ? AND base_role = "DOCTOR"');
+    $tgtStmt->execute([$doctorId]);
+    $targetDoctorName = $tgtStmt->fetchColumn();
+    if ($targetDoctorName === false) {
+        http_response_code(404);
+        exit('Doctor not found.');
+    }
 }
 
 $weekdays = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday'];
@@ -203,9 +211,16 @@ require __DIR__ . '/partials/head.php';
             <?php if ($saved): ?><div class="alert success">Weekly schedule saved.</div><?php endif; ?>
             <?php if ($saveError): ?><div class="alert error"><?= htmlspecialchars($saveError) ?></div><?php endif; ?>
 
+            <?php $editingOther = $baseRole === 'ADMIN' && $doctorId !== (int) $user['id']; ?>
             <div class="page-head">
-                <h1>My Schedule</h1>
-                <div class="sub">One-time setup — enter your daily hours once, tick your off days, and it applies to the whole week, all year.</div>
+                <h1><?= $editingOther ? htmlspecialchars($targetDoctorName) . "'s Schedule" : 'My Schedule' ?></h1>
+                <div class="sub">
+                    <?php if ($editingOther): ?>
+                        Editing on the doctor's behalf — set their routine hours once, tick off days, and it applies to the whole week, all year. The doctor can still adjust this themselves from their own console.
+                    <?php else: ?>
+                        One-time setup — enter your daily hours once, tick your off days, and it applies to the whole week, all year.
+                    <?php endif; ?>
+                </div>
             </div>
 
             <form method="POST" action="my_schedule.php<?= $baseRole === 'ADMIN' && $doctorId !== (int) $user['id'] ? '?doctor_id=' . $doctorId : '' ?>">

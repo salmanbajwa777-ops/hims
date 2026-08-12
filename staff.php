@@ -793,6 +793,8 @@ require __DIR__ . '/partials/sidebar.php';
                                    data-name="<?= htmlspecialchars($s['name'], ENT_QUOTES) ?>"
                                    data-types="<?= htmlspecialchars(json_encode($consultTypesByDoctor[(int) $s['id']] ?? []), ENT_QUOTES) ?>"
                                    onclick="openConsultTypesPanel(this.dataset); return false;">Consult Types</a>
+                                &nbsp;·&nbsp;
+                                <a href="my_schedule.php?doctor_id=<?= (int) $s['id'] ?>" class="edit-link">Schedule</a>
                                 <?php endif; ?>
                                 <?php if ((int) $s['id'] !== (int) $_SESSION['user_id']): ?>
                                 &nbsp;·&nbsp;
