@@ -26,7 +26,12 @@ require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
 require_permission('FINANCIAL_VIEW_ALL_COMMISSIONS');
 
-$year = preg_match('/^\d{4}$/', $_GET['year'] ?? '') ? (int) $_GET['year'] : (int) date('Y');
+// A month print request carries its own year (e.g. month=2026-03), which
+// wins over ?year= so printing January of a past year doesn't silently
+// query the current year's payouts instead.
+$printMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : null;
+$year = $printMonth ? (int) substr($printMonth, 0, 4)
+    : (preg_match('/^\d{4}$/', $_GET['year'] ?? '') ? (int) $_GET['year'] : (int) date('Y'));
 
 // Settled payouts only. A draft has not paid anything, so it has withheld
 // nothing — including it would overstate the deposit due.
@@ -68,6 +73,23 @@ foreach ($rows as $r) {
     $totalNet   += (float) $r['net'];
 }
 ksort($byMonth);
+
+// Standalone A4 document for a single month — own signature lines, meant to
+// be printed and filed, unlike the year-view screen's @media print CSS.
+if (isset($_GET['print']) && $printMonth) {
+    $ym = $printMonth;
+    $monthRows = [];
+    foreach ($byDoctor as $d) {
+        if (!isset($d['months'][$ym])) continue;
+        $m = $d['months'][$ym];
+        $monthRows[] = ['name' => $d['name'], 'self' => $d['self'], 'gross' => $m['gross'], 'tax' => $m['tax'], 'net' => $m['net']];
+    }
+    $totalGross = array_sum(array_column($monthRows, 'gross'));
+    $totalTax   = array_sum(array_column($monthRows, 'tax'));
+    $totalNet   = array_sum(array_column($monthRows, 'net'));
+    include __DIR__ . '/views/tax_register_print_partial.php';
+    exit;
+}
 
 if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
@@ -223,12 +245,13 @@ $money = function ($n) { return 'Rs ' . number_format($n); };
                 <div class="section-sub">All doctors combined — the figure to deposit for each month.</div>
                 <div style="overflow-x:auto;">
                 <table>
-                    <thead><tr><th>Month</th><th class="num">Tax to deposit</th></tr></thead>
+                    <thead><tr><th>Month</th><th class="num">Tax to deposit</th><th></th></tr></thead>
                     <tbody>
                         <?php foreach ($byMonth as $ym => $t): ?>
-                        <tr><td><?= date('F Y', strtotime($ym . '-01')) ?></td><td class="num"><?= $money($t) ?></td></tr>
+                        <tr><td><?= date('F Y', strtotime($ym . '-01')) ?></td><td class="num"><?= $money($t) ?></td>
+                            <td class="num"><a class="btn secondary" style="padding:4px 10px;font-size:12px;" target="_blank" href="tax_register.php?print=1&amp;month=<?= $ym ?>">Print</a></td></tr>
                         <?php endforeach; ?>
-                        <tr class="grand-row"><td>Total</td><td class="num"><?= $money($totalTax) ?></td></tr>
+                        <tr class="grand-row"><td>Total</td><td class="num"><?= $money($totalTax) ?></td><td></td></tr>
                     </tbody>
                 </table>
                 </div>
