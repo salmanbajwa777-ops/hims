@@ -137,4 +137,6 @@ SELECT m.migration, m.why, m.applied FROM (
     (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='u402528120_hmis' AND table_name='doctor_day_timings')
   UNION ALL SELECT 'add_consult_status','visit consult status',
     (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='u402528120_hmis' AND table_name='visits' AND column_name='consult_status')
+  UNION ALL SELECT 'add_employee_fines','staff fines + MANAGERIAL_POST_FINE',
+    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='u402528120_hmis' AND table_name='employee_fines')
 ) m ORDER BY m.applied ASC, m.migration;
