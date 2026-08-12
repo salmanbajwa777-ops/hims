@@ -71,16 +71,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $expenseId > 0) {
         // the audit line records "via email approval link".
         $deciderId = $loggedInApprover ? $sessionUserId : null;
         $reason    = trim($_POST['reject_reason'] ?? '');
-        $result    = decide_expense($pdo, $expenseId, $wantApprove, $deciderId, $reason);
-        if ($result['ok']) {
-            notify_expense_decided($pdo, $expenseId);   // best-effort, after commit
-            $flash = $result['message']; $flashKind = 'ok';
-        } else {
-            $flash = $result['message'];
-            $flashKind = ($result['status'] === 'ALREADY') ? 'ok' : 'err';
+
+        // NO SELF-APPROVAL over the anonymous link either. decide_expense()
+        // blocks a signed-in approver from deciding their own posting, but the
+        // magic-link path passes $deciderId = NULL, which that check has to skip
+        // (an anonymous decider cannot be compared to the poster). Without this,
+        // a manager could open their OWN approval email in a logged-out browser
+        // and clear their own spend — exactly what the rule forbids.
+        //
+        // The token is minted per expense, so the poster is knowable here even
+        // when the decider is not: refuse the anonymous path outright whenever
+        // the poster holds the approve permission, and make them sign in.
+        $result = null;
+        if ($deciderId === null) {
+            $pStmt = $pdo->prepare('SELECT posted_by_id FROM expenses WHERE id = ?');
+            $pStmt->execute([$expenseId]);
+            $posterId = (int) ($pStmt->fetchColumn() ?: 0);
+            // notif_users_with_permission() is the app's existing effective-permission
+            // resolver (role grant minus user revoke, plus user grant) — the same one
+            // that decides who gets the approval email. Reused rather than
+            // re-implementing the override logic here.
+            if ($posterId > 0
+                && in_array($posterId, notif_users_with_permission($pdo, 'FINANCIAL_APPROVE_EXPENSES'), true)) {
+                $flash = 'This expense was posted by an approver, so it must be decided by '
+                       . 'someone else while signed in. Please sign in to continue.';
+                $flashKind = 'err';
+                $result = ['ok' => false];   // suppress the decision below
+            }
         }
-        // The token (if any) is now burned; re-render reflects the final state.
-        $tokenValid = false;
+
+        if ($result === null) {
+            $result = decide_expense($pdo, $expenseId, $wantApprove, $deciderId, $reason);
+            if ($result['ok']) {
+                notify_expense_decided($pdo, $expenseId);   // best-effort, after commit
+                $flash = $result['message']; $flashKind = 'ok';
+            } else {
+                $flash = $result['message'];
+                // 'ALREADY' is not a failure to the reader — someone got there
+                // first. 'SELF' is a genuine refusal and must read as one.
+                $flashKind = (($result['status'] ?? '') === 'ALREADY') ? 'ok' : 'err';
+            }
+            // The token (if any) is now burned; re-render reflects the final state.
+            $tokenValid = false;
+        }
     }
 }
 

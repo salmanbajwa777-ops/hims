@@ -636,12 +636,65 @@ if ($canApprove && is_file(__DIR__ . '/partials/vehicle_cost_panel.php')) {
 
 // Rows the bulk bar can act on: pending, not voided, inside the current filter.
 // Counted from $rows so the tick-all box can never select something off-screen.
+// Excludes the viewer's OWN postings: decide_expense() refuses those, so
+// counting them would make "Select all N" overstate what can actually be done.
 $pendingIds = [];
 foreach ($rows as $r) {
-    if ($r['voided_at'] === null && ($r['approval_status'] ?? 'PENDING') === 'PENDING') {
+    if ($r['voided_at'] === null
+        && ($r['approval_status'] ?? 'PENDING') === 'PENDING'
+        && (int) $r['posted_by_id'] !== $userId) {
         $pendingIds[] = (int) $r['id'];
     }
 }
+
+// ---- Pending-approvals section ----
+//
+// Promoted above the listing so an approver can clear the queue on a phone
+// without scrolling past a form they do not need. Deliberately NOT limited to
+// the date filter: an expense posted three days ago and still unapproved must
+// not become invisible because the filter defaults to today. It is a work
+// queue, not a report.
+//
+// Shown to EVERY role that can reach this page — a receptionist sees the same
+// list read-only, so they know their own posting is waiting rather than lost.
+$pendingRows = [];
+try {
+    $pStmt = $pdo->prepare("
+        SELECT e.*, ec.name AS category_name, u.name AS posted_by_name
+          FROM expenses e
+          JOIN expense_categories ec ON ec.id = e.category_id
+          JOIN users u ON u.id = e.posted_by_id
+         WHERE e.approval_status = 'PENDING'
+           AND e.voided_at IS NULL
+         ORDER BY e.over_limit DESC, e.created_at ASC, e.id ASC
+         LIMIT 50
+    ");
+    $pStmt->execute();
+    $pendingRows = $pStmt->fetchAll();
+} catch (PDOException $e) {
+    // over_limit may predate its migration — retry without ordering on it.
+    try {
+        $pStmt = $pdo->query("
+            SELECT e.*, ec.name AS category_name, u.name AS posted_by_name
+              FROM expenses e
+              JOIN expense_categories ec ON ec.id = e.category_id
+              JOIN users u ON u.id = e.posted_by_id
+             WHERE e.approval_status = 'PENDING' AND e.voided_at IS NULL
+             ORDER BY e.created_at ASC, e.id ASC LIMIT 50
+        ");
+        $pendingRows = $pStmt->fetchAll();
+    } catch (PDOException $e2) { $pendingRows = []; }
+}
+
+// An approver may not decide their OWN posting (enforced in decide_expense();
+// mirrored here so the buttons are never rendered rather than rendered-and-
+// refused). $canApprove is the permission; this is the per-row test.
+$canDecideRow = function (array $r) use ($canApprove, $userId): bool {
+    return $canApprove && (int) $r['posted_by_id'] !== $userId;
+};
+
+// How many cards are visible before the "View N more" link.
+$pendingVisible = 3;
 
 // Column count for the full-width vehicle-cost sub-row, kept in step with the
 // header. Defined AFTER $pendingIds, since the tick-box column only exists when
@@ -730,6 +783,64 @@ $headExtra = <<<CSS
 .total-chip strong { color: var(--text); font-variant-numeric: tabular-nums; }
 .muted-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 
+/* ---------------------------------------------------------------------------
+   Post-expense accordion.
+   Desktop keeps the form permanently open in the left column — collapsing it
+   there would be a regression, since that column exists to hold it. The toggle
+   row only appears at phone widths and under forced-mobile view.
+   --------------------------------------------------------------------------- */
+.post-toggle { display: none; }
+.post-card .post-body { display: block; }
+
+/* ---------------------------------------------------------------------------
+   Pending approvals.
+   --------------------------------------------------------------------------- */
+/* min-width:0 lets this flex/grid child actually shrink — without it the cards'
+   content sets a floor and the whole .content overflows horizontally on desktop
+   (measured: 1306px inside a 1265px viewport before this was added). */
+.pending-wrap { margin-bottom: 18px; min-width: 0; max-width: 100%; }
+.pend-card { min-width: 0; }
+.pend-card .pc-desc, .pend-card .pc-meta { overflow-wrap: anywhere; }
+.pending-head { display: flex; align-items: center; gap: 9px; margin: 0 2px 10px; flex-wrap: wrap; }
+.pending-head .ph-t { font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+                      letter-spacing: .06em; color: var(--text-secondary); }
+.pending-head .ph-badge { background: var(--amber-bg); color: var(--amber-text);
+                          border: 1px solid rgba(245,158,11,.34); border-radius: 20px;
+                          font-size: 11px; font-weight: 700; padding: 1px 8px;
+                          font-variant-numeric: tabular-nums; }
+.pending-head .ph-note { font-size: 11.5px; color: var(--text-muted); }
+
+.pend-card { background: var(--card, #fff); border: 1px solid var(--border); border-radius: 12px;
+             padding: 12px 14px; margin-bottom: 8px; }
+.pend-card.over { border-color: rgba(245,158,11,.40); background: var(--amber-bg); }
+.pend-card.pend-extra { display: none; }
+.pend-card.pend-extra.show { display: block; }
+.pend-card .pc-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.pend-card .pc-amt { font-weight: 700; font-size: 15.5px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.pend-card .pc-cat { font-size: 12px; color: var(--text-secondary); font-weight: 600; text-align: right; }
+.pend-card .pc-desc { font-size: 13px; margin-top: 3px; }
+.pend-card .pc-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.pend-card .pc-flags { margin-top: 7px; }
+.pend-card .pc-acts { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px;
+                      border-top: 1px solid var(--border); }
+.pend-card.over .pc-acts { border-top-color: rgba(245,158,11,.34); }
+.pend-card .pc-status { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+                        font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.pend-card.over .pc-status { border-top-color: rgba(245,158,11,.34); }
+/* 44px matches the app-wide touch-target floor in assets/app.css — an approval
+   tap on a phone is the primary use case for this whole screen. */
+.pbtn { width: 100%; min-height: 44px; border-radius: 9px; border: 1px solid transparent;
+        font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.pbtn.p-ok { background: var(--primary); color: #fff; }
+.pbtn.p-ok:hover { background: var(--primary-dark); }
+.pbtn.p-no { background: transparent; color: var(--red-text); border-color: rgba(225,29,72,.34); }
+.pbtn.p-no:hover { background: var(--red-bg); }
+.pbtn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(63,122,99,.28); }
+.pend-more { display: block; width: 100%; padding: 10px; font: inherit; font-size: 12.5px;
+             font-weight: 600; color: var(--primary); background: var(--card, #fff);
+             border: 1px dashed var(--border-strong); border-radius: 10px; cursor: pointer; }
+.pend-more:hover { background: var(--primary-light); }
+
 /* Vehicle block on the posting form — sub-category segmented control, vehicle
    picker and meter reading. Shown only for needs_vehicle categories. */
 .sub-seg { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -768,6 +879,101 @@ $headExtra = <<<CSS
 .btn.ghost { background: none; color: var(--red-text, #b3261e); border: 1px solid rgba(225,29,72,.30); }
 input.bulk-pick, #bulkAll { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
 tr.row-sel td { background: rgba(26,127,126,.055); }
+
+/* ===========================================================================
+   MOBILE. Paired rules — a real breakpoint AND html[data-view="mobile"] — the
+   same pattern my_queue.php's .qrow uses, so the sidebar's Auto/Desktop/Mobile
+   toggle forces this layout on a big screen too.
+   =========================================================================== */
+@media (max-width: 900px) {
+    /* Accordion: collapse the post form behind a single tappable row. */
+    .post-card { padding: 0; }
+    .post-toggle { display: flex; align-items: center; gap: 10px; width: 100%;
+                   min-height: 52px; padding: 13px 14px; background: none; border: 0;
+                   font: inherit; text-align: left; cursor: pointer; color: var(--text); }
+    .post-toggle .pt-plus { width: 26px; height: 26px; border-radius: 50%; background: var(--primary);
+                            color: #fff; display: grid; place-items: center; font-size: 17px;
+                            line-height: 1; flex: none; }
+    .post-toggle .pt-lbl { font-weight: 600; flex: 1; font-size: 13.5px; }
+    .post-toggle .pt-chev { color: var(--text-muted); font-size: 15px; transition: transform .15s; }
+    .post-card.open .post-toggle .pt-chev { transform: rotate(90deg); }
+    .post-card.open .post-toggle { border-bottom: 1px solid var(--border); }
+    .post-card .post-body { display: none; padding: 14px; }
+    .post-card.open .post-body { display: block; }
+    /* The card's own heading is redundant once the toggle row names it. */
+    .post-card .post-body > .section-title { display: none; }
+
+    /* Listing table becomes cards. Same technique as .qrow: hide the head, turn
+       rows into blocks, and label each cell with its column via data-label. */
+    .exp-table thead { display: none; }
+    .exp-table, .exp-table tbody, .exp-table tr, .exp-table td { display: block; width: 100%; }
+    .exp-table tr { background: var(--card, #fff); border: 1px solid var(--border);
+                    border-radius: 12px; margin-bottom: 8px; padding: 10px 12px; }
+    .exp-table tr.row-voided { opacity: .55; }
+    .exp-table td { border: 0; padding: 2px 0; text-align: left !important; }
+    .exp-table td::before { content: attr(data-label) " "; font-size: 11px; font-weight: 700;
+                            color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    /* Amount and voucher lead the card, so they carry no label. */
+    .exp-table td.m-lead::before, .exp-table td.m-nolabel::before { content: none; }
+    .exp-table td.m-lead { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .exp-table td.m-hide { display: none; }
+    .exp-table tr td.m-act { display: flex; gap: 14px; padding-top: 8px; margin-top: 6px;
+                             border-top: 1px solid var(--border); }
+    .exp-table tr.veh-costrow { padding: 0; border: 0; background: none; }
+    .bulk-bar { position: static; }
+    .bulk-bar .bulk-actions { margin-left: 0; width: 100%; }
+    .bulk-bar .bulk-actions .btn { flex: 1; min-height: 44px; }
+    .filters .f-group { flex: 1 1 44%; }
+    .filters .f-group input, .filters .f-group select { width: 100%; }
+}
+
+html[data-view="mobile"] .post-card { padding: 0; }
+html[data-view="mobile"] .post-toggle { display: flex; align-items: center; gap: 10px; width: 100%;
+    min-height: 52px; padding: 13px 14px; background: none; border: 0; font: inherit;
+    text-align: left; cursor: pointer; color: var(--text); }
+html[data-view="mobile"] .post-toggle .pt-plus { width: 26px; height: 26px; border-radius: 50%;
+    background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 17px;
+    line-height: 1; flex: none; }
+html[data-view="mobile"] .post-toggle .pt-lbl { font-weight: 600; flex: 1; font-size: 13.5px; }
+html[data-view="mobile"] .post-toggle .pt-chev { color: var(--text-muted); font-size: 15px; }
+html[data-view="mobile"] .post-card.open .post-toggle .pt-chev { transform: rotate(90deg); }
+html[data-view="mobile"] .post-card.open .post-toggle { border-bottom: 1px solid var(--border); }
+html[data-view="mobile"] .post-card .post-body { display: none; padding: 14px; }
+html[data-view="mobile"] .post-card.open .post-body { display: block; }
+html[data-view="mobile"] .post-card .post-body > .section-title { display: none; }
+html[data-view="mobile"] .exp-table thead { display: none; }
+html[data-view="mobile"] .exp-table,
+html[data-view="mobile"] .exp-table tbody,
+html[data-view="mobile"] .exp-table tr,
+html[data-view="mobile"] .exp-table td { display: block; width: 100%; }
+html[data-view="mobile"] .exp-table tr { background: var(--card, #fff); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 8px; padding: 10px 12px; }
+html[data-view="mobile"] .exp-table td { border: 0; padding: 2px 0; text-align: left !important; }
+html[data-view="mobile"] .exp-table td::before { content: attr(data-label) " "; font-size: 11px;
+    font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+html[data-view="mobile"] .exp-table td.m-lead::before,
+html[data-view="mobile"] .exp-table td.m-nolabel::before { content: none; }
+html[data-view="mobile"] .exp-table td.m-lead { font-size: 15px; font-weight: 700;
+    font-variant-numeric: tabular-nums; }
+html[data-view="mobile"] .exp-table td.m-hide { display: none; }
+html[data-view="mobile"] .exp-table tr td.m-act { display: flex; gap: 14px; padding-top: 8px;
+    margin-top: 6px; border-top: 1px solid var(--border); }
+html[data-view="mobile"] .exp-table tr.veh-costrow { padding: 0; border: 0; background: none; }
+html[data-view="mobile"] .bulk-bar { position: static; }
+
+/* Forced-DESKTOP must UNDO the breakpoint rules, or a narrow window stays in
+   card mode after the user explicitly asked for desktop. !important is required:
+   the media query above has equal specificity and would otherwise win on order. */
+html[data-view="desktop"] .post-toggle { display: none !important; }
+html[data-view="desktop"] .post-card .post-body { display: block !important; }
+html[data-view="desktop"] .exp-table { display: table !important; }
+html[data-view="desktop"] .exp-table thead { display: table-header-group !important; }
+html[data-view="desktop"] .exp-table tbody { display: table-row-group !important; }
+html[data-view="desktop"] .exp-table tr { display: table-row !important; border: 0 !important;
+    padding: 0 !important; margin: 0 !important; background: none !important; }
+html[data-view="desktop"] .exp-table td { display: table-cell !important; }
+html[data-view="desktop"] .exp-table td::before { content: none !important; }
+html[data-view="desktop"] .exp-table td.m-hide { display: table-cell !important; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -793,9 +999,95 @@ require __DIR__ . '/partials/sidebar.php';
             <?php if ($error): ?><div class="alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
             <?php if ($success): ?><div class="alert success"><?= $success ?></div><?php endif; ?>
 
+            <!-- PENDING APPROVALS — promoted above everything so a phone user
+                 lands on the queue, not on a form. Hidden entirely at zero (no
+                 empty-state card). Not date-filtered: a three-day-old pending
+                 item must not vanish because the filter defaults to today. -->
+            <?php if ($pendingRows): ?>
+            <div class="pending-wrap">
+                <div class="pending-head">
+                    <span class="ph-t">Pending approval</span>
+                    <span class="ph-badge"><?= count($pendingRows) ?></span>
+                    <?php if (!$canApprove): ?>
+                    <span class="ph-note">Read-only — an admin or manager signs these off</span>
+                    <?php endif; ?>
+                </div>
+
+                <?php foreach ($pendingRows as $i => $pr): ?>
+                <?php
+                    $over    = !empty($pr['over_limit']);
+                    $mine    = (int) $pr['posted_by_id'] === $userId;
+                    $canRow  = $canDecideRow($pr);
+                    $hideCls = $i >= $pendingVisible ? ' pend-extra' : '';
+                ?>
+                <div class="pend-card<?= $over ? ' over' : '' ?><?= $hideCls ?>">
+                    <div class="pc-top">
+                        <span class="pc-amt">Rs <?= number_format((float) $pr['amount'], 0) ?></span>
+                        <span class="pc-cat"><?= htmlspecialchars($pr['category_name']) ?></span>
+                    </div>
+                    <div class="pc-desc"><?= htmlspecialchars($pr['description']) ?></div>
+                    <div class="pc-meta">
+                        <?= htmlspecialchars($pr['expense_number']) ?> ·
+                        <?= htmlspecialchars($pr['posted_by_name']) ?> ·
+                        <?= htmlspecialchars(date('d/m h:i A', strtotime($pr['created_at'] ?? $pr['expense_date']))) ?>
+                    </div>
+                    <?php if ($over): ?>
+                    <div class="pc-flags">
+                        <span class="st-chip st-over" title="<?= htmlspecialchars($pr['limit_note'] ?? '') ?>">Over limit</span>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if ($canRow): ?>
+                    <div class="pc-acts">
+                        <form method="POST" action="expenses.php" style="flex:1;margin:0;">
+                            <input type="hidden" name="action" value="approve_expense">
+                            <input type="hidden" name="expense_id" value="<?= (int) $pr['id'] ?>">
+                            <?= $filterFields ?>
+                            <button type="submit" class="pbtn p-ok">Approve</button>
+                        </form>
+                        <form method="POST" action="expenses.php" style="flex:1;margin:0;"
+                              onsubmit="var r=prompt('Reason for declining <?= htmlspecialchars($pr['expense_number']) ?> (the cash should be returned):');if(!r){return false;}this.reject_reason.value=r;return true;">
+                            <input type="hidden" name="action" value="reject_expense">
+                            <input type="hidden" name="expense_id" value="<?= (int) $pr['id'] ?>">
+                            <input type="hidden" name="reject_reason" value="">
+                            <?= $filterFields ?>
+                            <button type="submit" class="pbtn p-no">Decline</button>
+                        </form>
+                    </div>
+                    <?php else: ?>
+                    <div class="pc-status">
+                        <?php if ($mine && $canApprove): ?>
+                            ◷ You posted this — another approver must sign it off
+                        <?php elseif ($mine): ?>
+                            ◷ Awaiting admin approval
+                        <?php else: ?>
+                            ◷ Awaiting admin approval
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+
+                <?php if (count($pendingRows) > $pendingVisible): ?>
+                <button type="button" class="pend-more" id="pendMore">
+                    View <?= count($pendingRows) - $pendingVisible ?> more
+                </button>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
             <div class="exp-grid">
-                <!-- Post an expense -->
-                <div class="card">
+                <!-- Post an expense. Collapsed to a single row on mobile (and in
+                     forced-mobile view); always open on desktop, where the left
+                     column exists precisely to hold it. -->
+                <div class="card post-card" id="postCard">
+                    <button type="button" class="post-toggle" id="postToggle"
+                            aria-expanded="false" aria-controls="postBody">
+                        <span class="pt-plus" aria-hidden="true">+</span>
+                        <span class="pt-lbl">Post a new expense</span>
+                        <span class="pt-chev" aria-hidden="true">›</span>
+                    </button>
+                    <div class="post-body" id="postBody">
                     <div class="section-title">Post an Expense</div>
                     <div class="section-sub">Cash leaves the counter drawer against this voucher.</div>
 
@@ -958,6 +1250,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <button type="submit" class="btn" style="width:100%;">Post Expense</button>
                         <div class="muted-note">Keep the receipt with the counter cash for the shift tally.</div>
                     </form>
+                    </div><!-- /.post-body -->
                 </div>
 
                 <!-- Listing -->
@@ -1024,7 +1317,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <?php endif; ?>
 
                     <div style="overflow-x:auto;">
-                    <table>
+                    <table class="exp-table">
                         <thead>
                             <tr>
                                 <?php if ($canApprove && $pendingIds): ?><th style="width:34px;"></th><?php endif; ?>
@@ -1052,25 +1345,28 @@ require __DIR__ . '/partials/sidebar.php';
                             ?>
                             <tr class="<?= $voided ? 'row-voided' : '' ?>">
                                 <?php if ($canApprove && $pendingIds): ?>
-                                <td>
-                                    <?php if ($rowPending): ?>
+                                <td class="m-hide">
+                                    <?php /* Not offered for the approver's OWN posting — decide_expense()
+                                             refuses those, so a tick-box here would promise an action that
+                                             is guaranteed to fail and report as "skipped". */ ?>
+                                    <?php if ($rowPending && (int) $r['posted_by_id'] !== $userId): ?>
                                     <input type="checkbox" class="bulk-pick" form="bulkForm"
                                            name="expense_ids[]" value="<?= (int) $r['id'] ?>"
                                            aria-label="Select <?= htmlspecialchars($r['expense_number']) ?>">
                                     <?php endif; ?>
                                 </td>
                                 <?php endif; ?>
-                                <td>
+                                <td class="m-nolabel">
                                     <span class="exp-no"><?= htmlspecialchars($r['expense_number']) ?></span>
                                     <?php if ($voided): ?><br><span class="void-chip" title="<?= htmlspecialchars('By ' . ($r['voided_by_name'] ?? '') . ': ' . ($r['void_reason'] ?? '')) ?>">VOID</span><?php endif; ?>
                                 </td>
-                                <?php if ($isAdmin): ?><td style="white-space:nowrap;"><?= htmlspecialchars(date('d/m/Y', strtotime($r['expense_date']))) ?></td><?php endif; ?>
-                                <td><?= htmlspecialchars($r['category_name']) ?></td>
-                                <td><?= htmlspecialchars($r['description']) ?></td>
-                                <td><?= htmlspecialchars($r['paid_to'] ?? '—') ?></td>
-                                <td><?= htmlspecialchars($r['posted_by_name']) ?></td>
-                                <td style="text-align:right;"><span class="exp-amt">Rs <?= number_format((float) $r['amount'], 2) ?></span></td>
-                                <td>
+                                <?php if ($isAdmin): ?><td style="white-space:nowrap;" data-label="Date"><?= htmlspecialchars(date('d/m/Y', strtotime($r['expense_date']))) ?></td><?php endif; ?>
+                                <td data-label="Category"><?= htmlspecialchars($r['category_name']) ?></td>
+                                <td class="m-nolabel" style="font-weight:600;"><?= htmlspecialchars($r['description']) ?></td>
+                                <td data-label="Paid to" class="<?= ($r['paid_to'] ?? '') === '' ? 'm-hide' : '' ?>"><?= htmlspecialchars($r['paid_to'] ?? '—') ?></td>
+                                <td data-label="By"><?= htmlspecialchars($r['posted_by_name']) ?></td>
+                                <td style="text-align:right;" class="m-lead"><span class="exp-amt">Rs <?= number_format((float) $r['amount'], 2) ?></span></td>
+                                <td class="m-nolabel">
                                     <?php
                                         $st = $r['approval_status'] ?? 'PENDING';
                                         if ($st === 'APPROVED') {
@@ -1088,7 +1384,7 @@ require __DIR__ . '/partials/sidebar.php';
                                     ?>
                                 </td>
                                 <?php if ($isAdmin || $canApprove): ?>
-                                <td style="white-space:nowrap;">
+                                <td style="white-space:nowrap;" class="m-act m-nolabel">
                                     <?php if (!$voided && $canApprove && $st === 'PENDING'): ?>
                                     <form method="POST" action="expenses.php" style="margin:0 0 4px;">
                                         <input type="hidden" name="action" value="approve_expense">
@@ -1143,6 +1439,47 @@ require __DIR__ . '/partials/sidebar.php';
     </div>
 </div>
 <script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
+<script>
+// Post-expense accordion + "View N more" on the pending queue.
+// The accordion row only exists at mobile widths (CSS decides), so this just
+// toggles a class — no width sniffing in JS, which would disagree with the
+// media query at the boundary and after a view-toggle change.
+(function () {
+    var card = document.getElementById('postCard');
+    var tog  = document.getElementById('postToggle');
+    if (card && tog) {
+        tog.addEventListener('click', function () {
+            var open = card.classList.toggle('open');
+            tog.setAttribute('aria-expanded', open ? 'true' : 'false');
+            tog.querySelector('.pt-plus').textContent = open ? '×' : '+';
+            // Bring the first field into view when opening on a phone.
+            if (open) {
+                var first = card.querySelector('#expCategory');
+                if (first && window.matchMedia('(max-width: 900px)').matches) {
+                    setTimeout(function () { first.focus({ preventScroll: false }); }, 60);
+                }
+            }
+        });
+        // A validation error means the user was mid-post: open it so they can
+        // see what went wrong instead of a collapsed row hiding the form.
+        if (document.querySelector('.alert.error')) {
+            card.classList.add('open');
+            tog.setAttribute('aria-expanded', 'true');
+            tog.querySelector('.pt-plus').textContent = '×';
+        }
+    }
+
+    var more = document.getElementById('pendMore');
+    if (more) {
+        more.addEventListener('click', function () {
+            document.querySelectorAll('.pend-card.pend-extra').forEach(function (c) {
+                c.classList.add('show');
+            });
+            more.remove();
+        });
+    }
+})();
+</script>
 <?php if ($canApprove && $pendingIds): ?>
 <script>
 // Bulk approve/reject. The tick-boxes and the bar's buttons all belong to

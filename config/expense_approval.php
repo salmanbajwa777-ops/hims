@@ -24,7 +24,8 @@ function decide_expense(PDO $pdo, int $expenseId, bool $approve, ?int $deciderId
     try {
         $pdo->beginTransaction();
 
-        $stmt = $pdo->prepare('SELECT id, expense_number, approval_status, voided_at FROM expenses WHERE id = ? FOR UPDATE');
+        $stmt = $pdo->prepare('SELECT id, expense_number, approval_status, voided_at, posted_by_id
+                                 FROM expenses WHERE id = ? FOR UPDATE');
         $stmt->execute([$expenseId]);
         $e = $stmt->fetch();
 
@@ -35,6 +36,26 @@ function decide_expense(PDO $pdo, int $expenseId, bool $approve, ?int $deciderId
         if ($e['voided_at'] !== null) {
             $pdo->rollBack();
             return ['ok' => false, 'status' => 'ALREADY', 'message' => 'That expense has been voided and can no longer be approved.'];
+        }
+        // NO SELF-APPROVAL. An approver may not decide their own posting — the
+        // whole point of the step is a second pair of eyes on cash leaving the
+        // drawer. This never arises for an ADMIN (their postings auto-approve at
+        // post time) but a MANAGER holds FINANCIAL_APPROVE_EXPENSES while their
+        // own postings still go PENDING, so without this they could clear their
+        // own spend in one tap.
+        //
+        // Enforced HERE rather than in the page, so it covers every caller: the
+        // in-app buttons, the bulk bar, and the emailed magic link — a manager
+        // forwarding their own approval email must not be a way around it.
+        // $deciderId is NULL for a magic-link decision; that path is anonymous
+        // and cannot be attributed to the poster, so it is left alone.
+        if ($deciderId !== null && (int) $e['posted_by_id'] === $deciderId) {
+            $pdo->rollBack();
+            return [
+                'ok' => false, 'status' => 'SELF',
+                'message' => 'Expense ' . $e['expense_number'] . ' was posted by you — '
+                           . 'someone else must approve it.',
+            ];
         }
         if ($e['approval_status'] !== 'PENDING') {
             $pdo->rollBack();
