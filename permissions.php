@@ -3,9 +3,37 @@ require_once __DIR__ . '/config/guard_admin.php';
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 
-// Three base roles now: ADMIN (holds everything), DOCTOR (clinical), STAFF
-// (every desk/bedside worker — capabilities come entirely from permissions).
-$roles = ['ADMIN', 'DOCTOR', 'STAFF'];
+// Base roles: ADMIN (holds everything), DOCTOR (clinical), MANAGER (a
+// STAFF-shaped account pre-loaded with the oversight bundle — see
+// sql/add_manager_role.sql), STAFF (every desk/bedside worker — capabilities
+// come entirely from permissions).
+//
+// READ FROM THE COLUMN, NOT HARDCODED — same hazard staff.php guards against:
+// role_permissions.base_role is an ENUM widened by add_manager_role.sql, and
+// this screen WRITES to it (save_role_permissions below). Offering a MANAGER
+// tab before that migration has run would let a save attempt an INSERT the
+// column rejects. Mirrors staff.php's probe exactly so the two screens can
+// never disagree about which roles exist.
+$roles = (function (PDO $pdo): array {
+    $fallback = ['ADMIN', 'DOCTOR', 'STAFF'];
+    try {
+        $type = $pdo->query("
+            SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'role_permissions' AND COLUMN_NAME = 'base_role'
+             LIMIT 1
+        ")->fetchColumn();
+        if (!$type || !preg_match_all("/'([^']+)'/", (string) $type, $m)) {
+            return $fallback;
+        }
+        $preferred = ['ADMIN', 'DOCTOR', 'MANAGER', 'STAFF'];
+        $live = $m[1];
+        $ordered = array_values(array_intersect($preferred, $live));
+        return array_values(array_unique(array_merge($ordered, array_diff($live, $preferred))));
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+})($pdo);
 // Category order + labels drive the grouped layout on this screen. Keys are
 // re-categorized by sql/rbac_overhaul_3_categories.sql into these five buckets.
 $categoryLabels = [

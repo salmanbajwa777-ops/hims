@@ -161,6 +161,21 @@ $sbGroups = [
              'perm' => 'FINANCIAL_POST_EXPENSES', 'notAdmin' => true],
             ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',    'href' => 'shift_closing.php',
              'perm' => 'RECEPTION_CLOSE_DAY', 'notAdmin' => true],
+            // Same admin_handovers.php as the Finances copy below — the page
+            // itself renders read-only for a holder of ADMIN_AUDIT_HANDOVER
+            // alone and adds the receive/close-on-behalf actions for whoever
+            // also holds ADMIN_RECEIVE_HANDOVER. 'slug' => 'handovers' on both
+            // (matching the Expenses/Day Closing dupes above) so whichever row
+            // renders still highlights when admin_handovers.php sets
+            // $navActive = 'handovers'. The receive row is checked FIRST and
+            // 'hideIfPerm' skips the audit row when the viewer already holds
+            // the stronger permission, so someone granted both never sees the
+            // link twice.
+            ['slug' => 'handovers', 'label' => 'Cash Handovers', 'icon' => 'wallet',
+             'href' => 'admin_handovers.php', 'perm' => 'ADMIN_RECEIVE_HANDOVER', 'notAdmin' => true],
+            ['slug' => 'handovers', 'label' => 'Cash Handovers (Audit)', 'icon' => 'wallet',
+             'href' => 'admin_handovers.php', 'perm' => 'ADMIN_AUDIT_HANDOVER', 'notAdmin' => true,
+             'hideIfPerm' => 'ADMIN_RECEIVE_HANDOVER'],
             // Doctors answer procedure discounts here. Permission-gated, so it
             // is invisible to reception — and it must stay in Workspace rather
             // than Finances: a doctor never sees the Finances group, and they
@@ -216,6 +231,11 @@ $sbGroups = [
         'admin' => true,
         'items' => [
             ['slug' => 'sheet_log',   'label' => 'Google Sheet Sync','icon' => 'receipt', 'href' => 'sheet_log.php'],
+            // Carries its own 'perm' (like Drug Formulary above) so a MANAGER
+            // holding MANAGERIAL_POST_FINE — but not ADMIN — actually sees the
+            // link, not just an unreachable URL.
+            ['slug' => 'staff_fines', 'label' => 'Staff Fines', 'icon' => 'wallet', 'href' => 'staff_fines.php',
+             'perm' => 'MANAGERIAL_POST_FINE'],
             // These eight configuration screens used to sit flat in this group,
             // which made Management a wall of ten links where only two were
             // day-to-day work. They are now ONE collapsible parent: the setup
@@ -281,6 +301,11 @@ $sbItemVisible = function (array $it) use ($sbBaseRole, $sbIsAdmin) {
     if (!empty($it['notAdmin']) && $sbIsAdmin) { return false; }
     if (!empty($it['roles']) && !in_array($sbBaseRole, $it['roles'], true)) { return false; }
     if (!empty($it['perm']) && !has_permission($it['perm'])) { return false; }
+    // 'hideIfPerm': suppress this row when the viewer already holds a STRONGER
+    // permission covered by a sibling row (e.g. the audit-only Cash Handovers
+    // link hides itself for anyone who also holds the full receive
+    // permission), so holding both never shows the same href twice.
+    if (!empty($it['hideIfPerm']) && has_permission($it['hideIfPerm'])) { return false; }
     return true;
 };
 

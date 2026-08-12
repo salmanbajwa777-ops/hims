@@ -6,17 +6,34 @@
 // differs (the difference logs as a HANDOVER DISCREPANCY, separate from the
 // drawer variance), and marks received — which stamps who/when on the closing
 // and completes the day's audit trail.
+//
+// AUDIT vs RECEIVE (2026-08-12): a MANAGER holding only ADMIN_AUDIT_HANDOVER
+// sees this same page — pending list, received history, transaction
+// drill-down — but the mark-received and close-on-behalf actions stay locked
+// to ADMIN_RECEIVE_HANDOVER, so an auditor can monitor without being able to
+// touch the money. Not gated via guard_admin.php any more: this page is
+// permission-driven like the rest of the app, not ADMIN-only.
 
-require_once __DIR__ . '/config/guard_admin.php';
+require_once __DIR__ . '/config/auth.php';
+require_login();
+require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/permissions.php';
+refresh_session_permissions($pdo);
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/payment_methods.php';
-require_permission('ADMIN_RECEIVE_HANDOVER');
+
+// Either permission opens the page; the POST actions below re-check the
+// stricter one so a URL-crafted POST from an audit-only session still 403s.
+if (!has_permission('ADMIN_RECEIVE_HANDOVER') && !has_permission('ADMIN_AUDIT_HANDOVER')) {
+    require_permission('ADMIN_RECEIVE_HANDOVER'); // renders the standard 403
+}
+$canReceive = has_permission('ADMIN_RECEIVE_HANDOVER');
 
 $error = '';
 $success = '';
 
 // ---------------- Mark received ----------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_received') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_received' && $canReceive) {
     $closingId = (int) ($_POST['closing_id'] ?? 0);
     $received = round((float) str_replace(',', '', $_POST['handover_received'] ?? '0'), 2);
     $cashOk = !empty($_POST['cash_ok']);
@@ -85,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
 // receptionist's own system tally; the closing row still belongs to them
 // (cashier_id) so attribution is unchanged, but closed_by_admin_id records who
 // actually did it. Admin is both the closer and the handover recipient.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin_close_behalf') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin_close_behalf' && $canReceive) {
     $cashierId = (int) ($_POST['cashier_id'] ?? 0);
     $closeDate = $_POST['close_date'] ?? '';
     $counted = round(max(0.0, (float) str_replace(',', '', $_POST['counted_cash'] ?? '0')), 2);
@@ -173,9 +190,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin
 
 // Stranded shifts: any drawer receptionist's unclosed business days OLDER than the
 // self-close window (age > 5), with money movement, going back a reasonable span.
+// Receive-only — an audit-only viewer can't act on these, so skip computing
+// the list rather than show a "close on behalf" card with no working button.
 $strandedShifts = [];
 try {
-    foreach (receptionists_with_drawer($pdo) as $recp) {
+    foreach ($canReceive ? receptionists_with_drawer($pdo) : [] as $recp) {
         $days = unclosed_business_days($pdo, (int) $recp['id'], 30, true);
         foreach ($days as $d) {
             if ($d['age_days'] > 5) {
@@ -696,7 +715,11 @@ require __DIR__ . '/partials/sidebar.php';
 <?php else: ?>
     <div class="page-head">
         <h1>Cash Handovers</h1>
+        <?php if ($canReceive): ?>
         <p>Each receptionist's shift closing lands here separately. Recount their cash, review any highlighted post-close edits, confirm the signed slip is filed, then mark received — that locks the shift for good.</p>
+        <?php else: ?>
+        <p>Read-only audit view of every receptionist's shift closing — pending and received. Cross-check transactions with "View transactions"; receiving a handover requires the Receive Cash Handovers permission.</p>
+        <?php endif; ?>
     </div>
 
     <?php if ($error): ?><div class="alert-error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
@@ -709,16 +732,24 @@ require __DIR__ . '/partials/sidebar.php';
                 <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Pending handover<?= count($pending) === 1 ? '' : 's' ?>
                     <?php if ($pending): ?><span class="ho-pill amber" style="margin-left:8px;"><?= count($pending) ?> pending</span><?php endif; ?>
                 </h2>
-                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">Both confirmations are required — this is the audit gate.</p>
+                <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;"><?= $canReceive ? 'Both confirmations are required — this is the audit gate.' : 'Awaiting receipt by whoever holds the Receive Cash Handovers permission.' ?></p>
 
                 <?php if (!$pending): ?>
                     <div class="empty">No handovers awaiting receipt. Reception hasn't closed a day yet, or everything is already received.</div>
                 <?php endif; ?>
 
                 <?php foreach ($pending as $p): ?>
-                <form method="POST" action="admin_handovers.php" style="<?= $p !== $pending[0] ? 'margin-top:22px;padding-top:22px;border-top:1px solid var(--border);' : '' ?>">
+                <?php // Audit-only viewers get a read-only <div> here (nothing to
+                      // submit); a receiver gets the real <form>. Same inner markup
+                      // either way, so the two roles see an identical layout. ?>
+                <?php $pStyle = $p !== $pending[0] ? 'margin-top:22px;padding-top:22px;border-top:1px solid var(--border);' : ''; ?>
+                <?php if ($canReceive): ?>
+                <form method="POST" action="admin_handovers.php" style="<?= $pStyle ?>">
                     <input type="hidden" name="action" value="mark_received">
                     <input type="hidden" name="closing_id" value="<?= (int) $p['id'] ?>">
+                <?php else: ?>
+                <div style="<?= $pStyle ?>">
+                <?php endif; ?>
 
                     <?php $pEdited = $p['status'] === 'EDITED'; ?>
                     <div class="pend"<?= $pEdited ? ' style="border-color:var(--amber);background:var(--amber-bg);"' : '' ?>>
@@ -764,6 +795,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <p style="font-size:12.5px;color:var(--text-secondary);margin-top:10px;"><b>Variance note:</b> <?= htmlspecialchars($p['variance_note']) ?></p>
                     <?php endif; ?>
 
+                    <?php if ($canReceive): ?>
                     <div style="margin-top:12px;">
                         <div class="check-line">
                             <input type="checkbox" id="cash_ok_<?= (int) $p['id'] ?>" name="cash_ok" value="1" required>
@@ -790,11 +822,18 @@ require __DIR__ . '/partials/sidebar.php';
                         <?= $pEdited ? 'Approve changes &amp; mark received' : 'Mark received' ?>
                     </button>
                     <p class="hint-note">Stamps your name + time on <?= htmlspecialchars($p['closing_number']) ?><?= $pEdited ? ', approves the highlighted changes,' : '' ?> and locks the shift's audit trail.</p>
+                    <?php else: ?>
+                    <p class="hint-note">Audit view — receiving this handover requires the Receive Cash Handovers permission.</p>
+                    <?php endif; ?>
+                <?php if ($canReceive): ?>
                 </form>
+                <?php else: ?>
+                </div>
+                <?php endif; ?>
                 <?php endforeach; ?>
             </div>
 
-            <?php if ($strandedShifts): ?>
+            <?php if ($canReceive && $strandedShifts): ?>
             <div class="card">
                 <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Stranded shifts — close on behalf
                     <span class="ho-pill red" style="margin-left:8px;"><?= count($strandedShifts) ?></span>
