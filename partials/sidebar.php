@@ -49,7 +49,7 @@ if ($sbBaseRole === 'DOCTOR') {
     // unmapped pages simply highlight nothing.
     $dsActive = ['patients' => 'patients', 'profile' => 'profile', 'ipd' => 'ipd',
                  'dental_treatment' => 'dental_treatment', 'dental_accounts' => 'dental_accounts',
-                 'dental_lab' => 'dental_lab'][$navActive] ?? '';
+                 'dental_lab' => 'dental_lab', 'schedule' => 'schedule'][$navActive] ?? '';
     if (!isset($dsUserName)) {
         // specialty comes along so the doctor nav can hide the dental section
         // from non-dentists: the DENTAL_* keys are DOCTOR-role defaults, so a
@@ -138,6 +138,12 @@ $sbGroups = [
             ['slug' => 'patients',    'label' => 'Patients',        'icon' => 'users',    'href' => 'patients.php',
              'perm' => 'RECEPTION_REGISTER_PATIENTS'],
             ['slug' => 'doctor_timings', 'label' => 'Doctor Timings', 'icon' => 'clock',  'href' => 'doctor_timings.php',
+             'perm' => 'RECEPTION_EDIT_DOCTOR_TIMINGS'],
+            // Standing weekly hours (my_schedule.php) — same permission as the
+            // day sheet above, since one grant covers both surfaces. Doctors
+            // never see this copy: they reach the same page from their own
+            // sidebar's "My Schedule" link instead.
+            ['slug' => 'schedule',    'label' => 'Doctor Schedules', 'icon' => 'calendar', 'href' => 'my_schedule.php',
              'perm' => 'RECEPTION_EDIT_DOCTOR_TIMINGS'],
             ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php',
              'perm' => 'RECEPTION_GENERATE_INVOICES'],

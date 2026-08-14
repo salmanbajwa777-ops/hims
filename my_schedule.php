@@ -25,23 +25,37 @@ if (!$user) {
     exit;
 }
 
-// Doctors edit their own schedule; admins may open it for support and edit too
-// (viewing/fixing a doctor's template via ?doctor_id=).
+// Doctors edit their own schedule; admins and managers may open it for
+// support and edit too (viewing/fixing a doctor's template via ?doctor_id=),
+// gated on the same permission as reception's day sheet — see
+// sql/grant_manager_doctor_timings.sql.
 $baseRole = $_SESSION['base_role'] ?? '';
-if ($baseRole !== 'DOCTOR' && $baseRole !== 'ADMIN') {
+$canActOnOthers = has_permission('RECEPTION_EDIT_DOCTOR_TIMINGS') && $baseRole !== 'DOCTOR';
+if ($baseRole !== 'DOCTOR' && !$canActOnOthers) {
     http_response_code(403);
     exit('Forbidden — doctor console only.');
 }
 $doctorId = (int) $user['id'];
 $targetDoctorName = $user['name'];
-if ($baseRole === 'ADMIN' && (int) ($_GET['doctor_id'] ?? 0) > 0) {
-    $doctorId = (int) $_GET['doctor_id'];
-    $tgtStmt = $pdo->prepare('SELECT name FROM users WHERE id = ? AND base_role = "DOCTOR"');
-    $tgtStmt->execute([$doctorId]);
-    $targetDoctorName = $tgtStmt->fetchColumn();
-    if ($targetDoctorName === false) {
-        http_response_code(404);
-        exit('Doctor not found.');
+$doctorPickerList = null; // populated below only when a picker must render
+if ($canActOnOthers) {
+    // Admin/manager have no schedule of their own — a doctor to act on behalf
+    // of is required, never silently falls back to editing their own account.
+    // With no ?doctor_id= yet, show a picker instead of erroring (this page
+    // is reached directly from the sidebar now, not only from Staff & Doctors).
+    $doctorId = (int) ($_GET['doctor_id'] ?? 0);
+    if ($doctorId <= 0) {
+        $doctorPickerList = $pdo->query(
+            "SELECT id, name, specialty FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name"
+        )->fetchAll();
+    } else {
+        $tgtStmt = $pdo->prepare('SELECT name FROM users WHERE id = ? AND base_role = "DOCTOR"');
+        $tgtStmt->execute([$doctorId]);
+        $targetDoctorName = $tgtStmt->fetchColumn();
+        if ($targetDoctorName === false) {
+            http_response_code(404);
+            exit('Doctor not found.');
+        }
     }
 }
 
@@ -52,7 +66,7 @@ $weekdays = [1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5
 // days are off, and the server stamps the same window onto every working day.
 $saved = false;
 $saveError = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_schedule') {
+if ($doctorId > 0 && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_schedule') {
     // <input type=time> gives HH:MM; anything else (or empty) becomes NULL.
     $tParse = static fn ($v) => preg_match('/^\d{2}:\d{2}$/', trim($v ?? '')) ? trim($v) . ':00' : null;
 
@@ -109,14 +123,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
 // Friendly guard: if the migration (sql/add_doctor_weekly_schedule.sql) hasn't
 // been run yet, say so instead of 500ing — deploys land before phpMyAdmin runs.
 $week = [];
-try {
-    $q = $pdo->prepare('SELECT * FROM doctor_weekly_schedule WHERE doctor_id = ?');
-    $q->execute([$doctorId]);
-    foreach ($q->fetchAll() as $r) {
-        $week[(int) $r['weekday']] = $r;
+if ($doctorId > 0) {
+    try {
+        $q = $pdo->prepare('SELECT * FROM doctor_weekly_schedule WHERE doctor_id = ?');
+        $q->execute([$doctorId]);
+        foreach ($q->fetchAll() as $r) {
+            $week[(int) $r['weekday']] = $r;
+        }
+    } catch (Throwable $e) {
+        exit('My Schedule is not set up yet — run sql/add_doctor_weekly_schedule.sql in phpMyAdmin first.');
     }
-} catch (Throwable $e) {
-    exit('My Schedule is not set up yet — run sql/add_doctor_weekly_schedule.sql in phpMyAdmin first.');
 }
 
 // Waiting count for the sidebar badge (same query shape doctor.php uses).
@@ -186,32 +202,58 @@ $headExtra = <<<CSS
 
 .sheet-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
 .sheet-foot .hint { font-size: 12px; color: var(--text-muted); max-width: 42ch; }
+
+.back-link { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 600; color: var(--primary); text-decoration: none; }
+.back-link:hover { text-decoration: underline; }
+
+/* Doctor picker (admin/manager landing on this page with no doctor chosen) */
+.picker-list { display: flex; flex-direction: column; }
+.picker-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 4px; border-top: 1px solid var(--border); text-decoration: none; color: inherit; }
+.picker-row:first-child { border-top: none; }
+.picker-row:hover { background: var(--bg); }
+.picker-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.picker-specialty { font-size: 12px; color: var(--text-muted); }
+.empty-state { padding: 24px 4px; text-align: center; color: var(--text-muted); font-size: 13px; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
+$navActive = 'schedule';
+// sidebar.php self-delegates to doctor_sidebar.php for the DOCTOR role (with
+// the Dental group specialty-gated via $dsSpecialty), so admin/manager acting
+// on a doctor's behalf still get the normal reception/admin nav instead.
+$dsSpecialty = $user['specialty'] ?? '';
+require __DIR__ . '/partials/sidebar.php';
 ?>
-<div class="app">
-
-    <?php
-    $dsActive = 'schedule';
-    $dsUserName = $user['name'];
-    // The sidebar's Dental group is specialty-gated; without this a dentist
-    // lost the group here that they see on every other page.
-    $dsSpecialty = $user['specialty'] ?? '';
-    require __DIR__ . '/partials/doctor_sidebar.php';
-    ?>
-
-    <div class="main">
-        <?php /* This page had no top bar at all — a doctor opening their
-                 schedule lost search, alerts and logout entirely. */ ?>
-        <?php require __DIR__ . '/partials/quick_header.php'; ?>
 
         <div class="content">
 
             <?php if ($saved): ?><div class="alert success">Weekly schedule saved.</div><?php endif; ?>
             <?php if ($saveError): ?><div class="alert error"><?= htmlspecialchars($saveError) ?></div><?php endif; ?>
 
-            <?php $editingOther = $baseRole === 'ADMIN' && $doctorId !== (int) $user['id']; ?>
+            <?php if ($doctorPickerList !== null): ?>
+
+            <div class="page-head">
+                <h1>Doctor Schedules</h1>
+                <div class="sub">Pick a doctor to view or set their standing weekly hours.</div>
+            </div>
+            <div class="card">
+                <?php if (empty($doctorPickerList)): ?>
+                <div class="empty-state">No doctors in the system yet.</div>
+                <?php else: ?>
+                <div class="picker-list">
+                    <?php foreach ($doctorPickerList as $doc): ?>
+                    <a class="picker-row" href="my_schedule.php?doctor_id=<?= (int) $doc['id'] ?>">
+                        <span class="picker-name"><?= htmlspecialchars($doc['name']) ?></span>
+                        <?php if ($doc['specialty']): ?><span class="picker-specialty"><?= htmlspecialchars($doc['specialty']) ?></span><?php endif; ?>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php else: ?>
+
+            <?php $editingOther = $canActOnOthers; ?>
             <div class="page-head">
                 <h1><?= $editingOther ? htmlspecialchars($targetDoctorName) . "'s Schedule" : 'My Schedule' ?></h1>
                 <div class="sub">
@@ -221,9 +263,10 @@ require __DIR__ . '/partials/head.php';
                         One-time setup — enter your daily hours once, tick your off days, and it applies to the whole week, all year.
                     <?php endif; ?>
                 </div>
+                <?php if ($editingOther): ?><a href="my_schedule.php" class="back-link">&larr; All doctors</a><?php endif; ?>
             </div>
 
-            <form method="POST" action="my_schedule.php<?= $baseRole === 'ADMIN' && $doctorId !== (int) $user['id'] ? '?doctor_id=' . $doctorId : '' ?>">
+            <form method="POST" action="my_schedule.php<?= $canActOnOthers ? '?doctor_id=' . $doctorId : '' ?>">
                 <input type="hidden" name="action" value="save_schedule">
                 <div class="card">
 
@@ -266,6 +309,8 @@ require __DIR__ . '/partials/head.php';
                     </div>
                 </div>
             </form>
+
+            <?php endif; ?>
 
         </div>
     </div>

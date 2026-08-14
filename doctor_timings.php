@@ -1,16 +1,23 @@
 <?php
 /**
- * Doctor Timings — today's confirmed consultation hours, per doctor.
+ * Doctor Timings — confirmed consultation hours, per doctor, per day.
  *
  * One of reception's first duties at shift start is confirming which doctors
  * are coming in and when. This page is the single source of truth for that:
- * every doctor gets a row for TODAY with a status (Available / Delayed / Off),
- * a time window and a note. Whatever the outgoing receptionist saved is exactly
- * what the incoming one sees — the "last updated by X at H:i" line makes the
- * handover explicit.
+ * every doctor gets a row for the selected date with a status
+ * (Available / Delayed / Off), a time window and a note. Whatever the
+ * outgoing receptionist saved is exactly what the incoming one sees — the
+ * "last updated by X at H:i" line makes the handover explicit.
  *
- * receptionist.php pops these timings up automatically once per login session;
- * this page is the edit surface behind that popup (and the sidebar link).
+ * Defaults to TODAY (the sheet reception confirms each shift). ?date=YYYY-MM-DD
+ * opens any other date — e.g. pre-marking a doctor off for a known future
+ * leave day — without touching today's sheet or the doctor's standing weekly
+ * schedule (my_schedule.php). A date-specific save always wins for that one
+ * date; the weekly schedule remains the fallback for any date with no row.
+ *
+ * receptionist.php pops today's timings up automatically once per login
+ * session; this page is the edit surface behind that popup (and the sidebar
+ * link), plus the only entry point for a different date.
  */
 require_once __DIR__ . '/config/auth.php';
 require_login();
@@ -26,12 +33,26 @@ refresh_session_permissions($pdo);
 $canEdit = has_permission('RECEPTION_EDIT_DOCTOR_TIMINGS');
 
 $today = date('Y-m-d');
+
+// The date this sheet is for — today unless a valid ?date= is given. Past
+// dates are allowed to view (audit-style) but not to edit; there is no value
+// in rewriting a day that already happened.
+$reqDate = (string) ($_GET['date'] ?? '');
+$sheetDate = (preg_match('/^\d{4}-\d{2}-\d{2}$/', $reqDate) && strtotime($reqDate) !== false) ? $reqDate : $today;
+$isToday = $sheetDate === $today;
+$isPast = $sheetDate < $today;
+$canEditSheet = $canEdit && !$isPast;
+
 $saved = false;
 $saveError = '';
 
-// ---------------- Save today's timings (whole sheet at once) ----------------
+// ---------------- Save this date's timings (whole sheet at once) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_timings') {
-    if (!$canEdit) {
+    $postDate = (string) ($_POST['sheet_date'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $postDate) || strtotime($postDate) === false) {
+        $postDate = $today;
+    }
+    if (!$canEdit || $postDate < $today) {
         http_response_code(403);
         exit('Forbidden — reception access only.');
     }
@@ -77,20 +98,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             $note = trim($r['note'] ?? '');
             $note = $note === '' ? null : mb_substr($note, 0, 255);
 
-            $up->execute([$docId, $today, $start, $end, $start2, $end2, $status, $note, $_SESSION['user_id']]);
+            $up->execute([$docId, $postDate, $start, $end, $start2, $end2, $status, $note, $_SESSION['user_id']]);
         }
 
-        audit_log($pdo, 'doctor_timings_updated', "Updated doctor timings for $today", $_SESSION['user_id']);
+        audit_log($pdo, 'doctor_timings_updated', "Updated doctor timings for $postDate", $_SESSION['user_id']);
 
         $pdo->commit();
         $saved = true;
+        $sheetDate = $postDate;
+        $isToday = $sheetDate === $today;
+        $isPast = false;
     } catch (Throwable $e) {
         $pdo->rollBack();
         $saveError = 'Could not save timings — please try again.';
     }
 }
 
-// ---------------- Load the sheet: every doctor + today's row (if any) ----------------
+// ---------------- Load the sheet: every doctor + the selected date's row (if any) ----------------
 // Friendly guard: if the migration (sql/add_doctor_day_timings.sql) hasn't been
 // run yet, say so instead of 500ing — deploys land before phpMyAdmin runs.
 try {
@@ -105,21 +129,22 @@ try {
         WHERE u.base_role = 'DOCTOR'
         ORDER BY u.name
     ");
-    $stmt->execute([$today]);
+    $stmt->execute([$sheetDate]);
     $doctors = $stmt->fetchAll();
 } catch (Throwable $e) {
     exit('Doctor timings is not set up yet — run sql/add_doctor_day_timings.sql in phpMyAdmin first.');
 }
 
 // Unconfirmed rows prefill from the doctor's own weekly template (my_schedule.php):
-// a doctor whose standing pattern says today is off shows up pre-marked OFF, and
-// fixed hours land in the inputs. Reception still confirms by saving — only rows
-// with no doctor_day_timings entry for today are touched, and only in-memory.
-// try/catch: template table may not be migrated yet; feature silently dormant.
+// a doctor whose standing pattern says this weekday is off shows up pre-marked
+// OFF, and fixed hours land in the inputs. Reception still confirms by saving —
+// only rows with no doctor_day_timings entry for this date are touched, and
+// only in-memory. try/catch: template table may not be migrated yet; feature
+// silently dormant.
 try {
     $tpl = $pdo->prepare('SELECT doctor_id, is_off, start_time, end_time, start_time_2, end_time_2
                           FROM doctor_weekly_schedule WHERE weekday = ?');
-    $tpl->execute([(int) date('N')]);
+    $tpl->execute([(int) date('N', strtotime($sheetDate))]);
     $tplByDoc = [];
     foreach ($tpl->fetchAll() as $t) {
         $tplByDoc[(int) $t['doctor_id']] = $t;
@@ -146,9 +171,10 @@ foreach ($doctors as $d) {
     }
 }
 
-$statusLabels = ['AVAILABLE' => 'Available', 'DELAYED' => 'Delayed', 'OFF' => 'Off today'];
-// Read-only rendering for roles without the reception permission.
-$ro = $canEdit ? '' : ' disabled';
+$statusLabels = ['AVAILABLE' => 'Available', 'DELAYED' => 'Delayed', 'OFF' => 'Off'];
+// Read-only rendering for roles without the reception permission, and for
+// any date already in the past (nothing to confirm about a day that happened).
+$ro = $canEditSheet ? '' : ' disabled';
 
 $pageTitle = 'Doctor Timings';
 $headExtra = <<<CSS
@@ -204,6 +230,12 @@ tr.has-sess2 .sess2-add { display: none; }
 .sheet-foot .hint { font-size: 12.5px; color: var(--text-muted); }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
+.date-jump { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.date-jump label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.date-jump input[type=date] { padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--card); color: var(--text); }
+.back-link { font-size: 12.5px; font-weight: 600; color: var(--primary); text-decoration: none; }
+.back-link:hover { text-decoration: underline; }
+
 @media (max-width: 760px) {
     .tim-scroll { overflow-x: auto; }
     .tim-table { min-width: 720px; }
@@ -218,21 +250,34 @@ require __DIR__ . '/partials/sidebar.php';
 ?>
         <div class="content">
 
-            <?php if ($saved): ?><div class="alert success">Doctor timings for today saved. The next receptionist on duty will see these.</div><?php endif; ?>
+            <?php if ($saved): ?><div class="alert success">Doctor timings for <?= $isToday ? 'today' : date('d/m/Y', strtotime($sheetDate)) ?> saved.<?= $isToday ? ' The next receptionist on duty will see these.' : '' ?></div><?php endif; ?>
             <?php if ($saveError): ?><div class="alert error"><?= htmlspecialchars($saveError) ?></div><?php endif; ?>
 
             <div class="page-head">
                 <div>
-                    <h1>Doctor Timings — Today</h1>
-                    <div class="sub"><?= date('l, d/m/Y') ?> &middot; confirm each doctor's hours for the day; this is what every reception shift sees.</div>
+                    <h1>Doctor Timings <?= $isToday ? '— Today' : '' ?></h1>
+                    <div class="sub">
+                        <?= date('l, d/m/Y', strtotime($sheetDate)) ?>
+                        <?php if ($isToday): ?>&middot; confirm each doctor's hours for the day; this is what every reception shift sees.
+                        <?php elseif ($isPast): ?>&middot; a past date — read-only.
+                        <?php else: ?>&middot; setting this ahead of time overrides just this one date; the standing weekly schedule is untouched.
+                        <?php endif; ?>
+                    </div>
                 </div>
                 <?php if ($lastTouch): ?>
                 <div class="last-touch">Last updated by <strong><?= htmlspecialchars($lastTouch['by'] ?? 'unknown') ?></strong> at <?= date('H:i', strtotime($lastTouch['at'])) ?></div>
                 <?php endif; ?>
             </div>
 
-            <form method="POST" action="doctor_timings.php">
+            <form method="GET" action="doctor_timings.php" class="date-jump">
+                <label for="dateJump">Date</label>
+                <input type="date" id="dateJump" name="date" value="<?= htmlspecialchars($sheetDate) ?>" onchange="this.form.submit()">
+                <?php if (!$isToday): ?><a href="doctor_timings.php" class="back-link">&larr; Today</a><?php endif; ?>
+            </form>
+
+            <form method="POST" action="doctor_timings.php<?= $isToday ? '' : '?date=' . urlencode($sheetDate) ?>">
                 <input type="hidden" name="action" value="save_timings">
+                <input type="hidden" name="sheet_date" value="<?= htmlspecialchars($sheetDate) ?>">
                 <div class="card">
                     <?php if (empty($doctors)): ?>
                         <div class="empty-state">No doctors in the system yet. Add them under Staff &amp; Doctors.</div>
@@ -289,9 +334,9 @@ require __DIR__ . '/partials/sidebar.php';
                                             <input type="time" name="t[<?= (int) $d['id'] ?>][start2]" value="<?= htmlspecialchars($start2Val) ?>"<?= $ro ?>>
                                             <span class="dash">&ndash;</span>
                                             <input type="time" name="t[<?= (int) $d['id'] ?>][end2]" value="<?= htmlspecialchars($end2Val) ?>"<?= $ro ?>>
-                                            <?php if ($canEdit): ?><button type="button" class="sess2-remove" title="Remove session 2" onclick="timRemoveSess2(this)">&times;</button><?php endif; ?>
+                                            <?php if ($canEditSheet): ?><button type="button" class="sess2-remove" title="Remove session 2" onclick="timRemoveSess2(this)">&times;</button><?php endif; ?>
                                         </div>
-                                        <?php if ($canEdit): ?>
+                                        <?php if ($canEditSheet): ?>
                                         <button type="button" class="sess2-add" onclick="timAddSess2(this)">+ Add second session</button>
                                         <?php endif; ?>
                                     </div>
@@ -307,9 +352,9 @@ require __DIR__ . '/partials/sidebar.php';
                     </div>
 
                     <div class="sheet-foot">
-                        <div class="hint">Timings apply to <strong>today only</strong> and reset each day. Unconfirmed rows prefill from each doctor's own weekly schedule — saving confirms them. Most doctors need just one window; use <strong>+ Add second session</strong> for a split shift. Mark a doctor <strong>Off today</strong> to grey out their windows.</div>
-                        <?php if ($canEdit): ?>
-                        <button type="submit" class="btn">Save today's timings</button>
+                        <div class="hint">Timings apply to <strong><?= $isToday ? 'today only' : 'this date only' ?></strong>. Unconfirmed rows prefill from each doctor's own weekly schedule — saving confirms them. Most doctors need just one window; use <strong>+ Add second session</strong> for a split shift. Mark a doctor <strong>Off</strong> to grey out their windows.</div>
+                        <?php if ($canEditSheet): ?>
+                        <button type="submit" class="btn">Save <?= $isToday ? "today's" : 'these' ?> timings</button>
                         <?php endif; ?>
                     </div>
                     <?php endif; ?>
