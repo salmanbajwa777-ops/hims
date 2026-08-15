@@ -147,4 +147,40 @@ if (!file_exists($ppPath)) {
     echo "  --- first 300 chars ---\n";
     echo "  " . str_replace("\n", "\n  ", substr($content, 0, 300)) . "\n";
 }
+echo "\n";
+
+/* ------------------------------------------ 7. opcache status */
+echo "OPCACHE CHECK\n";
+if (function_exists('opcache_get_status')) {
+    $st = opcache_get_status(false);
+    if ($st === false) {
+        echo "  opcache_get_status() returned false — opcache likely disabled\n";
+    } else {
+        echo "  opcache enabled : " . ($st['opcache_enabled'] ? 'YES' : 'NO') . "\n";
+        $full = opcache_get_status(true);
+        if (isset($full['scripts'][$ppPath])) {
+            $s = $full['scripts'][$ppPath];
+            echo "  patient_past.php IS in opcache\n";
+            echo "    cached mtime as opcache sees it : " . date('Y-m-d H:i:s', $s['timestamp']) . "\n";
+            echo "    hits                             : " . $s['hits'] . "\n";
+            echo "  ** if this timestamp is OLDER than the mtime above, opcache is serving STALE bytecode **\n";
+        } else {
+            // Try matching by basename in case the resolved path differs.
+            $found = false;
+            foreach (($full['scripts'] ?? []) as $path => $s) {
+                if (basename($path) === 'patient_past.php') {
+                    $found = true;
+                    echo "  found under different path: $path\n";
+                    echo "    cached mtime : " . date('Y-m-d H:i:s', $s['timestamp']) . "\n";
+                    echo "    hits         : " . $s['hits'] . "\n";
+                }
+            }
+            if (!$found) {
+                echo "  patient_past.php not currently in opcache (may recompile on next hit — not the bug)\n";
+            }
+        }
+    }
+} else {
+    echo "  opcache not available in this PHP build\n";
+}
 echo "\nDone. Read-only — nothing was modified.\n";
