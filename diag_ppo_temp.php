@@ -129,4 +129,22 @@ $orph = $pdo->query("
     SELECT COUNT(*) FROM bills b LEFT JOIN visits v ON v.id = b.visit_id WHERE v.id IS NULL
 ")->fetchColumn();
 printf("  bills with no matching visit : %d%s\n", $orph, $orph ? '  ** these can NEVER show on ANY Past page **' : '');
+echo "\n";
+
+/* ------------------------------------------ 6. what patient_past.php ACTUALLY contains on disk */
+echo "LIVE FILE CHECK — what patient_past.php actually is on this server right now\n";
+$ppPath = __DIR__ . '/patient_past.php';
+if (!file_exists($ppPath)) {
+    echo "  ** patient_past.php DOES NOT EXIST at $ppPath **\n";
+} else {
+    $content = file_get_contents($ppPath);
+    echo "  file size    : " . strlen($content) . " bytes\n";
+    echo "  mtime        : " . date('Y-m-d H:i:s', filemtime($ppPath)) . " (server local time)\n";
+    echo "  md5          : " . md5($content) . "\n";
+    echo "  has marker   : " . (strpos($content, 'DEPLOY-CHECK-v2') !== false ? 'YES' : 'NO') . "\n";
+    echo "  has OPD pull : " . (strpos($content, "'kind' => 'opd'") !== false ? 'YES' : 'NO') . "\n";
+    // First 500 bytes so a totally different/old file becomes obvious at a glance.
+    echo "  --- first 300 chars ---\n";
+    echo "  " . str_replace("\n", "\n  ", substr($content, 0, 300)) . "\n";
+}
 echo "\nDone. Read-only — nothing was modified.\n";
