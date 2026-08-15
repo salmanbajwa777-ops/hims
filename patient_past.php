@@ -404,7 +404,7 @@ require __DIR__ . '/partials/sidebar.php';
 
     <div>
         <div class="page-title">Patient Past</div>
-        <div class="page-sub">Every slip this patient has been issued &mdash; consultations, ER services, admissions, in-door stays and procedures.</div>
+        <div class="page-sub">Every slip this patient has been issued &mdash; consultations, ER services, admissions, in-door stays and procedures. [DEPLOY-CHECK-v2]</div>
     </div>
 
     <div class="pp-head">
