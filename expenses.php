@@ -173,6 +173,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
         $tankFull = (int) $tankRaw;
     }
 
+    // WHO physically took the vehicle to the pump. Only meaningful on a fuel row,
+    // so forced NULL everywhere else — a maintenance posting must never carry a
+    // name that the per-person efficiency report would then hold against them.
+    //
+    // NOT posted_by_id: reception posts nearly every expense, so the poster is
+    // near-constant and comparing people by it would compare nothing.
+    //
+    // Deliberately OPTIONAL. A fill whose driver nobody remembers must still be
+    // postable — refusing it would push people to guess a name, and a guessed
+    // name in a report that accuses someone is worse than an honest blank.
+    $refuelledById = ($isFuelSub && ($_POST['refuelled_by_id'] ?? '') !== '')
+                         ? (int) $_POST['refuelled_by_id'] : 0;
+
     // Who the disbursement was paid to. Only meaningful for needs_doctor
     // categories; forced NULL otherwise so an ordinary expense can never carry
     // a stray doctor id from a stale form field.
@@ -398,6 +411,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             }   // end tank_full fallback
             $expenseId = (int) $pdo->lastInsertId();
 
+            // Who refuelled — written as a follow-up UPDATE rather than a sixth
+            // nested INSERT fallback. The chain above is already four shapes deep
+            // and adding a fifth would double every branch for one nullable
+            // annotation column.
+            //
+            // Inside the same transaction, so the name can never be attached to a
+            // posting that then rolls back. A failure here means the migration has
+            // not run: the expense is still correct and complete without the name,
+            // so it must NOT sink the posting — the money matters, the annotation
+            // does not.
+            if ($refuelledById > 0 && $expenseId > 0) {
+                try {
+                    $pdo->prepare('UPDATE expenses SET refuelled_by_id = ? WHERE id = ?')
+                        ->execute([$refuelledById, $expenseId]);
+                } catch (PDOException $eRef) {
+                    // refuelled_by_id absent (add_fuel_accountability.sql not run).
+                }
+            }
+
             // Mint the single-use magic-link token in the SAME transaction, so a
             // committed PENDING expense always has a matching link. Store only the
             // hash; the raw token travels in the email.
@@ -508,7 +540,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     // reading was, and it silently changes km/L. '' leaves it unchanged.
     $newTank = ($tRaw === '1' || $tRaw === '0') ? (int) $tRaw : null;
 
+    // Who refuelled, correctable on an already-posted row. Three distinct states,
+    // which is why this is not a plain (int) cast:
+    //   ''      absent from the form   -> leave whatever is stored
+    //   '0'     "Not recorded" chosen  -> CLEAR the name
+    //   '12'    a user id              -> set it
+    // Clearing has to be reachable: the per-person report is used to question
+    // someone's fuel use, so attributing a fill to the wrong person must be
+    // undoable, not merely overwritable.
+    $rRaw     = trim($_POST['refuelled_by_id'] ?? '');
+    $setRefuel = $rRaw !== '';
+    $newRefuel = ($rRaw === '' || $rRaw === '0') ? null : (int) $rRaw;
+    if ($newRefuel !== null && $newRefuel <= 0) { $newRefuel = null; }
+
     try {
+        // refuelled_by_id may not exist yet, so it is read in a second query
+        // rather than widening this one — a failure there must not stop a meter
+        // correction, which is the handler's primary job.
         $cur = $pdo->prepare('SELECT e.expense_number, e.vehicle_id, e.meter_reading, e.litres,
                                      v.name AS vehicle_name, v.registration
                                 FROM expenses e
@@ -516,6 +564,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                                WHERE e.id = ?');
         $cur->execute([$id]);
         $row = $cur->fetch() ?: null;
+
+        $oldRefuelId = null; $oldRefuelName = null; $refuelColumn = false;
+        if ($row) {
+            try {
+                $rq = $pdo->prepare('SELECT e.refuelled_by_id, u.name
+                                       FROM expenses e
+                                       LEFT JOIN users u ON u.id = e.refuelled_by_id
+                                      WHERE e.id = ?');
+                $rq->execute([$id]);
+                $rr = $rq->fetch() ?: null;
+                $refuelColumn  = true;
+                $oldRefuelId   = ($rr && $rr['refuelled_by_id'] !== null) ? (int) $rr['refuelled_by_id'] : null;
+                $oldRefuelName = $rr['name'] ?? null;
+            } catch (PDOException $e) { $refuelColumn = false; }
+        }
 
         if (!$row) {
             $error = 'That expense could not be found.';
@@ -536,8 +599,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                 } catch (PDOException $e) { /* pre-migration: silently skip */ }
             }
 
-            if ($oldMeter === $newMeter && $oldLitres === $newLitres && !$tankChanged) {
+            // Who refuelled. Same rule as tank_full: only written when the form
+            // supplied a value and the column exists.
+            $refuelChanged = false;
+            if ($setRefuel && $refuelColumn && $newRefuel !== $oldRefuelId) {
+                try {
+                    $pdo->prepare('UPDATE expenses SET refuelled_by_id = ? WHERE id = ?')
+                        ->execute([$newRefuel, $id]);
+                    $refuelChanged = true;
+                } catch (PDOException $e) { /* FK rejected an unknown user id */ }
+            }
+
+            if ($oldMeter === $newMeter && $oldLitres === $newLitres && !$tankChanged && !$refuelChanged) {
                 $success = 'No change — the reading is already ' . ($newMeter === null ? 'blank' : number_format($newMeter) . ' km') . '.';
+            } elseif ($oldMeter === $newMeter && $oldLitres === $newLitres && $refuelChanged && !$tankChanged) {
+                // The refueller changed but the reading did not. Logged on its own
+                // because attributing a fill to a person is the input to a report
+                // that questions their fuel use — a change of name must be as
+                // traceable as a change of odometer.
+                $nameOf = function (?int $uid) use ($pdo): string {
+                    if ($uid === null) { return 'nobody'; }
+                    try {
+                        $s = $pdo->prepare('SELECT name FROM users WHERE id = ?');
+                        $s->execute([$uid]);
+                        return (string) ($s->fetchColumn() ?: ('user #' . $uid));
+                    } catch (PDOException $e) { return 'user #' . $uid; }
+                };
+                audit_log($pdo, 'expense_refueller_changed',
+                    sprintf('Refuelled-by on %s: %s -> %s',
+                        $row['expense_number'],
+                        $oldRefuelName ?: 'nobody', $nameOf($newRefuel)),
+                    $userId);
+                $success = 'Refuelled-by updated for ' . $row['expense_number'] . '.';
             } else {
                 $pdo->prepare('UPDATE expenses SET meter_reading = ?, litres = ? WHERE id = ?')
                     ->execute([$newMeter, $newLitres, $id]);
@@ -547,10 +640,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
                          . ($l === null ? '' : ' / ' . number_format((float) $l, 2) . ' L');
                 };
                 audit_log($pdo, 'expense_meter_corrected',
-                    sprintf('Corrected meter on %s (%s): %s -> %s',
+                    sprintf('Corrected meter on %s (%s): %s -> %s%s',
                         $row['expense_number'],
                         trim(($row['vehicle_name'] ?? '') . ' ' . ($row['registration'] ?? '')),
-                        $fmt($oldMeter, $oldLitres), $fmt($newMeter, $newLitres)),
+                        $fmt($oldMeter, $oldLitres), $fmt($newMeter, $newLitres),
+                        $refuelChanged ? ' · refuelled-by also changed' : ''),
                     $userId);
 
                 $success = 'Meter reading updated for ' . $row['expense_number']
@@ -695,6 +789,25 @@ try {
     }
 } catch (PDOException $e) { /* pre-migration: no vehicle fields offered */ }
 
+// Staff for the "Refuelled by" picker, and whether the column exists to store
+// the answer in. Probed separately from $vehiclesList: add_fuel_accountability.sql
+// is a later migration, so a database can have vehicles but not this column, and
+// offering a field whose value would be silently dropped is worse than no field.
+$refuelStaff  = [];
+$refuelReady  = false;
+if ($vehiclesList) {
+    try {
+        $pdo->query('SELECT refuelled_by_id FROM expenses LIMIT 1');
+        $refuelReady = true;
+        // Every active user, not a role subset: whoever takes the van to the pump
+        // varies, and a name missing from the list would push the poster to leave
+        // it blank — which loses the accountability the field exists for.
+        $refuelStaff = $pdo->query(
+            'SELECT id, name, base_role FROM users WHERE is_active = 1 ORDER BY name'
+        )->fetchAll();
+    } catch (PDOException $e) { $refuelReady = false; $refuelStaff = []; }
+}
+
 // Doctors for the disbursement picker. Admin-only screen concern, but the list
 // is cheap and the <select> is hidden for everyone else anyway.
 $doctorsList = [];
@@ -741,20 +854,33 @@ $where  = ['e.expense_date BETWEEN ? AND ?'];
 $params = [$filterFrom, $filterTo];
 if ($filterCat > 0) { $where[] = 'e.category_id = ?'; $params[] = $filterCat; }
 
-$listStmt = $pdo->prepare('
+// The refueller join is attempted first and dropped if the column is absent, so
+// the listing keeps working on a database where add_fuel_accountability.sql has
+// not been run. Only the join differs — every other column is identical, so the
+// two shapes cannot drift.
+$listSql = '
     SELECT e.*, ec.name AS category_name, u.name AS posted_by_name,
-           v.name AS voided_by_name, a.name AS approved_by_name
+           v.name AS voided_by_name, a.name AS approved_by_name%s
     FROM expenses e
     JOIN expense_categories ec ON ec.id = e.category_id
     JOIN users u ON u.id = e.posted_by_id
     LEFT JOIN users v ON v.id = e.voided_by_id
     LEFT JOIN users a ON a.id = e.approved_by_id
+    %s
     WHERE ' . implode(' AND ', $where) . '
     ORDER BY e.created_at DESC, e.id DESC
     LIMIT 300
-');
-$listStmt->execute($params);
-$rows = $listStmt->fetchAll();
+';
+try {
+    $listStmt = $pdo->prepare(sprintf($listSql,
+        ', rf.name AS refuelled_by_name', 'LEFT JOIN users rf ON rf.id = e.refuelled_by_id'));
+    $listStmt->execute($params);
+    $rows = $listStmt->fetchAll();
+} catch (PDOException $e) {
+    $listStmt = $pdo->prepare(sprintf($listSql, '', ''));
+    $listStmt->execute($params);
+    $rows = $listStmt->fetchAll();
+}
 
 // Hidden inputs every row/bulk action form carries, so the PRG redirect can put
 // the admin back on the exact range + category they were working through.
@@ -1357,6 +1483,29 @@ require __DIR__ . '/partials/sidebar.php';
                                 <div class="meter-warn" id="rateWarn" style="display:none;"></div>
                             </div>
 
+                            <?php if ($refuelReady): ?>
+                            <!-- WHO took the vehicle to the pump. Fuel rows only,
+                                 and optional: a fill nobody remembers must still
+                                 be postable, because a guessed name feeding a
+                                 report that accuses someone is worse than a blank.
+                                 Drives the per-person km/L comparison on the
+                                 Vehicle Report. -->
+                            <div class="f-group" id="refuelGroup" style="display:none;">
+                                <label>Refuelled by</label>
+                                <select name="refuelled_by_id" id="expRefueller">
+                                    <option value="">Not recorded</option>
+                                    <?php foreach ($refuelStaff as $u): ?>
+                                    <option value="<?= (int) $u['id'] ?>"><?= htmlspecialchars($u['name']) ?><?php
+                                        if (!empty($u['base_role'])) { echo ' — ' . htmlspecialchars(ucfirst(strtolower($u['base_role']))); } ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="muted-note" style="margin-top:6px;">
+                                    Who physically took the vehicle to the pump — not who paid.
+                                    This is what lets the report compare km per litre by person.
+                                </div>
+                            </div>
+                            <?php endif; ?>
+
                             <!-- Full tank? Only a full-to-full pair gives a true
                                  km/L, so the fill state has to be recorded rather
                                  than assumed. Defaults to Yes: topping up is the
@@ -1527,7 +1676,15 @@ require __DIR__ . '/partials/sidebar.php';
                                 <td data-label="Category"><?= htmlspecialchars($r['category_name']) ?></td>
                                 <td class="m-nolabel" style="font-weight:600;"><?= htmlspecialchars($r['description']) ?></td>
                                 <td data-label="Paid to" class="<?= ($r['paid_to'] ?? '') === '' ? 'm-hide' : '' ?>"><?= htmlspecialchars($r['paid_to'] ?? '—') ?></td>
-                                <td data-label="By"><?= htmlspecialchars($r['posted_by_name']) ?></td>
+                                <td data-label="By"><?= htmlspecialchars($r['posted_by_name']) ?>
+                                    <?php /* Who refuelled, when it differs from who posted. Shown on
+                                             the row so a wrong attribution is noticed here rather than
+                                             first appearing as a red flag on the report. */ ?>
+                                    <?php if (!empty($r['refuelled_by_name']) && $r['refuelled_by_name'] !== $r['posted_by_name']): ?>
+                                    <br><span class="muted" style="font-size:11px;" title="Refuelled by">
+                                        ⛽ <?= htmlspecialchars($r['refuelled_by_name']) ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td style="text-align:right;" class="m-lead"><span class="exp-amt">Rs <?= number_format((float) $r['amount'], 2) ?></span></td>
                                 <td class="m-nolabel">
                                     <?php
@@ -1574,14 +1731,18 @@ require __DIR__ . '/partials/sidebar.php';
                                         $curM = $r['meter_reading'] !== null ? (string) (int) $r['meter_reading'] : '';
                                         $curL = $r['litres'] !== null ? rtrim(rtrim(number_format((float) $r['litres'], 2, '.', ''), '0'), '.') : '';
                                         $curT = array_key_exists('tank_full', $r) && $r['tank_full'] !== null ? (string) (int) $r['tank_full'] : '';
+                                        // Pre-fills the refueller prompt. Absent pre-migration, in
+                                        // which case editMeter() skips that step entirely.
+                                        $curRN = $r['refuelled_by_name'] ?? '';
                                     ?>
                                     <form method="POST" action="expenses.php" style="margin:0 0 4px;"
-                                          onsubmit="return editMeter(this, '<?= htmlspecialchars($r['expense_number'], ENT_QUOTES) ?>', '<?= htmlspecialchars($curM, ENT_QUOTES) ?>', '<?= htmlspecialchars($curL, ENT_QUOTES) ?>', '<?= htmlspecialchars($curT, ENT_QUOTES) ?>');">
+                                          onsubmit="return editMeter(this, '<?= htmlspecialchars($r['expense_number'], ENT_QUOTES) ?>', '<?= htmlspecialchars($curM, ENT_QUOTES) ?>', '<?= htmlspecialchars($curL, ENT_QUOTES) ?>', '<?= htmlspecialchars($curT, ENT_QUOTES) ?>', '<?= htmlspecialchars($curRN, ENT_QUOTES) ?>');">
                                         <input type="hidden" name="action" value="edit_meter">
                                         <input type="hidden" name="expense_id" value="<?= (int) $r['id'] ?>">
                                         <input type="hidden" name="meter_reading" value="">
                                         <input type="hidden" name="litres" value="">
                                         <input type="hidden" name="tank_full" value="">
+                                        <input type="hidden" name="refuelled_by_id" value="">
                                         <?= $filterFields ?>
                                         <button type="submit" class="link-btn"><?= $curM === '' ? 'Add meter' : 'Edit meter' ?></button>
                                     </form>
@@ -1665,6 +1826,15 @@ require __DIR__ . '/partials/sidebar.php';
     }
 })();
 
+<?php if ($isAdmin && $refuelReady && $refuelStaff): ?>
+<?php /* Name -> id for the Edit-meter refueller prompt. Emitted only for an
+         admin (the only role that can call the handler) and only once the column
+         exists, so editMeter() can test for it and skip that step otherwise. */ ?>
+window.EXP_REFUEL_STAFF = <?= json_encode(array_map(
+    fn($u) => ['id' => (int) $u['id'], 'n' => $u['name']], $refuelStaff),
+    JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+<?php endif; ?>
+
 // Correct a meter reading. prompt() rather than a modal to match the Void and
 // Reject controls already on this row — one bespoke dialog among three prompts
 // would be the odd one out. Litres is asked only as a follow-up so the common
@@ -1672,7 +1842,7 @@ require __DIR__ . '/partials/sidebar.php';
 //
 // Blank is a MEANINGFUL answer: it clears the reading, which is the right
 // correction for "this row never had a trustworthy number". Cancel aborts.
-function editMeter(form, voucher, curMeter, curLitres, curTank) {
+function editMeter(form, voucher, curMeter, curLitres, curTank, curRefuelName) {
     var m = window.prompt(
         'Meter reading (km) for ' + voucher + ':\n\n' +
         'Leave blank to clear it. Cancel to abort.',
@@ -1711,9 +1881,52 @@ function editMeter(form, voucher, curMeter, curLitres, curTank) {
         }
     }
 
+    // WHO refuelled, asked only on a fuel row (litres present) and only once the
+    // column exists. Matched on the typed NAME rather than an id: nobody knows
+    // their own user id, and a mistyped id would silently attribute a fill to
+    // the wrong person in a report used to question fuel use.
+    //
+    // Three answers: blank leaves it unchanged, "-" clears it, a name sets it.
+    // Clearing must be reachable so a wrong attribution can be undone.
+    var r = '';
+    if (l !== '' && window.EXP_REFUEL_STAFF) {
+        var typed = window.prompt(
+            'Refuelled by — who took the vehicle to the pump?\n\n' +
+            'Type part of the name. Enter "-" to clear it.\n' +
+            'Leave blank to leave it unchanged.' +
+            (curRefuelName ? '\n\nCurrently: ' + curRefuelName : ''),
+            curRefuelName || '');
+        if (typed === null) { return false; }
+        typed = typed.trim();
+        if (typed === '-') {
+            r = '0';                                  // explicit clear
+        } else if (typed !== '') {
+            var needle = typed.toUpperCase(), hits = [];
+            for (var i = 0; i < window.EXP_REFUEL_STAFF.length; i++) {
+                if (window.EXP_REFUEL_STAFF[i].n.toUpperCase().indexOf(needle) !== -1) {
+                    hits.push(window.EXP_REFUEL_STAFF[i]);
+                }
+            }
+            if (hits.length === 0) {
+                window.alert('No active staff member matches "' + typed + '".');
+                return false;
+            }
+            // Never guess between two matches — picking one would be a silent
+            // misattribution, which is the one error this feature must not make.
+            if (hits.length > 1) {
+                var names = hits.map(function (h) { return h.n; }).slice(0, 8).join('\n');
+                window.alert(hits.length + ' staff match "' + typed + '":\n\n' + names +
+                             '\n\nType more of the name so there is only one match.');
+                return false;
+            }
+            r = String(hits[0].id);
+        }
+    }
+
     form.meter_reading.value = m;
     form.litres.value = l;
     form.tank_full.value = t;
+    if (form.refuelled_by_id) { form.refuelled_by_id.value = r; }
     return true;
 }
 </script>
@@ -2007,6 +2220,9 @@ function editMeter(form, voucher, curMeter, curLitres, curTank) {
         var tankHid = document.getElementById('expTankFull');
         var rateWarn = document.getElementById('rateWarn');
         var dupWarn  = document.getElementById('dupWarn');
+        // Both null before add_fuel_accountability.sql runs — every use is guarded.
+        var refuelGrp = document.getElementById('refuelGroup');
+        var refuelSel = document.getElementById('expRefueller');
         var fleetRate = null, fuelToday = false;
 
         if (tankSeg) {
@@ -2059,9 +2275,14 @@ function editMeter(form, voucher, curMeter, curLitres, curTank) {
             var isFuel = btn.getAttribute('data-fuel') === '1';
             litGrp.style.display = isFuel ? '' : 'none';
             if (tankGrp) { tankGrp.style.display = isFuel ? '' : 'none'; }
+            if (refuelGrp) { refuelGrp.style.display = isFuel ? '' : 'none'; }
             if (!isFuel) {
                 if (litres) { litres.value = ''; }
                 if (tankHid) { tankHid.value = ''; }
+                // Clear the refueller too: the server forces it NULL on a
+                // non-fuel row anyway, but leaving a name visible in a hidden
+                // field would tell the user it was recorded when it was not.
+                if (refuelSel) { refuelSel.value = ''; }
                 if (rateWarn) { rateWarn.style.display = 'none'; }
             } else if (tankHid && tankHid.value === '') {
                 // Re-arm the default when coming back to Fuel.
@@ -2095,9 +2316,11 @@ function editMeter(form, voucher, curMeter, curLitres, curTank) {
                 vehSel.value = ''; subHid.value = ''; meter.value = '';
                 if (litres) { litres.value = ''; }
                 if (tankHid) { tankHid.value = ''; }
+                if (refuelSel) { refuelSel.value = ''; }
                 subBtns.forEach(function (b) { b.classList.remove('on'); });
                 litGrp.style.display = 'none';
                 if (tankGrp) { tankGrp.style.display = 'none'; }
+                if (refuelGrp) { refuelGrp.style.display = 'none'; }
                 calc.style.display = 'none';
                 mWarn.style.display = 'none';
                 if (rateWarn) { rateWarn.style.display = 'none'; }

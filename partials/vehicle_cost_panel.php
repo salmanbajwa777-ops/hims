@@ -61,7 +61,9 @@ function vehicle_cost_panel(PDO $pdo, int $expenseId): void {
         <?php elseif ($ctx['flag'] === 'jump'): ?>
         <div style="margin-bottom:8px;font-weight:600;color:#8A6100;">
             Jump of <?= number_format((int) $ctx['meter'] - (int) $ctx['prev_meter']) ?> km since the last
-            reading — larger than <?= number_format(VEH_MAX_PLAUSIBLE_GAP) ?> km, so a posting may have been missed.
+            reading — larger than this vehicle's
+            <?= number_format($ctx['jump_limit'] ?? VEH_MAX_PLAUSIBLE_GAP) ?> km limit,
+            so a posting may have been missed.
         </div>
         <?php endif; ?>
 
@@ -88,6 +90,23 @@ function vehicle_cost_panel(PDO $pdo, int $expenseId): void {
                     Rs <?= number_format($ctx['this_rate'], 2) ?> / litre
                     <?php if ($ctx['litres'] !== null): ?>
                         <span style="color:#616D65;">· <?= number_format($ctx['litres'], 2) ?> L</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endif; ?>
+            <?php /* Who refuelled, and how this vehicle usually performs under
+                     them. Shown at the decision point because that is when the
+                     approver can still ask — the same name on a report three
+                     weeks later carries far less weight. Absent pre-migration. */ ?>
+            <?php if (!empty($ctx['by_name'])): ?>
+            <tr>
+                <td style="padding:3px 0;color:#4A574F;">Refuelled by</td>
+                <td style="padding:3px 0;text-align:right;font-weight:700;">
+                    <?= htmlspecialchars($ctx['by_name']) ?>
+                    <?php if ($ctx['by_km_per_l'] !== null && $ctx['by_fills'] >= VEH_MIN_FILLS_TO_JUDGE): ?>
+                    <span style="color:#616D65;font-weight:400;font-size:11.5px;font-family:<?= $mono ?>;">
+                        · usually <?= number_format($ctx['by_km_per_l'], 2) ?> km/L
+                        over <?= (int) $ctx['by_fills'] ?> fills</span>
                     <?php endif; ?>
                 </td>
             </tr>

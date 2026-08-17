@@ -18,6 +18,9 @@
  * they feed the per-vehicle cost-per-km figures on vehicle_report.php.
  */
 require_once __DIR__ . '/config/guard_admin.php';
+// For VEH_MAX_PLAUSIBLE_GAP — the register shows the fleet default as the
+// placeholder on the per-vehicle jump-limit field, so the two can never drift.
+require_once __DIR__ . '/config/vehicle_costs.php';
 
 $error = '';
 $success = '';
@@ -100,18 +103,59 @@ try {
     $vehiclesReady = true;
 } catch (PDOException $e) { /* add_vehicle_expenses.sql not run yet */ }
 
+// The jump limit and tank size arrive with add_fuel_accountability.sql, which is
+// a SEPARATE migration from the one that created the table. Probed independently
+// so a half-migrated database renders the register without the two extra fields
+// rather than failing on an UPDATE naming a column that is not there.
+$vehTuningReady = false;
+if ($vehiclesReady) {
+    try {
+        $pdo->query('SELECT jump_limit_km, tank_litres FROM vehicles LIMIT 1');
+        $vehTuningReady = true;
+    } catch (PDOException $e) { /* add_fuel_accountability.sql not run yet */ }
+}
+
+/**
+ * A jump limit as the admin typed it. Blank means "use the app default", which
+ * is a different statement from zero — a stored 0 would discard every reading
+ * and report the vehicle as having driven nowhere, so it is refused.
+ */
+$vehLimitValue = function ($raw): ?int {
+    $raw = trim((string) $raw);
+    if ($raw === '') { return null; }
+    $n = (int) $raw;
+    return $n > 0 ? $n : null;
+};
+$vehTankValue = function ($raw): ?float {
+    $raw = trim((string) $raw);
+    if ($raw === '') { return null; }
+    $n = round((float) $raw, 2);
+    return $n > 0 ? $n : null;
+};
+
 if ($vehiclesReady && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_vehicle') {
     $vName = trim($_POST['v_name'] ?? '');
     $vReg  = strtoupper(trim($_POST['v_reg'] ?? ''));
     $vType = trim($_POST['v_type'] ?? '');
+    $vJump = $vehLimitValue($_POST['v_jump'] ?? '');
+    $vTank = $vehTankValue($_POST['v_tank'] ?? '');
     if ($vName === '' || $vReg === '') {
         $error = 'A vehicle needs a name and a registration number.';
     } else {
         try {
-            $pdo->prepare('INSERT INTO vehicles (name, registration, vehicle_type, created_by_id)
-                           VALUES (?, ?, ?, ?)
-                           ON DUPLICATE KEY UPDATE name = VALUES(name), vehicle_type = VALUES(vehicle_type), is_active = 1')
-                ->execute([$vName, $vReg, $vType !== '' ? $vType : null, $_SESSION['user_id']]);
+            if ($vehTuningReady) {
+                $pdo->prepare('INSERT INTO vehicles (name, registration, vehicle_type, jump_limit_km, tank_litres, created_by_id)
+                               VALUES (?, ?, ?, ?, ?, ?)
+                               ON DUPLICATE KEY UPDATE name = VALUES(name), vehicle_type = VALUES(vehicle_type),
+                                                       jump_limit_km = VALUES(jump_limit_km),
+                                                       tank_litres = VALUES(tank_litres), is_active = 1')
+                    ->execute([$vName, $vReg, $vType !== '' ? $vType : null, $vJump, $vTank, $_SESSION['user_id']]);
+            } else {
+                $pdo->prepare('INSERT INTO vehicles (name, registration, vehicle_type, created_by_id)
+                               VALUES (?, ?, ?, ?)
+                               ON DUPLICATE KEY UPDATE name = VALUES(name), vehicle_type = VALUES(vehicle_type), is_active = 1')
+                    ->execute([$vName, $vReg, $vType !== '' ? $vType : null, $_SESSION['user_id']]);
+            }
             audit_log($pdo, 'vehicle_saved', "Saved vehicle \"$vName\" ($vReg)", $_SESSION['user_id']);
             $success = "Vehicle \"$vName\" saved.";
         } catch (PDOException $e) {
@@ -123,18 +167,49 @@ if ($vehiclesReady && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
 if ($vehiclesReady && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_vehicles') {
     $vn = $_POST['v_name_e'] ?? [];
     $vt = $_POST['v_type_e'] ?? [];
+    $vj = $_POST['v_jump_e'] ?? [];
+    $vk = $_POST['v_tank_e'] ?? [];
     $va = $_POST['v_active'] ?? [];
-    $upd = $pdo->prepare('UPDATE vehicles SET name = ?, vehicle_type = ?, is_active = ? WHERE id = ?');
-    $saved = 0;
+    // The jump limit changes what every historic figure for this vehicle means,
+    // so a change to it is audited by name and old/new value rather than folded
+    // into the row count. veh_limit_for() is the only reader, and it caches per
+    // request, so the next page load picks the new value up.
+    $before = [];
+    if ($vehTuningReady) {
+        foreach ($pdo->query('SELECT id, name, jump_limit_km FROM vehicles')->fetchAll() as $b) {
+            $before[(int) $b['id']] = $b;
+        }
+    }
+    $upd = $vehTuningReady
+        ? $pdo->prepare('UPDATE vehicles SET name = ?, vehicle_type = ?, jump_limit_km = ?, tank_litres = ?, is_active = ? WHERE id = ?')
+        : $pdo->prepare('UPDATE vehicles SET name = ?, vehicle_type = ?, is_active = ? WHERE id = ?');
+    $saved = 0; $limitNotes = [];
     foreach ($vn as $id => $rawName) {
         $id = (int) $id; $nm = trim($rawName);
         if ($id <= 0 || $nm === '') { continue; }
         $ty = trim($vt[$id] ?? '');
-        $upd->execute([$nm, $ty !== '' ? $ty : null, isset($va[$id]) ? 1 : 0, $id]);
+        if ($vehTuningReady) {
+            $jl = $vehLimitValue($vj[$id] ?? '');
+            $tk = $vehTankValue($vk[$id] ?? '');
+            $upd->execute([$nm, $ty !== '' ? $ty : null, $jl, $tk, isset($va[$id]) ? 1 : 0, $id]);
+            $old = isset($before[$id]) && $before[$id]['jump_limit_km'] !== null
+                       ? (int) $before[$id]['jump_limit_km'] : null;
+            if ($old !== $jl) {
+                $limitNotes[] = sprintf('%s: %s -> %s', $nm,
+                    $old === null ? 'default' : $old . ' km',
+                    $jl === null ? 'default' : $jl . ' km');
+            }
+        } else {
+            $upd->execute([$nm, $ty !== '' ? $ty : null, isset($va[$id]) ? 1 : 0, $id]);
+        }
         $saved++;
     }
     if ($saved > 0) {
         audit_log($pdo, 'vehicles_saved', "Bulk-saved $saved vehicle(s)", $_SESSION['user_id']);
+        if ($limitNotes) {
+            audit_log($pdo, 'vehicle_jump_limit_changed',
+                      'Jump limit changed — ' . implode('; ', $limitNotes), $_SESSION['user_id']);
+        }
         $success = "Saved $saved vehicle" . ($saved === 1 ? '' : 's') . '.';
     }
 }
@@ -293,7 +368,7 @@ require __DIR__ . '/partials/sidebar.php';
 
                 <form method="POST" action="expense_categories.php" style="margin-bottom:18px;">
                     <input type="hidden" name="action" value="add_vehicle">
-                    <div class="add-row" style="grid-template-columns:2fr 1.2fr 1.2fr auto;">
+                    <div class="add-row" style="grid-template-columns:<?= $vehTuningReady ? '1.8fr 1.1fr 1.1fr 1fr .8fr auto' : '2fr 1.2fr 1.2fr auto' ?>;">
                         <div>
                             <label>Vehicle name</label>
                             <input type="text" name="v_name" placeholder="e.g. Suzuki Bolan" required>
@@ -307,8 +382,28 @@ require __DIR__ . '/partials/sidebar.php';
                             <label>Type (optional)</label>
                             <input type="text" name="v_type" placeholder="Ambulance / Bike">
                         </div>
+                        <?php if ($vehTuningReady): ?>
+                        <div>
+                            <label>Jump limit (km)</label>
+                            <input type="number" name="v_jump" min="1" step="1"
+                                   placeholder="<?= (int) VEH_MAX_PLAUSIBLE_GAP ?>">
+                        </div>
+                        <div>
+                            <label>Tank (L)</label>
+                            <input type="number" name="v_tank" min="1" step="0.01" placeholder="—">
+                        </div>
+                        <?php endif; ?>
                         <button type="submit" class="btn">Add</button>
                     </div>
+                    <?php if ($vehTuningReady): ?>
+                    <div class="muted-note" style="margin-top:8px;">
+                        <b>Jump limit</b> is the largest believable distance between two meter
+                        readings for this vehicle. A bigger gap is treated as a typo or a missed
+                        posting and its distance is discarded — the money still counts.
+                        Leave blank for the <?= number_format(VEH_MAX_PLAUSIBLE_GAP) ?> km default.
+                        <b>Tank</b> is a reference only; no figure is calculated from it.
+                    </div>
+                    <?php endif; ?>
                 </form>
 
                 <form method="POST" action="expense_categories.php">
@@ -320,6 +415,10 @@ require __DIR__ . '/partials/sidebar.php';
                             <th>Vehicle</th>
                             <th style="width:150px;">Registration</th>
                             <th style="width:160px;">Type</th>
+                            <?php if ($vehTuningReady): ?>
+                            <th style="width:118px;" title="Largest believable gap between two readings for this vehicle">Jump limit</th>
+                            <th style="width:96px;" title="Reference only — no calculation uses it">Tank (L)</th>
+                            <?php endif; ?>
                             <th style="width:130px;">Last meter</th>
                             <th style="width:110px;">Expenses</th>
                             <th style="width:90px;">Active</th>
@@ -327,7 +426,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </thead>
                     <tbody>
                         <?php if (!$vehicles): ?>
-                        <tr><td colspan="6" class="muted" style="padding:20px 10px;">
+                        <tr><td colspan="<?= $vehTuningReady ? 8 : 6 ?>" class="muted" style="padding:20px 10px;">
                             No vehicles yet — add one above so reception can post fuel against it.
                         </td></tr>
                         <?php endif; ?>
@@ -338,6 +437,17 @@ require __DIR__ . '/partials/sidebar.php';
                             <td><span class="count-chip"><?= htmlspecialchars($v['registration']) ?></span></td>
                             <td><input type="text" name="v_type_e[<?= $vid ?>]" class="row-inp" style="width:100%;"
                                        value="<?= htmlspecialchars($v['vehicle_type'] ?? '') ?>"></td>
+                            <?php if ($vehTuningReady): ?>
+                            <?php /* Blank shows the default as a placeholder rather than pre-filling
+                                     5000, so saving the row does not silently freeze today's default
+                                     into the vehicle and stop it following a future change. */ ?>
+                            <td><input type="number" name="v_jump_e[<?= $vid ?>]" class="row-inp" min="1" step="1"
+                                       style="width:100%;" placeholder="<?= (int) VEH_MAX_PLAUSIBLE_GAP ?>"
+                                       value="<?= $v['jump_limit_km'] !== null ? (int) $v['jump_limit_km'] : '' ?>"></td>
+                            <td><input type="number" name="v_tank_e[<?= $vid ?>]" class="row-inp" min="1" step="0.01"
+                                       style="width:100%;" placeholder="—"
+                                       value="<?= $v['tank_litres'] !== null ? rtrim(rtrim(number_format((float) $v['tank_litres'], 2, '.', ''), '0'), '.') : '' ?>"></td>
+                            <?php endif; ?>
                             <td><span class="count-chip"><?= $v['last_meter'] !== null ? number_format((int) $v['last_meter']) . ' km' : '—' ?></span></td>
                             <td><span class="count-chip"><?= (int) $v['expense_count'] ?> posted</span></td>
                             <td><label class="active-toggle"><input type="checkbox" name="v_active[<?= $vid ?>]" value="1"
@@ -347,6 +457,14 @@ require __DIR__ . '/partials/sidebar.php';
                     </tbody>
                 </table>
                 </div>
+                <?php if (!$vehTuningReady): ?>
+                <div class="muted-note" style="margin-top:12px;">
+                    Run <b>sql/add_fuel_accountability.sql</b> to set a <b>jump limit</b> per vehicle.
+                    Until then every vehicle is measured against the same
+                    <?= number_format(VEH_MAX_PLAUSIBLE_GAP) ?> km default, which is too generous
+                    for a motorbike.
+                </div>
+                <?php endif; ?>
                 <?php if ($vehicles): ?>
                 <div style="display:flex;justify-content:flex-end;margin-top:16px;">
                     <button type="submit" class="btn">Save vehicles</button>

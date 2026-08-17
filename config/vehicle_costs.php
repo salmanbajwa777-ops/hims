@@ -20,11 +20,45 @@
  * empty range.
  */
 
-// A gap larger than this between two consecutive readings is treated as a data
-// error (missed posting or a typo) rather than real distance. 5,000 km between
-// two fills is not physically plausible for a clinic vehicle.
+// FALLBACK gap limit, used only for a vehicle with no jump_limit_km of its own.
+// A gap larger than the limit is treated as a data error (missed posting or a
+// typo) rather than real distance.
+//
+// One constant cannot fit a fleet: 5,000 km between two fills is generous for an
+// ambulance and physically impossible for a 10-litre motorbike, so a bike error
+// of 3,000 km would pass unnoticed. veh_limit_for() reads the vehicle's own
+// limit and falls back here, so an un-tuned vehicle behaves exactly as before.
 if (!defined('VEH_MAX_PLAUSIBLE_GAP')) {
     define('VEH_MAX_PLAUSIBLE_GAP', 5000);
+}
+
+/**
+ * The plausibility limit to measure ONE vehicle against.
+ *
+ * Cached per request: every per-fill row, the approval panel and the attention
+ * list all ask for the same vehicle's limit, and re-querying per reading would
+ * turn one page render into hundreds of round trips.
+ *
+ * Falls back to the fleet default when the column is absent (migration not run)
+ * or the vehicle has no limit set, so behaviour is unchanged until someone
+ * deliberately tunes a vehicle.
+ */
+function veh_limit_for(PDO $pdo, int $vehicleId): int {
+    static $cache = [];
+    if (array_key_exists($vehicleId, $cache)) { return $cache[$vehicleId]; }
+
+    $limit = VEH_MAX_PLAUSIBLE_GAP;
+    try {
+        $s = $pdo->prepare('SELECT jump_limit_km FROM vehicles WHERE id = ?');
+        $s->execute([$vehicleId]);
+        $v = $s->fetchColumn();
+        // A zero or negative stored limit would discard every reading and report
+        // the vehicle as having driven nowhere. Treat it as "not set".
+        if ($v !== false && $v !== null && (int) $v > 0) { $limit = (int) $v; }
+    } catch (PDOException $e) {
+        // jump_limit_km absent — add_fuel_accountability.sql not run yet.
+    }
+    return $cache[$vehicleId] = $limit;
 }
 
 /**
@@ -33,12 +67,19 @@ if (!defined('VEH_MAX_PLAUSIBLE_GAP')) {
  * its reading is not evidence of a trip.
  */
 function veh_readings(PDO $pdo, int $vehicleId, string $from, string $to): array {
+    // Two optional columns, each added by a migration that may not have run.
+    // Both are selected as literal NULL when absent so every consumer sees one
+    // stable row shape — a NULL reads as "not recorded", which is exactly right
+    // for a pre-migration row and is never confused with a real value.
     $sql = "
         SELECT e.id, e.expense_date, e.meter_reading, e.litres, e.amount,
                %s AS tank_full,
+               %s AS refuelled_by_id,
+               %s AS refuelled_by_name,
                s.name AS sub_name, s.tracks_fuel
           FROM expenses e
           LEFT JOIN expense_subcategories s ON s.id = e.subcategory_id
+          %s
          WHERE e.vehicle_id = ?
            AND e.meter_reading IS NOT NULL
            AND e.voided_at IS NULL
@@ -46,18 +87,26 @@ function veh_readings(PDO $pdo, int $vehicleId, string $from, string $to): array
            AND e.expense_date BETWEEN ? AND ?
          ORDER BY e.expense_date, e.meter_reading, e.id
     ";
-    try {
-        $s = $pdo->prepare(sprintf($sql, 'e.tank_full'));
-        $s->execute([$vehicleId, $from, $to]);
-        return $s->fetchAll();
-    } catch (PDOException $e) {
-        // tank_full absent (add_expense_tank_full.sql not run yet). Select NULL
-        // in its place so every consumer sees the same shape — a NULL reads as
-        // "unknown fill state", which is exactly right for a pre-migration row.
-        $s = $pdo->prepare(sprintf($sql, 'NULL'));
-        $s->execute([$vehicleId, $from, $to]);
-        return $s->fetchAll();
+    // Widest shape first, then step down one column at a time. Tried in this
+    // order because the two migrations can have been applied independently.
+    $shapes = [
+        ['e.tank_full', 'e.refuelled_by_id', 'ru.name', 'LEFT JOIN users ru ON ru.id = e.refuelled_by_id'],
+        ['e.tank_full', 'NULL',              'NULL',    ''],
+        ['NULL',        'e.refuelled_by_id', 'ru.name', 'LEFT JOIN users ru ON ru.id = e.refuelled_by_id'],
+        ['NULL',        'NULL',              'NULL',    ''],
+    ];
+    foreach ($shapes as $i => $sh) {
+        try {
+            $s = $pdo->prepare(vsprintf($sql, $sh));
+            $s->execute([$vehicleId, $from, $to]);
+            return $s->fetchAll();
+        } catch (PDOException $e) {
+            if ($i === count($shapes) - 1) { throw $e; }   // last shape uses no
+            // optional column at all, so a failure there is a real error and must
+            // not be swallowed into an empty result that reads as "no data".
+        }
     }
+    return [];
 }
 
 /**
@@ -89,7 +138,10 @@ function veh_km(array $readings, int $maxGap = VEH_MAX_PLAUSIBLE_GAP): array {
  * there is no previous reading to measure from.
  */
 function veh_per_fill(PDO $pdo, int $vehicleId, string $from, string $to,
-                      int $maxGap = VEH_MAX_PLAUSIBLE_GAP): array {
+                      ?int $maxGap = null): array {
+    // Null means "ask the vehicle". An explicit value still wins, so a caller
+    // testing a specific limit can pass one.
+    $maxGap = $maxGap ?? veh_limit_for($pdo, $vehicleId);
     $rows = veh_readings($pdo, $vehicleId, $from, $to);
     $out = []; $prev = null;
     // Fill state of the PREVIOUS fuel row, for the full-to-full test below.
@@ -139,6 +191,12 @@ function veh_per_fill(PDO $pdo, int $vehicleId, string $from, string $to,
                 'litres'    => $litres,
                 'amount'    => $amount,
                 'tank_full' => $tankFull,
+                // Who took the vehicle to the pump. NULL on every pre-migration
+                // row and on any fill posted without a name, which the per-person
+                // report reports as "Unassigned" rather than folding into a person.
+                'by_id'     => isset($r['refuelled_by_id']) && $r['refuelled_by_id'] !== null
+                                   ? (int) $r['refuelled_by_id'] : null,
+                'by_name'   => $r['refuelled_by_name'] ?? null,
                 'kmpl'      => $kmpl,
                 'kmpl_blocked_by' => $kmplBlockedBy,
                 'per_km'    => $trip ? $amount / $trip : null,
@@ -203,8 +261,9 @@ function veh_spend(PDO $pdo, int $vehicleId, string $from, string $to): array {
  * distance, and printing "Rs 0.00/km" or dividing by zero would both be lies.
  */
 function veh_metrics(PDO $pdo, int $vehicleId, string $from, string $to): array {
+    $limit    = veh_limit_for($pdo, $vehicleId);
     $readings = veh_readings($pdo, $vehicleId, $from, $to);
-    $k        = veh_km($readings);
+    $k        = veh_km($readings, $limit);
     $spend    = veh_spend($pdo, $vehicleId, $from, $to);
     $km       = $k['km'];
 
@@ -240,6 +299,7 @@ function veh_metrics(PDO $pdo, int $vehicleId, string $from, string $to): array 
     return [
         'km'           => $km,
         'bad_gaps'     => $k['bad_gaps'],
+        'jump_limit'   => $limit,          // so the UI can name the limit it applied
         'readings'     => count($readings),
         'fuel'         => $spend['fuel'],
         'maintenance'  => $spend['maintenance'],
@@ -285,6 +345,10 @@ function veh_approval_context(PDO $pdo, int $expenseId): ?array {
 
     $vehicleId = (int) $e['vehicle_id'];
     $date      = $e['expense_date'];
+    // This vehicle's own limit, so the approval panel and the report agree on
+    // what counts as a believable gap for THIS vehicle rather than for a fleet
+    // average that fits neither a bike nor an ambulance.
+    $maxGap    = veh_limit_for($pdo, $vehicleId);
 
     // Previous GOOD reading before this row, to measure THIS trip.
     //
@@ -321,7 +385,7 @@ function veh_approval_context(PDO $pdo, int $expenseId): ?array {
             break;
         }
         $delta = $m - (int) $older['meter_reading'];
-        if ($delta > 0 && $delta <= VEH_MAX_PLAUSIBLE_GAP) {
+        if ($delta > 0 && $delta <= $maxGap) {
             $prev = $cand;             // forms a sane gap with its predecessor
             break;
         }
@@ -331,12 +395,40 @@ function veh_approval_context(PDO $pdo, int $expenseId): ?array {
     $trip = null; $flag = '';
     if ($prev && $e['meter_reading'] !== null) {
         $delta = (int) $e['meter_reading'] - (int) $prev['meter_reading'];
-        if ($delta > 0 && $delta <= VEH_MAX_PLAUSIBLE_GAP) { $trip = $delta; }
+        if ($delta > 0 && $delta <= $maxGap) { $trip = $delta; }
         else { $flag = $delta <= 0 ? 'rollback' : 'jump'; }
     }
 
     $amount = (float) $e['amount'];
     $litres = $e['litres'] !== null ? (float) $e['litres'] : null;
+
+    // Who refuelled, and their own running km/L on THIS vehicle. Surfaced at the
+    // moment of approval because that is when the approver can still ask the
+    // question — a name on a report three weeks later is far weaker. Read in its
+    // own guarded query so a pre-migration database renders the rest of the panel.
+    $byName = null; $byKmpl = null; $byFills = 0;
+    try {
+        $bq = $pdo->prepare('SELECT e.refuelled_by_id, u.name
+                               FROM expenses e LEFT JOIN users u ON u.id = e.refuelled_by_id
+                              WHERE e.id = ?');
+        $bq->execute([$expenseId]);
+        $br = $bq->fetch() ?: null;
+        if ($br && $br['refuelled_by_id'] !== null) {
+            $byName = $br['name'];
+            // Their trailing history on this vehicle, over a wider window than the
+            // 90-day cost baseline: km/L needs full-to-full pairs, which are far
+            // sparser than plain readings, so a short window would usually be null.
+            $bpFrom = date('Y-m-d', strtotime($date . ' -180 days'));
+            $bp = veh_by_person($pdo, $vehicleId, $bpFrom, $date);
+            foreach ($bp['rows'] as $row) {
+                if ($row['id'] === (int) $br['refuelled_by_id']) {
+                    $byKmpl  = $row['kmpl'];
+                    $byFills = (int) $row['fills'];
+                    break;
+                }
+            }
+        }
+    } catch (PDOException $eb) { /* refuelled_by_id absent */ }
 
     // Trailing 90-day baseline, excluding this expense.
     $from = date('Y-m-d', strtotime($date . ' -90 days'));
@@ -360,6 +452,7 @@ function veh_approval_context(PDO $pdo, int $expenseId): ?array {
         'prev_date'      => $prev ? $prev['expense_date'] : null,
         'trip'           => $trip,
         'flag'           => $flag,
+        'jump_limit'     => $maxGap,
         'amount'         => $amount,
         'litres'         => $litres,
         'this_per_km'    => $thisPerKm,
@@ -370,7 +463,274 @@ function veh_approval_context(PDO $pdo, int $expenseId): ?array {
         'base_km_per_l'  => $base['km_per_litre'],
         'base_km'        => $base['km'],
         'variance_pct'   => $variance,
+        'by_name'        => $byName,
+        'by_km_per_l'    => $byKmpl,
+        'by_fills'       => $byFills,
     ];
+}
+
+// A person needs at least this many measurable full-to-full fills before any
+// comparison is drawn. Below it, one heavy-traffic week or one mistyped odometer
+// dominates the average and the "finding" is noise wearing a red badge.
+if (!defined('VEH_MIN_FILLS_TO_JUDGE')) { define('VEH_MIN_FILLS_TO_JUDGE', 3); }
+
+// How far below the vehicle's own average a person's km/L must sit before the
+// row is flagged for a look. 15% is beyond what route or traffic variation
+// explains over several fills, without flagging every ordinary fluctuation.
+if (!defined('VEH_PERSON_FLAG_PCT')) { define('VEH_PERSON_FLAG_PCT', 15.0); }
+
+/**
+ * Km per litre grouped by the PERSON who refuelled, for one vehicle.
+ *
+ * THE QUESTION THIS ANSWERS: litres bought is recorded on the receipt; litres
+ * BURNED is inferred from the odometer. For one vehicle on one set of routes,
+ * those two should track each other regardless of who was driving. When one
+ * person's fills persistently return fewer km per litre than everyone else's on
+ * the SAME vehicle, fuel that was paid for did not go into that tank.
+ *
+ * WHY THE COMPARISON IS WITHIN ONE VEHICLE, NEVER ACROSS THE FLEET
+ *   A bike returns 40 km/L and an ambulance 9. Ranking people across vehicles
+ *   would simply rank them by which vehicle they happen to drive, and the
+ *   person on the thirstiest van would be permanently "worst".
+ *
+ * WHY ONLY FULL-TO-FULL SEGMENTS COUNT
+ *   Only there do the litres in a fill correspond to the distance just covered.
+ *   Including part fills would attribute someone else's litres to this person's
+ *   kilometres, which is precisely the error the report claims to detect —
+ *   a false accusation, not merely an imprecise number.
+ *
+ * WHY UNASSIGNED IS REPORTED SEPARATELY AND NEVER FLAGGED
+ *   Rows posted before refuelled_by_id existed have nobody attached. Folding
+ *   them into a person would put another person's litres on their name.
+ *
+ * The 'flag' is a prompt to look, not a verdict: heavy city traffic, long idles
+ * on aircon, a loaded route or one bad odometer reading all lower km/L honestly.
+ * 'litres_over' and 'rs_over' quantify the gap so the size of the question is
+ * visible — they are NOT a claim that this much fuel was stolen.
+ */
+function veh_by_person(PDO $pdo, int $vehicleId, string $from, string $to): array {
+    $fills = veh_per_fill($pdo, $vehicleId, $from, $to);
+
+    $people = [];
+    foreach ($fills as $f) {
+        // Only measurable segments. A fill with no km/L carries no evidence
+        // about efficiency, so it must not dilute anyone's average — but its
+        // spend is still real, so it is counted separately as 'unmeasured'.
+        $key  = $f['by_id'] ?? 0;                       // 0 = Unassigned
+        $name = $f['by_id'] ? ($f['by_name'] ?: 'User #' . $f['by_id']) : 'Unassigned';
+        if (!isset($people[$key])) {
+            $people[$key] = ['id' => $f['by_id'], 'name' => $name, 'fills' => 0,
+                             'km' => 0.0, 'litres' => 0.0, 'amount' => 0.0,
+                             'unmeasured' => 0, 'unmeasured_amount' => 0.0];
+        }
+        $people[$key]['amount'] += $f['amount'];
+        if ($f['kmpl'] !== null) {
+            $people[$key]['fills']++;
+            $people[$key]['km']     += (float) $f['trip'];
+            $people[$key]['litres'] += (float) $f['litres'];
+        } else {
+            $people[$key]['unmeasured']++;
+            $people[$key]['unmeasured_amount'] += $f['amount'];
+        }
+    }
+    if (!$people) { return ['rows' => [], 'vehicle_kmpl' => null, 'measured_fills' => 0]; }
+
+    // The vehicle's own baseline: total measured km over total measured litres.
+    // Not a mean of the per-person rates — someone with two fills must not weigh
+    // the same as someone with twelve.
+    $totKm = 0.0; $totLit = 0.0; $measured = 0;
+    foreach ($people as $p) { $totKm += $p['km']; $totLit += $p['litres']; $measured += $p['fills']; }
+    $vehicleKmpl = ($totKm > 0 && $totLit > 0) ? $totKm / $totLit : null;
+
+    $rows = [];
+    foreach ($people as $p) {
+        $kmpl = ($p['km'] > 0 && $p['litres'] > 0) ? $p['km'] / $p['litres'] : null;
+        $dev  = ($kmpl !== null && $vehicleKmpl > 0)
+                    ? (($kmpl - $vehicleKmpl) / $vehicleKmpl) * 100 : null;
+
+        // Litres this person's distance SHOULD have needed at the vehicle's own
+        // rate, and what the surplus cost. Only for a person running BELOW the
+        // baseline with enough fills to judge — computing it for someone above
+        // average would produce a meaningless negative "loss".
+        $litresOver = null; $rsOver = null;
+        $flag = false;
+        if ($kmpl !== null && $dev !== null && $p['fills'] >= VEH_MIN_FILLS_TO_JUDGE
+            && $dev <= -VEH_PERSON_FLAG_PCT) {
+            $flag = true;
+            $expected   = $p['km'] / $vehicleKmpl;              // litres at baseline
+            $litresOver = $p['litres'] - $expected;
+            $rate       = $p['litres'] > 0 ? $p['amount'] / $p['litres'] : 0.0;
+            $rsOver     = $litresOver > 0 ? $litresOver * $rate : null;
+        }
+        // Unassigned is a data gap, never a suspect. Its rows may well belong to
+        // the very person being examined.
+        if ($p['id'] === null) { $flag = false; $litresOver = null; $rsOver = null; }
+
+        $rows[] = $p + [
+            'kmpl'        => $kmpl,
+            'dev_pct'     => $dev,
+            'flag'        => $flag,
+            'litres_over' => $litresOver,
+            'rs_over'     => $rsOver,
+            // Why no judgement was drawn, so the UI explains rather than showing
+            // a bare blank that reads as "nothing wrong here".
+            'too_few'     => ($kmpl !== null && $p['fills'] < VEH_MIN_FILLS_TO_JUDGE),
+        ];
+    }
+
+    // Worst first: a flagged row leads, then by deviation ascending. The person
+    // who needs looking at is at the top without anyone having to sort.
+    usort($rows, function ($a, $b) {
+        if ($a['flag'] !== $b['flag']) { return $a['flag'] ? -1 : 1; }
+        $ad = $a['dev_pct'] ?? 999; $bd = $b['dev_pct'] ?? 999;
+        return $ad <=> $bd;
+    });
+
+    return ['rows' => $rows, 'vehicle_kmpl' => $vehicleKmpl, 'measured_fills' => $measured];
+}
+
+/**
+ * Readings that need a human to fix them, worst first, across the whole fleet.
+ *
+ * The report already counts discarded readings, but a count sends you hunting
+ * through a list. This returns the actual rows with the reason, so the fix is
+ * one click from the finding.
+ *
+ * Four kinds, in descending order of how badly they corrupt a figure:
+ *   rollback — reading lower than the one before it; a dropped or transposed digit
+ *   jump     — gap above THIS vehicle's limit; usually a missed month of postings
+ *   missing  — a fuel fill with no reading at all; measures no distance
+ *   rate     — Rs/litre more than 30% off the fleet rate; a wrong amount or litres
+ */
+function veh_attention(PDO $pdo, string $from, string $to, int $limitRows = 40): array {
+    $vehicles = $pdo->query('SELECT id, name, registration FROM vehicles')->fetchAll();
+    $fleetRate = veh_fleet_rate_per_litre($pdo, 90, $to);
+    $out = [];
+
+    foreach ($vehicles as $v) {
+        $vid    = (int) $v['id'];
+        $label  = $v['name'] . ' · ' . $v['registration'];
+        $maxGap = veh_limit_for($pdo, $vid);
+        $rows   = veh_readings($pdo, $vid, $from, $to);
+
+        // Same forward walk as veh_km(), but recording WHICH reading broke the
+        // chain instead of only counting. Kept in step with veh_km deliberately:
+        // if these two disagreed, the report would count a problem the list
+        // could not show, or show one the totals did not reflect.
+        $prev = null;
+        foreach ($rows as $r) {
+            $m = (int) $r['meter_reading'];
+            if ($prev !== null) {
+                $delta = $m - $prev;
+                if ($delta <= 0) {
+                    $out[] = ['sev' => 3, 'kind' => 'rollback', 'id' => (int) $r['id'],
+                              'vehicle' => $label, 'date' => $r['expense_date'],
+                              'meter' => $m, 'prev' => $prev, 'delta' => $delta,
+                              'limit' => $maxGap];
+                } elseif ($delta > $maxGap) {
+                    $out[] = ['sev' => 3, 'kind' => 'jump', 'id' => (int) $r['id'],
+                              'vehicle' => $label, 'date' => $r['expense_date'],
+                              'meter' => $m, 'prev' => $prev, 'delta' => $delta,
+                              'limit' => $maxGap];
+                }
+            }
+            if ($prev === null || ($m > $prev && $m - $prev <= $maxGap)) { $prev = $m; }
+        }
+
+        // Rs/litre outliers among this vehicle's fills.
+        if ($fleetRate !== null && $fleetRate > 0) {
+            foreach (veh_per_fill($pdo, $vid, $from, $to) as $f) {
+                if ($f['rate'] === null) { continue; }
+                $off = (($f['rate'] - $fleetRate) / $fleetRate) * 100;
+                if (abs($off) >= 30) {
+                    $out[] = ['sev' => 1, 'kind' => 'rate', 'id' => $f['id'],
+                              'vehicle' => $label, 'date' => $f['date'],
+                              'rate' => $f['rate'], 'fleet_rate' => $fleetRate,
+                              'off_pct' => $off];
+                }
+            }
+        }
+    }
+
+    // Fuel fills with no reading at all. These never appear in veh_readings()
+    // (which requires meter_reading IS NOT NULL), so they are invisible to every
+    // other figure on the page — the one class of problem a count cannot surface.
+    try {
+        $s = $pdo->prepare("
+            SELECT e.id, e.expense_date, v.name, v.registration
+              FROM expenses e
+              JOIN vehicles v ON v.id = e.vehicle_id
+              JOIN expense_subcategories s ON s.id = e.subcategory_id
+             WHERE s.tracks_fuel = 1
+               AND e.meter_reading IS NULL
+               AND e.voided_at IS NULL
+               AND e.approval_status <> 'REJECTED'
+               AND e.expense_date BETWEEN ? AND ?
+             ORDER BY e.expense_date DESC
+        ");
+        $s->execute([$from, $to]);
+        foreach ($s->fetchAll() as $r) {
+            $out[] = ['sev' => 2, 'kind' => 'missing', 'id' => (int) $r['id'],
+                      'vehicle' => $r['name'] . ' · ' . $r['registration'],
+                      'date' => $r['expense_date']];
+        }
+    } catch (PDOException $e) {
+        // Vehicle columns absent — the caller already gates on $schemaReady.
+    }
+
+    // Severity first, then newest: a recent error is still correctable from
+    // memory, whereas one from four months ago probably is not.
+    usort($out, function ($a, $b) {
+        if ($a['sev'] !== $b['sev']) { return $b['sev'] <=> $a['sev']; }
+        return strcmp($b['date'], $a['date']);
+    });
+    return array_slice($out, 0, $limitRows);
+}
+
+/**
+ * Monthly cost-per-km series for one vehicle, for the trend view.
+ *
+ * Each month is measured INDEPENDENTLY, so the first reading of each month is
+ * that month's baseline and the distance between the last fill of one month and
+ * the first of the next belongs to neither. That understates distance slightly
+ * and therefore overstates cost per km — the same deliberate direction of error
+ * used everywhere else here, so the trend never flatters.
+ *
+ * 'high' marks a month sitting more than 20% above the vehicle's own mean for
+ * the window. Compared against itself, not the fleet: a fuel price rise lifts
+ * every vehicle together, whereas one van climbing alone is the real signal.
+ */
+function veh_trend(PDO $pdo, int $vehicleId, int $months = 6, ?string $asOf = null): array {
+    $end  = $asOf ?: date('Y-m-d');
+    $out  = [];
+    for ($i = $months - 1; $i >= 0; $i--) {
+        $mStart = date('Y-m-01', strtotime($end . ' -' . $i . ' months'));
+        $mEnd   = date('Y-m-t',  strtotime($mStart));
+        $m = veh_metrics($pdo, $vehicleId, $mStart, $mEnd);
+        $out[] = [
+            'label'        => date('M', strtotime($mStart)),
+            'year'         => date('Y', strtotime($mStart)),
+            'from'         => $mStart,
+            'to'           => $mEnd,
+            'km'           => $m['km'],
+            'total'        => $m['total'],
+            'fuel_per_km'  => $m['fuel_per_km'],
+            'total_per_km' => $m['total_per_km'],
+            'high'         => false,
+        ];
+    }
+    // The vehicle's own mean over the months that actually have a figure.
+    $vals = array_values(array_filter(array_column($out, 'fuel_per_km'), fn($v) => $v !== null));
+    $mean = $vals ? array_sum($vals) / count($vals) : null;
+    if ($mean !== null && $mean > 0) {
+        foreach ($out as $i => $row) {
+            if ($row['fuel_per_km'] !== null && $row['fuel_per_km'] > $mean * 1.20) {
+                $out[$i]['high'] = true;
+            }
+        }
+    }
+    return ['months' => $out, 'mean' => $mean,
+            'peak'   => $vals ? max($vals) : null];
 }
 
 /**

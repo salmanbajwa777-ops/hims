@@ -102,13 +102,30 @@ $fleetKmPerL     = ($fleet['km'] > 0 && $fleet['litres'] > 0) ? $fleet['km'] / $
 // Per-fill detail for the focused vehicle (or the first one with data).
 $fills = [];
 $focusRow = null;
+$byPerson = ['rows' => [], 'vehicle_kmpl' => null, 'measured_fills' => 0];
+$trend    = ['months' => [], 'mean' => null, 'peak' => null];
 if ($schemaReady && $rowsOut) {
     if ($focusVehicle > 0) {
         foreach ($rowsOut as $r) { if ((int) $r['vehicle']['id'] === $focusVehicle) { $focusRow = $r; break; } }
     }
     if (!$focusRow) { $focusRow = $rowsOut[0]; $focusVehicle = (int) $focusRow['vehicle']['id']; }
     $fills = veh_per_fill($pdo, $focusVehicle, $from, $to);
+
+    // Per-person efficiency for the focused vehicle. Within ONE vehicle only —
+    // a bike returns 40 km/L and an ambulance 9, so a fleet-wide ranking of
+    // people would just rank them by which vehicle they happen to drive.
+    $byPerson = veh_by_person($pdo, $focusVehicle, $from, $to);
+
+    // Six months regardless of the date filter above: a trend needs a fixed
+    // window to be a trend, and re-scoping it to a one-week filter would leave
+    // a single bar that says nothing.
+    $trend = veh_trend($pdo, $focusVehicle, 6, $to);
 }
+
+// Readings that need a human to fix them, fleet-wide. Deliberately NOT limited
+// to the focused vehicle: a corrupt reading on a van nobody is looking at is
+// exactly the one that stays broken.
+$attention = $schemaReady ? veh_attention($pdo, $from, $to) : [];
 
 $qs = function (array $over = []) use ($from, $to, $focusVehicle) {
     return '?' . http_build_query(array_merge(
@@ -150,6 +167,49 @@ $headExtra = <<<CSS
            padding: 12px 16px; font-size: 12.8px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 16px; }
 .vlink { color: var(--primary); font-weight: 600; text-decoration: none; }
 .vlink:hover { text-decoration: underline; }
+
+/* ---- Per-person efficiency: an outlier must read without reading numbers ---- */
+.who { font-weight: 600; }
+.who .role { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 400; }
+tr.suspect td { background: var(--red-bg); }
+tr.suspect td:first-child { box-shadow: inset 3px 0 0 var(--red-text); }
+.dev { display: flex; align-items: center; gap: 7px; justify-content: flex-end; }
+.dev .track { width: 68px; height: 7px; border-radius: 4px; background: var(--border);
+              position: relative; flex: none; overflow: hidden; }
+.dev .track i { position: absolute; top: 0; bottom: 0; display: block; }
+.dev .track i.lo { background: var(--red-text); right: 50%; }
+.dev .track i.hi { background: var(--primary-accent); left: 50%; }
+.dev .v { font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; }
+.dev .v.lo { color: var(--red-text); } .dev .v.hi { color: var(--primary-accent); }
+
+/* ---- Attention list ---- */
+.att { display: flex; flex-direction: column; gap: 9px; }
+.att .arow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    border: 1px solid var(--border); border-left-width: 3px; border-radius: 0 10px 10px 0;
+    padding: 11px 14px; background: var(--bg); }
+.att .arow.s3 { border-left-color: var(--red-text); }
+.att .arow.s2 { border-left-color: var(--amber-text); }
+.att .arow.s1 { border-left-color: var(--amber-text); }
+.att .what { flex: 1 1 220px; min-width: 0; }
+.att .what b { font-size: 13.5px; }
+.att .what span { display: block; font-size: 12.5px; color: var(--text-secondary); }
+.att .fix { font-size: 12.5px; font-weight: 700; color: var(--primary); text-decoration: none;
+    border: 1px solid var(--border-strong); background: var(--card, #fff); border-radius: 8px;
+    padding: 0 13px; min-height: 40px; display: inline-flex; align-items: center; white-space: nowrap; }
+.att .fix:hover { background: var(--primary-light); }
+
+/* ---- Trend ---- */
+.trend { display: flex; flex-direction: column; gap: 5px; }
+.trend .t { display: grid; grid-template-columns: 64px 1fr 78px; gap: 12px; align-items: center; }
+.trend .t .m { font-size: 12.5px; color: var(--text-secondary); font-weight: 600; }
+.trend .t .g { height: 22px; background: var(--border); border-radius: 5px; overflow: hidden; }
+.trend .t .g i { display: block; height: 100%; background: var(--primary-accent); border-radius: 5px; }
+.trend .t .g i.up { background: var(--red-text); }
+.trend .t .val { font-variant-numeric: tabular-nums; font-size: 12.5px; text-align: right; }
+
+@media (max-width: 640px) {
+    .trend .t { grid-template-columns: 52px 1fr 70px; }
+}
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -215,10 +275,11 @@ require __DIR__ . '/partials/sidebar.php';
                 <?php if ($fleet['bad_gaps'] > 0): ?>
                 <div>
                     <b><?= $fleet['bad_gaps'] ?> reading<?= $fleet['bad_gaps'] === 1 ? '' : 's' ?> discarded (implausible).</b>
-                    Lower than the one before it, or more than <?= number_format(VEH_MAX_PLAUSIBLE_GAP) ?> km above it.
-                    The money on those postings still counts in full, so cost per km is measured over
-                    <em>less</em> distance than the vehicle may really have run — an over-estimate rather
-                    than a silent under-estimate. Fix these with <b>Edit meter</b> on the Expenses page.
+                    Lower than the one before it, or further above it than that vehicle's own jump limit
+                    allows. The money on those postings still counts in full, so cost per km is measured
+                    over <em>less</em> distance than the vehicle may really have run — an over-estimate
+                    rather than a silent under-estimate.
+                    <b>They are listed individually at the bottom of this page</b>, each with a link to fix it.
                 </div>
                 <?php endif; ?>
                 <?php if ($fleet['partial_blocked'] > 0): ?>
@@ -265,7 +326,13 @@ require __DIR__ . '/partials/sidebar.php';
                                 <a class="vlink" href="<?= htmlspecialchars($qs(['vehicle' => $vid])) ?>">
                                     <span class="veh-name"><?= htmlspecialchars($v['name']) ?></span></a>
                                 <span class="plate"><?= htmlspecialchars($v['registration']) ?><?php
-                                    if (!$v['is_active']) { echo ' · retired'; } ?></span>
+                                    if (!$v['is_active']) { echo ' · retired'; } ?>
+                                    <?php /* Only shown when tuned away from the fleet default, so the
+                                             column does not repeat "5,000 km" on every row. */ ?>
+                                    <?php if ((int) $r['jump_limit'] !== (int) VEH_MAX_PLAUSIBLE_GAP): ?>
+                                    · <span title="Gaps larger than this are discarded for this vehicle">max <?= number_format($r['jump_limit']) ?> km</span>
+                                    <?php endif; ?>
+                                </span>
                             </td>
                             <td class="num"><?= $r['km'] > 0 ? number_format($r['km']) : '—' ?>
                                 <?php if ($r['bad_gaps'] > 0): ?>
@@ -393,6 +460,207 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
             </div>
             <?php endif; ?>
+
+            <!-- Per-person efficiency, within this one vehicle -->
+            <?php if ($focusRow): ?>
+            <div class="card" style="margin-top:18px;">
+                <div class="section-title">
+                    Km per litre by person — <?= htmlspecialchars($focusRow['vehicle']['name']) ?>
+                </div>
+                <div class="section-sub">
+                    Same vehicle, same routes. Litres bought is on the receipt; litres burned comes from
+                    the odometer. When one person's fills keep returning fewer kilometres per litre than
+                    everyone else's on this vehicle, the two do not agree.
+                </div>
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Refuelled by</th>
+                            <th class="num" title="Full-tank-to-full-tank fills only — the ones where litres match a distance">Fills</th>
+                            <th class="num">Km</th>
+                            <th class="num">Litres</th>
+                            <th class="num">Km / L</th>
+                            <th class="num">vs vehicle average</th>
+                            <th class="num" title="Litres above what this distance needed at the vehicle's own rate">Extra litres</th>
+                            <th class="num">Rs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$byPerson['rows']): ?>
+                        <tr><td colspan="8" class="muted" style="padding:18px 10px;">
+                            No fuel fills for this vehicle in the range.
+                        </td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($byPerson['rows'] as $p): ?>
+                        <tr class="<?= $p['flag'] ? 'suspect' : '' ?>">
+                            <td>
+                                <span class="who"><?= htmlspecialchars($p['name']) ?></span>
+                                <?php if ($p['id'] === null): ?>
+                                <span class="role">no name recorded on these fills</span>
+                                <?php elseif ($p['flag']): ?>
+                                <span class="chip c-bad" style="margin-top:4px;">Look at this</span>
+                                <?php elseif ($p['too_few']): ?>
+                                <span class="role">too few fills to judge</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="num"><?= (int) $p['fills'] ?>
+                                <?php if ($p['unmeasured'] > 0): ?>
+                                <br><span class="muted" style="font-size:10.5px;"
+                                          title="Part fills and baseline fills — real spend, but no distance can be matched to their litres">
+                                    +<?= (int) $p['unmeasured'] ?> n/m</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="num"><?= $p['km'] > 0 ? number_format($p['km']) : '—' ?></td>
+                            <td class="num"><?= $p['litres'] > 0 ? number_format($p['litres'], 2) : '—' ?></td>
+                            <td class="num"><b><?= veh_kmpl($p['kmpl']) ?></b></td>
+                            <td class="num">
+                                <?php if ($p['dev_pct'] === null): ?>
+                                    <span class="muted">—</span>
+                                <?php else: $lo = $p['dev_pct'] < 0;
+                                      // Bar width caps at 50% of the half-track so a wild
+                                      // outlier cannot overflow its own cell.
+                                      $w = min(50, abs($p['dev_pct'])); ?>
+                                    <div class="dev">
+                                        <span class="track"><i class="<?= $lo ? 'lo' : 'hi' ?>" style="width:<?= $w ?>%;"></i></span>
+                                        <span class="v <?= $lo ? 'lo' : 'hi' ?>"><?= ($lo ? '' : '+') . number_format($p['dev_pct'], 1) ?>%</span>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
+                            <td class="num"><?= $p['litres_over'] !== null ? number_format($p['litres_over'], 1) : '—' ?></td>
+                            <td class="num"><b><?= $p['rs_over'] !== null ? number_format($p['rs_over']) : '—' ?></b></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <?php if ($byPerson['vehicle_kmpl'] !== null): ?>
+                    <tfoot>
+                        <tr>
+                            <td><b>This vehicle</b></td>
+                            <td class="num"><b><?= (int) $byPerson['measured_fills'] ?></b></td>
+                            <td class="num" colspan="2" style="text-align:right;color:var(--text-muted);">baseline</td>
+                            <td class="num"><b><?= veh_kmpl($byPerson['vehicle_kmpl']) ?></b></td>
+                            <td colspan="3"></td>
+                        </tr>
+                    </tfoot>
+                    <?php endif; ?>
+                </table>
+                </div>
+                <div class="warnbox" style="margin:14px 0 0;">
+                    <b>This is a question, not a verdict.</b> Heavy city traffic, long idles on aircon, a
+                    loaded route or one mistyped odometer all lower km/L honestly. A flag means
+                    <em>look at these fills</em> — never that fuel was taken. Nobody is flagged on fewer
+                    than <?= (int) VEH_MIN_FILLS_TO_JUDGE ?> measurable fills, and
+                    <b>Unassigned</b> is never flagged at all: those fills may well be the same person's.
+                </div>
+                <div class="muted-note">
+                    Only full-tank-to-full-tank fills count here, so litres genuinely match the distance.
+                    Part fills still count toward cost per km and appear as <b>n/m</b> (not measurable).
+                    <b>Extra litres</b> is what this person's distance needed at this vehicle's own rate,
+                    subtracted from what they actually bought.
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Trend, six months, measured against this vehicle's own mean -->
+            <?php if ($focusRow && $trend['months']): ?>
+            <div class="card" style="margin-top:18px;">
+                <div class="section-title">
+                    Six-month trend — <?= htmlspecialchars($focusRow['vehicle']['name']) ?>
+                </div>
+                <div class="section-sub">
+                    Fuel cost per km, month by month. Compared with this vehicle's own average, not the
+                    fleet's — a fuel price rise lifts every vehicle together, so one van climbing alone
+                    is the signal worth chasing.
+                </div>
+                <div class="trend">
+                    <?php
+                    // Bars scale to the peak month so the shape is visible; a
+                    // fixed maximum would flatten every bar on a cheap vehicle.
+                    $peak = $trend['peak'] ?: 1;
+                    foreach ($trend['months'] as $mo):
+                        $v = $mo['fuel_per_km'];
+                        $w = $v !== null ? max(2, min(100, ($v / $peak) * 100)) : 0;
+                    ?>
+                    <div class="t">
+                        <span class="m"><?= htmlspecialchars($mo['label']) ?>
+                            <span class="muted" style="font-size:10.5px;"><?= htmlspecialchars(substr($mo['year'], 2)) ?></span></span>
+                        <span class="g">
+                            <?php if ($v !== null): ?>
+                            <i class="<?= $mo['high'] ? 'up' : '' ?>" style="width:<?= $w ?>%;"
+                               title="<?= number_format($mo['km']) ?> km · Rs <?= number_format($mo['total']) ?> spent"></i>
+                            <?php endif; ?>
+                        </span>
+                        <span class="val"><?= $v !== null ? number_format($v, 2) : '<span class="muted">no km</span>' ?></span>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <div class="muted-note">
+                    A bar turns red once that month sits more than 20% above this vehicle's six-month
+                    average<?= $trend['mean'] !== null ? ' of Rs ' . number_format($trend['mean'], 2) . '/km' : '' ?>.
+                    Each month is measured on its own readings, so distance across a month boundary
+                    belongs to neither — which makes these figures a slight over-estimate, never a
+                    flattering one. A month showing <b>no km</b> had no usable pair of readings.
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Readings that need fixing, fleet-wide, worst first -->
+            <div class="card" style="margin-top:18px;">
+                <div class="section-title">
+                    Readings needing attention
+                    <?php if ($attention): ?>
+                    <span class="chip c-bad" style="vertical-align:2px;"><?= count($attention) ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="section-sub">
+                    Every reading in this range that a figure above had to discard or could not use —
+                    across the whole fleet, not just the vehicle selected, because a bad reading on a
+                    van nobody is looking at is the one that stays broken.
+                </div>
+                <?php if (!$attention): ?>
+                <div class="notebox" style="margin:0;">
+                    Nothing to fix — every reading in this range forms a believable chain.
+                </div>
+                <?php else: ?>
+                <div class="att">
+                    <?php foreach ($attention as $a): ?>
+                    <div class="arow s<?= (int) $a['sev'] ?>">
+                        <div class="what">
+                            <b><?= htmlspecialchars($a['vehicle']) ?> ·
+                               <?= htmlspecialchars(date('d/m/Y', strtotime($a['date']))) ?></b>
+                            <span>
+                                <?php if ($a['kind'] === 'rollback'): ?>
+                                    Reading <?= number_format($a['meter']) ?> is <b>lower</b> than
+                                    <?= number_format($a['prev']) ?> before it — a digit was probably dropped.
+                                <?php elseif ($a['kind'] === 'jump'): ?>
+                                    Jumped <?= number_format($a['delta']) ?> km, over this vehicle's
+                                    <?= number_format($a['limit']) ?> km limit — a typo, or postings were missed.
+                                <?php elseif ($a['kind'] === 'missing'): ?>
+                                    A fuel fill with <b>no meter reading</b>, so it measures no distance at all.
+                                <?php else: ?>
+                                    Rs <?= number_format($a['rate'], 2) ?> per litre is
+                                    <?= number_format(abs($a['off_pct']), 0) ?>%
+                                    <?= $a['off_pct'] > 0 ? 'above' : 'below' ?>
+                                    the fleet rate of Rs <?= number_format($a['fleet_rate'], 2) ?> — check the receipt.
+                                <?php endif; ?>
+                            </span>
+                        </div>
+                        <span class="chip <?= $a['sev'] >= 3 ? 'c-bad' : 'c-warn' ?>">
+                            <?= htmlspecialchars(ucfirst($a['kind'])) ?></span>
+                        <?php /* Straight to the Expenses page filtered to that day, where the
+                                 admin's Edit meter link sits on the row. */ ?>
+                        <a class="fix" href="expenses.php?<?= http_build_query(['from' => $a['date'], 'to' => $a['date']]) ?>">
+                            <?= $a['kind'] === 'missing' ? 'Add reading' : 'Fix reading' ?></a>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <div class="muted-note">
+                    Fixing one uses <b>Edit meter</b> on the Expenses page — admin only, logged with the
+                    old and new value, and it never touches the amount, the date or who paid. A closed
+                    day is no obstacle: no money moves.
+                </div>
+                <?php endif; ?>
+            </div>
 
             <div class="notebox" style="margin-top:18px;">
                 <b>How distance is worked out.</b> Km comes from consecutive odometer readings, not from
