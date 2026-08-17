@@ -152,6 +152,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
     if ($meterReading !== null && $meterReading < 0) { $meterReading = null; }
     if ($litres !== null && $litres <= 0) { $litres = null; }
 
+    // Is the chosen sub-category a fuel one? Read from the DB, never from the
+    // name, so "Diesel" or "Petrol" added later behave correctly with no code
+    // change. Drives the mandatory-field rules below and the tank_full flag.
+    $isFuelSub = false;
+    if ($needsVehicle && $subcategoryId > 0) {
+        try {
+            $fs = $pdo->prepare('SELECT tracks_fuel FROM expense_subcategories WHERE id = ?');
+            $fs->execute([$subcategoryId]);
+            $isFuelSub = (bool) $fs->fetchColumn();
+        } catch (PDOException $e) { $isFuelSub = false; }
+    }
+
+    // Full tank? Only meaningful on a fuel row; forced NULL everywhere else so a
+    // maintenance posting can never carry a stray flag. '' = unanswered, which
+    // the validation below rejects for a fuel row.
+    $tankRaw   = $_POST['tank_full'] ?? '';
+    $tankFull  = null;
+    if ($isFuelSub && ($tankRaw === '1' || $tankRaw === '0')) {
+        $tankFull = (int) $tankRaw;
+    }
+
     // Who the disbursement was paid to. Only meaningful for needs_doctor
     // categories; forced NULL otherwise so an ordinary expense can never carry
     // a stray doctor id from a stale form field.
@@ -192,6 +213,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
         $error = 'Pick the vehicle this spend is for.';
     } elseif ($needsVehicle && $subcategoryId <= 0) {
         $error = 'Choose Fuel, Maintenance or Repairs.';
+    // A FUEL row without a meter reading, litres, or a known tank state cannot
+    // produce an efficiency figure, and a fuel posting whose whole purpose is
+    // that figure is worth blocking for. Maintenance and Repairs are deliberately
+    // NOT subject to any of these three — they often have no meaningful reading
+    // and never have litres.
+    } elseif ($isFuelSub && $meterReading === null) {
+        $error = 'A fuel posting needs the meter reading.';
+    } elseif ($isFuelSub && ($litres === null || $litres <= 0)) {
+        $error = 'A fuel posting needs the litres filled.';
+    } elseif ($isFuelSub && $tankFull === null) {
+        $error = 'Say whether the tank was filled to full.';
     } elseif ($monthLock) {
         $error = $monthLock;
     } elseif ($dayLock) {
@@ -279,7 +311,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
             $vehicleValue = $vehicleId > 0 ? $vehicleId : null;
             $subcatValue  = $subcategoryId > 0 ? $subcategoryId : null;
             try {
-                // Newest shape: vehicle columns present.
+                // Newest shape: vehicle columns + tank_full present.
+                $pdo->prepare('
+                    INSERT INTO expenses
+                        (expense_number, category_id, subcategory_id, vehicle_id, meter_reading, litres, tank_full,
+                         amount, description, paid_to, paid_to_doctor_id,
+                         expense_date, period_month, source,
+                         posted_by_id, approval_status, over_limit, limit_note, approved_by_id, approved_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ' . ($isAdmin ? 'NOW()' : 'NULL') . ')
+                ')->execute([
+                    $expenseNumber, $categoryId, $subcatValue, $vehicleValue, $meterReading, $litres, $tankFull,
+                    $amount, $description,
+                    $paidTo !== '' ? $paidTo : null, $doctorValue,
+                    $periodValue, $source,
+                    $userId, $status,
+                    $overLimit ? 1 : 0, $limitNote,
+                    $isAdmin ? $userId : null,
+                ]);
+            } catch (PDOException $eTank) {
+            try {
+                // tank_full absent (add_expense_tank_full.sql not run) — step down.
                 $pdo->prepare('
                     INSERT INTO expenses
                         (expense_number, category_id, subcategory_id, vehicle_id, meter_reading, litres,
@@ -344,6 +395,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'post_
                 }
             }
             }   // end vehicle-columns fallback
+            }   // end tank_full fallback
             $expenseId = (int) $pdo->lastInsertId();
 
             // Mint the single-use magic-link token in the SAME transaction, so a
@@ -417,6 +469,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_
         }
     } else {
         $error = 'A void needs a reason.';
+    }
+    expense_redirect_back($_POST, $error !== '' ? 'error' : 'success', $error !== '' ? $error : $success);
+}
+
+// ---- Correct the meter reading / litres on an already-posted expense ----
+//
+// Admin only. Exists because a mistyped odometer was previously permanent: the
+// report counted it as an unusable reading and there was no way to fix it, so
+// cost-per-km stayed wrong forever on a shrinking denominator.
+//
+// DELIBERATELY NOT DAY-LOCKED. A void is refused once the poster has signed off
+// that day's tally because it moves cash. A meter reading moves NO money — it
+// touches neither amount nor source nor expected_cash — and the readings most in
+// need of correction are precisely the ones on days already closed. Blocking
+// those would make the feature useless for its actual purpose. The money fields
+// remain untouchable here; only meter_reading and litres can change.
+//
+// Every correction is audit-logged with the old AND new value, so a reading that
+// was edited to flatter a cost-per-km figure is visible after the fact.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_meter') {
+    if (!$isAdmin) {
+        http_response_code(403);
+        exit('Only admin can correct a meter reading.');
+    }
+    $id = (int) ($_POST['expense_id'] ?? 0);
+
+    // Blank clears the reading — that is a legitimate correction ("this row never
+    // had a trustworthy reading"), distinct from typing 0.
+    $mRaw = trim($_POST['meter_reading'] ?? '');
+    $lRaw = trim($_POST['litres'] ?? '');
+    $tRaw = trim($_POST['tank_full'] ?? '');
+    $newMeter  = $mRaw === '' ? null : (int) $mRaw;
+    $newLitres = $lRaw === '' ? null : round((float) $lRaw, 2);
+    if ($newMeter !== null && $newMeter < 0)  { $newMeter = null; }
+    if ($newLitres !== null && $newLitres <= 0) { $newLitres = null; }
+    // A mis-set full/part flag would otherwise be as permanent as a mistyped
+    // reading was, and it silently changes km/L. '' leaves it unchanged.
+    $newTank = ($tRaw === '1' || $tRaw === '0') ? (int) $tRaw : null;
+
+    try {
+        $cur = $pdo->prepare('SELECT e.expense_number, e.vehicle_id, e.meter_reading, e.litres,
+                                     v.name AS vehicle_name, v.registration
+                                FROM expenses e
+                                LEFT JOIN vehicles v ON v.id = e.vehicle_id
+                               WHERE e.id = ?');
+        $cur->execute([$id]);
+        $row = $cur->fetch() ?: null;
+
+        if (!$row) {
+            $error = 'That expense could not be found.';
+        } elseif ((int) ($row['vehicle_id'] ?? 0) <= 0) {
+            // A reading is meaningless without a vehicle to attribute it to.
+            $error = 'That expense is not attached to a vehicle, so it has no meter reading.';
+        } else {
+            $oldMeter  = $row['meter_reading'] !== null ? (int) $row['meter_reading'] : null;
+            $oldLitres = $row['litres'] !== null ? (float) $row['litres'] : null;
+
+            // tank_full is only written when the form supplied a value AND the
+            // column exists; otherwise it keeps whatever it had.
+            $tankChanged = false;
+            if ($newTank !== null) {
+                try {
+                    $pdo->prepare('UPDATE expenses SET tank_full = ? WHERE id = ?')->execute([$newTank, $id]);
+                    $tankChanged = true;
+                } catch (PDOException $e) { /* pre-migration: silently skip */ }
+            }
+
+            if ($oldMeter === $newMeter && $oldLitres === $newLitres && !$tankChanged) {
+                $success = 'No change — the reading is already ' . ($newMeter === null ? 'blank' : number_format($newMeter) . ' km') . '.';
+            } else {
+                $pdo->prepare('UPDATE expenses SET meter_reading = ?, litres = ? WHERE id = ?')
+                    ->execute([$newMeter, $newLitres, $id]);
+
+                $fmt = function ($m, $l) {
+                    return ($m === null ? 'blank' : number_format((float) $m) . ' km')
+                         . ($l === null ? '' : ' / ' . number_format((float) $l, 2) . ' L');
+                };
+                audit_log($pdo, 'expense_meter_corrected',
+                    sprintf('Corrected meter on %s (%s): %s -> %s',
+                        $row['expense_number'],
+                        trim(($row['vehicle_name'] ?? '') . ' ' . ($row['registration'] ?? '')),
+                        $fmt($oldMeter, $oldLitres), $fmt($newMeter, $newLitres)),
+                    $userId);
+
+                $success = 'Meter reading updated for ' . $row['expense_number']
+                         . '. Cost-per-km figures will recalculate.';
+            }
+        }
+    } catch (PDOException $e) {
+        // meter_reading/litres absent → the vehicle migration has not run.
+        $error = 'Meter readings are not available until the vehicle migration has run.';
     }
     expense_redirect_back($_POST, $error !== '' ? 'error' : 'success', $error !== '' ? $error : $success);
 }
@@ -1211,7 +1354,27 @@ require __DIR__ . '/partials/sidebar.php';
                             <div class="f-group" id="litresGroup" style="display:none;">
                                 <label>Litres</label>
                                 <input type="number" name="litres" id="expLitres" step="0.01" min="0" placeholder="0.00">
+                                <div class="meter-warn" id="rateWarn" style="display:none;"></div>
                             </div>
+
+                            <!-- Full tank? Only a full-to-full pair gives a true
+                                 km/L, so the fill state has to be recorded rather
+                                 than assumed. Defaults to Yes: topping up is the
+                                 exception, not the rule. -->
+                            <div class="f-group" id="tankGroup" style="display:none;">
+                                <label>Filled to full?</label>
+                                <div class="sub-seg" id="tankSeg">
+                                    <button type="button" class="sub-btn on" data-tank="1">Yes — full tank</button>
+                                    <button type="button" class="sub-btn" data-tank="0">No — part fill</button>
+                                </div>
+                                <input type="hidden" name="tank_full" id="expTankFull" value="1">
+                                <div class="muted-note" style="margin-top:6px;">
+                                    Only full-to-full fills give a true km/L. A part fill still counts
+                                    toward cost per km.
+                                </div>
+                            </div>
+
+                            <div class="meter-warn" id="dupWarn" style="display:none;"></div>
                         </div>
                         <?php endif; ?>
 
@@ -1401,6 +1564,28 @@ require __DIR__ . '/partials/sidebar.php';
                                         <button type="submit" class="link-btn warn">Reject</button>
                                     </form>
                                     <?php endif; ?>
+                                    <?php
+                                    /* Correct a mistyped odometer. Admin only, and only on a
+                                       row that actually carries a vehicle — a reading has no
+                                       meaning without one. Offered even on a CLOSED day and on
+                                       an already-approved row: no money moves, and those are
+                                       exactly the readings that need fixing. */
+                                    if (!$voided && $isAdmin && $vehiclePanelReady && !empty($r['vehicle_id'])):
+                                        $curM = $r['meter_reading'] !== null ? (string) (int) $r['meter_reading'] : '';
+                                        $curL = $r['litres'] !== null ? rtrim(rtrim(number_format((float) $r['litres'], 2, '.', ''), '0'), '.') : '';
+                                        $curT = array_key_exists('tank_full', $r) && $r['tank_full'] !== null ? (string) (int) $r['tank_full'] : '';
+                                    ?>
+                                    <form method="POST" action="expenses.php" style="margin:0 0 4px;"
+                                          onsubmit="return editMeter(this, '<?= htmlspecialchars($r['expense_number'], ENT_QUOTES) ?>', '<?= htmlspecialchars($curM, ENT_QUOTES) ?>', '<?= htmlspecialchars($curL, ENT_QUOTES) ?>', '<?= htmlspecialchars($curT, ENT_QUOTES) ?>');">
+                                        <input type="hidden" name="action" value="edit_meter">
+                                        <input type="hidden" name="expense_id" value="<?= (int) $r['id'] ?>">
+                                        <input type="hidden" name="meter_reading" value="">
+                                        <input type="hidden" name="litres" value="">
+                                        <input type="hidden" name="tank_full" value="">
+                                        <?= $filterFields ?>
+                                        <button type="submit" class="link-btn"><?= $curM === '' ? 'Add meter' : 'Edit meter' ?></button>
+                                    </form>
+                                    <?php endif; ?>
                                     <?php if (!$voided && $isAdmin): ?>
                                     <form method="POST" action="expenses.php" style="margin:0;"
                                           onsubmit="var r=prompt('Reason for voiding <?= htmlspecialchars($r['expense_number']) ?>:');if(!r){return false;}this.void_reason.value=r;return true;">
@@ -1479,6 +1664,58 @@ require __DIR__ . '/partials/sidebar.php';
         });
     }
 })();
+
+// Correct a meter reading. prompt() rather than a modal to match the Void and
+// Reject controls already on this row — one bespoke dialog among three prompts
+// would be the odd one out. Litres is asked only as a follow-up so the common
+// case (fix the odometer, leave litres alone) stays two keystrokes.
+//
+// Blank is a MEANINGFUL answer: it clears the reading, which is the right
+// correction for "this row never had a trustworthy number". Cancel aborts.
+function editMeter(form, voucher, curMeter, curLitres, curTank) {
+    var m = window.prompt(
+        'Meter reading (km) for ' + voucher + ':\n\n' +
+        'Leave blank to clear it. Cancel to abort.',
+        curMeter);
+    if (m === null) { return false; }               // cancelled
+    m = m.trim();
+    if (m !== '' && !/^\d{1,9}$/.test(m)) {
+        window.alert('Enter whole kilometres only, e.g. 48595 — no commas or decimals.');
+        return false;
+    }
+
+    var l = window.prompt(
+        'Litres for ' + voucher + ':\n\n' +
+        'Leave blank if not a fuel fill. Cancel to abort.',
+        curLitres);
+    if (l === null) { return false; }
+    l = l.trim();
+    if (l !== '' && !/^\d{1,6}(\.\d{1,2})?$/.test(l)) {
+        window.alert('Enter litres as a number, e.g. 40 or 40.50.');
+        return false;
+    }
+
+    // Tank state only matters when there are litres — a maintenance row has no
+    // fill to describe. Blank leaves the existing flag untouched.
+    var t = '';
+    if (l !== '') {
+        t = window.prompt(
+            'Was the tank filled to FULL? Enter 1 for full, 0 for a part fill.\n\n' +
+            'Leave blank to leave it unchanged. Only full-to-full pairs give a km/L.',
+            curTank);
+        if (t === null) { return false; }
+        t = t.trim();
+        if (t !== '' && t !== '0' && t !== '1') {
+            window.alert('Enter 1 for a full tank, 0 for a part fill, or leave blank.');
+            return false;
+        }
+    }
+
+    form.meter_reading.value = m;
+    form.litres.value = l;
+    form.tank_full.value = t;
+    return true;
+}
 </script>
 <?php if ($canApprove && $pendingIds): ?>
 <script>
@@ -1752,20 +1989,87 @@ require __DIR__ . '/partials/sidebar.php';
                     } else {
                         prevInp.value = 'first reading';
                     }
+                    if (d) {
+                        fleetRate = (d.fleet_rate === null || d.fleet_rate === undefined)
+                                  ? null : parseFloat(d.fleet_rate);
+                        fuelToday = !!d.fuel_today;
+                    }
                     refreshCalc();
+                    refreshRate();
+                    refreshDup();
                 })
                 .catch(function () { prevInp.value = '—'; });
+        }
+
+        // ---- Full-tank toggle -----------------------------------------------
+        var tankGrp = document.getElementById('tankGroup');
+        var tankSeg = document.getElementById('tankSeg');
+        var tankHid = document.getElementById('expTankFull');
+        var rateWarn = document.getElementById('rateWarn');
+        var dupWarn  = document.getElementById('dupWarn');
+        var fleetRate = null, fuelToday = false;
+
+        if (tankSeg) {
+            [].slice.call(tankSeg.querySelectorAll('.sub-btn')).forEach(function (b) {
+                b.addEventListener('click', function () {
+                    [].slice.call(tankSeg.querySelectorAll('.sub-btn')).forEach(function (x) {
+                        x.classList.remove('on');
+                    });
+                    b.classList.add('on');
+                    tankHid.value = b.getAttribute('data-tank');
+                });
+            });
+        }
+
+        // Implied Rs/litre vs the fleet's trailing 30-day average. Non-blocking:
+        // fuel prices move and a genuine outlier is possible, so this informs the
+        // person who can still check the receipt.
+        function refreshRate() {
+            if (!rateWarn) { return; }
+            rateWarn.style.display = 'none';
+            var amt = parseFloat(amount && amount.value ? amount.value : '');
+            var L   = parseFloat(litres && litres.value ? litres.value : '');
+            if (!(amt > 0) || !(L > 0) || !(fleetRate > 0)) { return; }
+            var mine = amt / L;
+            var diff = ((mine - fleetRate) / fleetRate) * 100;
+            if (Math.abs(diff) >= 30) {
+                rateWarn.className = 'meter-warn warn';
+                rateWarn.textContent = 'Rs/litre looks unusual: Rs ' + mine.toFixed(2)
+                    + ' vs a recent average of Rs ' + fleetRate.toFixed(2)
+                    + ' (' + (diff > 0 ? '+' : '') + diff.toFixed(0) + '%). Check before submitting.';
+                rateWarn.style.display = '';
+            }
+        }
+
+        function refreshDup() {
+            if (!dupWarn) { return; }
+            var show = fuelToday && subHid.value && litGrp.style.display !== 'none';
+            dupWarn.className = 'meter-warn warn';
+            dupWarn.textContent = 'This vehicle already has a fuel entry today — '
+                + 'continue if this is a genuine second fill.';
+            dupWarn.style.display = show ? '' : 'none';
         }
 
         function pickSub(btn) {
             subBtns.forEach(function (b) { b.classList.remove('on'); });
             btn.classList.add('on');
             subHid.value = btn.getAttribute('data-sub');
-            // Litres only make sense for a fuel sub-category.
+            // Litres, the tank toggle and the fuel-only warnings all follow the
+            // sub-category's tracks_fuel flag, never its name.
             var isFuel = btn.getAttribute('data-fuel') === '1';
             litGrp.style.display = isFuel ? '' : 'none';
-            if (!isFuel && litres) { litres.value = ''; }
+            if (tankGrp) { tankGrp.style.display = isFuel ? '' : 'none'; }
+            if (!isFuel) {
+                if (litres) { litres.value = ''; }
+                if (tankHid) { tankHid.value = ''; }
+                if (rateWarn) { rateWarn.style.display = 'none'; }
+            } else if (tankHid && tankHid.value === '') {
+                // Re-arm the default when coming back to Fuel.
+                tankHid.value = '1';
+            }
             refreshCalc();
+            refreshRate();
+            refreshDup();
         }
         subBtns.forEach(function (b) {
             b.addEventListener('click', function () { pickSub(b); });
@@ -1773,8 +2077,12 @@ require __DIR__ . '/partials/sidebar.php';
 
         vehSel.addEventListener('change', loadPrev);
         meter.addEventListener('input', refreshCalc);
-        if (litres) { litres.addEventListener('input', refreshCalc); }
-        if (amount) { amount.addEventListener('input', refreshCalc); }
+        if (litres) {
+            litres.addEventListener('input', function () { refreshCalc(); refreshRate(); });
+        }
+        if (amount) {
+            amount.addEventListener('input', function () { refreshCalc(); refreshRate(); });
+        }
 
         // Show/hide the whole block with the category, and scope the
         // sub-category buttons to the chosen category.
@@ -1786,10 +2094,14 @@ require __DIR__ . '/partials/sidebar.php';
             if (!on) {
                 vehSel.value = ''; subHid.value = ''; meter.value = '';
                 if (litres) { litres.value = ''; }
+                if (tankHid) { tankHid.value = ''; }
                 subBtns.forEach(function (b) { b.classList.remove('on'); });
                 litGrp.style.display = 'none';
+                if (tankGrp) { tankGrp.style.display = 'none'; }
                 calc.style.display = 'none';
                 mWarn.style.display = 'none';
+                if (rateWarn) { rateWarn.style.display = 'none'; }
+                if (dupWarn) { dupWarn.style.display = 'none'; }
                 return;
             }
             // Only this category's sub-categories are offered; default to the

@@ -33,8 +33,9 @@ if (!defined('VEH_MAX_PLAUSIBLE_GAP')) {
  * its reading is not evidence of a trip.
  */
 function veh_readings(PDO $pdo, int $vehicleId, string $from, string $to): array {
-    $s = $pdo->prepare("
+    $sql = "
         SELECT e.id, e.expense_date, e.meter_reading, e.litres, e.amount,
+               %s AS tank_full,
                s.name AS sub_name, s.tracks_fuel
           FROM expenses e
           LEFT JOIN expense_subcategories s ON s.id = e.subcategory_id
@@ -44,9 +45,19 @@ function veh_readings(PDO $pdo, int $vehicleId, string $from, string $to): array
            AND e.approval_status <> 'REJECTED'
            AND e.expense_date BETWEEN ? AND ?
          ORDER BY e.expense_date, e.meter_reading, e.id
-    ");
-    $s->execute([$vehicleId, $from, $to]);
-    return $s->fetchAll();
+    ";
+    try {
+        $s = $pdo->prepare(sprintf($sql, 'e.tank_full'));
+        $s->execute([$vehicleId, $from, $to]);
+        return $s->fetchAll();
+    } catch (PDOException $e) {
+        // tank_full absent (add_expense_tank_full.sql not run yet). Select NULL
+        // in its place so every consumer sees the same shape — a NULL reads as
+        // "unknown fill state", which is exactly right for a pre-migration row.
+        $s = $pdo->prepare(sprintf($sql, 'NULL'));
+        $s->execute([$vehicleId, $from, $to]);
+        return $s->fetchAll();
+    }
 }
 
 /**
@@ -81,6 +92,11 @@ function veh_per_fill(PDO $pdo, int $vehicleId, string $from, string $to,
                       int $maxGap = VEH_MAX_PLAUSIBLE_GAP): array {
     $rows = veh_readings($pdo, $vehicleId, $from, $to);
     $out = []; $prev = null;
+    // Fill state of the PREVIOUS fuel row, for the full-to-full test below.
+    // NULL until the first fuel row is seen; a pre-migration row is NULL too,
+    // which correctly reads as "cannot prove it was full".
+    $prevTankFull = null;
+
     foreach ($rows as $r) {
         // Only fuel fills get a per-fill row: a maintenance reading is a useful
         // waypoint for the running total but is not a "fill".
@@ -95,18 +111,41 @@ function veh_per_fill(PDO $pdo, int $vehicleId, string $from, string $to,
         if ($isFuel) {
             $litres = $r['litres'] !== null ? (float) $r['litres'] : null;
             $amount = (float) $r['amount'];
+            $tankFull = $r['tank_full'] === null ? null : (int) $r['tank_full'];
+
+            // A DISCRETE km/L needs a full-to-full segment: the litres in THIS
+            // fill are what covered the distance since the tank was last brimmed.
+            // If either end was a partial fill (or its state is unknown), the
+            // litres do not correspond to the distance and the figure would be
+            // wrong rather than merely imprecise — so it is withheld.
+            //
+            // Only the EFFICIENCY figure is withheld. trip, per_km, amount and
+            // litres are all still reported and still count everywhere else.
+            $fullToFull = ($tankFull === 1 && $prevTankFull === 1);
+            $kmpl = ($fullToFull && $trip && $litres > 0) ? $trip / $litres : null;
+
+            // Why km/L is blank, so the report can explain rather than show a
+            // bare dash: 'partial' is a legitimate measurement gap, not an error.
+            $kmplBlockedBy = '';
+            if ($kmpl === null && $trip && $litres > 0) {
+                $kmplBlockedBy = 'partial';
+            }
+
             $out[] = [
-                'id'      => (int) $r['id'],
-                'date'    => $r['expense_date'],
-                'meter'   => $m,
-                'trip'    => $trip,
-                'litres'  => $litres,
-                'amount'  => $amount,
-                'kmpl'    => ($trip && $litres > 0) ? $trip / $litres : null,
-                'per_km'  => $trip ? $amount / $trip : null,
-                'rate'    => ($litres > 0) ? $amount / $litres : null,   // Rs per litre
-                'flag'    => $flag,
+                'id'        => (int) $r['id'],
+                'date'      => $r['expense_date'],
+                'meter'     => $m,
+                'trip'      => $trip,
+                'litres'    => $litres,
+                'amount'    => $amount,
+                'tank_full' => $tankFull,
+                'kmpl'      => $kmpl,
+                'kmpl_blocked_by' => $kmplBlockedBy,
+                'per_km'    => $trip ? $amount / $trip : null,
+                'rate'      => ($litres > 0) ? $amount / $litres : null,   // Rs per litre
+                'flag'      => $flag,
             ];
+            $prevTankFull = $tankFull;
         }
         if ($prev === null || ($m > $prev && $m - $prev <= $maxGap)) { $prev = $m; }
     }
@@ -169,6 +208,35 @@ function veh_metrics(PDO $pdo, int $vehicleId, string $from, string $to): array 
     $spend    = veh_spend($pdo, $vehicleId, $from, $to);
     $km       = $k['km'];
 
+    // Discrete full-to-full segments, and how many were excluded for a partial
+    // fill. Counted separately from bad_gaps so a vehicle that simply tops up
+    // is never mistaken for one with corrupt odometer data — very different
+    // problems, and only one of them needs fixing.
+    $fills          = veh_per_fill($pdo, $vehicleId, $from, $to);
+    $exactSegments  = 0;
+    $partialBlocked = 0;
+    $exactKm = 0.0; $exactLitres = 0.0;
+    foreach ($fills as $f) {
+        if ($f['kmpl'] !== null) {
+            $exactSegments++;
+            $exactKm     += (float) $f['trip'];
+            $exactLitres += (float) $f['litres'];
+        } elseif ($f['kmpl_blocked_by'] === 'partial') {
+            $partialBlocked++;
+        }
+    }
+
+    // PRECISE efficiency: only full-to-full segments, litres over their own km.
+    $exactKmPerLitre = ($exactLitres > 0 && $exactKm > 0) ? $exactKm / $exactLitres : null;
+
+    // APPROXIMATE efficiency (rolling average): all fuel litres in the window
+    // over all distance in the window, regardless of fill state. For a vehicle
+    // that structurally never gets a full tank this is the only efficiency
+    // figure obtainable — the discrete method cannot work by definition, which
+    // is physics rather than a bug. Always labelled "approx" in the UI and never
+    // merged with or substituted for the precise figure.
+    $approxKmPerLitre = ($km > 0 && $spend['litres'] > 0) ? $km / $spend['litres'] : null;
+
     return [
         'km'           => $km,
         'bad_gaps'     => $k['bad_gaps'],
@@ -181,7 +249,12 @@ function veh_metrics(PDO $pdo, int $vehicleId, string $from, string $to): array 
         'litres'       => $spend['litres'],
         'fuel_per_km'  => $km > 0 ? $spend['fuel'] / $km : null,
         'total_per_km' => $km > 0 ? $spend['total'] / $km : null,
-        'km_per_litre' => ($km > 0 && $spend['litres'] > 0) ? $km / $spend['litres'] : null,
+        // Precise where possible, approximate otherwise. km_per_litre is kept as
+        // the precise figure for backward compatibility with existing callers.
+        'km_per_litre'        => $exactKmPerLitre,
+        'approx_km_per_litre' => $approxKmPerLitre,
+        'exact_segments'      => $exactSegments,
+        'partial_blocked'     => $partialBlocked,
     ];
 }
 
@@ -298,6 +371,61 @@ function veh_approval_context(PDO $pdo, int $expenseId): ?array {
         'base_km'        => $base['km'],
         'variance_pct'   => $variance,
     ];
+}
+
+/**
+ * Fleet-wide average Rs/litre over the trailing N days, for the posting-time
+ * plausibility check. Fleet-wide rather than per-vehicle because fuel price is a
+ * property of the pump, not the vehicle, and a per-vehicle average would have
+ * too few data points to be a stable reference.
+ *
+ * Returns null when there is not enough history to compare against — the caller
+ * must then skip the warning rather than compare against a fabricated baseline.
+ */
+function veh_fleet_rate_per_litre(PDO $pdo, int $days = 30, ?string $asOf = null): ?float {
+    $to   = $asOf ?: date('Y-m-d');
+    $from = date('Y-m-d', strtotime($to . ' -' . $days . ' days'));
+    try {
+        $s = $pdo->prepare("
+            SELECT COALESCE(SUM(e.amount), 0) AS amt, COALESCE(SUM(e.litres), 0) AS lit
+              FROM expenses e
+              JOIN expense_subcategories s ON s.id = e.subcategory_id
+             WHERE s.tracks_fuel = 1
+               AND e.litres > 0
+               AND e.voided_at IS NULL
+               AND e.approval_status <> 'REJECTED'
+               AND e.expense_date BETWEEN ? AND ?
+        ");
+        $s->execute([$from, $to]);
+        $r = $s->fetch();
+        $lit = (float) ($r['lit'] ?? 0);
+        return $lit > 0 ? ((float) $r['amt']) / $lit : null;
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
+/**
+ * Does this vehicle already have a fuel posting on this date?
+ * Feeds a non-blocking duplicate warning — a second genuine fill on a long trip
+ * day is legitimate, so this informs rather than refuses.
+ */
+function veh_has_fuel_on_date(PDO $pdo, int $vehicleId, string $date, int $excludeId = 0): bool {
+    try {
+        $s = $pdo->prepare("
+            SELECT COUNT(*) FROM expenses e
+              JOIN expense_subcategories s ON s.id = e.subcategory_id
+             WHERE e.vehicle_id = ? AND s.tracks_fuel = 1
+               AND e.expense_date = ?
+               AND e.id <> ?
+               AND e.voided_at IS NULL
+               AND e.approval_status <> 'REJECTED'
+        ");
+        $s->execute([$vehicleId, $date, $excludeId]);
+        return ((int) $s->fetchColumn()) > 0;
+    } catch (PDOException $e) {
+        return false;
+    }
 }
 
 /** Rs 24.13 — two decimals, or an em dash when the figure is unknowable. */

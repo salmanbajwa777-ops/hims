@@ -55,6 +55,14 @@ try {
         'meter'   => $prev ? (int) $prev['meter_reading'] : null,
         'date'    => $prev ? date('d/m/Y', strtotime($prev['expense_date'])) : null,
         'max_gap' => VEH_MAX_PLAUSIBLE_GAP,
+        // Fleet trailing Rs/litre, so the form can flag an implausible rate
+        // BEFORE submission. NULL when there is too little history to compare
+        // against — the client then skips the warning rather than measuring
+        // against a fabricated baseline.
+        'fleet_rate' => veh_fleet_rate_per_litre($pdo, 30),
+        // Already a fuel posting for this vehicle today? Drives a non-blocking
+        // duplicate warning; a second genuine fill on a long-trip day is normal.
+        'fuel_today' => veh_has_fuel_on_date($pdo, $vehicleId, date('Y-m-d')),
     ]);
 } catch (PDOException $e) {
     // Pre-migration or a schema gap: report cleanly so the form just hides the

@@ -58,7 +58,8 @@ $focusVehicle = (int) ($_GET['vehicle'] ?? 0);
 $vehicles = [];
 $rowsOut  = [];
 $fleet    = ['km' => 0, 'fuel' => 0.0, 'maintenance' => 0.0, 'repairs' => 0.0,
-             'other' => 0.0, 'total' => 0.0, 'litres' => 0.0, 'bad_gaps' => 0];
+             'other' => 0.0, 'total' => 0.0, 'litres' => 0.0, 'bad_gaps' => 0,
+             'partial_blocked' => 0, 'exact_segments' => 0];
 
 if ($schemaReady) {
     // Inactive vehicles still appear when they have spend in the range — a van
@@ -83,6 +84,8 @@ if ($schemaReady) {
         $fleet['total']       += $m['total'];
         $fleet['litres']      += $m['litres'];
         $fleet['bad_gaps']    += $m['bad_gaps'];
+        $fleet['partial_blocked'] += $m['partial_blocked'];
+        $fleet['exact_segments']  += $m['exact_segments'];
     }
 }
 
@@ -91,6 +94,9 @@ if ($schemaReady) {
 // ambulance doing 1,900 km.
 $fleetFuelPerKm  = $fleet['km'] > 0 ? $fleet['fuel']  / $fleet['km'] : null;
 $fleetTotalPerKm = $fleet['km'] > 0 ? $fleet['total'] / $fleet['km'] : null;
+// Fleet APPROXIMATE efficiency — all litres over all distance. The precise
+// full-to-full figure is per-vehicle only: summing exact segments across
+// different vehicles would average a bike against an ambulance and mean nothing.
 $fleetKmPerL     = ($fleet['km'] > 0 && $fleet['litres'] > 0) ? $fleet['km'] / $fleet['litres'] : null;
 
 // Per-fill detail for the focused vehicle (or the first one with data).
@@ -197,18 +203,32 @@ require __DIR__ . '/partials/sidebar.php';
                 <div class="kpi">
                     <div class="k">Economy</div>
                     <div class="v"><?= veh_kmpl($fleetKmPerL) ?></div>
-                    <div class="d">km / litre</div>
+                    <div class="d">approx km / litre<?= $fleet['partial_blocked'] > 0 ? ' · incl. part fills' : '' ?></div>
                 </div>
             </div>
 
-            <?php if ($fleet['bad_gaps'] > 0): ?>
+            <?php if ($fleet['bad_gaps'] > 0 || $fleet['partial_blocked'] > 0): ?>
             <div class="warnbox">
-                <b><?= $fleet['bad_gaps'] ?> meter reading<?= $fleet['bad_gaps'] === 1 ? '' : 's' ?> could not be used.</b>
-                A reading lower than the one before it, or more than
-                <?= number_format(VEH_MAX_PLAUSIBLE_GAP) ?> km above it, is treated as a data-entry error and
-                excluded from the distance. The money on those postings is still counted in full —
-                so cost per km here is measured over <em>less</em> distance than the vehicle may really have run,
-                which makes it an over-estimate rather than a silent under-estimate.
+                <?php /* Two separate reasons, counted separately. A vehicle that
+                         simply tops up must never be mistaken for one with corrupt
+                         odometer data — only one of those needs fixing. */ ?>
+                <?php if ($fleet['bad_gaps'] > 0): ?>
+                <div>
+                    <b><?= $fleet['bad_gaps'] ?> reading<?= $fleet['bad_gaps'] === 1 ? '' : 's' ?> discarded (implausible).</b>
+                    Lower than the one before it, or more than <?= number_format(VEH_MAX_PLAUSIBLE_GAP) ?> km above it.
+                    The money on those postings still counts in full, so cost per km is measured over
+                    <em>less</em> distance than the vehicle may really have run — an over-estimate rather
+                    than a silent under-estimate. Fix these with <b>Edit meter</b> on the Expenses page.
+                </div>
+                <?php endif; ?>
+                <?php if ($fleet['partial_blocked'] > 0): ?>
+                <div style="<?= $fleet['bad_gaps'] > 0 ? 'margin-top:8px;padding-top:8px;border-top:1px dashed rgba(245,158,11,.40);' : '' ?>">
+                    <b><?= $fleet['partial_blocked'] ?> segment<?= $fleet['partial_blocked'] === 1 ? '' : 's' ?> excluded from km/L (partial fill).</b>
+                    This is not an error — a part fill's litres cannot be matched to a distance. Those
+                    fills still count toward cost per km, and the <b>approx km/L</b> column below covers
+                    them.
+                </div>
+                <?php endif; ?>
             </div>
             <?php endif; ?>
 
@@ -226,14 +246,15 @@ require __DIR__ . '/partials/sidebar.php';
                             <th class="num">Maint.</th>
                             <th class="num">Repairs</th>
                             <th class="num">Total</th>
-                            <th class="num">Km/L</th>
+                            <th class="num" title="Precise: measured between two full-tank fills only">Km/L</th>
+                            <th class="num" title="All litres over all distance in range — includes part fills">Approx km/L</th>
                             <th class="num">Fuel /km</th>
                             <th class="num">Total /km</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (!$rowsOut): ?>
-                        <tr><td colspan="9" class="muted" style="padding:20px 10px;">
+                        <tr><td colspan="10" class="muted" style="padding:20px 10px;">
                             No vehicle expenses in this range. Add vehicles under
                             <a class="vlink" href="expense_categories.php">Categories &amp; Limits</a>.
                         </td></tr>
@@ -256,7 +277,15 @@ require __DIR__ . '/partials/sidebar.php';
                             <td class="num"><?= number_format($r['maintenance']) ?></td>
                             <td class="num"><?= number_format($r['repairs']) ?></td>
                             <td class="num"><b><?= number_format($r['total']) ?></b></td>
-                            <td class="num"><?= veh_kmpl($r['km_per_litre']) ?></td>
+                            <td class="num">
+                                <?= veh_kmpl($r['km_per_litre']) ?>
+                                <?php if ($r['km_per_litre'] === null && $r['litres'] > 0): ?>
+                                <br><span class="chip c-warn" title="No two consecutive full-tank fills in this range, so a precise figure cannot be measured. Use the approx column.">no full pair</span>
+                                <?php elseif ($r['exact_segments'] > 0): ?>
+                                <br><span class="muted" style="font-size:10.5px;"><?= (int) $r['exact_segments'] ?> seg</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="num"><?= veh_kmpl($r['approx_km_per_litre']) ?></td>
                             <td class="num"><?= veh_money_per_km($r['fuel_per_km']) ?></td>
                             <td class="num"><b><?= veh_money_per_km($r['total_per_km']) ?></b></td>
                         </tr>
@@ -271,6 +300,10 @@ require __DIR__ . '/partials/sidebar.php';
                             <td class="num"><b><?= number_format($fleet['maintenance']) ?></b></td>
                             <td class="num"><b><?= number_format($fleet['repairs']) ?></b></td>
                             <td class="num"><b><?= number_format($fleet['total']) ?></b></td>
+                            <?php /* No precise fleet km/L: averaging full-to-full segments across a
+                                     bike and an ambulance would produce a number describing neither.
+                                     The approx column carries the fleet figure instead. */ ?>
+                            <td class="num muted">—</td>
                             <td class="num"><b><?= veh_kmpl($fleetKmPerL) ?></b></td>
                             <td class="num"><b><?= veh_money_per_km($fleetFuelPerKm) ?></b></td>
                             <td class="num"><b><?= veh_money_per_km($fleetTotalPerKm) ?></b></td>
@@ -302,6 +335,7 @@ require __DIR__ . '/partials/sidebar.php';
                             <th class="num">Meter</th>
                             <th class="num">Trip km</th>
                             <th class="num">Litres</th>
+                            <th>Tank</th>
                             <th class="num">Rs / litre</th>
                             <th class="num">Km / L</th>
                             <th class="num">Amount</th>
@@ -310,7 +344,7 @@ require __DIR__ . '/partials/sidebar.php';
                     </thead>
                     <tbody>
                         <?php if (!$fills): ?>
-                        <tr><td colspan="8" class="muted" style="padding:18px 10px;">No fuel fills for this vehicle in the range.</td></tr>
+                        <tr><td colspan="9" class="muted" style="padding:18px 10px;">No fuel fills for this vehicle in the range.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($fills as $i => $f): ?>
                         <tr>
@@ -328,8 +362,22 @@ require __DIR__ . '/partials/sidebar.php';
                                 <?php endif; ?>
                             </td>
                             <td class="num"><?= $f['litres'] !== null ? number_format($f['litres'], 2) : '—' ?></td>
+                            <td>
+                                <?php if (($f['tank_full'] ?? null) === 1): ?>
+                                    <span class="chip c-fuel">Full</span>
+                                <?php elseif (($f['tank_full'] ?? null) === 0): ?>
+                                    <span class="chip c-warn" title="Part fill — litres cannot be matched to a distance, so no precise km/L">Part</span>
+                                <?php else: ?>
+                                    <span class="muted" title="Recorded before the full-tank flag existed">—</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="num"><?= $f['rate'] !== null ? number_format($f['rate'], 2) : '—' ?></td>
-                            <td class="num"><?= veh_kmpl($f['kmpl']) ?></td>
+                            <td class="num">
+                                <?= veh_kmpl($f['kmpl']) ?>
+                                <?php if ($f['kmpl'] === null && ($f['kmpl_blocked_by'] ?? '') === 'partial'): ?>
+                                <br><span class="chip c-warn" title="Needs a full tank at BOTH ends of the segment">part fill</span>
+                                <?php endif; ?>
+                            </td>
                             <td class="num"><?= number_format($f['amount']) ?></td>
                             <td class="num"><b><?= veh_money_per_km($f['per_km']) ?></b></td>
                         </tr>
@@ -338,6 +386,8 @@ require __DIR__ . '/partials/sidebar.php';
                 </table>
                 </div>
                 <div class="muted-note">
+                    <b>km/L reflects fuel used to cover the distance since the last full-tank fill.</b>
+                    Partial fills are excluded from km/L but still count toward cost.
                     The first fill in the range is a <b>baseline</b> — it fixes the starting odometer, so it
                     has no trip of its own. Widen the date range to measure it against an earlier fill.
                 </div>
