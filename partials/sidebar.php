@@ -137,14 +137,6 @@ $sbGroups = [
         'items' => [
             ['slug' => 'patients',    'label' => 'Patients',        'icon' => 'users',    'href' => 'patients.php',
              'perm' => 'RECEPTION_REGISTER_PATIENTS'],
-            ['slug' => 'doctor_timings', 'label' => 'Doctor Timings', 'icon' => 'clock',  'href' => 'doctor_timings.php',
-             'perm' => 'RECEPTION_EDIT_DOCTOR_TIMINGS'],
-            // Standing weekly hours (my_schedule.php) — same permission as the
-            // day sheet above, since one grant covers both surfaces. Doctors
-            // never see this copy: they reach the same page from their own
-            // sidebar's "My Schedule" link instead.
-            ['slug' => 'schedule',    'label' => 'Doctor Schedules', 'icon' => 'calendar', 'href' => 'my_schedule.php',
-             'perm' => 'RECEPTION_EDIT_DOCTOR_TIMINGS'],
             ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php',
              'perm' => 'RECEPTION_GENERATE_INVOICES'],
             ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php',
@@ -188,6 +180,18 @@ $sbGroups = [
             // are the whole audience for it.
             ['slug' => 'proc_discounts', 'label' => 'Procedure Discounts', 'icon' => 'receipt',
              'href' => 'procedure_discount_approvals.php', 'perm' => 'DOCTOR_APPROVE_PROCEDURE_DISCOUNT'],
+        ],
+    ],
+    [
+        // Was two flat Workspace rows (Doctor Timings, Doctor Schedules) with the
+        // SAME permission gate — merged into one link, own group. doctor_timings.php
+        // now carries both surfaces as tabs (Today's Sheet / Weekly Schedule); the
+        // day sheet remains the default landing tab so the link behaves exactly
+        // like the old "Doctor Timings" entry for anyone just clicking it.
+        'label' => 'Staff & Doctors',
+        'items' => [
+            ['slug' => 'doctor_timings', 'label' => 'Doctor Timings & Schedules', 'icon' => 'clock',
+             'href' => 'doctor_timings.php', 'perm' => 'RECEPTION_EDIT_DOCTOR_TIMINGS'],
         ],
     ],
     [

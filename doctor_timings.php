@@ -1,13 +1,14 @@
 <?php
 /**
- * Doctor Timings — confirmed consultation hours, per doctor, per day.
+ * Doctor Timings & Schedules — one nav entry, two tabs.
  *
- * One of reception's first duties at shift start is confirming which doctors
- * are coming in and when. This page is the single source of truth for that:
- * every doctor gets a row for the selected date with a status
- * (Available / Delayed / Off), a time window and a note. Whatever the
- * outgoing receptionist saved is exactly what the incoming one sees — the
- * "last updated by X at H:i" line makes the handover explicit.
+ * Tab 1 ("Today's Sheet", this file's original content): confirmed
+ * consultation hours per doctor per day — reception's shift-start duty.
+ * Tab 2 ("Weekly Schedule"): the doctor's standing weekly template, delegated
+ * straight to my_schedule.php's own admin/manager code path (?tab=schedule
+ * here maps to that file's $canActOnOthers picker+editor). Kept as one link
+ * in the sidebar instead of two, per request — the two data models
+ * (doctor_day_timings vs doctor_weekly_schedule) stay separate underneath.
  *
  * Defaults to TODAY (the sheet reception confirms each shift). ?date=YYYY-MM-DD
  * opens any other date — e.g. pre-marking a doctor off for a known future
@@ -24,6 +25,27 @@ require_login();
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
+
+// The Weekly Schedule tab is my_schedule.php's own admin/manager render path
+// (picker + editor for RECEPTION_EDIT_DOCTOR_TIMINGS holders), reused as-is so
+// the two data models never get tangled into one form. It sets $navActive and
+// requires sidebar.php itself, so hand off before this file does either.
+if (($_GET['tab'] ?? '') === 'schedule') {
+    $dtTabBarHtml = doctor_timings_tab_bar('schedule');
+    require __DIR__ . '/my_schedule.php';
+    exit;
+}
+
+/** Renders the two-tab strip shared by both tabs of this merged page. */
+function doctor_timings_tab_bar(string $active): string
+{
+    $sheetCls = $active === 'sheet' ? ' active' : '';
+    $schedCls = $active === 'schedule' ? ' active' : '';
+    return '<div class="dt-tabs">'
+        . '<a href="doctor_timings.php" class="dt-tab' . $sheetCls . '">Today\'s Sheet</a>'
+        . '<a href="doctor_timings.php?tab=schedule" class="dt-tab' . $schedCls . '">Weekly Schedule</a>'
+        . '</div>';
+}
 
 // Anyone logged in may VIEW the day's timings (doctors and admins care too);
 // editing is its own capability now (RECEPTION_EDIT_DOCTOR_TIMINGS), split out of
@@ -180,6 +202,10 @@ $pageTitle = 'Doctor Timings';
 $headExtra = <<<CSS
 <style>
 .content { max-width: 1000px; }
+.dt-tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.dt-tab { padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--text-secondary); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.dt-tab:hover { color: var(--text); }
+.dt-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-head h1 { font-size: 22px; font-weight: 700; }
 .page-head .sub { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
@@ -249,6 +275,8 @@ $navActive = 'doctor_timings';
 require __DIR__ . '/partials/sidebar.php';
 ?>
         <div class="content">
+
+            <?= doctor_timings_tab_bar('sheet') ?>
 
             <?php if ($saved): ?><div class="alert success">Doctor timings for <?= $isToday ? 'today' : date('d/m/Y', strtotime($sheetDate)) ?> saved.<?= $isToday ? ' The next receptionist on duty will see these.' : '' ?></div><?php endif; ?>
             <?php if ($saveError): ?><div class="alert error"><?= htmlspecialchars($saveError) ?></div><?php endif; ?>

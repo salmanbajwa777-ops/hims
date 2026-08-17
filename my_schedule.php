@@ -214,10 +214,18 @@ $headExtra = <<<CSS
 .picker-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
 .picker-specialty { font-size: 12px; color: var(--text-muted); }
 .empty-state { padding: 24px 4px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.dt-tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.dt-tab { padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--text-secondary); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.dt-tab:hover { color: var(--text); }
+.dt-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
-$navActive = 'schedule';
+// Delegated from doctor_timings.php (merged "Doctor Timings & Schedules" link)
+// keeps that sidebar item highlighted; opened directly (a doctor's own "My
+// Schedule") highlights the doctor nav's own 'schedule' entry via $dsActive's
+// mapping in sidebar.php, which key off this same $navActive value.
+$navActive = isset($dtTabBarHtml) ? 'doctor_timings' : 'schedule';
 // sidebar.php self-delegates to doctor_sidebar.php for the DOCTOR role (with
 // the Dental group specialty-gated via $dsSpecialty), so admin/manager acting
 // on a doctor's behalf still get the normal reception/admin nav instead.
@@ -226,6 +234,8 @@ require __DIR__ . '/partials/sidebar.php';
 ?>
 
         <div class="content">
+
+            <?php if (isset($dtTabBarHtml)): ?><?= $dtTabBarHtml ?><?php endif; ?>
 
             <?php if ($saved): ?><div class="alert success">Weekly schedule saved.</div><?php endif; ?>
             <?php if ($saveError): ?><div class="alert error"><?= htmlspecialchars($saveError) ?></div><?php endif; ?>
