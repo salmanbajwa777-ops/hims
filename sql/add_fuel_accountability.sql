@@ -75,15 +75,12 @@ ALTER TABLE `u402528120_hmis`.vehicles
         COMMENT 'Nominal tank capacity in litres; reference only, no maths uses it'
         AFTER jump_limit_km;
 
--- Sensible starting limits by type, applied ONLY where nothing is set yet.
--- These are still defaults, not facts — the vehicle form lets them be corrected.
-UPDATE `u402528120_hmis`.vehicles
-   SET jump_limit_km = 600
- WHERE jump_limit_km IS NULL AND vehicle_type LIKE '%Bike%';
-
-UPDATE `u402528120_hmis`.vehicles
-   SET jump_limit_km = 2000
- WHERE jump_limit_km IS NULL AND vehicle_type LIKE '%Ambulance%';
+-- DELIBERATELY NO SEEDING. An earlier version of this file set a limit by
+-- matching vehicle_type against invented examples ('%Bike%', '%Ambulance%').
+-- That was wrong twice over: the fleet has no ambulance, and a migration must
+-- not write a guessed operating threshold into live data. Every vehicle starts
+-- NULL (= the 5,000 km application default) and the admin sets the real number
+-- on the Vehicles card, where the change is audited old -> new.
 
 
 -- ---- 3. Full-tank flag  (from add_expense_tank_full.sql) --------------------
