@@ -46,6 +46,36 @@ function token_session_for(PDO $pdo, int $doctorId, ?string $atTime = null): int
         return 1;
     }
 
+    // NO ROW FOR TODAY — fall back to the doctor's weekly template.
+    //
+    // This is the bug that made the restart fail in practice. doctor_day_timings
+    // only gets a row when a human opens Doctor Timings and saves, or when
+    // cron/materialize_doctor_timings.php runs — and that cron has to be
+    // registered on the host, which is easy to miss. On any day nobody saved the
+    // timings, this function found no row, returned 1 all day, and the evening
+    // tokens carried on from the morning even though the schema was perfectly
+    // correct and the doctor's template clearly stated two sittings.
+    //
+    // The weekly template is the same data the cron would have copied, so
+    // reading it directly makes the restart work whether or not anything
+    // materialized today's row. Reception overriding today's hours still wins,
+    // because that path only runs when a real row is absent.
+    if (!$row) {
+        try {
+            $wk = $pdo->prepare('
+                SELECT end_time, start_time_2
+                FROM doctor_weekly_schedule
+                WHERE doctor_id = ? AND weekday = ? AND is_off = 0
+            ');
+            // ISO weekday, 1 = Monday, matching the column's stated convention
+            // and date(\'N\') as used by the materialize cron.
+            $wk->execute([$doctorId, (int) date('N')]);
+            $row = $wk->fetch();
+        } catch (PDOException $e) {
+            return 1;   // template table absent — single session
+        }
+    }
+
     if (!$row || empty($row['start_time_2'])) {
         return 1;
     }
