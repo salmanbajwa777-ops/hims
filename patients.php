@@ -710,6 +710,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
     }
 }
 
+// ---------------- Edit patient profile (reception / manager / admin) ----------------
+// Corrects demographics captured wrong at registration (misheard DOB, misspelled
+// name, wrong email/phone, etc). Deliberately narrow: it can change every field
+// EXCEPT identity (id/mrn) — no delete power here, that stays admin-only above.
+// Gated on the same permission as registration itself, so anyone who can take a
+// patient's details in the first place can also correct them.
+$editError = '';
+$editSuccess = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_patient') {
+    require_permission('RECEPTION_REGISTER_PATIENTS');
+    if ($isDoctorReadonly) {
+        http_response_code(403);
+        exit('Forbidden — doctors have read-only patient lookup.');
+    }
+
+    $editId = (int) ($_POST['patient_id'] ?? 0);
+    $eStmt = $pdo->prepare('SELECT id, name, mrn FROM patients WHERE id = ?');
+    $eStmt->execute([$editId]);
+    $editTarget = $eStmt->fetch();
+
+    $eName = mb_strtoupper(trim($_POST['e_name'] ?? ''), 'UTF-8');
+    $eFatherName = mb_strtoupper(trim($_POST['e_father_name'] ?? ''), 'UTF-8');
+    $ePhoneCc = preg_replace('/[^\d+]/', '', $_POST['e_phone_cc'] ?? '+92');
+    if ($ePhoneCc === '' || $ePhoneCc[0] !== '+') { $ePhoneCc = '+92'; }
+    $ePhoneLocal = ltrim(preg_replace('/\D/', '', $_POST['e_phone'] ?? ''), '0');
+    $ePhone = $ePhoneLocal !== '' ? $ePhoneCc . $ePhoneLocal : '';
+    $ePhoneError = '';
+    if ($ePhoneCc === '+92' && !preg_match('/^[1-9]\d{9}$/', $ePhoneLocal)) {
+        $ePhoneError = 'Enter a valid 10-digit Pakistan mobile number (e.g. 3001234567).';
+    }
+    $eDob = trim($_POST['e_dob'] ?? '') ?: null;
+    $eGender = $_POST['e_gender'] ?? '';
+    $eEmail = trim($_POST['e_email'] ?? '');
+    $eEmail = ($eEmail !== '' && filter_var($eEmail, FILTER_VALIDATE_EMAIL)) ? $eEmail : null;
+    $eHasEmailCol = false;
+    try {
+        $pdo->query('SELECT email FROM patients LIMIT 0');
+        $eHasEmailCol = true;
+    } catch (PDOException $e) { /* pre-migration */ }
+    $eCnic = trim($_POST['e_cnic'] ?? '') ?: null;
+    $eAltPhone = trim($_POST['e_alt_phone'] ?? '') ?: null;
+    $eCityId = (int) ($_POST['e_city_id'] ?? 0) ?: null;
+    $eAreaId = (int) ($_POST['e_area_id'] ?? 0) ?: null;
+    $eAddress = trim($_POST['e_address'] ?? '') ?: null;
+
+    if (!$editTarget) {
+        $editError = 'Patient not found.';
+    } elseif ($eName === '' || $ePhone === '' || !in_array($eGender, ['MALE', 'FEMALE', 'OTHER'], true)) {
+        $editError = 'Name, phone, and gender are required.';
+    } elseif ($ePhoneError !== '') {
+        $editError = $ePhoneError;
+    } else {
+        $updSql = 'UPDATE patients SET name = ?, father_name = ?, dob = ?, gender = ?, phone = ?, '
+            . ($eHasEmailCol ? 'email = ?, ' : '')
+            . 'alt_phone = ?, cnic = ?, city_id = ?, area_id = ?, address = ? WHERE id = ?';
+        $updParams = array_merge(
+            [$eName, $eFatherName ?: null, $eDob, $eGender, $ePhone],
+            $eHasEmailCol ? [$eEmail] : [],
+            [$eAltPhone, $eCnic, $eCityId, $eAreaId, $eAddress, $editId]
+        );
+        $pdo->prepare($updSql)->execute($updParams);
+
+        audit_log($pdo, 'patient_profile_edited', "Edited patient #$editId profile — now ($eName, MRN {$editTarget['mrn']})", $_SESSION['user_id']);
+
+        $editSuccess = "Updated {$eName}'s profile.";
+    }
+}
+
 // ---------------- Assign / clear a discount category (admin only) ----------------
 // The patient's standing discount scheme (Family & Friends / Charity / Loyalty).
 // Assignment is admin-only; reception just sees the badge. All FUTURE invoices
@@ -1118,6 +1186,12 @@ require __DIR__ . '/partials/sidebar.php';
             <?php if ($success): ?>
                 <div class="alert success"><?= htmlspecialchars($success) ?></div>
             <?php endif; ?>
+            <?php if ($editSuccess): ?>
+                <div class="alert success"><?= htmlspecialchars($editSuccess) ?></div>
+            <?php endif; ?>
+            <?php if ($editError): ?>
+                <div class="alert error"><?= htmlspecialchars($editError) ?></div>
+            <?php endif; ?>
 
             <form class="card search-card" method="GET" action="patients.php">
                 <div class="search-field">
@@ -1211,6 +1285,25 @@ require __DIR__ . '/partials/sidebar.php';
                             <td>
                                 <div class="row-acts">
                                     <button type="button" class="qa" onclick="openFollowup(<?= (int) $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($p['mrn']), ENT_QUOTES) ?>, <?= (int) ($p['last_doctor_id'] ?? 0) ?>)">New invoice</button>
+                                    <!-- Edit profile: corrects demographics captured wrong at registration
+                                         (misheard DOB, misspelled name, wrong phone/email). Open to reception,
+                                         manager and admin alike — same permission that gates registration.
+                                         No delete power lives here; that stays the separate admin-only action. -->
+                                    <button type="button" class="qa" onclick='openEditPatient(<?= htmlspecialchars(json_encode([
+                                        'id' => (int) $p['id'],
+                                        'name' => $p['name'],
+                                        'father_name' => $p['father_name'],
+                                        'phone' => $p['phone'],
+                                        'email' => $p['email'] ?? null,
+                                        'dob' => $p['dob'],
+                                        'gender' => $p['gender'],
+                                        'cnic' => $p['cnic'],
+                                        'alt_phone' => $p['alt_phone'],
+                                        'city_id' => $p['city_id'],
+                                        'area_id' => $p['area_id'],
+                                        'address' => $p['address'],
+                                        'mrn' => $p['mrn'],
+                                    ]), ENT_QUOTES) ?>)'>Edit</button>
                                     <?php if ($canAdmitHere || $canIpdAdmitHere): ?>
                                     <!-- Admit from the all-patients list: the shared handler reuses today's
                                          visit or creates a shell (byPatient=true). In-Door is now the third
@@ -1537,6 +1630,173 @@ require __DIR__ . '/partials/sidebar.php';
         </form>
     </div>
 </div>
+
+<!-- Edit Patient Profile modal — open to reception/manager/admin (same gate as
+     registration). Corrects demographics captured wrong at intake: name spelling,
+     DOB, phone, email, CNIC, city/area, address. No delete control lives here. -->
+<style>
+.ep-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:70; align-items:center; justify-content:center; padding:20px; }
+.ep-overlay.open { display:flex; }
+.ep-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:620px; max-height:90vh; overflow-y:auto; box-shadow:var(--shadow-lg); }
+.ep-head { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 22px 4px; }
+.ep-eyebrow { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); }
+.ep-name { font-size:18px; font-weight:700; margin-top:2px; }
+.ep-x { background:none; border:none; font-size:24px; line-height:1; color:var(--text-muted); cursor:pointer; }
+.ep-body { padding:14px 22px 4px; }
+.ep-body .field-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+.ep-body .field { display:flex; flex-direction:column; gap:6px; }
+.ep-body .field.full { grid-column:1 / -1; }
+.ep-body label { font-size:12.5px; font-weight:600; color:var(--text-secondary); }
+.ep-body label .opt { font-weight:500; color:var(--text-muted); }
+.ep-body input, .ep-body select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-input); font-size:13.5px; font-family:inherit; background:var(--bg); color:var(--text); }
+.ep-body input:focus, .ep-body select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); background:#fff; }
+.ep-body .radio-row { display:flex; gap:8px; }
+.ep-body .radio-pill { flex:1; }
+.ep-body .radio-pill input { position:absolute; opacity:0; width:0; height:0; }
+.ep-body .radio-pill label { display:flex; align-items:center; justify-content:center; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-input); font-size:13px; font-weight:600; color:var(--text-secondary); background:var(--bg); cursor:pointer; }
+.ep-body .radio-pill input:checked + label { background:var(--primary-light); border-color:var(--primary); color:var(--primary-dark); }
+.ep-phone { display:flex; gap:8px; }
+.ep-phone select { flex:0 0 100px; }
+.ep-mrn-tag { font-family:'Courier New',monospace; font-size:12px; color:var(--text-muted); }
+.ep-foot { display:flex; justify-content:flex-end; gap:10px; padding:18px 22px 22px; }
+</style>
+<div class="ep-overlay" id="epOverlay" onclick="if(event.target===this)epClose()">
+    <div class="ep-modal" role="dialog" aria-modal="true">
+        <form method="POST" action="patients.php" id="epForm">
+            <input type="hidden" name="action" value="update_patient">
+            <input type="hidden" name="patient_id" id="epId">
+            <div class="ep-head">
+                <div>
+                    <div class="ep-eyebrow">Edit patient profile</div>
+                    <div class="ep-name" id="epName">—</div>
+                    <div class="ep-mrn-tag" id="epMrn"></div>
+                </div>
+                <button type="button" class="ep-x" onclick="epClose()" aria-label="Close">&times;</button>
+            </div>
+            <div class="ep-body">
+                <div class="field-grid">
+                    <div class="field full">
+                        <label for="epNameInput">Full Name <span style="color:var(--red);">*</span></label>
+                        <input type="text" id="epNameInput" name="e_name" class="uc" required>
+                    </div>
+                    <div class="field">
+                        <label for="epFatherName">Father / Guardian Name <span class="opt">(optional)</span></label>
+                        <input type="text" id="epFatherName" name="e_father_name" class="uc">
+                    </div>
+                    <div class="field">
+                        <label for="epPhone">Phone <span style="color:var(--red);">*</span></label>
+                        <div class="ep-phone">
+                            <select id="epPhoneCc" name="e_phone_cc">
+                                <option value="+92">🇵🇰 +92</option>
+                                <option value="+1">🇺🇸 +1</option>
+                                <option value="+44">🇬🇧 +44</option>
+                                <option value="+91">🇮🇳 +91</option>
+                                <option value="+971">🇦🇪 +971</option>
+                                <option value="+966">🇸🇦 +966</option>
+                            </select>
+                            <input type="tel" id="epPhone" name="e_phone" inputmode="numeric" placeholder="3001234567" maxlength="10" required>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="epDob">Date of Birth <span class="opt">(optional)</span></label>
+                        <input type="date" id="epDob" name="e_dob">
+                    </div>
+                    <div class="field">
+                        <label for="epEmail">Email <span class="opt">(optional)</span></label>
+                        <input type="email" id="epEmail" name="e_email" autocomplete="email">
+                    </div>
+                    <div class="field">
+                        <label>Gender <span style="color:var(--red);">*</span></label>
+                        <div class="radio-row">
+                            <div class="radio-pill"><input type="radio" id="epGenderF" name="e_gender" value="FEMALE"><label for="epGenderF">Female</label></div>
+                            <div class="radio-pill"><input type="radio" id="epGenderM" name="e_gender" value="MALE"><label for="epGenderM">Male</label></div>
+                            <div class="radio-pill"><input type="radio" id="epGenderO" name="e_gender" value="OTHER"><label for="epGenderO">Other</label></div>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="epCnic">CNIC <span class="opt">(optional)</span></label>
+                        <input type="text" id="epCnic" name="e_cnic">
+                    </div>
+                    <div class="field">
+                        <label for="epAltPhone">Alternate Phone <span class="opt">(optional)</span></label>
+                        <input type="text" id="epAltPhone" name="e_alt_phone">
+                    </div>
+                    <div class="field">
+                        <label for="epCity">City</label>
+                        <select id="epCity" name="e_city_id" onchange="epFillAreas()">
+                            <option value="">—</option>
+                            <?php foreach ($cities as $c): ?>
+                            <option value="<?= (int) $c['id'] ?>"><?= htmlspecialchars($c['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="epArea">Area</label>
+                        <select id="epArea" name="e_area_id">
+                            <option value="">—</option>
+                        </select>
+                    </div>
+                    <div class="field full">
+                        <label for="epAddress">Address <span class="opt">(optional)</span></label>
+                        <input type="text" id="epAddress" name="e_address">
+                    </div>
+                </div>
+            </div>
+            <div class="ep-foot">
+                <button type="button" class="btn secondary" onclick="epClose()">Cancel</button>
+                <button type="submit" class="btn">Save changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+// ---------------- Edit Patient Profile ----------------
+const epAreasByCity = <?= json_encode($areasByCity) ?>;
+function epFillAreas(selectedAreaId) {
+    const cityId = document.getElementById('epCity').value;
+    const areaSel = document.getElementById('epArea');
+    areaSel.innerHTML = '<option value="">—</option>';
+    (epAreasByCity[cityId] || []).forEach(a => {
+        const o = document.createElement('option');
+        o.value = a.id; o.textContent = a.name;
+        if (selectedAreaId && String(a.id) === String(selectedAreaId)) { o.selected = true; }
+        areaSel.appendChild(o);
+    });
+}
+function openEditPatient(p) {
+    document.getElementById('epId').value = p.id;
+    document.getElementById('epName').textContent = p.name;
+    document.getElementById('epMrn').textContent = 'MRN ' + p.mrn;
+    document.getElementById('epNameInput').value = p.name || '';
+    document.getElementById('epFatherName').value = p.father_name || '';
+    document.getElementById('epDob').value = p.dob || '';
+    document.getElementById('epEmail').value = p.email || '';
+    document.getElementById('epCnic').value = p.cnic || '';
+    document.getElementById('epAltPhone').value = p.alt_phone || '';
+    document.getElementById('epAddress').value = p.address || '';
+
+    // Phone arrives as E.164 (+923001234567). Split back into cc + local for the
+    // two-part control; falls back to +92 / raw digits if the code isn't in our list.
+    const ccOptions = Array.from(document.getElementById('epPhoneCc').options).map(o => o.value);
+    let cc = '+92', local = (p.phone || '').replace(/\D/g, '');
+    for (const candidate of ccOptions.sort((a, b) => b.length - a.length)) {
+        const digits = candidate.slice(1);
+        if ((p.phone || '').startsWith(candidate)) { cc = candidate; local = (p.phone || '').slice(candidate.length); break; }
+    }
+    document.getElementById('epPhoneCc').value = cc;
+    document.getElementById('epPhone').value = local;
+
+    document.querySelectorAll('#epForm input[name="e_gender"]').forEach(r => { r.checked = (r.value === p.gender); });
+
+    document.getElementById('epCity').value = p.city_id || '';
+    epFillAreas(p.area_id);
+
+    document.getElementById('epOverlay').classList.add('open');
+}
+function epClose() { document.getElementById('epOverlay').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') epClose(); });
+</script>
+
 <!-- Booking-match guard (Popup B) — shared by registration and follow-up.
      "Yes" pre-fills doctor/purpose (still editable) and stashes booking_id; the
      SAVE consumes the booking, not this click. "No" leaves the booking live. -->
