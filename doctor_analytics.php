@@ -302,102 +302,6 @@ if ($view === 'procedures') {
 }
 
 // ============================================================================
-// VIEW: payout — one month, three streams (OPD / IPD / Procedures), tax
-//                withheld, final payable. The doctor-facing counterpart of
-//                doctor_earned_for_month() (config/billing.php), which today
-//                only feeds the admin's Doctor Shares posting form
-//                (doctor_earned.php). This view is READ-ONLY and provisional
-//                for the current month — it does not touch expenses/payouts.
-//
-// OPD + IPD come straight from doctor_earned_for_month() so this screen can
-// never disagree with the admin's disbursement form; re-deriving the split
-// locally is exactly the drift that helper exists to prevent.
-//
-// Procedures are NOT in doctor_earned_for_month() yet (that helper's own
-// comment marks them "still NOT payable" — no monthly aggregate exists), so
-// they're summed here the same way the Procedures tab does: per-LINE through
-// doctor_split_sql(), scoped to the picked calendar month via paid_at. If
-// procedures are later folded into doctor_earned_for_month(), this block
-// should be deleted in favour of that, not kept as a second copy.
-// ============================================================================
-if ($view === 'payout') {
-    $poMonth = preg_match('/^\d{4}-\d{2}$/', $_GET['month'] ?? '') ? $_GET['month'] : date('Y-m');
-    $poStart = $poMonth . '-01';
-    $poIsCurrent = ($poMonth === date('Y-m'));
-    $poNavPrev = date('Y-m', strtotime($poStart . ' -1 month'));
-    $poNavNext = $poIsCurrent ? null : date('Y-m', strtotime($poStart . ' +1 month'));
-    $poPeriodLabel = date('F Y', strtotime($poStart));
-
-    $poEarned = doctor_earned_for_month($pdo, $doctorId, $poMonth);
-
-    // Procedures for the same month, cash basis on paid_at (procedure_bill.php
-    // writes status='paid' + paid_at in the same INSERT — see the Procedures
-    // view above; there is no draft/later-settlement state to worry about).
-    $poProc = ['gross' => 0.0, 'tax' => 0.0, 'doctor' => 0.0, 'n' => 0, 'bills' => 0];
-    $poProcLive = false;
-    try {
-        $poFrom = $poStart . ' 00:00:00';
-        $poToExcl = date('Y-m-01', strtotime($poStart . ' +1 month')) . ' 00:00:00';
-        $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
-        $splitArgs = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
-        $docExpr = doctor_split_sql(...[...$splitArgs, 'doctor', $dispCol]);
-        $taxExpr = doctor_split_sql(...[...$splitArgs, 'tax', $dispCol]);
-
-        $pq = $pdo->prepare("
-            SELECT COUNT(*) AS n, COUNT(DISTINCT pb.id) AS bills,
-                   COALESCE(SUM(i.amount), 0) AS gross,
-                   COALESCE(SUM($taxExpr), 0) AS tax,
-                   COALESCE(SUM($docExpr), 0) AS doctor
-            FROM procedure_bill_items i
-            JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
-            WHERE pb.doctor_id = ?
-              AND pb.status = 'paid'
-              AND pb.voided_at IS NULL
-              AND pb.paid_at >= ? AND pb.paid_at < ?
-        ");
-        $pq->execute([$doctorId, $poFrom, $poToExcl]);
-        if ($r = $pq->fetch()) {
-            $poProc = [
-                'gross' => (float) $r['gross'], 'tax' => (float) $r['tax'],
-                'doctor' => (float) $r['doctor'], 'n' => (int) $r['n'], 'bills' => (int) $r['bills'],
-            ];
-        }
-        $poProcLive = true;
-    } catch (PDOException $e) {
-        // procedure_bill_items/procedure_bills absent — procedures stream reads
-        // zero rather than failing the whole payout view.
-    }
-
-    $poGross = (float) $poEarned['gross'] + $poProc['gross'];
-    $poTax   = (float) $poEarned['tax']   + $poProc['tax'];
-    $poFinal = (float) $poEarned['doctor'] + $poProc['doctor'];
-    $poOpd   = (float) ($poEarned['opd_doctor'] ?? 0);
-    $poIpd   = (float) ($poEarned['ipd_doctor'] ?? 0);
-
-    // Same-range comparison, previous calendar month, for the small delta chip.
-    $poPrevMonth = date('Y-m', strtotime($poStart . ' -1 month'));
-    $poPrevEarned = doctor_earned_for_month($pdo, $doctorId, $poPrevMonth);
-    $poPrevFinal = (float) $poPrevEarned['doctor'];
-    // Procedures aren't folded into $poPrevEarned; add them for a fair total.
-    try {
-        $ppFrom = $poPrevMonth . '-01 00:00:00';
-        $ppToExcl = date('Y-m-01', strtotime($poPrevMonth . '-01 +1 month')) . ' 00:00:00';
-        $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
-        $splitArgs = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
-        $docExpr = doctor_split_sql(...[...$splitArgs, 'doctor', $dispCol]);
-        $ppq = $pdo->prepare("
-            SELECT COALESCE(SUM($docExpr), 0) AS doctor
-            FROM procedure_bill_items i
-            JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
-            WHERE pb.doctor_id = ? AND pb.status = 'paid' AND pb.voided_at IS NULL
-              AND pb.paid_at >= ? AND pb.paid_at < ?
-        ");
-        $ppq->execute([$doctorId, $ppFrom, $ppToExcl]);
-        $poPrevFinal += (float) $ppq->fetchColumn();
-    } catch (PDOException $e) { /* leave prev total as OPD+IPD only */ }
-}
-
-// ============================================================================
 // VIEW: revenue — build series for the chart + summary
 // ============================================================================
 if ($view === 'revenue') {
@@ -537,6 +441,94 @@ if ($view === 'revenue') {
     ");
     $mixQ->execute([$doctorId, $curStart, $curEnd]);
     $revisitMix = array_column($mixQ->fetchAll(), 'n', 'ft');
+
+    // ------------------------------------------------------------------------
+    // Payout split (OPD / IPD / Procedures + tax + final payable), shown under
+    // the chart on the Month view only — "this month's settlement" doesn't
+    // mean anything summed across a whole year. Doctor-facing counterpart of
+    // doctor_earned_for_month() (config/billing.php), which today only feeds
+    // the admin's Doctor Shares posting form (doctor_earned.php).
+    //
+    // OPD + IPD come straight from doctor_earned_for_month() so this can never
+    // disagree with the admin's disbursement form; re-deriving the split
+    // locally is exactly the drift that helper exists to prevent.
+    //
+    // Procedures are NOT in doctor_earned_for_month() yet (that helper's own
+    // comment marks them "still NOT payable" — no monthly aggregate exists),
+    // so they're summed here the same way the Procedures tab does: per-LINE
+    // through doctor_split_sql(), scoped to the picked month via paid_at. If
+    // procedures are later folded into doctor_earned_for_month(), this block
+    // should be deleted in favour of that, not kept as a second copy.
+    // ------------------------------------------------------------------------
+    $showPayout = ($gran === 'month');
+    if ($showPayout) {
+        $poEarned = doctor_earned_for_month($pdo, $doctorId, $period);
+
+        // Cash basis on paid_at — procedure_bill.php writes status='paid' +
+        // paid_at in the same INSERT, so there's no draft/later-settlement
+        // state to worry about (see the Procedures view above).
+        $poProc = ['gross' => 0.0, 'tax' => 0.0, 'doctor' => 0.0, 'n' => 0, 'bills' => 0];
+        $poProcLive = false;
+        try {
+            $poFrom = $curStart . ' 00:00:00';
+            $poToExcl = date('Y-m-01', strtotime($curStart . ' +1 month')) . ' 00:00:00';
+            $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
+            $splitArgs = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
+            $docExpr = doctor_split_sql(...[...$splitArgs, 'doctor', $dispCol]);
+            $taxExpr = doctor_split_sql(...[...$splitArgs, 'tax', $dispCol]);
+
+            $pq = $pdo->prepare("
+                SELECT COUNT(*) AS n, COUNT(DISTINCT pb.id) AS bills,
+                       COALESCE(SUM(i.amount), 0) AS gross,
+                       COALESCE(SUM($taxExpr), 0) AS tax,
+                       COALESCE(SUM($docExpr), 0) AS doctor
+                FROM procedure_bill_items i
+                JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
+                WHERE pb.doctor_id = ?
+                  AND pb.status = 'paid'
+                  AND pb.voided_at IS NULL
+                  AND pb.paid_at >= ? AND pb.paid_at < ?
+            ");
+            $pq->execute([$doctorId, $poFrom, $poToExcl]);
+            if ($r = $pq->fetch()) {
+                $poProc = [
+                    'gross' => (float) $r['gross'], 'tax' => (float) $r['tax'],
+                    'doctor' => (float) $r['doctor'], 'n' => (int) $r['n'], 'bills' => (int) $r['bills'],
+                ];
+            }
+            $poProcLive = true;
+        } catch (PDOException $e) {
+            // procedure_bill_items/procedure_bills absent — procedures stream
+            // reads zero rather than failing the whole payout block.
+        }
+
+        $poGross = (float) $poEarned['gross'] + $poProc['gross'];
+        $poTax   = (float) $poEarned['tax']   + $poProc['tax'];
+        $poFinal = (float) $poEarned['doctor'] + $poProc['doctor'];
+        $poOpd   = (float) ($poEarned['opd_doctor'] ?? 0);
+        $poIpd   = (float) ($poEarned['ipd_doctor'] ?? 0);
+        $poIsCurrent = ($period === date('Y-m'));
+
+        // Previous-month comparison reuses $prevStart already computed above.
+        $poPrevEarned = doctor_earned_for_month($pdo, $doctorId, date('Y-m', strtotime($prevStart)));
+        $poPrevFinal = (float) $poPrevEarned['doctor'];
+        try {
+            $ppFrom = $prevStart . ' 00:00:00';
+            $ppToExcl = date('Y-m-01', strtotime($prevStart . ' +1 month')) . ' 00:00:00';
+            $dispCol = procedure_disposables_column($pdo) ? 'i.disposables_cost' : '0';
+            $splitArgs = ['i.amount', 'i.doctor_share_pct', 'i.has_tax', 'i.tax_percent'];
+            $docExpr = doctor_split_sql(...[...$splitArgs, 'doctor', $dispCol]);
+            $ppq = $pdo->prepare("
+                SELECT COALESCE(SUM($docExpr), 0) AS doctor
+                FROM procedure_bill_items i
+                JOIN procedure_bills pb ON pb.id = i.procedure_bill_id
+                WHERE pb.doctor_id = ? AND pb.status = 'paid' AND pb.voided_at IS NULL
+                  AND pb.paid_at >= ? AND pb.paid_at < ?
+            ");
+            $ppq->execute([$doctorId, $ppFrom, $ppToExcl]);
+            $poPrevFinal += (float) $ppq->fetchColumn();
+        } catch (PDOException $e) { /* leave prev total as OPD+IPD only */ }
+    }
 }
 
 // ============================================================================
@@ -819,140 +811,12 @@ require __DIR__ . '/partials/head.php';
             </div>
 
             <div class="view-tabs">
-                <a class="view-tab <?= $view === 'payout' ? 'active' : '' ?>" href="<?= qs_view('payout') ?>">Payout Summary</a>
                 <a class="view-tab <?= $view === 'revenue' ? 'active' : '' ?>" href="<?= qs_view('revenue') ?>">Revenue</a>
                 <a class="view-tab <?= $view === 'patients' ? 'active' : '' ?>" href="<?= qs_view('patients') ?>">Consultations &amp; Revisits</a>
                 <a class="view-tab <?= $view === 'procedures' ? 'active' : '' ?>" href="<?= qs_view('procedures') ?>">Procedures</a>
             </div>
 
-<?php if ($view === 'payout'): ?>
-            <div class="payout-head">
-                <div class="datepick">
-                    <a class="arrow" href="<?= qs_view('payout', ['month' => $poNavPrev]) ?>" aria-label="Previous month">&lsaquo;</a>
-                    <form class="doc-picker" method="GET" action="doctor_analytics.php">
-                        <input type="hidden" name="view" value="payout">
-                        <?php if ($isAdmin): ?><input type="hidden" name="doctor_id" value="<?= (int) $doctorId ?>"><?php endif; ?>
-                        <select name="month" class="month-select" onchange="this.form.submit()" aria-label="Select month">
-                            <?php for ($i = 0; $i < 12; $i++): $optM = date('Y-m', strtotime(date('Y-m-01') . " -$i month")); ?>
-                            <option value="<?= $optM ?>" <?= $optM === $poMonth ? 'selected' : '' ?>><?= date('F Y', strtotime($optM . '-01')) ?></option>
-                            <?php endfor; ?>
-                        </select>
-                    </form>
-                    <?php if ($poNavNext !== null): ?>
-                    <a class="arrow" href="<?= qs_view('payout', ['month' => $poNavNext]) ?>" aria-label="Next month">&rsaquo;</a>
-                    <?php else: ?>
-                    <span class="arrow disabled" aria-hidden="true">&rsaquo;</span>
-                    <?php endif; ?>
-                </div>
-                <span class="status-pill <?= $poIsCurrent ? 'amber' : 'green' ?>"><?= $poIsCurrent ? 'Month in progress' : 'Month closed' ?></span>
-            </div>
-
-            <div class="section-label">Earned by stream &middot; <?= htmlspecialchars($poPeriodLabel) ?></div>
-            <div class="split-grid">
-                <div class="split-card opd">
-                    <div class="split-top">
-                        <span class="split-name">OPD Consultations</span>
-                    </div>
-                    <div class="split-amt"><span class="cur">Rs</span> <?= fmt_amt($poOpd) ?></div>
-                    <div class="split-sub"><?= (int) ($poEarned['opd_bills'] ?? 0) ?> paid consultation<?= (int) ($poEarned['opd_bills'] ?? 0) === 1 ? '' : 's' ?></div>
-                    <div class="split-bar-track"><div class="split-bar-fill" style="width:<?= $poFinal > 0 ? min(100, round($poOpd / $poFinal * 100)) : 0 ?>%"></div></div>
-                    <div class="split-pct"><?= $poFinal > 0 ? round($poOpd / $poFinal * 100) : 0 ?>% of total earned</div>
-                </div>
-                <div class="split-card ipd">
-                    <div class="split-top">
-                        <span class="split-name">IPD / Admissions</span>
-                    </div>
-                    <div class="split-amt"><span class="cur">Rs</span> <?= fmt_amt($poIpd) ?></div>
-                    <div class="split-sub"><?= (int) ($poEarned['ipd_visits'] ?? 0) ?> daily round<?= (int) ($poEarned['ipd_visits'] ?? 0) === 1 ? '' : 's' ?></div>
-                    <div class="split-bar-track"><div class="split-bar-fill" style="width:<?= $poFinal > 0 ? min(100, round($poIpd / $poFinal * 100)) : 0 ?>%"></div></div>
-                    <div class="split-pct"><?= $poFinal > 0 ? round($poIpd / $poFinal * 100) : 0 ?>% of total earned</div>
-                </div>
-                <div class="split-card proc">
-                    <div class="split-top">
-                        <span class="split-name">Procedures</span>
-                    </div>
-                    <?php if ($poProcLive): ?>
-                    <div class="split-amt"><span class="cur">Rs</span> <?= fmt_amt($poProc['doctor']) ?></div>
-                    <div class="split-sub"><?= $poProc['n'] ?> procedure<?= $poProc['n'] === 1 ? '' : 's' ?> performed</div>
-                    <div class="split-bar-track"><div class="split-bar-fill" style="width:<?= $poFinal > 0 ? min(100, round($poProc['doctor'] / $poFinal * 100)) : 0 ?>%"></div></div>
-                    <div class="split-pct"><?= $poFinal > 0 ? round($poProc['doctor'] / $poFinal * 100) : 0 ?>% of total earned</div>
-                    <?php else: ?>
-                    <div class="split-amt" style="color:var(--text-muted)">&mdash;</div>
-                    <div class="split-sub">Procedure billing not set up on this database</div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <div class="section-label">Monthly settlement</div>
-            <div class="settle-card">
-                <div class="settle-head">
-                    <div>
-                        <div class="settle-title"><?= htmlspecialchars($poPeriodLabel) ?> payout summary</div>
-                        <div class="settle-sub">Your earned share across all streams, less withheld tax</div>
-                    </div>
-                </div>
-                <div class="settle-rows">
-                    <div class="settle-row">
-                        <span class="lab"><span class="dotk" style="background:var(--primary-accent)"></span>OPD earned</span>
-                        <span class="val tnum"><?= fmt_amt($poOpd) ?> PKR</span>
-                    </div>
-                    <div class="settle-row">
-                        <span class="lab"><span class="dotk" style="background:#5B7FA6"></span>IPD earned</span>
-                        <span class="val tnum"><?= fmt_amt($poIpd) ?> PKR</span>
-                    </div>
-                    <div class="settle-row">
-                        <span class="lab"><span class="dotk" style="background:#8A6FA8"></span>Procedures earned</span>
-                        <span class="val tnum"><?= fmt_amt($poProc['doctor']) ?> PKR</span>
-                    </div>
-                    <div class="settle-row" style="border-top:1px solid var(--border); margin-top:2px; padding-top:14px;">
-                        <span class="lab" style="font-weight:700; color:var(--text);">Gross earned (before tax)</span>
-                        <span class="val tnum" style="font-size:14.5px;"><?= fmt_amt($poGross) ?> PKR</span>
-                    </div>
-                    <div class="settle-row deduct">
-                        <span class="lab">Tax withheld</span>
-                        <span class="val tnum"><?= fmt_amt($poTax) ?> PKR</span>
-                    </div>
-                </div>
-                <div class="settle-final">
-                    <div>
-                        <div class="flab">Final payable to you</div>
-                        <div class="fnote">After tax &middot; before any advance recoveries</div>
-                    </div>
-                    <div class="fval"><span class="cur">Rs</span> <?= fmt_amt($poFinal) ?></div>
-                </div>
-                <div class="settle-foot">
-                    <span class="foot-note">
-                        <?= $poIsCurrent ? 'Figures update live through the month as bills are paid.' : 'Month closed — figures are final for ' . htmlspecialchars($poPeriodLabel) . '.' ?>
-                    </span>
-                </div>
-            </div>
-
-            <div class="cmp-strip">
-                <div class="cmp-chip">
-                    <div class="lab">vs <?= date('F Y', strtotime($poPrevMonth . '-01')) ?></div>
-                    <div class="num tnum"><?= fmt_amt($poFinal) ?></div>
-                    <?php if ($poPrevFinal > 0): $poDelta = ($poFinal - $poPrevFinal) / $poPrevFinal * 100; ?>
-                    <div class="delta <?= $poDelta >= 0 ? 'up' : 'down' ?>"><?= $poDelta >= 0 ? '&#9650;' : '&#9660;' ?> <?= number_format(abs($poDelta), 1) ?>% vs <?= fmt_amt($poPrevFinal) ?></div>
-                    <?php else: ?>
-                    <div class="delta" style="color:var(--text-muted)">no prior data</div>
-                    <?php endif; ?>
-                </div>
-                <div class="cmp-chip">
-                    <div class="lab">Consultations + rounds</div>
-                    <div class="num tnum"><?= (int) $poEarned['bills'] ?></div>
-                    <div class="delta" style="color:var(--text-muted)">this month</div>
-                </div>
-                <div class="cmp-chip">
-                    <div class="lab">Effective tax rate</div>
-                    <div class="num tnum"><?= $poGross > 0 ? number_format($poTax / $poGross * 100, 1) : '0.0' ?>%</div>
-                    <div class="delta" style="color:var(--text-muted)">of gross earned</div>
-                </div>
-            </div>
-            <div class="section-sub" style="margin-top:14px">
-                Your earned share of paid consultations, in-door daily rounds and procedures — tax withheld first, then your revenue-share %. Admission/ER bills stay clinic revenue and aren't counted here.
-            </div>
-
-<?php elseif ($view === 'revenue'): ?>
+<?php if ($view === 'revenue'): ?>
             <div class="card">
                 <?php
                 // The chart is the shared partial both consoles use, so the
@@ -1032,6 +896,114 @@ require __DIR__ . '/partials/head.php';
                     Your earned share of paid consultations — (fee paid, less any withheld tax) × your revenue-share %. The clinic keeps the remainder; ER admission bills are clinic revenue and aren't counted here.
                 </div>
             </div>
+
+<?php if ($showPayout): ?>
+            <div class="section-label" style="margin-top:22px">Earned by stream &middot; <?= htmlspecialchars($periodLabel) ?></div>
+            <div class="split-grid">
+                <div class="split-card opd">
+                    <div class="split-top">
+                        <span class="split-name">OPD Consultations</span>
+                    </div>
+                    <div class="split-amt"><span class="cur">Rs</span> <?= fmt_amt($poOpd) ?></div>
+                    <div class="split-sub"><?= (int) ($poEarned['opd_bills'] ?? 0) ?> paid consultation<?= (int) ($poEarned['opd_bills'] ?? 0) === 1 ? '' : 's' ?></div>
+                    <div class="split-bar-track"><div class="split-bar-fill" style="width:<?= $poFinal > 0 ? min(100, round($poOpd / $poFinal * 100)) : 0 ?>%"></div></div>
+                    <div class="split-pct"><?= $poFinal > 0 ? round($poOpd / $poFinal * 100) : 0 ?>% of total earned</div>
+                </div>
+                <div class="split-card ipd">
+                    <div class="split-top">
+                        <span class="split-name">IPD / Admissions</span>
+                    </div>
+                    <div class="split-amt"><span class="cur">Rs</span> <?= fmt_amt($poIpd) ?></div>
+                    <div class="split-sub"><?= (int) ($poEarned['ipd_visits'] ?? 0) ?> daily round<?= (int) ($poEarned['ipd_visits'] ?? 0) === 1 ? '' : 's' ?></div>
+                    <div class="split-bar-track"><div class="split-bar-fill" style="width:<?= $poFinal > 0 ? min(100, round($poIpd / $poFinal * 100)) : 0 ?>%"></div></div>
+                    <div class="split-pct"><?= $poFinal > 0 ? round($poIpd / $poFinal * 100) : 0 ?>% of total earned</div>
+                </div>
+                <div class="split-card proc">
+                    <div class="split-top">
+                        <span class="split-name">Procedures</span>
+                    </div>
+                    <?php if ($poProcLive): ?>
+                    <div class="split-amt"><span class="cur">Rs</span> <?= fmt_amt($poProc['doctor']) ?></div>
+                    <div class="split-sub"><?= $poProc['n'] ?> procedure<?= $poProc['n'] === 1 ? '' : 's' ?> performed</div>
+                    <div class="split-bar-track"><div class="split-bar-fill" style="width:<?= $poFinal > 0 ? min(100, round($poProc['doctor'] / $poFinal * 100)) : 0 ?>%"></div></div>
+                    <div class="split-pct"><?= $poFinal > 0 ? round($poProc['doctor'] / $poFinal * 100) : 0 ?>% of total earned</div>
+                    <?php else: ?>
+                    <div class="split-amt" style="color:var(--text-muted)">&mdash;</div>
+                    <div class="split-sub">Procedure billing not set up on this database</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="section-label">Monthly settlement</div>
+            <div class="settle-card">
+                <div class="settle-head">
+                    <div>
+                        <div class="settle-title"><?= htmlspecialchars($periodLabel) ?> payout summary</div>
+                        <div class="settle-sub">Your earned share across all streams, less withheld tax</div>
+                    </div>
+                    <span class="status-pill <?= $poIsCurrent ? 'amber' : 'green' ?>"><?= $poIsCurrent ? 'Month in progress' : 'Month closed' ?></span>
+                </div>
+                <div class="settle-rows">
+                    <div class="settle-row">
+                        <span class="lab"><span class="dotk" style="background:var(--primary-accent)"></span>OPD earned</span>
+                        <span class="val tnum"><?= fmt_amt($poOpd) ?> PKR</span>
+                    </div>
+                    <div class="settle-row">
+                        <span class="lab"><span class="dotk" style="background:#5B7FA6"></span>IPD earned</span>
+                        <span class="val tnum"><?= fmt_amt($poIpd) ?> PKR</span>
+                    </div>
+                    <div class="settle-row">
+                        <span class="lab"><span class="dotk" style="background:#8A6FA8"></span>Procedures earned</span>
+                        <span class="val tnum"><?= fmt_amt($poProc['doctor']) ?> PKR</span>
+                    </div>
+                    <div class="settle-row" style="border-top:1px solid var(--border); margin-top:2px; padding-top:14px;">
+                        <span class="lab" style="font-weight:700; color:var(--text);">Gross earned (before tax)</span>
+                        <span class="val tnum" style="font-size:14.5px;"><?= fmt_amt($poGross) ?> PKR</span>
+                    </div>
+                    <div class="settle-row deduct">
+                        <span class="lab">Tax withheld</span>
+                        <span class="val tnum"><?= fmt_amt($poTax) ?> PKR</span>
+                    </div>
+                </div>
+                <div class="settle-final">
+                    <div>
+                        <div class="flab">Final payable to you</div>
+                        <div class="fnote">After tax &middot; before any advance recoveries</div>
+                    </div>
+                    <div class="fval"><span class="cur">Rs</span> <?= fmt_amt($poFinal) ?></div>
+                </div>
+                <div class="settle-foot">
+                    <span class="foot-note">
+                        <?= $poIsCurrent ? 'Figures update live through the month as bills are paid.' : 'Month closed — figures are final for ' . htmlspecialchars($periodLabel) . '.' ?>
+                    </span>
+                </div>
+            </div>
+
+            <div class="cmp-strip">
+                <div class="cmp-chip">
+                    <div class="lab">vs <?= htmlspecialchars($prevLabel) ?></div>
+                    <div class="num tnum"><?= fmt_amt($poFinal) ?></div>
+                    <?php if ($poPrevFinal > 0): $poDelta = ($poFinal - $poPrevFinal) / $poPrevFinal * 100; ?>
+                    <div class="delta <?= $poDelta >= 0 ? 'up' : 'down' ?>"><?= $poDelta >= 0 ? '&#9650;' : '&#9660;' ?> <?= number_format(abs($poDelta), 1) ?>% vs <?= fmt_amt($poPrevFinal) ?></div>
+                    <?php else: ?>
+                    <div class="delta" style="color:var(--text-muted)">no prior data</div>
+                    <?php endif; ?>
+                </div>
+                <div class="cmp-chip">
+                    <div class="lab">Consultations + rounds</div>
+                    <div class="num tnum"><?= (int) $poEarned['bills'] ?></div>
+                    <div class="delta" style="color:var(--text-muted)">this month</div>
+                </div>
+                <div class="cmp-chip">
+                    <div class="lab">Effective tax rate</div>
+                    <div class="num tnum"><?= $poGross > 0 ? number_format($poTax / $poGross * 100, 1) : '0.0' ?>%</div>
+                    <div class="delta" style="color:var(--text-muted)">of gross earned</div>
+                </div>
+            </div>
+            <div class="section-sub" style="margin-top:14px">
+                Your earned share of paid consultations, in-door daily rounds and procedures — tax withheld first, then your revenue-share %. Admission/ER bills stay clinic revenue and aren't counted here.
+            </div>
+<?php endif; ?>
 
 <?php elseif ($view === 'patients'): ?>
             <div class="card">
