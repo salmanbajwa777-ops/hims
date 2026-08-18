@@ -662,8 +662,9 @@ $headExtra = <<<CSS
 .sum .cnt { font-size: 11.5px; color: var(--text-muted); }
 .rev-total { display: flex; justify-content: space-between; border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; font-weight: 700; font-size: 14px; }
 
-/* Payout Summary view */
-.payout-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+/* Payout split, shown under the Revenue chart on Month granularity */
+.month-jump { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.month-jump-lab { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 .month-select { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px 10px; font-size: 13px; font-weight: 600; color: var(--text); }
 .arrow.disabled { opacity: .4; pointer-events: none; }
 
@@ -695,7 +696,11 @@ $headExtra = <<<CSS
 .settle-row .lab { color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
 .settle-row .val { font-weight: 600; }
 .settle-row.deduct .val { color: var(--danger); }
-.settle-row.deduct .val::before { content: "\2212 "; }
+.settle-row.deduct .val::before { content: "\\2212 "; }
+.settle-row.sub { padding: 8px 0; border-bottom: none; }
+.settle-row.sub .lab { padding-left: 16px; font-size: 12.5px; color: var(--text-muted); }
+.settle-row.sub .val { font-size: 12.5px; font-weight: 500; color: var(--text-muted); }
+.settle-row.sub:last-of-type { padding-bottom: 14px; }
 .settle-final { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--primary-dark); color: var(--on-primary); padding: 20px; margin-top: 4px; }
 .settle-final .flab { font-size: 12px; font-weight: 600; color: var(--text-on-dark, #CFDCD4); text-transform: uppercase; letter-spacing: .05em; }
 .settle-final .fnote { font-size: 11.5px; color: #9DB3A7; margin-top: 3px; }
@@ -818,6 +823,19 @@ require __DIR__ . '/partials/head.php';
 
 <?php if ($view === 'revenue'): ?>
             <div class="card">
+                <?php if ($gran === 'month'): ?>
+                <form class="doc-picker month-jump" method="GET" action="doctor_analytics.php">
+                    <input type="hidden" name="view" value="revenue">
+                    <input type="hidden" name="gran" value="month">
+                    <?php if ($isAdmin): ?><input type="hidden" name="doctor_id" value="<?= (int) $doctorId ?>"><?php endif; ?>
+                    <label for="jump-month" class="month-jump-lab">Jump to month</label>
+                    <select id="jump-month" name="period" class="month-select" onchange="this.form.submit()">
+                        <?php for ($i = 0; $i < 24; $i++): $optM = date('Y-m', strtotime(date('Y-m-01') . " -$i month")); ?>
+                        <option value="<?= $optM ?>" <?= $optM === $period ? 'selected' : '' ?>><?= date('F Y', strtotime($optM . '-01')) ?></option>
+                        <?php endfor; ?>
+                    </select>
+                </form>
+                <?php endif; ?>
                 <?php
                 // The chart is the shared partial both consoles use, so the
                 // doctor's "month report" and the admin's are the same object.
@@ -945,30 +963,38 @@ require __DIR__ . '/partials/head.php';
                 </div>
                 <div class="settle-rows">
                     <div class="settle-row">
-                        <span class="lab"><span class="dotk" style="background:var(--primary-accent)"></span>OPD earned</span>
-                        <span class="val tnum"><?= fmt_amt($poOpd) ?> PKR</span>
-                    </div>
-                    <div class="settle-row">
-                        <span class="lab"><span class="dotk" style="background:#5B7FA6"></span>IPD earned</span>
-                        <span class="val tnum"><?= fmt_amt($poIpd) ?> PKR</span>
-                    </div>
-                    <div class="settle-row">
-                        <span class="lab"><span class="dotk" style="background:#8A6FA8"></span>Procedures earned</span>
-                        <span class="val tnum"><?= fmt_amt($poProc['doctor']) ?> PKR</span>
-                    </div>
-                    <div class="settle-row" style="border-top:1px solid var(--border); margin-top:2px; padding-top:14px;">
-                        <span class="lab" style="font-weight:700; color:var(--text);">Gross earned (before tax)</span>
-                        <span class="val tnum" style="font-size:14.5px;"><?= fmt_amt($poGross) ?> PKR</span>
+                        <span class="lab">Gross billed (patient-paid, all streams)</span>
+                        <span class="val tnum"><?= fmt_amt($poGross) ?> PKR</span>
                     </div>
                     <div class="settle-row deduct">
                         <span class="lab">Tax withheld</span>
                         <span class="val tnum"><?= fmt_amt($poTax) ?> PKR</span>
                     </div>
+                    <div class="settle-row deduct">
+                        <span class="lab">Clinic's share</span>
+                        <span class="val tnum"><?= fmt_amt(max(0.0, $poGross - $poTax - $poFinal)) ?> PKR</span>
+                    </div>
+                    <div class="settle-row" style="border-top:1px solid var(--border); margin-top:2px; padding-top:14px;">
+                        <span class="lab" style="font-weight:700; color:var(--text);">Your earned share, by stream</span>
+                        <span class="val tnum" style="font-size:14.5px;"><?= fmt_amt($poFinal) ?> PKR</span>
+                    </div>
+                    <div class="settle-row sub">
+                        <span class="lab"><span class="dotk" style="background:var(--primary-accent)"></span>OPD earned</span>
+                        <span class="val tnum"><?= fmt_amt($poOpd) ?> PKR</span>
+                    </div>
+                    <div class="settle-row sub">
+                        <span class="lab"><span class="dotk" style="background:#5B7FA6"></span>IPD earned</span>
+                        <span class="val tnum"><?= fmt_amt($poIpd) ?> PKR</span>
+                    </div>
+                    <div class="settle-row sub">
+                        <span class="lab"><span class="dotk" style="background:#8A6FA8"></span>Procedures earned</span>
+                        <span class="val tnum"><?= fmt_amt($poProc['doctor']) ?> PKR</span>
+                    </div>
                 </div>
                 <div class="settle-final">
                     <div>
                         <div class="flab">Final payable to you</div>
-                        <div class="fnote">After tax &middot; before any advance recoveries</div>
+                        <div class="fnote">After tax and the clinic's share &middot; before any advance recoveries</div>
                     </div>
                     <div class="fval"><span class="cur">Rs</span> <?= fmt_amt($poFinal) ?></div>
                 </div>
