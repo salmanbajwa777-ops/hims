@@ -455,13 +455,80 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
  * Returns the raw token so the caller could log it if needed; callers normally
  * ignore it. Call AFTER $pdo->commit() like every other notify_* function.
  */
+
+
+/**
+ * The TWO people an expense-approval email goes to: one manager, one admin.
+ *
+ * WHY THIS EXISTS: the old code mailed admin_alert_email() plus EVERY holder of
+ * FINANCIAL_APPROVE_EXPENSES. That permission is held by every admin by role,
+ * every manager, and anyone with a per-user grant — so one posting mailed five
+ * or six people. The requirement is exactly two: one manager and one admin, so
+ * the posting is visible to both sides of the approval chain and nobody else.
+ *
+ * Deterministic pick (lowest id) rather than "all of them": the point is that
+ * ONE person on each side is accountable for the queue, and ordering by id keeps
+ * the same two people receiving it instead of the audience rotating.
+ *
+ * The manager slot prefers the MANAGER base_role but accepts any non-admin
+ * holding the approve permission, so a MANAGER with the permission revoked is
+ * skipped and a STAFF user explicitly granted it can still cover the slot.
+ * Degrades safely: no manager on file still emails the admin, and vice versa.
+ */
+function expense_notify_recipients(PDO $pdo): array {
+    $out = ['manager' => null, 'admin' => null];
+
+    // ONE manager. Effective permission = role grant minus a user revoke, plus a
+    // user grant — the same rule load_permissions() applies.
+    try {
+        $m = $pdo->query("
+            SELECT u.id, u.name, u.email FROM users u
+             WHERE u.is_active = 1 AND u.email IS NOT NULL AND u.email <> ''
+               AND u.base_role <> 'ADMIN'
+               AND (
+                    (   EXISTS (SELECT 1 FROM role_permissions rp
+                                  JOIN permissions p ON p.id = rp.permission_id
+                                 WHERE rp.base_role = u.base_role AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES')
+                     AND NOT EXISTS (SELECT 1 FROM user_permission_overrides o
+                                       JOIN permissions p ON p.id = o.permission_id
+                                      WHERE o.user_id = u.id AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES' AND o.granted = 0))
+                 OR EXISTS (SELECT 1 FROM user_permission_overrides o
+                              JOIN permissions p ON p.id = o.permission_id
+                             WHERE o.user_id = u.id AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES' AND o.granted = 1)
+               )
+             ORDER BY (u.base_role = 'MANAGER') DESC, u.id
+             LIMIT 1
+        ")->fetch();
+        if ($m) { $out['manager'] = $m; }
+    } catch (Throwable $e) { /* leave null */ }
+
+    // ONE admin.
+    try {
+        $a = $pdo->query("
+            SELECT id, name, email FROM users
+             WHERE is_active = 1 AND base_role = 'ADMIN'
+               AND email IS NOT NULL AND email <> ''
+             ORDER BY id LIMIT 1
+        ")->fetch();
+        if ($a) { $out['admin'] = $a; }
+    } catch (Throwable $e) { /* leave null */ }
+
+    // No admin user carries an email — fall back to the configured alert address
+    // so the admin side is never silent.
+    if (!$out['admin']) {
+        $alert = admin_alert_email();
+        if ($alert) { $out['admin'] = ['id' => 0, 'name' => 'Admin', 'email' => $alert]; }
+    }
+    return $out;
+}
+
 function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void {
     try {
         // over_limit/limit_note may be absent if the migration hasn't run yet;
         // fall back to a column-free SELECT so the email still sends mid-deploy.
         try {
             $stmt = $pdo->prepare('
-                SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date,
+                SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date, e.posted_by_id,
                        e.approval_status, e.over_limit, e.limit_note,
                        ec.name AS category_name, u.name AS posted_by_name, t.expires_at
                 FROM expenses e
@@ -474,7 +541,7 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
             $r = $stmt->fetch();
         } catch (PDOException $ex) {
             $stmt = $pdo->prepare('
-                SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date,
+                SELECT e.expense_number, e.amount, e.description, e.paid_to, e.expense_date, e.posted_by_id,
                        e.approval_status, ec.name AS category_name, u.name AS posted_by_name, t.expires_at
                 FROM expenses e
                 JOIN expense_categories ec ON ec.id = e.category_id
@@ -497,8 +564,18 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
         // role grant minus user revoke, plus user grant), matching load_permissions().
         // Same audience as the email below, resolved as ids: everyone holding
         // FINANCIAL_APPROVE_EXPENSES, plus every admin.
+        // Exactly two recipients: one manager, one admin. Previously this was
+        // every admin PLUS every holder of FINANCIAL_APPROVE_EXPENSES, which on
+        // this install is the same handful of people several times over.
+        $rcpt = expense_notify_recipients($pdo);
+        $notifyIds = [];
+        foreach (['manager', 'admin'] as $slot) {
+            if (!empty($rcpt[$slot]['id'])) { $notifyIds[] = (int) $rcpt[$slot]['id']; }
+        }
+        // The poster is never told about their own posting.
+        $notifyIds = array_values(array_diff(array_unique($notifyIds), [(int) ($r['posted_by_id'] ?? 0)]));
         notify_users($pdo,
-            array_merge(notif_admin_ids($pdo), notif_users_with_permission($pdo, 'FINANCIAL_APPROVE_EXPENSES')),
+            $notifyIds,
             $isOver ? 'expense_approval_over_limit' : 'expense_approval',
             ($isOver ? 'OVER-LIMIT expense needs approval' : 'Expense awaiting approval')
                 . ' — Rs ' . number_format((float) $r['amount'], 0),
@@ -511,24 +588,15 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
         // sole way to approve. The settings screen says so on the row itself.
         if (!notif_email_enabled($pdo, 'expense_approval')) { return; }
 
-        $to = [admin_alert_email()];
-        $mgr = $pdo->query("
-            SELECT u.email FROM users u
-            WHERE u.is_active = 1 AND u.email IS NOT NULL AND u.email <> ''
-              AND (
-                    (   EXISTS (SELECT 1 FROM role_permissions rp
-                                JOIN permissions p ON p.id = rp.permission_id
-                                WHERE rp.base_role = u.base_role AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES')
-                     AND NOT EXISTS (SELECT 1 FROM user_permission_overrides o
-                                     JOIN permissions p ON p.id = o.permission_id
-                                     WHERE o.user_id = u.id AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES' AND o.granted = 0))
-                 OR EXISTS (SELECT 1 FROM user_permission_overrides o
-                            JOIN permissions p ON p.id = o.permission_id
-                            WHERE o.user_id = u.id AND p.`key` = 'FINANCIAL_APPROVE_EXPENSES' AND o.granted = 1)
-              )
-        ");
-        foreach ($mgr->fetchAll() as $m) { $to[] = $m['email']; }
-        $to = array_values(array_unique(array_filter($to)));
+        // TWO emails, no more: one manager, one admin. $rcpt was resolved above.
+        $to = [];
+        foreach (['manager', 'admin'] as $slot) {
+            $e = $rcpt[$slot]['email'] ?? null;
+            if ($e && filter_var($e, FILTER_VALIDATE_EMAIL)) { $to[] = $e; }
+        }
+        // unique() matters: if one person is both the only manager and the only
+        // admin, they get ONE email rather than the same message twice.
+        $to = array_values(array_unique($to));
         if (!$to) { return; }
 
         $base = (mail_config() ?? [])['base_url'] ?? 'https://hims.babymedics.com';
@@ -580,7 +648,7 @@ function notify_expense_decided(PDO $pdo, int $expenseId): void {
         $stmt = $pdo->prepare('
             SELECT e.expense_number, e.amount, e.description, e.approval_status,
                    e.rejection_reason, ec.name AS category_name,
-                   e.posted_by_id, pu.name AS posted_by_name, pu.email AS posted_by_email,
+                   e.posted_by_id, e.approved_by_id, pu.name AS posted_by_name, pu.email AS posted_by_email,
                    au.name AS approver_name
             FROM expenses e
             JOIN expense_categories ec ON ec.id = e.category_id
@@ -594,22 +662,49 @@ function notify_expense_decided(PDO $pdo, int $expenseId): void {
 
         $approved = $r['approval_status'] === 'APPROVED';
 
+        // Nobody is notified about their own decision. An admin's posting is
+        // auto-approved by the poster themselves, so without this the admin gets
+        // an in-app ping announcing what he just did.
+        $decidedBySelf = !empty($r['approved_by_id'])
+            && (int) $r['approved_by_id'] === (int) $r['posted_by_id'];
+
         // The poster needs this one most — a rejection means cash goes back in
         // the drawer — and they may well have no email on file.
-        notify_users($pdo, [(int) $r['posted_by_id']],
-            $approved ? 'expense_approved' : 'expense_rejected',
-            'Expense ' . ($approved ? 'approved' : 'REJECTED') . ' — Rs ' . number_format((float) $r['amount'], 0),
-            $r['category_name'] . ' · ' . $r['description']
-                . (!$approved && $r['rejection_reason'] ? ' — ' . $r['rejection_reason'] : '')
-                . ' · by ' . ($r['approver_name'] ?? '—'),
-            'expenses.php', $r['expense_number']);
+        if (!$decidedBySelf) {
+            notify_users($pdo, [(int) $r['posted_by_id']],
+                $approved ? 'expense_approved' : 'expense_rejected',
+                'Expense ' . ($approved ? 'approved' : 'REJECTED') . ' — Rs ' . number_format((float) $r['amount'], 0),
+                $r['category_name'] . ' · ' . $r['description']
+                    . (!$approved && $r['rejection_reason'] ? ' — ' . $r['rejection_reason'] : '')
+                    . ' · by ' . ($r['approver_name'] ?? '—'),
+                'expenses.php', $r['expense_number']);
+        }
+
+        // Self-decided (an admin's own auto-approved posting) tells nobody
+        // anything: the person already knows, and no cash needs returning.
+        if ($decidedBySelf) { return; }
+
+        // APPROVAL SENDS NO EMAIL AT ALL.
+        //
+        // An approval is the expected outcome and needs no action from anyone —
+        // the in-app notification above already records it. Emailing on approve
+        // is what produced the absurd case of an admin auto-approving his own
+        // expense and then being emailed about it: the status is set to APPROVED
+        // at posting time for an admin, this function runs, and the old code
+        // mailed admin_alert_email() — the admin, about himself.
+        //
+        // A REJECTION is different: cash has to go back in the drawer, so exactly
+        // one person needs to act, and that is the person who posted it.
+        if ($approved) { return; }
 
         if (!notif_email_enabled($pdo, 'expense_decided')) { return; }
 
-        $to = array_values(array_filter(array_unique([
-            admin_alert_email(),
-            ($r['posted_by_email'] && filter_var($r['posted_by_email'], FILTER_VALIDATE_EMAIL)) ? $r['posted_by_email'] : null,
-        ])));
+        // ONE recipient: the staff member who posted the expense. Not the admin,
+        // not the approver, not the alert address — nobody else has anything to do.
+        $to = [];
+        if ($r['posted_by_email'] && filter_var($r['posted_by_email'], FILTER_VALIDATE_EMAIL)) {
+            $to[] = $r['posted_by_email'];
+        }
         if (!$to) { return; }
 
         $kv = [
