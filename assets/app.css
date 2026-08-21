@@ -131,6 +131,29 @@
 /* ---------- Reset ---------- */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* No spinner arrows on number fields, anywhere in HIMS.
+   Every amount, fee, meter reading and quantity in this app is TYPED, never
+   nudged one step at a time — a Rs 12,500 expense is 6 keystrokes or 12,500
+   clicks. The arrows also sit exactly where a thumb lands on mobile, so there
+   they are a hazard rather than a shortcut: a mis-tap silently changes a money
+   value with no visible cause.
+   The `step` attribute is deliberately LEFT ALONE. It still governs how many
+   decimals a TYPED value may carry (step="0.01" on fees, step="1" on whole
+   rupees) — that is validation, not a control. Nothing in the app calls
+   stepUp()/stepDown(), so removing the arrows costs no behaviour.
+   -moz-appearance is still needed: Firefox draws its own spinner and honours
+   only the prefixed form. */
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
 html, body { height: 100%; }
 
 body {
