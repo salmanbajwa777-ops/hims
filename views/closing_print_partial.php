@@ -101,8 +101,21 @@ $adminNameUpper = mb_strtoupper($closing['admin_name'] ?? '', 'UTF-8');
         <?php endif; ?>
 
         <?php if (!empty($closing['closed_by_admin_name'])): ?>
+        <?php /* No longer says "LATE CLOSE": an admin may now close a shift the same
+                 day when the receptionist cannot, so the banner states the fact —
+                 who closed it for whom — without asserting it was overdue. */ ?>
         <div style="text-align:center;font-size:9.5px;font-weight:bold;letter-spacing:1px;border:1.5px solid #000;padding:2px 6px;margin:3px auto 0;width:fit-content;">
-            CLOSED BY <?= htmlspecialchars(mb_strtoupper($closing['closed_by_admin_name'], 'UTF-8')) ?> ON BEHALF OF <?= htmlspecialchars($cashierNameUpper) ?> (LATE CLOSE)
+            CLOSED BY <?= htmlspecialchars(mb_strtoupper($closing['closed_by_admin_name'], 'UTF-8')) ?> ON BEHALF OF <?= htmlspecialchars($cashierNameUpper) ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if (abs($varianceVal) >= 0.01): ?>
+        <?php /* A cash mismatch is the single most important thing on this slip and
+                 must not be a quiet row inside a table of eight numbers. Whoever
+                 signs this is signing for a drawer that did not balance, so it is
+                 stated at the top, in words, with the amount and the direction. */ ?>
+        <div style="text-align:center;font-size:11px;font-weight:bold;letter-spacing:.5px;border:2px solid #000;padding:4px 8px;margin:4px auto 0;width:fit-content;">
+            CASH MISMATCH — <?= $varianceVal < 0 ? 'SHORT' : 'OVER' ?> BY RS <?= number_format(abs($varianceVal), 2) ?>
         </div>
         <?php endif; ?>
 
@@ -142,7 +155,10 @@ $adminNameUpper = mb_strtoupper($closing['admin_name'] ?? '', 'UTF-8');
             <tr><td>Less: counter expenses</td><td class="text-right">(<?= number_format($slipExpenses, 2) ?>)</td></tr>
             <tr><td>Expected cash in hand</td><td class="text-right"><?= number_format((float) $closing['expected_cash'], 2) ?></td></tr>
             <tr><td>Counted cash</td><td class="text-right"><?= number_format((float) $closing['counted_cash'], 2) ?></td></tr>
-            <tr><td>Variance</td><td class="text-right"><?= $varianceLabel ?></td></tr>
+            <?php /* Bold only when it is NOT balanced, so weight carries meaning
+                     instead of decorating every slip. */ ?>
+            <tr><td<?= abs($varianceVal) >= 0.01 ? ' style="font-weight:bold;"' : '' ?>>Variance</td>
+                <td class="text-right"<?= abs($varianceVal) >= 0.01 ? ' style="font-weight:bold;"' : '' ?>><?= $varianceLabel ?></td></tr>
             <tr class="net"><td><strong>CASH HANDED TO ADMIN (Rs)</strong></td><td class="text-right"><strong><?= number_format((float) $closing['handover_declared'], 2) ?></strong></td></tr>
         </table>
 

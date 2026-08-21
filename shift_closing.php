@@ -22,7 +22,15 @@ require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
 refresh_session_permissions($pdo);
-require_permission('RECEPTION_CLOSE_DAY');
+// Printing a slip is a READ of a closing that has already happened, so it is
+// gated more widely than closing one. A handover receiver (admin or manager) is
+// shown slip links on admin_handovers.php — including for shifts they closed on
+// someone's behalf — and must not hit a 403 on a link the app itself rendered.
+// Everything past this block still requires RECEPTION_CLOSE_DAY.
+$isSlipPrint = isset($_GET['print']) && isset($_GET['closing_id']);
+if (!($isSlipPrint && has_permission('ADMIN_RECEIVE_HANDOVER'))) {
+    require_permission('RECEPTION_CLOSE_DAY');
+}
 
 $error = '';
 $uid = (int) $_SESSION['user_id'];

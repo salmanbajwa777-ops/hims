@@ -117,9 +117,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin
 
         if ($cashierId <= 0 || $validDate === '') {
             $error = 'Pick a valid receptionist and date to close.';
-        } elseif ($ageDays <= 5) {
-            // Inside the window — the receptionist closes this themselves.
-            $error = 'That day is still within the receptionist\'s own 5-day window — they should close it.';
+        } elseif ($ageDays < 0) {
+            // A future business day has no takings to count yet.
+            $error = 'That day has not happened yet.';
         } elseif (!user_holds_drawer($pdo, $cashierId)) {
             $error = 'That user does not run a cash drawer.';
         } elseif (day_closing($pdo, $validDate, $cashierId)) {
@@ -197,15 +197,24 @@ try {
     foreach ($canReceive ? receptionists_with_drawer($pdo) : [] as $recp) {
         $days = unclosed_business_days($pdo, (int) $recp['id'], 30, true);
         foreach ($days as $d) {
-            if ($d['age_days'] > 5) {
-                $strandedShifts[] = [
-                    'cashier_id'    => (int) $recp['id'],
-                    'cashier_name'  => $recp['name'],
-                    'date'          => $d['date'],
-                    'expected_cash' => $d['expected_cash'],
-                    'age_days'      => $d['age_days'],
-                ];
-            }
+            // EVERY unclosed day is listed, not only those past the receptionist's
+            // own 5-day window. A receptionist who goes home sick at 4pm strands
+            // TODAY's drawer, and that is exactly when an admin needs to be able to
+            // close it — waiting five days to reconcile cash is the opposite of
+            // what the situation calls for.
+            //
+            // 'stranded' distinguishes the two cases for the UI: past the window is
+            // overdue and shown in red, inside it is a normal stand-in and shown in
+            // amber, so opening this up does not make five ordinary days look like
+            // five emergencies.
+            $strandedShifts[] = [
+                'cashier_id'    => (int) $recp['id'],
+                'cashier_name'  => $recp['name'],
+                'date'          => $d['date'],
+                'expected_cash' => $d['expected_cash'],
+                'age_days'      => $d['age_days'],
+                'stranded'      => $d['age_days'] > 5,
+            ];
         }
     }
     // Oldest first — the most urgent to reconcile.
@@ -458,6 +467,14 @@ require __DIR__ . '/partials/sidebar.php';
 /* Negative-expected-cash explainer on a stranded shift. Amber, not red: the
    figure is correct, it just needs explaining — red would read as data damage. */
 .neg-explain { background: var(--warn-bg); color: var(--warn); border-radius: var(--radius-input); padding: 11px 14px; font-size: 12.5px; line-height: 1.55; margin: 12px 0 4px; }
+/* Live variance under the counted-cash box. Hidden while balanced so it only
+   ever appears when there is something to acknowledge. */
+.var-live { display: none; margin-top: 7px; font-size: 12.5px; font-weight: 600;
+    border-radius: var(--radius-input); padding: 9px 12px; line-height: 1.5; }
+.var-live.on { display: block; }
+.var-live.short { background: var(--red-bg); color: var(--red-text); border: 1px solid rgba(225,29,72,.28); }
+.var-live.over  { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(245,158,11,.34); }
+.var-live b { font-variant-numeric: tabular-nums; }
 
 /* ---- Received-history filters ----
    Two stacked rows rather than one wrapping toolbar: this card sits in the
@@ -835,13 +852,39 @@ require __DIR__ . '/partials/sidebar.php';
 
             <?php if ($canReceive && $strandedShifts): ?>
             <div class="card">
-                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Stranded shifts — close on behalf
-                    <span class="ho-pill red" style="margin-left:8px;"><?= count($strandedShifts) ?></span>
+                <?php
+                // Two populations in one card. Overdue days are a problem; a day
+                // the receptionist simply could not close is routine cover, and
+                // presenting both in alarm red would train the admin to ignore red.
+                $overdueCount = count(array_filter($strandedShifts, fn($s) => !empty($s['stranded'])));
+                $standInCount = count($strandedShifts) - $overdueCount;
+                ?>
+                <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">Close a shift on someone's behalf
+                    <?php if ($overdueCount): ?>
+                    <span class="ho-pill red" style="margin-left:8px;" title="Older than 5 days"><?= $overdueCount ?> overdue</span>
+                    <?php endif; ?>
+                    <?php if ($standInCount): ?>
+                    <span class="ho-pill" style="margin-left:6px;" title="Within the receptionist's own window"><?= $standInCount ?> to cover</span>
+                    <?php endif; ?>
                 </h2>
                 <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;">
-                    Days a receptionist left unclosed for more than 5 days. Count the cash you're holding for that day,
-                    enter what you received, and add a note. This closes and receives it in one step, on their behalf.
+                    Any day a receptionist has not closed — including today. If someone is off sick or
+                    cannot finish their closing, count the cash you are holding for that day, enter what
+                    you actually received, and add a note. This closes and receives it in one step, under
+                    their name, stamped as closed by you.
+                    <strong>A mismatch between counted and expected is allowed</strong> — it is recorded
+                    as the variance and printed on the slip.
                 </p>
+                <?php /* The slip can only name WHO closed it once the attribution column
+                         exists. Everything else works without it, so this informs rather
+                         than blocks. */ ?>
+                <?php if (!column_exists($pdo, 'shift_closings', 'closed_by_admin_id')): ?>
+                <p class="neg-explain" style="margin-top:0;margin-bottom:14px;">
+                    <strong>Run <code>sql/add_admin_close_behalf.sql</code></strong> to record who closed
+                    a shift on whose behalf. Closing works without it and the cash reconciles correctly,
+                    but the slip cannot print &ldquo;closed by you on their behalf&rdquo; until it is applied.
+                </p>
+                <?php endif; ?>
 
                 <?php foreach ($strandedShifts as $i => $s): ?>
                 <form method="POST" action="admin_handovers.php" style="<?= $i > 0 ? 'margin-top:20px;padding-top:20px;border-top:1px solid var(--border);' : '' ?>">
@@ -861,10 +904,23 @@ require __DIR__ . '/partials/sidebar.php';
                     $isNegative = $expCash < 0;
                     $prefill    = number_format(max(0, $expCash), 0, '.', '');
                     ?>
-                    <div class="pend" style="border-color:var(--red);background:var(--red-bg);">
+                    <?php
+                    $isOverdue = !empty($s['stranded']);
+                    $age = (int) $s['age_days'];
+                    $ageTxt = $age === 0 ? 'today' : ($age === 1 ? 'yesterday' : $age . ' days ago');
+                    $rowStyle = $isOverdue
+                        ? 'border-color:var(--red);background:var(--red-bg);'
+                        : 'border-color:rgba(245,158,11,.45);background:var(--amber-bg);';
+                    $fid = 'beh' . (int) $s['cashier_id'] . '_' . preg_replace('/\D/', '', $s['date']);
+                    ?>
+                    <div class="pend" style="<?= $rowStyle ?>">
                         <div>
-                            <div class="who"><?= htmlspecialchars($s['cashier_name']) ?> — <?= date('D d/m/Y', strtotime($s['date'])) ?></div>
-                            <div class="det"><?= (int) $s['age_days'] ?> days ago · expected cash Rs <?= number_format($expCash, 0) ?> (their system tally)</div>
+                            <div class="who"><?= htmlspecialchars($s['cashier_name']) ?> — <?= date('D d/m/Y', strtotime($s['date'])) ?>
+                                <?php if ($isOverdue): ?>
+                                <span class="ho-pill red" style="margin-left:6px;">overdue</span>
+                                <?php endif; ?>
+                            </div>
+                            <div class="det"><?= $ageTxt ?> · expected cash Rs <?= number_format($expCash, 0) ?> (their system tally)</div>
                         </div>
                         <div>
                             <div class="amt">Rs <?= number_format($expCash, 0) ?></div>
@@ -886,7 +942,13 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="hfield">
                         <label>Counted cash for that day (Rs)</label>
                         <input name="counted_cash" type="number" min="0" step="1" required
+                               id="<?= $fid ?>_cnt" data-expected="<?= htmlspecialchars((string) $expCash) ?>"
                                value="<?= $prefill ?>">
+                        <?php /* Live variance. The admin is allowed to record a mismatch, but
+                                 must SEE it before committing — a short drawer discovered on
+                                 the printed slip a week later is a different problem from one
+                                 acknowledged at the moment of closing. */ ?>
+                        <div class="var-live" id="<?= $fid ?>_var" aria-live="polite"></div>
                     </div>
                     <div class="hfield">
                         <label>Actual amount you received (Rs)</label>
@@ -894,16 +956,20 @@ require __DIR__ . '/partials/sidebar.php';
                                value="<?= $prefill ?>">
                     </div>
                     <div class="hfield">
-                        <label>Note (required) — why this was closed late</label>
+                        <label>Note (required) — why you closed this for them</label>
                         <input name="behalf_note" type="text" maxlength="255" required
-                               placeholder="e.g. receptionist off sick; cash reconciled from safe">
+                               placeholder="e.g. receptionist off sick; cash counted from safe with witness">
                     </div>
 
+                    <?php /* The confirm restates the variance in words, computed from
+                             what is in the box at click time — so the last thing seen
+                             before an irreversible close is the size of the mismatch,
+                             not a generic "are you sure". */ ?>
                     <button class="rcv-btn" type="submit"
-                            onclick="return confirm('Close <?= htmlspecialchars(date('d/m/Y', strtotime($s['date'])), ENT_QUOTES) ?> on behalf of <?= htmlspecialchars($s['cashier_name'], ENT_QUOTES) ?>? This is recorded under your name.');">
+                            onclick="return confirmBehalf(this, '<?= htmlspecialchars(date('d/m/Y', strtotime($s['date'])), ENT_QUOTES) ?>', '<?= htmlspecialchars($s['cashier_name'], ENT_QUOTES) ?>', '<?= $fid ?>_cnt');">
                         Close &amp; receive on their behalf
                     </button>
-                    <p class="hint-note">Records the closing under <?= htmlspecialchars($s['cashier_name']) ?>, stamped "closed by you on their behalf".</p>
+                    <p class="hint-note">Records the closing under <?= htmlspecialchars($s['cashier_name']) ?>, stamped "closed by you on their behalf". Once received it cannot be reopened.</p>
                 </form>
                 <?php endforeach; ?>
             </div>
@@ -1004,5 +1070,68 @@ require __DIR__ . '/partials/sidebar.php';
      This page has date inputs on the history filter, so without this the picker
      reads as mm/dd on a US-English machine. -->
 <script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . '/assets/js/date-picker.js') ?: 1 ?>"></script>
+<script>
+// Live variance on the close-on-behalf forms.
+//
+// A mismatch is ALLOWED — an admin counting a drawer for someone who is not
+// there will sometimes find less or more than the system expects, and refusing
+// the close would leave the day open forever. But it must be acknowledged at
+// the moment of closing, not discovered on a printed slip a week later, so the
+// difference is spelled out in words as soon as it appears.
+function confirmBehalf(btn, dateTxt, who, cntId) {
+    var input = document.getElementById(cntId);
+    var msg = 'Close ' + dateTxt + ' on behalf of ' + who + '?\n\nThis is recorded under your name and cannot be reopened once received.';
+    if (input) {
+        var expected = parseFloat(input.getAttribute('data-expected'));
+        var counted = parseFloat(input.value);
+        if (!isNaN(expected) && !isNaN(counted)) {
+            var diff = Math.round((counted - expected) * 100) / 100;
+            if (Math.abs(diff) >= 0.01) {
+                var amt = Math.abs(diff).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                msg = 'CASH MISMATCH — ' + (diff < 0 ? 'SHORT' : 'OVER') + ' by Rs ' + amt
+                    + '\n\nExpected Rs ' + expected.toLocaleString('en-PK', {maximumFractionDigits: 2})
+                    + ', counted Rs ' + counted.toLocaleString('en-PK', {maximumFractionDigits: 2})
+                    + '.\n\nClosing anyway is allowed. The difference is recorded as the variance '
+                    + 'and printed on the slip under ' + who + "'s name.\n\n" + msg;
+            }
+        }
+    }
+    return window.confirm(msg);
+}
+
+(function () {
+    var boxes = document.querySelectorAll('.var-live[id]');
+    Array.prototype.forEach.call(boxes, function (out) {
+        var input = document.getElementById(out.id.replace(/_var$/, '_cnt'));
+        if (!input) { return; }
+        var expected = parseFloat(input.getAttribute('data-expected'));
+        if (isNaN(expected)) { return; }
+
+        function render() {
+            var counted = parseFloat(input.value);
+            if (input.value === '' || isNaN(counted)) {
+                out.className = 'var-live';
+                out.textContent = '';
+                return;
+            }
+            var diff = Math.round((counted - expected) * 100) / 100;
+            if (Math.abs(diff) < 0.01) {
+                out.className = 'var-live';
+                out.textContent = '';
+                return;
+            }
+            var short = diff < 0;
+            var amt = Math.abs(diff).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            out.className = 'var-live on ' + (short ? 'short' : 'over');
+            out.innerHTML = (short ? 'SHORT by Rs <b>' : 'OVER by Rs <b>') + amt + '</b>'
+                + ' — expected Rs ' + expected.toLocaleString('en-PK', {maximumFractionDigits: 2})
+                + '. This is allowed; it will be recorded as the variance and printed on the slip. '
+                + 'Say why in the note.';
+        }
+        input.addEventListener('input', render);
+        render();
+    });
+})();
+</script>
 </body>
 </html>
