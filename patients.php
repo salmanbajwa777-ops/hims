@@ -1769,7 +1769,9 @@ function openEditPatient(p) {
     document.getElementById('epMrn').textContent = 'MRN ' + p.mrn;
     document.getElementById('epNameInput').value = p.name || '';
     document.getElementById('epFatherName').value = p.father_name || '';
-    document.getElementById('epDob').value = p.dob || '';
+    var epDobNative = document.querySelector('input[name="e_dob"]');
+    epDobNative.value = p.dob || '';
+    epDobNative.dispatchEvent(new Event('change', { bubbles: true }));
     document.getElementById('epEmail').value = p.email || '';
     document.getElementById('epCnic').value = p.cnic || '';
     document.getElementById('epAltPhone').value = p.alt_phone || '';

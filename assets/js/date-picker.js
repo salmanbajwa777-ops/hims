@@ -52,6 +52,8 @@
     var popup = null;         // the floating calendar element
     var popupOwner = null;    // the proxy <input> it's currently attached to
     var viewYear, viewMonth;  // month currently shown in the grid
+    var viewMode = 'day';     // 'day' | 'month' | 'year' — which grid is showing
+    var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     function buildPopup() {
         popup = document.createElement('div');
@@ -67,6 +69,7 @@
     function closePopup() {
         if (popup) popup.style.display = 'none';
         popupOwner = null;
+        viewMode = 'day';
     }
 
     function ownerIso(proxy) {
@@ -79,6 +82,10 @@
     // advanced month is immediately reset to the selected one and the arrows
     // appear dead. (That was the "I cannot change the dates" bug: with a value
     // set, every ‹ / › click re-rendered straight back to the selected month.)
+    //
+    // The title ("August 2026") is itself a button that cycles day -> month ->
+    // year, Android-style, so an old DOB is a few taps away instead of one
+    // ‹ click per month (a 40-year-back DOB was 480+ clicks in day view alone).
     function renderPopup(proxy, syncView) {
         var iso = displayToIso(proxy.value) || ownerIso(proxy);
         var sel = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -88,33 +95,67 @@
             if (sel) { viewYear = +sel[1]; viewMonth = +sel[2] - 1; }
             else { viewYear = today.getFullYear(); viewMonth = today.getMonth(); }
         }
+        if (syncView) viewMode = 'day';
 
         var min = proxy._native.getAttribute('min');
         var max = proxy._native.getAttribute('max');
+        var minYear = min ? +min.slice(0, 4) : (today.getFullYear() - 120);
+        var maxYear = max ? +max.slice(0, 4) : (today.getFullYear() + 20);
 
-        var html = '<div class="ddmy-head">'
-            + '<button type="button" class="ddmy-nav" data-nav="-1" aria-label="Previous month">&lsaquo;</button>'
-            + '<span class="ddmy-title">' + MONTHS[viewMonth] + ' ' + viewYear + '</span>'
-            + '<button type="button" class="ddmy-nav" data-nav="1" aria-label="Next month">&rsaquo;</button>'
-            + '</div><div class="ddmy-grid">';
-        DOW.forEach(function (d) { html += '<span class="ddmy-dow">' + d + '</span>'; });
-
-        var first = new Date(viewYear, viewMonth, 1);
-        var startDow = (first.getDay() + 6) % 7; // Monday-first
-        var daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-        for (var i = 0; i < startDow; i++) html += '<span></span>';
-        for (var day = 1; day <= daysInMonth; day++) {
-            var cellIso = viewYear + '-' + pad(viewMonth + 1) + '-' + pad(day);
-            var cls = 'ddmy-day';
-            if (sel && cellIso === iso) cls += ' sel';
-            if (today.getFullYear() === viewYear && today.getMonth() === viewMonth && today.getDate() === day) cls += ' today';
-            var disabled = (min && cellIso < min) || (max && cellIso > max);
-            if (disabled) cls += ' disabled';
-            html += '<button type="button" class="' + cls + '"'
-                + (disabled ? ' disabled' : ' data-iso="' + cellIso + '"') + '>' + day + '</button>';
+        var titleHtml, bodyHtml;
+        if (viewMode === 'month') {
+            titleHtml = '<span class="ddmy-title ddmy-title-btn" data-mode="year">' + viewYear + '</span>';
+            bodyHtml = '<div class="ddmy-grid ddmy-grid-month">';
+            for (var m = 0; m < 12; m++) {
+                var cls = 'ddmy-cell';
+                if (m === viewMonth) cls += ' sel';
+                if (today.getFullYear() === viewYear && today.getMonth() === m) cls += ' today';
+                bodyHtml += '<button type="button" class="' + cls + '" data-month="' + m + '">' + MONTHS_SHORT[m] + '</button>';
+            }
+            bodyHtml += '</div>';
+        } else if (viewMode === 'year') {
+            titleHtml = '<span class="ddmy-title">Select year</span>';
+            bodyHtml = '<div class="ddmy-grid ddmy-grid-year">';
+            for (var y = maxYear; y >= minYear; y--) {
+                var ycls = 'ddmy-cell';
+                if (y === viewYear) ycls += ' sel';
+                if (y === today.getFullYear()) ycls += ' today';
+                bodyHtml += '<button type="button" class="' + ycls + '" data-year="' + y + '">' + y + '</button>';
+            }
+            bodyHtml += '</div>';
+        } else {
+            titleHtml = '<span class="ddmy-title ddmy-title-btn" data-mode="month">' + MONTHS[viewMonth] + ' ' + viewYear + '</span>';
+            bodyHtml = '<div class="ddmy-grid">';
+            DOW.forEach(function (d) { bodyHtml += '<span class="ddmy-dow">' + d + '</span>'; });
+            var first = new Date(viewYear, viewMonth, 1);
+            var startDow = (first.getDay() + 6) % 7; // Monday-first
+            var daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+            for (var i = 0; i < startDow; i++) bodyHtml += '<span></span>';
+            for (var day = 1; day <= daysInMonth; day++) {
+                var cellIso = viewYear + '-' + pad(viewMonth + 1) + '-' + pad(day);
+                var dcls = 'ddmy-day';
+                if (sel && cellIso === iso) dcls += ' sel';
+                if (today.getFullYear() === viewYear && today.getMonth() === viewMonth && today.getDate() === day) dcls += ' today';
+                var disabled = (min && cellIso < min) || (max && cellIso > max);
+                if (disabled) dcls += ' disabled';
+                bodyHtml += '<button type="button" class="' + dcls + '"'
+                    + (disabled ? ' disabled' : ' data-iso="' + cellIso + '"') + '>' + day + '</button>';
+            }
+            bodyHtml += '</div>';
         }
-        html += '</div>';
+
+        var navDisplay = viewMode === 'day' ? '' : ' style="visibility:hidden"';
+        var html = '<div class="ddmy-head">'
+            + '<button type="button" class="ddmy-nav" data-nav="-1" aria-label="Previous month"' + navDisplay + '>&lsaquo;</button>'
+            + titleHtml
+            + '<button type="button" class="ddmy-nav" data-nav="1" aria-label="Next month"' + navDisplay + '>&rsaquo;</button>'
+            + '</div>' + bodyHtml;
         popup.innerHTML = html;
+
+        if (viewMode === 'year') {
+            var selYearEl = popup.querySelector('.ddmy-cell.sel');
+            if (selYearEl) selYearEl.scrollIntoView({ block: 'center' });
+        }
     }
 
     function positionPopup(proxy) {
@@ -152,8 +193,33 @@
     function handlePick(e) {
         if (!popup || popup.style.display === 'none' || !popupOwner) return;
         if (!popup.contains(e.target)) return;
+
+        var titleBtn = e.target.closest('.ddmy-title-btn');
+        if (titleBtn) {
+            viewMode = titleBtn.getAttribute('data-mode'); // day -> month, month -> year
+            renderPopup(popupOwner, false);
+            positionPopup(popupOwner);
+            return;
+        }
+        var monthCell = e.target.closest('[data-month]');
+        if (monthCell) {
+            viewMonth = +monthCell.getAttribute('data-month');
+            viewMode = 'day';
+            renderPopup(popupOwner, false);
+            positionPopup(popupOwner);
+            return;
+        }
+        var yearCell = e.target.closest('[data-year]');
+        if (yearCell) {
+            viewYear = +yearCell.getAttribute('data-year');
+            viewMode = 'month';
+            renderPopup(popupOwner, false);
+            positionPopup(popupOwner);
+            return;
+        }
         var nav = e.target.closest('[data-nav]');
         if (nav) {
+            if (viewMode !== 'day') return; // nav arrows are hidden outside day view
             viewMonth += +nav.getAttribute('data-nav');
             if (viewMonth < 0) { viewMonth = 11; viewYear--; }
             else if (viewMonth > 11) { viewMonth = 0; viewYear++; }
@@ -261,6 +327,16 @@
         });
         proxy.addEventListener('focus', function () { openCalendar(proxy); });
         proxy.addEventListener('pointerup', function () { if (popupOwner !== proxy) openCalendar(proxy); });
+
+        // Some pages set the native input's value directly from JS (e.g. prefilling
+        // an edit modal from fetched data) instead of driving the proxy. Without this,
+        // that value never reaches the visible proxy, and — worse — saving the form
+        // unchanged submits whatever the proxy last held (often empty), silently
+        // overwriting the real value. Mirror native -> proxy on 'change' the same way
+        // commit() mirrors proxy -> native.
+        native.addEventListener('change', function () {
+            proxy.value = isoToDisplay(native.value);
+        });
     }
 
     function enhanceAll(root) {
