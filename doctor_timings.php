@@ -415,5 +415,6 @@ function timRemoveSess2(btn) {
     tr.querySelectorAll('.sess2-row input[type=time]').forEach(function (i) { i.value = ''; });
 }
 </script>
+<script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
 </html>
