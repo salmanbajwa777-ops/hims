@@ -164,7 +164,19 @@ for ($i = 0; $i < 24; $i++) {
     $monthOptions[date('Y-m', $ts)] = date('F Y', $ts);
 }
 
-$pageTitle = 'Doctor Payouts';
+// When viewing one payout, the title carries doctor + period so "Save as PDF"
+// (which defaults the filename to document.title) names the file usefully
+// instead of every payout downloading as the same generic "Doctor Payouts.pdf".
+if ($view) {
+    $isWholeMonth = $view['period_start'] === date('Y-m-01', strtotime($view['period_start']))
+                 && $view['period_end']   === date('Y-m-t',  strtotime($view['period_start']));
+    $viewPeriodLabel = $isWholeMonth
+        ? date('F Y', strtotime($view['period_start']))
+        : date('d-m-Y', strtotime($view['period_start'])) . ' to ' . date('d-m-Y', strtotime($view['period_end']));
+    $pageTitle = $view['doctor_name'] . ' - ' . $viewPeriodLabel . ' - ' . $view['payout_number'];
+} else {
+    $pageTitle = 'Doctor Payouts';
+}
 $headExtra = <<<CSS
 <style>
 /* The page header styles are gone with the header itself — the shared
