@@ -164,8 +164,10 @@ $sbGroups = [
             // because an admin has their own copy of this reasoning: they
             // rarely raise invoices themselves, and when they do the admin
             // Visit Log already covers it with everyone else's too.
+            // No 'perm' key on purpose: unconditional for every STAFF member
+            // on reception duty, not revocable via user_permission_overrides.
             ['slug' => 'my_shift_log', 'label' => 'My Shift Log', 'icon' => 'clock', 'href' => 'my_shift_log.php',
-             'perm' => 'RECEPTION_VIEW_OWN_SHIFT_LOG', 'notAdmin' => true],
+             'roles' => ['STAFF'], 'notAdmin' => true],
             // Same admin_handovers.php as the Finances copy below — the page
             // itself renders read-only for a holder of ADMIN_AUDIT_HANDOVER
             // alone and adds the receive/close-on-behalf actions for whoever
@@ -293,8 +295,10 @@ $sbGroups = [
                 ['slug' => 'vehicle_report', 'label' => 'Vehicle Report', 'icon' => 'chart', 'href' => 'vehicle_report.php',
                  'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
                 ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
-                ['slug' => 'visit_log', 'label' => 'Visit Log', 'icon' => 'receipt', 'href' => 'visit_log.php',
-                 'perm' => 'FINANCIAL_VIEW_VISIT_LOG'],
+                // No 'perm' key on purpose (matches Discount Report above):
+                // admin always sees this, same as visit_log.php's own gate
+                // (guard_admin.php, not require_permission()).
+                ['slug' => 'visit_log', 'label' => 'Visit Log', 'icon' => 'receipt', 'href' => 'visit_log.php'],
                 ['slug' => 'reports', 'label' => 'More Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
             ]],
         ],

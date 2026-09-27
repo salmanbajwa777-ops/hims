@@ -21,7 +21,16 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
 require_once __DIR__ . '/config/billing.php';
-require_permission('RECEPTION_VIEW_OWN_SHIFT_LOG');
+
+// Unconditional for every STAFF member on reception duty — not gated behind
+// a revocable permission. "My Shift Log" is a cashier's own record of what
+// they rang up today; it should never depend on an admin having granted (or
+// a stray override having revoked) a permission key.
+$baseRole = $_SESSION['base_role'] ?? '';
+if ($baseRole !== 'STAFF') {
+    http_response_code(403);
+    exit('Forbidden — reception console only.');
+}
 
 $uid = (int) $_SESSION['user_id'];
 $businessDate = business_day($pdo);

@@ -18,8 +18,11 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
 require_once __DIR__ . '/config/billing.php';
-require_permission('DOCTOR_VIEW_OWN_VISITS');
 
+// Unconditional for every DOCTOR — not gated behind a revocable permission.
+// "My Patients" is a doctor's own record of who they saw; it should never
+// depend on an admin having granted (or a stray override having revoked) a
+// permission key.
 $baseRole = $_SESSION['base_role'] ?? '';
 if ($baseRole !== 'DOCTOR') {
     http_response_code(403);
