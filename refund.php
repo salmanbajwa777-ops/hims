@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
         $lockStmt->execute([$billId]);
         $bill = $lockStmt->fetch();
 
-        $visitStmt = $pdo->prepare('SELECT v.doctor_id FROM visits v JOIN bills b ON b.visit_id = v.id WHERE b.id = ?');
+        $visitStmt = $pdo->prepare('SELECT v.doctor_id, v.patient_id FROM visits v JOIN bills b ON b.visit_id = v.id WHERE b.id = ?');
         $visitStmt->execute([$billId]);
         $visit = $visitStmt->fetch();
 
@@ -150,6 +150,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
             $refundId = (int) $pdo->lastInsertId();
 
             audit_log($pdo, 'refund_issued', "Refund $refundNumber of Rs $amount against bill #$billId, reason: $reason", $_SESSION['user_id']);
+
+            log_shift_event($pdo, 'REFUND', 'OPD', (int) $visit['patient_id'], (int) ($visit['doctor_id'] ?: 0) ?: null,
+                -(float) $amount, 'refund', $refundId, $refundNumber, 'paid', $reason);
 
             $pdo->commit();
 

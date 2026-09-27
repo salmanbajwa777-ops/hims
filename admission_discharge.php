@@ -195,6 +195,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply
         ->execute([$amount, $pct, $uid, $bill['id']]);
     recalc_admission_bill_totals($pdo, (int) $bill['id']);
     audit_log($pdo, 'admission_bill_discount', "Manual discount Rs " . number_format($amount, 2) . ($pct > 0 ? " ({$pct}%)" : '') . " on {$bill['invoice_number']}", $uid);
+    if ($amount > 0) {
+        log_shift_event($pdo, 'DISCOUNT', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+            -$amount, 'admission_bill', (int) $bill['id'], $bill['invoice_number'],
+            'paid', "Discharge lump-sum discount" . ($pct > 0 ? " ({$pct}%)" : ''));
+    }
     header('Location: admission_discharge.php?id=' . $admissionId); exit;
 }
 
@@ -241,6 +246,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
             $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ? WHERE id = ?')
                 ->execute([$method, $paid, $uid, $bill['id']]);
         }
+        // 'partial' — the stay hasn't closed yet (awaiting write-off approval), so
+        // no DISCHARGE event here; that lands when approve_writeoff (or a future
+        // full top-up) actually finalizes the admission below.
+        log_shift_event($pdo, 'INVOICE', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+            (float) $total, 'admission_bill', (int) $bill['id'], $bill['invoice_number'], 'partial');
         header('Location: admission_discharge.php?id=' . $admissionId . '&pending_writeoff=1'); exit;
     }
 
@@ -258,6 +268,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
         $pdo->prepare('UPDATE admissions SET status = \'DISCHARGED\', discharge_finalized_by_id = ?, discharge_finalized_at = NOW() WHERE id = ?')
             ->execute([$uid, $admissionId]);
         audit_log($pdo, 'admission_bill_paid', "Admission bill {$bill['invoice_number']} paid Rs " . number_format($paid, 2) . " ($method)", $uid);
+        log_shift_event($pdo, 'INVOICE', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+            (float) $total, 'admission_bill', (int) $bill['id'], $bill['invoice_number']);
+        log_shift_event($pdo, 'DISCHARGE', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+            (float) $paid, 'admission_bill', (int) $bill['id'], $bill['invoice_number']);
         $pdo->commit();
 
         // Alert admin: discharge complete, bill paid in full (best-effort, after commit).
@@ -325,12 +339,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
             }
             $pdo->prepare('INSERT INTO admission_writeoffs (admission_id, admission_bill_id, patient_id, amount_written_off, approved_by_id, approved_by_role, reason, shift_tally_date) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE())')
                 ->execute([$admissionId, $bill['id'], (int) $adm['patient_id'], $short, $uid, (in_array($baseRole, ['ADMIN','STAFF'], true) ? $baseRole : 'STAFF'), $reason]);
+            $writeoffId = (int) $pdo->lastInsertId();
             // Patient rollup for the alert badge.
             $pdo->prepare('UPDATE patients SET unpaid_flag = 1, unpaid_total = unpaid_total + ?, unpaid_count = unpaid_count + 1 WHERE id = ?')
                 ->execute([$short, (int) $adm['patient_id']]);
             $pdo->prepare('UPDATE admissions SET status = \'DISCHARGED\', discharge_finalized_by_id = ?, discharge_finalized_at = NOW() WHERE id = ?')
                 ->execute([$uid, $admissionId]);
             audit_log($pdo, 'admission_writeoff_approved', "Wrote off Rs " . number_format($short, 2) . " on {$bill['invoice_number']}: $reason", $uid);
+            // The earlier partial-payment INVOICE row (logged at finalize time)
+            // settles to 'paid' now that the shortfall is written off.
+            $pdo->prepare("UPDATE shift_events SET status = 'paid' WHERE reference_type = 'admission_bill' AND reference_id = ? AND event_type = 'INVOICE'")
+                ->execute([(int) $bill['id']]);
+            log_shift_event($pdo, 'WRITEOFF', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+                -$short, 'admission_writeoff', $writeoffId, $bill['invoice_number'], 'paid', $reason ?: null);
+            log_shift_event($pdo, 'DISCHARGE', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+                (float) $bill['grand_total'], 'admission_bill', (int) $bill['id'], $bill['invoice_number']);
             $pdo->commit();
 
             // Alert admin: discharge with a write-off (best-effort, after commit).

@@ -95,12 +95,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                     UPDATE ipd_drug_formulary
                     SET generic_name = ?, dose_form = ?, brand_name = ?, brand_names = ?,
                         drug_class = ?, allergy_group = ?,
-                        is_high_alert = ?, default_dose_unit = ?, default_routes = ?, default_frequencies = ?, is_enabled = ?
+                        is_high_alert = ?, default_dose_unit = ?, default_routes = ?, default_frequencies = ?, is_enabled = 1
                     WHERE id = ?
                 ')->execute([
                     $generic, $form, $brand ?: null, $alts ?: null,
                     $class ?: null, $group ?: null,
-                    $high, $unit ?: null, $routes ?: null, $freqs ?: null, $enabled, $id,
+                    $high, $unit ?: null, $routes ?: null, $freqs ?: null, $id,
                 ]);
                 audit_log($pdo, 'ipd_formulary_updated', "Formulary drug #$id updated: $generic ($form)");
                 $flash = 'Drug updated.';
@@ -109,11 +109,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                     INSERT INTO ipd_drug_formulary
                         (generic_name, dose_form, brand_name, brand_names, drug_class, allergy_group,
                          is_high_alert, default_dose_unit, default_routes, default_frequencies, is_enabled, created_by_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 ')->execute([
                     $generic, $form, $brand ?: null, $alts ?: null,
                     $class ?: null, $group ?: null,
-                    $high, $unit ?: null, $routes ?: null, $freqs ?: null, $enabled, $uid,
+                    $high, $unit ?: null, $routes ?: null, $freqs ?: null, $uid,
                 ]);
                 audit_log($pdo, 'ipd_formulary_added', "Formulary drug added: $generic ($form)");
                 $flash = 'Drug added to the formulary.';
@@ -320,10 +320,6 @@ include __DIR__ . '/partials/sidebar.php';
             <label class="fm-check" style="font-weight:600;padding:0 11px;">
               <input type="checkbox" name="is_high_alert" value="1" <?= !empty($edit['is_high_alert']) ? 'checked' : '' ?>>
               High-alert drug
-            </label>
-            <label class="fm-check" style="font-weight:600;padding:0 11px;">
-              <input type="checkbox" name="is_enabled" value="1" <?= (!$edit || !empty($edit['is_enabled'])) ? 'checked' : '' ?>>
-              Available to prescribe
             </label>
           </div>
         </div>

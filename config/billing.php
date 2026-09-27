@@ -636,6 +636,57 @@ function business_day_window(PDO $pdo, string $businessDate): array {
     return [$start, $end];
 }
 
+// Structured sibling to audit_log() (config/permissions.php) — written
+// alongside it at every invoice/discount/refund/discharge write site, inside
+// whatever transaction is already open there. audit_log() is a free-text
+// narration; this is the queryable row that backs My Patients (doctor),
+// My Shift Log (staff) and Visit Log (admin). See sql/add_shift_events.sql.
+//
+// $amount is signed: positive for an INVOICE or DISCHARGE (money owed/
+// collected), negative for a DISCOUNT or REFUND (a delta off what was
+// already recorded). business_date is stamped via business_day($pdo), not
+// CURDATE(), so an overnight shift logs against the correct business day —
+// same reasoning as shift_closing.php's cutoff-aware tally.
+//
+// actor_id is always the CURRENT $_SESSION['user_id'], matching audit_log()'s
+// own convention: during impersonation this is the impersonated staff member,
+// not the admin, so a shift log reconciles against what that person sees on
+// their own screen (day-cash tallies already rely on this same convention).
+function log_shift_event(
+    PDO $pdo,
+    string $eventType,      // 'INVOICE' | 'DISCOUNT' | 'REFUND' | 'DISCHARGE' | 'WRITEOFF'
+    string $stream,         // 'OPD' | 'ER' | 'IPD' | 'PROCEDURE' | 'DENTAL'
+    int $patientId,
+    ?int $doctorId,
+    float $amount,
+    string $referenceType,  // 'bill' | 'er_bill' | 'admission_bill' | 'procedure_bill' | 'dental_payment' | 'refund' | 'admission_writeoff'
+    int $referenceId,
+    ?string $invoiceNumber,
+    string $status = 'paid', // 'paid' | 'pending' | 'voided' | 'partial'
+    ?string $note = null
+): void {
+    $businessDate = business_day($pdo);
+    $actorId = (int) ($_SESSION['user_id'] ?? 0);
+    $pdo->prepare('
+        INSERT INTO shift_events
+            (event_type, stream, patient_id, doctor_id, actor_id, amount,
+             reference_type, reference_id, invoice_number, status, business_date, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ')->execute([
+        $eventType, $stream, $patientId, $doctorId, $actorId, $amount,
+        $referenceType, $referenceId, $invoiceNumber, $status, $businessDate, $note,
+    ]);
+}
+
+// Marks every shift_events row for a given reference as voided — called from
+// the void_*() helpers below, alongside their existing SET voided_at = NOW().
+// A bare UPDATE, not wrapped in its own transaction: callers already hold one
+// open (or don't need one), matching how those functions write voided_at.
+function void_shift_events(PDO $pdo, string $referenceType, int $referenceId): void {
+    $pdo->prepare("UPDATE shift_events SET status = 'voided' WHERE reference_type = ? AND reference_id = ?")
+        ->execute([$referenceType, $referenceId]);
+}
+
 // One receptionist's system-side tally for one date: the cash/online payments
 // THEY recorded (paid_by_id), the cash refunds THEY generated, the expenses
 // THEY posted, and the expected-cash figure their physical count is checked
@@ -1528,6 +1579,7 @@ function void_bill(PDO $pdo, int $billId, int $userId, string $reason): array {
         return [false, 'Could not void the invoice (already voided?).'];
     }
     audit_log($pdo, 'bill_voided', "Voided invoice {$bill['invoice_number']} (bill #$billId) — $reason", $userId);
+    void_shift_events($pdo, 'bill', $billId);
     return [true, "Invoice {$bill['invoice_number']} voided. The number is kept for the record."];
 }
 
@@ -1572,6 +1624,7 @@ function void_refund(PDO $pdo, int $refundId, int $userId, string $reason): arra
         return [false, 'Could not void the refund (already voided?).'];
     }
     audit_log($pdo, 'refund_voided', "Voided refund {$r['refund_number']} (#$refundId) — $reason", $userId);
+    void_shift_events($pdo, 'refund', $refundId);
     return [true, "Refund {$r['refund_number']} voided. The number is kept for the record."];
 }
 
@@ -1628,6 +1681,7 @@ function void_admission_bill(PDO $pdo, int $admBillId, int $userId, string $reas
                 ->execute([(int) $ab['patient_id']]);
         }
         audit_log($pdo, 'admission_bill_voided', "Voided admission bill {$ab['invoice_number']} (#$admBillId) — $reason", $userId);
+        void_shift_events($pdo, 'admission_bill', $admBillId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -1672,6 +1726,7 @@ function void_er_bill(PDO $pdo, int $erBillId, int $userId, string $reason): arr
             return [false, 'Could not void the ER bill (already voided?).'];
         }
         audit_log($pdo, 'er_bill_voided', "Voided ER bill {$eb['invoice_number']} (#$erBillId) — $reason", $userId);
+        void_shift_events($pdo, 'er_bill', $erBillId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -1717,6 +1772,7 @@ function void_procedure_bill(PDO $pdo, int $procBillId, int $userId, string $rea
             return [false, 'Could not void the procedure bill (already voided?).'];
         }
         audit_log($pdo, 'procedure_bill_voided', "Voided procedure bill {$pb['invoice_number']} (#$procBillId) — $reason", $userId);
+        void_shift_events($pdo, 'procedure_bill', $procBillId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }

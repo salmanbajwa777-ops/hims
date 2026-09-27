@@ -717,7 +717,6 @@ function ipd_formulary(PDO $pdo): array {
                    drug_class, allergy_group, is_high_alert,
                    default_routes, default_frequencies, default_dose_unit
             FROM ipd_drug_formulary
-            WHERE is_enabled = 1
             ORDER BY generic_name, dose_form
         ')->fetchAll();
     } catch (Throwable $e) {
@@ -730,7 +729,6 @@ function ipd_formulary(PDO $pdo): array {
                 SELECT id, generic_name, brand_name, brand_names, drug_class, allergy_group,
                        is_high_alert, default_routes, default_frequencies, default_dose_unit
                 FROM ipd_drug_formulary
-                WHERE is_enabled = 1
                 ORDER BY generic_name
             ')->fetchAll();
             foreach ($rows as &$r) { $r['dose_form'] = ''; }
@@ -745,7 +743,7 @@ function ipd_formulary(PDO $pdo): array {
 function ipd_formulary_drug(PDO $pdo, int $id): ?array {
     if ($id <= 0) { return null; }
     try {
-        $st = $pdo->prepare('SELECT * FROM ipd_drug_formulary WHERE id = ? AND is_enabled = 1');
+        $st = $pdo->prepare('SELECT * FROM ipd_drug_formulary WHERE id = ?');
         $st->execute([$id]);
         return $st->fetch() ?: null;
     } catch (Throwable $e) {

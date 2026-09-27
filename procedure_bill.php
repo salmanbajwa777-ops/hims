@@ -377,6 +377,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
 
             audit_log($pdo, 'procedure_bill_raised', "Procedure bill $invoiceNumber for patient #$patientId by {$doctor['name']}: Rs " . number_format($grandTotal, 2) . ' (' . count($lines) . ' procedure' . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)", (int) $_SESSION['user_id']);
 
+            log_shift_event($pdo, 'INVOICE', 'PROCEDURE', $patientId, $doctorId, (float) $grandTotal,
+                'procedure_bill', $procBillId, $invoiceNumber);
+            if ($discountAmount > 0) {
+                log_shift_event($pdo, 'DISCOUNT', 'PROCEDURE', $patientId, $doctorId, -$discountAmount,
+                    'procedure_bill', $procBillId, $invoiceNumber, 'paid', "{$discountPct}% category discount");
+            }
+            if ($manualDiscount > 0.009) {
+                log_shift_event($pdo, 'DISCOUNT', 'PROCEDURE', $patientId, $doctorId, -$manualDiscount,
+                    'procedure_bill', $procBillId, $invoiceNumber, 'paid',
+                    'Manual discount' . ($manualDiscountReason ? ": $manualDiscountReason" : '') . ' (doctor sign-off pending)');
+            }
+
             if ($consentsCreated > 0) {
                 // The CNIC itself is deliberately NOT written to the audit trail:
                 // it already lives on the consent row, and the audit log is read

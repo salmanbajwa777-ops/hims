@@ -374,6 +374,7 @@ function void_dental_payment(PDO $pdo, int $paymentId, int $userId, string $reas
             return [false, 'Could not void the payment (already voided?).'];
         }
         audit_log($pdo, 'dental_payment_voided', "Voided receipt {$pay['receipt_number']} (Rs {$pay['amount']}) on account {$pay['account_number']} — $reason", $userId);
+        void_shift_events($pdo, 'dental_payment', $paymentId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }

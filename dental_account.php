@@ -268,6 +268,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'take_
                              $notes !== '' ? $notes : null]);
                 $payId = (int) $pdo->lastInsertId();
                 audit_log($pdo, 'dental_account_payment_taken', "Receipt $receiptNumber — Rs $amount ($method) against account {$account['account_number']}", $userId);
+                log_shift_event($pdo, 'INVOICE', 'DENTAL', (int) $account['patient_id'], (int) ($account['doctor_id'] ?: 0) ?: null,
+                    (float) $amount, 'dental_payment', $payId, $receiptNumber);
                 $pdo->commit();
                 // Straight to the receipt, mirroring how every other bill in the
                 // app settles: take the money, hand over the paper.

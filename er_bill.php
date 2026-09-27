@@ -169,6 +169,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
 
             audit_log($pdo, 'er_bill_raised', "ER bill $invoiceNumber for patient #$patientId: Rs " . number_format($grandTotal, 2) . ' (' . count($lines) . ' service' . (count($lines) > 1 ? 's' : '') . ", $paymentMethod)", (int) $_SESSION['user_id']);
 
+            // 'waived' (zero net fee) still counts as settled, not pending — same
+            // convention create_bill_for_visit() uses for a free OPD consult.
+            log_shift_event($pdo, 'INVOICE', 'ER', $patientId, $erDocId ?: null, (float) $grandTotal,
+                'er_bill', $erBillId, $invoiceNumber, 'paid');
+            if ($discountPct > 0) {
+                log_shift_event($pdo, 'DISCOUNT', 'ER', $patientId, $erDocId ?: null,
+                    -round($subtotal * $discountPct / 100, 2), 'er_bill', $erBillId, $invoiceNumber, 'paid',
+                    "{$discountPct}% category discount");
+            }
+
             $pdo->commit();
 
             // Best-effort Google-Sheet log row, after commit — never block reception.

@@ -539,6 +539,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
 
                 audit_log($pdo, 'patient_registered', "Registered patient #$patientId ($name, MRN $mrn), visit #$visitId with doctor #$doctorId, token #$tokenNo" . ($discountPct > 0 ? ", {$discountPct}% discount applied" : ''), $_SESSION['user_id']);
 
+                $billRow = $pdo->prepare('SELECT invoice_number, paid_amount FROM bills WHERE id = ?');
+                $billRow->execute([$billId]);
+                $billRow = $billRow->fetch();
+                log_shift_event($pdo, 'INVOICE', 'OPD', $patientId, $doctorId,
+                    (float) ($billRow['paid_amount'] ?? 0), 'bill', $billId, $billRow['invoice_number'] ?? null);
+                if ($discountPct > 0) {
+                    log_shift_event($pdo, 'DISCOUNT', 'OPD', $patientId, $doctorId, -round($fee * $discountPct / 100, 2),
+                        'bill', $billId, $billRow['invoice_number'] ?? null, 'paid',
+                        "{$discountPct}% discount on registration");
+                }
+
                 $pdo->commit();
 
                 // Email the doctor about their new patient (best-effort, after commit).
@@ -683,6 +694,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
             );
 
             audit_log($pdo, 'followup_registered', "Follow-up visit #$visitId for patient #$patientId ({$patient['mrn']}), {$quote['fee_type']} ({$quote['reason']}), token #$tokenNo" . ($categoryPct > 0 ? ", {$cat['name']} category discount {$categoryPct}% (total {$discountPct}%)" : ''), $_SESSION['user_id']);
+
+            $billRow = $pdo->prepare('SELECT invoice_number, paid_amount FROM bills WHERE id = ?');
+            $billRow->execute([$billId]);
+            $billRow = $billRow->fetch();
+            log_shift_event($pdo, 'INVOICE', 'OPD', $patientId, $doctorId,
+                (float) ($billRow['paid_amount'] ?? 0), 'bill', $billId, $billRow['invoice_number'] ?? null);
+            if ($discountPct > 0) {
+                log_shift_event($pdo, 'DISCOUNT', 'OPD', $patientId, $doctorId, -round($fullFee * $discountPct / 100, 2),
+                    'bill', $billId, $billRow['invoice_number'] ?? null, 'paid',
+                    "{$discountPct}% discount ({$quote['fee_type']} revisit" . ($categoryPct > 0 ? " + category" : '') . ")");
+            }
 
             $pdo->commit();
 

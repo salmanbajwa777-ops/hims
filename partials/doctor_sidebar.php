@@ -98,6 +98,7 @@ function ds_icon(string $name): string {
     <div class="nav-group">
         <div class="nav-group-label">Records</div>
         <a class="nav-item <?= $dsActive === 'patients' ? 'active' : '' ?>" href="patients.php"><span class="nav-icon"><?= ds_icon('search') ?></span> <span class="nav-label">Find Patient</span></a>
+        <a class="nav-item <?= $dsActive === 'my_patients' ? 'active' : '' ?>" href="my_patients.php"><span class="nav-icon"><?= ds_icon('file') ?></span> <span class="nav-label">My Patients</span></a>
         <a class="nav-item <?= $dsActive === 'schedule' ? 'active' : '' ?>" href="my_schedule.php"><span class="nav-icon"><?= ds_icon('calendar') ?></span> <span class="nav-label">My Schedule</span></a>
     </div>
 

@@ -159,6 +159,13 @@ $sbGroups = [
              'perm' => 'FINANCIAL_POST_EXPENSES', 'notAdmin' => true],
             ['slug' => 'shift_closing', 'label' => 'Day Closing',   'icon' => 'clock',    'href' => 'shift_closing.php',
              'perm' => 'RECEPTION_CLOSE_DAY', 'notAdmin' => true],
+            // Today's own invoice/discount/refund/discharge activity — the
+            // staff-facing sibling of the admin Visit Log below. 'notAdmin'
+            // because an admin has their own copy of this reasoning: they
+            // rarely raise invoices themselves, and when they do the admin
+            // Visit Log already covers it with everyone else's too.
+            ['slug' => 'my_shift_log', 'label' => 'My Shift Log', 'icon' => 'clock', 'href' => 'my_shift_log.php',
+             'perm' => 'RECEPTION_VIEW_OWN_SHIFT_LOG', 'notAdmin' => true],
             // Same admin_handovers.php as the Finances copy below — the page
             // itself renders read-only for a holder of ADMIN_AUDIT_HANDOVER
             // alone and adds the receive/close-on-behalf actions for whoever
@@ -286,6 +293,8 @@ $sbGroups = [
                 ['slug' => 'vehicle_report', 'label' => 'Vehicle Report', 'icon' => 'chart', 'href' => 'vehicle_report.php',
                  'perm' => 'FINANCIAL_VIEW_CLINIC_REPORTS'],
                 ['slug' => 'discount_report', 'label' => 'Discount Report', 'icon' => 'percent', 'href' => 'discount_report.php'],
+                ['slug' => 'visit_log', 'label' => 'Visit Log', 'icon' => 'receipt', 'href' => 'visit_log.php',
+                 'perm' => 'FINANCIAL_VIEW_VISIT_LOG'],
                 ['slug' => 'reports', 'label' => 'More Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
             ]],
         ],
