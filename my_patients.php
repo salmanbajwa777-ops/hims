@@ -63,11 +63,11 @@ if ($range === 'today') {
 $search = trim((string) ($_GET['q'] ?? ''));
 
 $sql = "
-    SELECT se.id, se.occurred_at, se.business_date, se.amount, se.invoice_number, se.status,
+    SELECT se.id, se.event_type, se.note, se.occurred_at, se.business_date, se.amount, se.invoice_number, se.status,
            p.name AS patient_name, p.mrn, p.dob, p.gender
     FROM shift_events se
     JOIN patients p ON p.id = se.patient_id
-    WHERE se.event_type = 'INVOICE' AND se.stream = 'OPD'
+    WHERE ((se.event_type = 'INVOICE' AND se.stream = 'OPD') OR se.event_type = 'REFUND')
       AND se.doctor_id = ? AND se.business_date BETWEEN ? AND ?
 ";
 $params = [$doctorId, $from, $to];
@@ -82,9 +82,16 @@ $q->execute($params);
 $rows = $q->fetchAll();
 
 // Summary strip.
-$uniquePatients = count(array_unique(array_map(fn($r) => $r['mrn'], $rows)));
-$totalVisits = count($rows);
-$feesEarned = array_sum(array_column($rows, 'amount'));
+// Refund rows are money going back, not visits: they stay out of the visit
+// counts, but net off the fee total (their amount is already negative) unless
+// the refund was voided.
+$visitRows = array_filter($rows, fn($r) => $r['event_type'] === 'INVOICE');
+$uniquePatients = count(array_unique(array_map(fn($r) => $r['mrn'], $visitRows)));
+$totalVisits = count($visitRows);
+$feesEarned = array_sum(array_map(
+    fn($r) => ($r['event_type'] === 'REFUND' && $r['status'] === 'voided') ? 0 : (float) $r['amount'],
+    $rows
+));
 
 // Group rows by business_date for the day-separator presentation.
 $byDay = [];
@@ -170,8 +177,10 @@ $dsWaitingCount = 0;
                 <?php foreach ($byDay as $day => $dayRows): ?>
                 <tr class="mp-day-sep"><td colspan="5"><?= date('l, d M Y', strtotime($day)) ?></td></tr>
                 <?php foreach ($dayRows as $r): $age = my_patients_age($r['dob']); ?>
-                <tr>
+                <?php $isRefund = $r['event_type'] === 'REFUND'; ?>
+                <tr<?= $isRefund ? ' style="background:var(--red-bg, #F7E9E5);' . ($r['status'] === 'voided' ? 'opacity:.55;' : '') . '"' : '' ?>>
                     <td style="font-weight:600;"><?= htmlspecialchars($r['patient_name']) ?>
+                        <?php if ($isRefund): ?><span class="muted" style="font-size:11px;font-weight:700;color:#9E4E34;">REFUND<?= $r['note'] ? ' &middot; ' . htmlspecialchars($r['note']) : '' ?></span><?php endif; ?>
                         <div class="muted mono" style="font-size:11.5px;"><?= htmlspecialchars($r['mrn']) ?><?= $age !== '' ? " &middot; {$age}y" : '' ?><?= $r['gender'] ? ' &middot; ' . htmlspecialchars($r['gender']) : '' ?></div>
                     </td>
                     <td class="mono"><?= htmlspecialchars($r['invoice_number'] ?? '—') ?></td>

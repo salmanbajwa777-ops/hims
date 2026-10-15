@@ -61,7 +61,7 @@ if (isset($_GET['print']) && isset($_GET['refund_id'])) {
 
     // Refunds raised against this bill BEFORE this one — the "previously refunded"
     // figure on the voucher, so a reprint always shows the same numbers.
-    $priorStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS t FROM refunds WHERE bill_id = ? AND id < ?');
+    $priorStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) AS t FROM refunds WHERE bill_id = ? AND id < ? AND voided_at IS NULL');
     $priorStmt->execute([$refund['bill_id'], $refundId]);
     $priorRefunded = (float) $priorStmt->fetch()['t'];
 
@@ -100,6 +100,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
         $visitStmt = $pdo->prepare('SELECT v.doctor_id, v.patient_id FROM visits v JOIN bills b ON b.visit_id = v.id WHERE b.id = ?');
         $visitStmt->execute([$billId]);
         $visit = $visitStmt->fetch();
+
+        // Double-click / resubmit guard: the bill row is locked above, so an identical
+        // refund by the same person in the last 2 minutes is the same click landing
+        // twice. Show the first voucher instead of paying the patient out again.
+        $dupStmt = $pdo->prepare('
+            SELECT id FROM refunds
+            WHERE bill_id = ? AND amount = ? AND generated_by_id = ? AND voided_at IS NULL
+              AND created_at >= (NOW() - INTERVAL 120 SECOND)
+            ORDER BY id DESC LIMIT 1
+        ');
+        $dupStmt->execute([$billId, $amount, $_SESSION['user_id']]);
+        $dupId = (int) $dupStmt->fetchColumn();
+        if ($dupId > 0) {
+            $pdo->rollBack();
+            header('Location: refund.php?print=1&refund_id=' . $dupId);
+            exit;
+        }
 
         $alreadyRefunded = refunded_total($pdo, $billId);
         $paid = (float) ($bill['paid_amount'] ?? 0);
@@ -470,6 +487,13 @@ require __DIR__ . '/partials/impersonation_banner.php';
         });
     });
     check();
+
+    // Lock the button on the first submit so a double-click can't post twice.
+    document.getElementById('refundForm').addEventListener('submit', function (e) {
+        if (submit.dataset.sent) { e.preventDefault(); return; }
+        submit.dataset.sent = '1';
+        setTimeout(function () { submit.disabled = true; }, 0);
+    });
 })();
 
 // The "paid out by" picker only exists when the original payer isn't a drawer
