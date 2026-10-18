@@ -60,9 +60,10 @@ $adminNameUpper = mb_strtoupper($closing['admin_name'] ?? '', 'UTF-8');
         .amounts-table td { border: 1px solid #000; padding: 2px 3px; }
         .text-right { text-align: right; }
         .amounts-table .net { background-color: #f0f0f0; font-weight: bold; border-top: 2px solid #000; font-size: 11px; }
+        .notes-box { flex: 1 1 0; min-height: 12mm; max-height: 30mm; border: 1.5px solid #000; padding: 2px 4px; font-family: Arial, Helvetica, sans-serif; font-size: 8.5px; font-weight: bold; letter-spacing: .5px; margin-top: 4px; }
         .section-title { font-size: 9px; font-weight: bold; letter-spacing: 1px; margin: 4px 0 2px; }
         .detail { font-size: 9.5px; margin: 2px 0; }
-        .signatures { display: flex; gap: 12px; margin-top: auto; padding-top: 24px; }
+        .signatures { display: flex; gap: 12px; margin-top: auto; padding-top: 14px; }
         .sig { flex: 1; text-align: center; }
         .sig .line { border-top: 1px solid #000; margin-bottom: 3px; }
         .sig .role { font-size: 8.5px; font-weight: bold; letter-spacing: .5px; }
@@ -132,39 +133,63 @@ $adminNameUpper = mb_strtoupper($closing['admin_name'] ?? '', 'UTF-8');
             </tr>
         </table>
 
-        <div class="section-title">COLLECTIONS — THIS CASHIER ONLY</div>
+        <?php
+        // GROSS first: what the shift took before online, refunds and expenses come
+        // off. The saved closing row holds only cash consults, cash+ER+procedure+
+        // dental admissions and one online lump, so the per-stream split is rebuilt
+        // from the live tally. Gross/cash/online always come from the STORED row;
+        // the split only decides which row a rupee is shown on.
+        $cashTot   = (float) $closing['cash_consult_total'] + (float) $closing['cash_admission_total'];
+        $cashCnt   = (int) $closing['cash_consult_count'] + (int) $closing['cash_admission_count'];
+        $onlineTot = (float) $closing['online_total'];
+        $onlineCnt = (int) $closing['online_count'];
+        $grossTot  = $cashTot + $onlineTot;
+        $grossCnt  = $cashCnt + $onlineCnt;
+        $streams = null;
+        $streamDrift = false;
+        try {
+            $lt = day_cash_tally($pdo, $closing['closing_date'], (int) $closing['cashier_id']);
+            $streams = [
+                'Consultations' => [$lt['cash_consult_total'] + $lt['online_consult_total'], $lt['cash_consult_count'] + $lt['online_consult_count']],
+                'Admissions'    => [$lt['cash_admission_total'] + $lt['online_admission_total'] - $lt['cash_er_total'] - $lt['online_er_total'],
+                                    $lt['cash_admission_count'] + $lt['online_admission_count'] - $lt['cash_er_count'] - $lt['online_er_count']],
+                'ER-Direct'     => [$lt['cash_er_total'] + $lt['online_er_total'], $lt['cash_er_count'] + $lt['online_er_count']],
+            ];
+            $streamSum = $streams['Consultations'][0] + $streams['Admissions'][0] + $streams['ER-Direct'][0];
+            $streamDrift = abs($streamSum - $grossTot) >= 0.01;
+        } catch (Throwable $e) {
+            $streams = null;
+        }
+        $slipExpenses = (float) ($closing['expense_total'] ?? 0);
+        ?>
+        <div class="section-title">COLLECTIONS — THIS CASHIER ONLY — GROSS TOTAL</div>
         <table class="amounts-table">
-            <tr><th>Method</th><th class="text-right">Count</th><th class="text-right">Amount (Rs)</th></tr>
-            <tr><td>Cash — consultations</td><td class="text-right"><?= (int) $closing['cash_consult_count'] ?></td><td class="text-right"><?= number_format((float) $closing['cash_consult_total'], 2) ?></td></tr>
-            <tr><td>Cash — admissions</td><td class="text-right"><?= (int) $closing['cash_admission_count'] ?></td><td class="text-right"><?= number_format((float) $closing['cash_admission_total'], 2) ?></td></tr>
-            <tr><td>Online — all</td><td class="text-right"><?= (int) $closing['online_count'] ?></td><td class="text-right"><?= number_format((float) $closing['online_total'], 2) ?></td></tr>
+            <tr><th>Stream</th><th class="text-right">Count</th><th class="text-right">Amount (Rs)</th></tr>
+            <?php if ($streams): foreach ($streams as $sLabel => [$sAmt, $sCnt]): ?>
+            <tr><td><?= $sLabel ?></td><td class="text-right"><?= (int) $sCnt ?></td><td class="text-right"><?= number_format((float) $sAmt, 2) ?></td></tr>
+            <?php endforeach; endif; ?>
+            <tr class="net"><td><strong>GROSS TOTAL</strong> <span style="font-weight:normal;font-size:8.5px;">(before online, refunds, expenses)</span></td><td class="text-right"><?= $grossCnt ?></td><td class="text-right"><strong><?= number_format($grossTot, 2) ?></strong></td></tr>
+            <tr><td>Cash total</td><td class="text-right"><?= $cashCnt ?></td><td class="text-right"><?= number_format($cashTot, 2) ?></td></tr>
+            <tr><td>Online total</td><td class="text-right"><?= $onlineCnt ?></td><td class="text-right"><?= number_format($onlineTot, 2) ?></td></tr>
             <tr><td>Refunds paid (cash)</td><td class="text-right"><?= (int) $closing['cash_refund_count'] ?></td><td class="text-right">(<?= number_format((float) $closing['cash_refund_total'], 2) ?>)</td></tr>
-            <?php $slipExpenses = (float) ($closing['expense_total'] ?? 0); ?>
             <tr><td>Counter expenses (EXP)</td><td class="text-right"><?= (int) ($closing['expense_count'] ?? 0) ?></td><td class="text-right">(<?= number_format($slipExpenses, 2) ?>)</td></tr>
-            <?php
-            $netCollected = (float) $closing['cash_consult_total'] + (float) $closing['cash_admission_total']
-                          + (float) $closing['online_total'] - (float) $closing['cash_refund_total'];
-            ?>
-            <tr class="net"><td><strong>TOTAL COLLECTED</strong></td><td class="text-right"><?= (int) $closing['cash_consult_count'] + (int) $closing['cash_admission_count'] + (int) $closing['online_count'] ?></td><td class="text-right"><strong><?= number_format($netCollected, 2) ?></strong></td></tr>
-        </table>
-
-        <div class="section-title">CASH IN HAND</div>
-        <table class="amounts-table">
-            <tr><td>Cash payments received</td><td class="text-right"><?= number_format((float) $closing['cash_consult_total'] + (float) $closing['cash_admission_total'], 2) ?></td></tr>
-            <tr><td>Less: cash refunds paid</td><td class="text-right">(<?= number_format((float) $closing['cash_refund_total'], 2) ?>)</td></tr>
-            <tr><td>Less: counter expenses</td><td class="text-right">(<?= number_format($slipExpenses, 2) ?>)</td></tr>
-            <tr><td>Expected cash in hand</td><td class="text-right"><?= number_format((float) $closing['expected_cash'], 2) ?></td></tr>
-            <tr><td>Counted cash</td><td class="text-right"><?= number_format((float) $closing['counted_cash'], 2) ?></td></tr>
+            <tr><td colspan="2">Expected cash in hand</td><td class="text-right"><?= number_format((float) $closing['expected_cash'], 2) ?></td></tr>
+            <tr><td colspan="2">Counted cash</td><td class="text-right"><?= number_format((float) $closing['counted_cash'], 2) ?></td></tr>
             <?php /* Bold only when it is NOT balanced, so weight carries meaning
                      instead of decorating every slip. */ ?>
-            <tr><td<?= abs($varianceVal) >= 0.01 ? ' style="font-weight:bold;"' : '' ?>>Variance</td>
+            <tr><td colspan="2"<?= abs($varianceVal) >= 0.01 ? ' style="font-weight:bold;"' : '' ?>>Variance</td>
                 <td class="text-right"<?= abs($varianceVal) >= 0.01 ? ' style="font-weight:bold;"' : '' ?>><?= $varianceLabel ?></td></tr>
-            <tr class="net"><td><strong>CASH HANDED TO ADMIN (Rs)</strong></td><td class="text-right"><strong><?= number_format((float) $closing['handover_declared'], 2) ?></strong></td></tr>
+            <tr class="net"><td colspan="2"><strong>CASH HANDED TO ADMIN (Rs)</strong></td><td class="text-right"><strong><?= number_format((float) $closing['handover_declared'], 2) ?></strong></td></tr>
         </table>
+        <?php if ($streamDrift): ?>
+        <p class="detail" style="font-size:8.5px;">Stream rows were rebuilt from current records and no longer add up to the gross total closed at shift end (a bill was voided or changed since). Gross, cash and online are the closing-time figures.</p>
+        <?php endif; ?>
 
         <?php if ($closing['variance_note']): ?>
         <p class="detail"><strong>Variance note:</strong> <?= htmlspecialchars($closing['variance_note']) ?></p>
         <?php endif; ?>
+
+        <div class="notes-box">MISSED / TRANSFERRED TO NEXT SHIFT ETC.</div>
 
         <div class="signatures">
             <div class="sig">
