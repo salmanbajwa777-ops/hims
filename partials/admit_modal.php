@@ -170,6 +170,36 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                         </div>
                         <?php endif; ?>
                     </div>
+
+                    <?php if (($_SESSION['base_role'] ?? '') !== 'DOCTOR' && function_exists('adm_has') && isset($pdo) && adm_has($pdo, 'admissions', 'reception_admit_reason')): ?>
+                    <!-- Reception admit: why the doctor did not mark it. One pick is
+                         all that is required - it never blocks an emergency. Sent as
+                         reception_admit_reason(+_other); the handler ignores it for
+                         doctors and before the reason column exists. -->
+                    <div class="admit-field" style="margin-top:16px;">
+                        <label>Why is reception admitting? <span style="color:var(--red,#dc2626);">*</span></label>
+                        <select name="reception_admit_reason" id="admitRecReason" data-opd-required <?= $admitShowIpd ? '' : 'required' ?>>
+                            <option value="">Select reason&hellip;</option>
+                            <option value="Doctor did not mark it">Doctor did not mark it</option>
+                            <option value="Emergency - doctor busy">Emergency - doctor busy</option>
+                            <option value="Walk-in direct admit">Walk-in direct admit</option>
+                            <option value="Other">Other (type a reason)&hellip;</option>
+                        </select>
+                        <input type="text" name="reception_admit_reason_other" id="admitRecReasonOther" maxlength="150" placeholder="Reason" style="margin-top:8px;" hidden disabled>
+                    </div>
+                    <script>
+                    (function () {
+                        var s = document.getElementById('admitRecReason');
+                        var o = document.getElementById('admitRecReasonOther');
+                        if (!s || !o) { return; }
+                        s.addEventListener('change', function () {
+                            var other = s.value === 'Other';
+                            o.hidden = !other; o.disabled = !other; o.required = other;
+                            if (!other) { o.value = ''; }
+                        });
+                    })();
+                    </script>
+                    <?php endif; ?>
                 </div>
 
                 <?php if ($admitShowIpd): ?>

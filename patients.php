@@ -35,6 +35,7 @@ $admitError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit_patient') {
     $result = handle_admit_patient($pdo);
     if ($result['ok']) {
+        unset($_SESSION['admit_notice']);   // only receptionist.php shows it; don't leak it to a later admit
         header('Location: admission.php?id=' . (int) $result['admission_id']);
         exit;
     }

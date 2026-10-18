@@ -15,6 +15,7 @@ require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/sheets.php';
 require_once __DIR__ . '/config/payment_methods.php';
+require_once __DIR__ . '/config/admission_bill.php';   // ensure_admission_bill(), approvals, schema guards
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -44,85 +45,8 @@ if (!$canFinalize && !$canApproveWriteoff) { http_response_code(403); exit('Forb
 
 $err = '';
 
-// Find or create the admission bill (draft), seeded once from stay + services.
-function ensure_admission_bill(PDO $pdo, array $adm, int $uid): array {
-    $b = $pdo->prepare('SELECT * FROM admission_bills WHERE admission_id = ?');
-    $b->execute([$adm['id']]);
-    $bill = $b->fetch();
-    if ($bill) { return $bill; }
-
-    // Patient's standing discount category: applies to SERVICE/PROCEDURE lines
-    // only (each at its own rate) — the room stay is NEVER discounted. Rates are
-    // snapshotted per line so later category edits don't rewrite this bill, and
-    // month-end reporting can split service vs procedure discounts.
-    $cat = patient_discount_category($pdo, (int) $adm['patient_id']);
-
-    $pdo->beginTransaction();
-    try {
-        $inv = generate_admission_invoice_number($pdo);
-        $pdo->prepare('INSERT INTO admission_bills (invoice_number, admission_id, created_by_id, discount_category_id) VALUES (?, ?, ?, ?)')
-            ->execute([$inv, $adm['id'], $uid, $cat ? (int) $cat['id'] : null]);
-        $billId = (int) $pdo->lastInsertId();
-
-        // Stay line.
-        $rate = $pdo->prepare('SELECT rate_amount, rate_basis FROM admission_rates WHERE admission_type = ?');
-        $rate->execute([$adm['admission_type']]);
-        $rate = $rate->fetch() ?: ['rate_amount' => 0, 'rate_basis' => 'HOURLY'];
-        $endTs = $adm['discharged_at'] ? strtotime($adm['discharged_at']) : time();
-        $mins = max(0, (int) round(($endTs - strtotime($adm['admitted_at'])) / 60));
-        if ($rate['rate_basis'] === 'DAILY') {
-            $units = max(1, (int) ceil($mins / 1440));
-            $desc = 'Stay — ' . $adm['admission_type'] . ' (' . $units . ' day' . ($units > 1 ? 's' : '') . ')';
-        } else {
-            $units = admission_billed_hours($mins);
-            $desc = 'Stay — ' . $adm['admission_type'] . ' (' . $units . ' hr)';
-        }
-        $stayAmt = round((float) $rate['rate_amount'] * $units, 2);
-        $totalDiscount = 0.0;
-        // The room stay now carries its own category rate (single rate across all
-        // admission types). Stored net, with the discount snapshotted on the line
-        // so edit/remove resync and month-end reporting stay honest.
-        $stayPct = $cat ? (float) $cat['room_stay_pct'] : 0.0;
-        $stayDiscount = round($stayAmt * $stayPct / 100, 2);
-        $stayNet = round($stayAmt - $stayDiscount, 2);
-        $totalDiscount += $stayDiscount;
-        $pdo->prepare('INSERT INTO admission_bill_items (admission_bill_id, description, quantity, unit_rate, amount, item_kind, discount_pct, discount_amount) VALUES (?, ?, ?, ?, ?, \'STAY\', ?, ?)')
-            ->execute([$billId, $desc, $units, $rate['rate_amount'], $stayNet, $stayPct, $stayDiscount]);
-
-        // Service lines (billable only), net of the category discount if any.
-        $svc = $pdo->prepare('SELECT * FROM admission_services WHERE admission_id = ? AND is_billable = 1 ORDER BY logged_at');
-        $svc->execute([$adm['id']]);
-        foreach ($svc->fetchAll() as $s) {
-            $qtyLabel = $s['charge_type'] === 'HOURLY' ? ((int) $s['duration_minutes']) . ' min' : (int) $s['quantity'];
-            // Procedures discount at their own rate, plain services at theirs.
-            $pct = 0.0;
-            if ($cat) {
-                $pct = $s['service_type'] === 'PROCEDURE'
-                    ? (float) $cat['procedures_pct'] : (float) $cat['er_services_pct'];
-            }
-            $gross = (float) $s['calculated_charge'];
-            $lineDiscount = round($gross * $pct / 100, 2);
-            $net = round($gross - $lineDiscount, 2);
-            $totalDiscount += $lineDiscount;
-            $pdo->prepare('INSERT INTO admission_bill_items (admission_bill_id, description, quantity, unit_rate, amount, item_kind, discount_pct, discount_amount, service_type) VALUES (?, ?, ?, ?, ?, \'SERVICE\', ?, ?, ?)')
-                ->execute([$billId, $s['service_name'] . ' (' . $qtyLabel . ')', max(1, (int) $s['quantity']), $s['unit_charge'], $net, $pct, $lineDiscount, $s['service_type']]);
-        }
-        if ($totalDiscount > 0) {
-            $pdo->prepare('UPDATE admission_bills SET discount_amount = ? WHERE id = ?')
-                ->execute([round($totalDiscount, 2), $billId]);
-        }
-
-        recalc_admission_bill_totals($pdo, $billId);
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-
-    $b->execute([$adm['id']]);
-    return $b->fetch();
-}
-
+// ensure_admission_bill() now lives in config/admission_bill.php (shared with the admit
+// transaction, which raises the draft header). Behaviour unchanged for existing bills.
 $bill = ensure_admission_bill($pdo, $adm, $uid);
 $locked = $bill['status'] === 'paid' || $bill['printed_at'];
 
@@ -142,27 +66,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
     $desc = trim($_POST['description'] ?? '');
     $qty = (float) ($_POST['quantity'] ?? 1);
     $rate = (float) ($_POST['unit_rate'] ?? 0);
+    $editReason = mb_substr(trim((string) ($_POST['reason'] ?? '')), 0, 255);
     $amount = round($qty * $rate, 2);
-    if ($itemId > 0 && $desc !== '') {
-        // A manual edit replaces the auto-priced line entirely — clear its
-        // category-discount snapshot so reporting doesn't count a discount
-        // that is no longer embedded in the amount.
-        $pdo->prepare('UPDATE admission_bill_items SET description = ?, quantity = ?, unit_rate = ?, amount = ?, discount_pct = 0, discount_amount = 0 WHERE id = ? AND admission_bill_id = ?')
-            ->execute([$desc, $qty, $rate, $amount, $itemId, $bill['id']]);
-        audit_log($pdo, 'admission_bill_item_edited', "Edited item #$itemId on admission bill {$bill['invoice_number']}", $uid);
-        resync_admission_bill_discount($pdo, (int) $bill['id']);
-        recalc_admission_bill_totals($pdo, (int) $bill['id']);
+
+    $oldQ = $pdo->prepare('SELECT description, quantity, unit_rate, amount, item_kind FROM admission_bill_items WHERE id = ? AND admission_bill_id = ?');
+    $oldQ->execute([$itemId, $bill['id']]);
+    $old = $oldQ->fetch();
+
+    if (!$old || $desc === '') {
+        $err = 'That line could not be found, or its description is empty.';
+    } elseif ($qty <= 0 || $rate < 0) {
+        // Negative money / zero quantity is never a valid line.
+        $err = 'Quantity must be above zero and the rate cannot be negative.';
+    } else {
+        // Below the previous rate, or a smaller line total than before, is a
+        // discount by another name: it needs a reason and is flagged for review.
+        $lowered = $rate < (float) $old['unit_rate'] - 0.001 || $amount < (float) $old['amount'] - 0.001;
+        if ($lowered && $editReason === '') {
+            $err = 'Give a reason when lowering a rate or a line total.';
+        } else {
+            $pdo->beginTransaction();
+            try {
+                // A manual edit replaces the auto-priced line entirely — clear its
+                // category-discount snapshot so reporting doesn't count a discount
+                // that is no longer embedded in the amount.
+                $pdo->prepare('UPDATE admission_bill_items SET description = ?, quantity = ?, unit_rate = ?, amount = ?, discount_pct = 0, discount_amount = 0 WHERE id = ? AND admission_bill_id = ?')
+                    ->execute([$desc, $qty, $rate, $amount, $itemId, $bill['id']]);
+                resync_admission_bill_discount($pdo, (int) $bill['id']);
+                recalc_admission_bill_totals($pdo, (int) $bill['id']);
+                audit_log($pdo, 'admission_bill_item_edited', json_encode([
+                    'invoice' => $bill['invoice_number'], 'item' => $itemId,
+                    'before' => ['desc' => $old['description'], 'qty' => (float) $old['quantity'], 'rate' => (float) $old['unit_rate'], 'amount' => (float) $old['amount']],
+                    'after'  => ['desc' => $desc, 'qty' => $qty, 'rate' => $rate, 'amount' => $amount],
+                    'reason' => $editReason,
+                ]), $uid);
+                if ($lowered) {
+                    adm_open_approval($pdo, $admissionId, (int) $bill['id'], 'ZERO_OR_DISCOUNT',
+                        'Line lowered: ' . $old['description'] . ' Rs ' . number_format((float) $old['amount']) . ' -> Rs ' . number_format($amount) . ' (' . $editReason . ')', $uid);
+                }
+                $pdo->commit();
+                header('Location: admission_discharge.php?id=' . $admissionId); exit;
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                $err = 'Could not save the line.';
+            }
+        }
     }
-    header('Location: admission_discharge.php?id=' . $admissionId); exit;
 }
 
 // ---- Remove a line item ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remove_item' && !$locked && $canFinalize) {
     $itemId = (int) ($_POST['item_id'] ?? 0);
-    $pdo->prepare('DELETE FROM admission_bill_items WHERE id = ? AND admission_bill_id = ?')->execute([$itemId, $bill['id']]);
-    resync_admission_bill_discount($pdo, (int) $bill['id']);
-    recalc_admission_bill_totals($pdo, (int) $bill['id']);
-    header('Location: admission_discharge.php?id=' . $admissionId); exit;
+    $rmReason = mb_substr(trim((string) ($_POST['reason'] ?? '')), 0, 255);
+    $oldQ = $pdo->prepare('SELECT description, quantity, unit_rate, amount, item_kind FROM admission_bill_items WHERE id = ? AND admission_bill_id = ?');
+    $oldQ->execute([$itemId, $bill['id']]);
+    $old = $oldQ->fetch();
+    if (!$old) {
+        $err = 'That line could not be found.';
+    } elseif ((float) $old['amount'] > 0 && $rmReason === '') {
+        $err = 'Give a reason for removing a charged line.';
+    } else {
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('DELETE FROM admission_bill_items WHERE id = ? AND admission_bill_id = ?')->execute([$itemId, $bill['id']]);
+            resync_admission_bill_discount($pdo, (int) $bill['id']);
+            recalc_admission_bill_totals($pdo, (int) $bill['id']);
+            audit_log($pdo, 'admission_bill_item_removed', json_encode([
+                'invoice' => $bill['invoice_number'], 'item' => $itemId,
+                'before' => ['desc' => $old['description'], 'qty' => (float) $old['quantity'], 'rate' => (float) $old['unit_rate'], 'amount' => (float) $old['amount'], 'kind' => $old['item_kind']],
+                'after'  => null,
+                'reason' => $rmReason,
+            ]), $uid);
+            // Dropping a SERVICE line lowers the bill below what the nurse logged.
+            if ($old['item_kind'] === 'SERVICE' && (float) $old['amount'] > 0) {
+                adm_open_approval($pdo, $admissionId, (int) $bill['id'], 'ZERO_OR_DISCOUNT',
+                    'Line removed: ' . $old['description'] . ' Rs ' . number_format((float) $old['amount']) . ' (' . $rmReason . ')', $uid);
+            }
+            $pdo->commit();
+            header('Location: admission_discharge.php?id=' . $admissionId); exit;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            $err = 'Could not remove the line.';
+        }
+    }
 }
 
 // ---- Apply / update the manual discharge discount ----
@@ -182,25 +168,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'apply
     $currentTotal = (float) $bill['grand_total'];
 
     $pct = 0.0;
+    $discErr = '';
+    $discReason = mb_substr(trim((string) ($_POST['discount_reason'] ?? '')), 0, 255);
     if ($mode === 'percent') {
-        $pct = max(0, min(100, (float) ($_POST['discount_percent'] ?? 0)));
+        $rawPct = (float) ($_POST['discount_percent'] ?? 0);
+        if ($rawPct < 0 || $rawPct > 100) { $discErr = 'Discount percent must be between 0 and 100.'; }
+        $pct = max(0, min(100, $rawPct));
         $amount = round($currentTotal * $pct / 100, 2);
     } else {
-        $amount = max(0, (float) ($_POST['discount_amount'] ?? 0));
+        $rawAmt = (float) ($_POST['discount_amount'] ?? 0);
+        if ($rawAmt < 0) { $discErr = 'Discount cannot be negative.'; }
+        $amount = max(0, $rawAmt);
     }
     // Clamp: never discount below zero.
     $amount = min($amount, $gross);
 
-    $pdo->prepare('UPDATE admission_bills SET manual_discount_amount = ?, manual_discount_pct = ?, manual_discount_by_id = ? WHERE id = ?')
-        ->execute([$amount, $pct, $uid, $bill['id']]);
-    recalc_admission_bill_totals($pdo, (int) $bill['id']);
-    audit_log($pdo, 'admission_bill_discount', "Manual discount Rs " . number_format($amount, 2) . ($pct > 0 ? " ({$pct}%)" : '') . " on {$bill['invoice_number']}", $uid);
-    if ($amount > 0) {
-        log_shift_event($pdo, 'DISCOUNT', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
-            -$amount, 'admission_bill', (int) $bill['id'], $bill['invoice_number'],
-            'paid', "Discharge lump-sum discount" . ($pct > 0 ? " ({$pct}%)" : ''));
+    // The user's own discount ceiling (users.max_discount_pct, the same cap OPD
+    // registration enforces) applies when one is set (> 0). 0 means "unset" here,
+    // because treating it as "no discount allowed" would lock every receptionist
+    // out of this box; those discounts are capped at gross and flagged instead.
+    if ($discErr === '' && $amount > 0 && $gross > 0 && adm_has($pdo, 'users', 'max_discount_pct')) {
+        $capQ = $pdo->prepare('SELECT max_discount_pct FROM users WHERE id = ?');
+        $capQ->execute([$uid]);
+        $cap = (float) $capQ->fetchColumn();
+        if ($cap > 0 && ($amount / $gross * 100) > $cap + 0.001) {
+            $discErr = 'Discount exceeds your permitted limit of ' . rtrim(rtrim(number_format($cap, 2), '0'), '.') . '% of the bill.';
+        }
     }
-    header('Location: admission_discharge.php?id=' . $admissionId); exit;
+    if ($discErr === '' && $amount > 0 && $discReason === '') {
+        $discErr = 'Give a reason for the discount.';
+    }
+
+    if ($discErr !== '') {
+        $err = $discErr;
+    } else {
+        // Bill update + ledger row + approval row share ONE transaction.
+        $priorManual = (float) ($bill['manual_discount_amount'] ?? 0);
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('UPDATE admission_bills SET manual_discount_amount = ?, manual_discount_pct = ?, manual_discount_by_id = ? WHERE id = ?')
+                ->execute([$amount, $pct, $uid, $bill['id']]);
+            recalc_admission_bill_totals($pdo, (int) $bill['id']);
+            audit_log($pdo, 'admission_bill_discount', json_encode([
+                'invoice' => $bill['invoice_number'],
+                'before' => ['manual_discount' => $priorManual, 'grand_total' => (float) $bill['grand_total']],
+                'after'  => ['manual_discount' => $amount, 'pct' => $pct, 'gross' => $gross],
+                'reason' => $discReason,
+            ]), $uid);
+            if ($amount > 0) {
+                log_shift_event($pdo, 'DISCOUNT', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+                    -$amount, 'admission_bill', (int) $bill['id'], $bill['invoice_number'],
+                    'paid', "Discharge lump-sum discount" . ($pct > 0 ? " ({$pct}%)" : ''));
+                adm_open_approval($pdo, $admissionId, (int) $bill['id'], 'ZERO_OR_DISCOUNT',
+                    'Manual discount Rs ' . number_format($amount) . ' of Rs ' . number_format($gross) . ': ' . $discReason, $uid);
+            }
+            $pdo->commit();
+            header('Location: admission_discharge.php?id=' . $admissionId); exit;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            $err = 'Could not apply the discount.';
+        }
+    }
 }
 
 // ---- Clear the manual discharge discount ----
@@ -224,8 +252,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
 
     // A closed day accepts no more payments — the cash tally has been signed.
     $dayLock = require_day_open($pdo);
+    $outcome = (($_POST['outcome'] ?? '') === 'LEFT_BEFORE_TREATMENT') ? 'LEFT_BEFORE_TREATMENT' : '';
+    $outReason = mb_substr(trim((string) ($_POST['outcome_reason'] ?? '')), 0, 255);
+    $finFlagReason = $outReason !== '' ? $outReason
+        : 'Flagged at finalise: total Rs ' . number_format($total) . ', collected Rs ' . number_format($paid);
     if ($dayLock) {
         $err = $dayLock;
+    } elseif ($outcome === 'LEFT_BEFORE_TREATMENT') {
+        // Patient was admitted, then the parents declined treatment. Allowed ONLY
+        // when no live billable service exists; reason mandatory; recorded as a
+        // PENDING approval for an admin/manager to review (moves no money itself).
+        $lbtErr = adm_check_left_before_treatment($pdo, $admissionId, $outReason);
+        if ($lbtErr !== null) {
+            $err = $lbtErr;
+        } else {
+            // The stay line is waived down to whatever was actually collected: the
+            // gap is booked as the manual discharge discount (replacing any earlier
+            // one), so the bill still ties out and the discount ledger row exists.
+            $gross = round((float) $bill['subtotal'] + (float) ($bill['discount_amount'] ?? 0), 2);
+            $collect = max(0, min((float) ($_POST['paid_amount'] ?? 0), $gross));
+            $waived = round($gross - $collect, 2);
+            $priorManual = (float) ($bill['manual_discount_amount'] ?? 0);
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare('UPDATE admission_bills SET manual_discount_amount = ?, manual_discount_pct = 0, manual_discount_by_id = ? WHERE id = ?')
+                    ->execute([$waived, $uid, $bill['id']]);
+                recalc_admission_bill_totals($pdo, (int) $bill['id']);
+                try {
+                    $pdo->prepare('UPDATE admission_bills SET status = \'paid\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ?, paid_by_id = ? WHERE id = ?')
+                        ->execute([$method, $collect, $uid, $uid, $bill['id']]);
+                } catch (PDOException $e) {
+                    $pdo->prepare('UPDATE admission_bills SET status = \'paid\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ? WHERE id = ?')
+                        ->execute([$method, $collect, $uid, $bill['id']]);
+                }
+                $pdo->prepare('UPDATE admissions SET status = \'DISCHARGED\', discharge_finalized_by_id = ?, discharge_finalized_at = NOW() WHERE id = ?')
+                    ->execute([$uid, $admissionId]);
+                adm_open_approval($pdo, $admissionId, (int) $bill['id'], 'LEFT_BEFORE_TREATMENT', $outReason, $uid);
+                audit_log($pdo, 'admission_left_before_treatment', json_encode([
+                    'invoice' => $bill['invoice_number'], 'gross' => $gross, 'collected' => $collect, 'waived' => $waived, 'reason' => $outReason,
+                ]), $uid);
+                $docId = (int) ($adm['admitting_doctor_id'] ?: 0) ?: null;
+                log_shift_event($pdo, 'INVOICE', 'IPD', (int) $adm['patient_id'], $docId,
+                    $collect, 'admission_bill', (int) $bill['id'], $bill['invoice_number']);
+                if ($waived - $priorManual > 0.001) {
+                    log_shift_event($pdo, 'DISCOUNT', 'IPD', (int) $adm['patient_id'], $docId,
+                        -round($waived - $priorManual, 2), 'admission_bill', (int) $bill['id'], $bill['invoice_number'],
+                        'paid', 'Left before treatment: ' . $outReason);
+                }
+                log_shift_event($pdo, 'DISCHARGE', 'IPD', (int) $adm['patient_id'], $docId,
+                    $collect, 'admission_bill', (int) $bill['id'], $bill['invoice_number']);
+                $pdo->commit();
+                notify_patient_discharged($pdo, $admissionId);
+                sheet_push($pdo, 'DISCHARGE', (int) $bill['id'], $uid);
+                header('Location: admission_discharge.php?id=' . $admissionId . '&paid=1'); exit;
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                $err = 'Could not close the stay as left before treatment.';
+            }
+        }
     } elseif ($short > 0.001) {
         // Partial → needs write-off approval before the stay closes. Record the
         // paid amount + finalize, but leave the admission DISCHARGE_IN_PROGRESS
@@ -237,24 +321,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
         // day_cash_tally() until an admin approved the write-off — which could
         // be days later — leaving the collector over at every close in between
         // with no line explaining it. See day_cash_tally()'s 'finalized' branch.
+        // The money write, its ledger row and the review flag share ONE transaction.
+        $pdo->beginTransaction();
         try {
-            $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ?, paid_by_id = ? WHERE id = ?')
-                ->execute([$method, $paid, $uid, $uid, $bill['id']]);
-        } catch (PDOException $e) {
-            // paid_by_id absent (pre-migration) — same fallback as the full-payment
-            // path below.
-            $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ? WHERE id = ?')
-                ->execute([$method, $paid, $uid, $bill['id']]);
+            try {
+                $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ?, paid_by_id = ? WHERE id = ?')
+                    ->execute([$method, $paid, $uid, $uid, $bill['id']]);
+            } catch (PDOException $e) {
+                // paid_by_id absent (pre-migration) — same fallback as the full-payment
+                // path below.
+                $pdo->prepare('UPDATE admission_bills SET status = \'finalized\', payment_method = ?, paid_amount = ?, paid_at = NOW(), finalized_by_id = ? WHERE id = ?')
+                    ->execute([$method, $paid, $uid, $bill['id']]);
+            }
+            // 'partial' — the stay hasn't closed yet (awaiting write-off approval), so
+            // no DISCHARGE event here; that lands when approve_writeoff (or a future
+            // full top-up) actually finalizes the admission below.
+            log_shift_event($pdo, 'INVOICE', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
+                (float) $total, 'admission_bill', (int) $bill['id'], $bill['invoice_number'], 'partial');
+            // Allowed, not blocked — but a short payment / zero total / discount is
+            // flagged for an admin or manager to review. (Write-off flow below is unchanged.)
+            foreach (adm_finalize_flags($bill, $total, $paid) as $flagKind) {
+                adm_open_approval($pdo, $admissionId, (int) $bill['id'], $flagKind, $finFlagReason, $uid);
+            }
+            $pdo->commit();
+            header('Location: admission_discharge.php?id=' . $admissionId . '&pending_writeoff=1'); exit;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            $err = 'Could not record the partial payment.';
         }
-        // 'partial' — the stay hasn't closed yet (awaiting write-off approval), so
-        // no DISCHARGE event here; that lands when approve_writeoff (or a future
-        // full top-up) actually finalizes the admission below.
-        log_shift_event($pdo, 'INVOICE', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
-            (float) $total, 'admission_bill', (int) $bill['id'], $bill['invoice_number'], 'partial');
-        header('Location: admission_discharge.php?id=' . $admissionId . '&pending_writeoff=1'); exit;
     }
 
-    // Full payment → close it.
+    // Full payment → close it. Skipped when a guard above already set $err (the
+    // closed-day lock used to fall through to here and book the payment anyway).
+    if ($err === '') {
     $pdo->beginTransaction();
     try {
         // paid_by_id fallback pattern: see checkout.php record_payment.
@@ -272,6 +371,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
             (float) $total, 'admission_bill', (int) $bill['id'], $bill['invoice_number']);
         log_shift_event($pdo, 'DISCHARGE', 'IPD', (int) $adm['patient_id'], (int) ($adm['admitting_doctor_id'] ?: 0) ?: null,
             (float) $paid, 'admission_bill', (int) $bill['id'], $bill['invoice_number']);
+        // Zero total / manual discount: allowed, flagged for review (same transaction).
+        foreach (adm_finalize_flags($bill, $total, $paid) as $flagKind) {
+            adm_open_approval($pdo, $admissionId, (int) $bill['id'], $flagKind, $finFlagReason, $uid);
+        }
         $pdo->commit();
 
         // Alert admin: discharge complete, bill paid in full (best-effort, after commit).
@@ -281,8 +384,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'final
 
         header('Location: admission_discharge.php?id=' . $admissionId . '&paid=1'); exit;
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
         $err = 'Could not record payment.';
+    }
     }
 }
 
@@ -383,6 +487,20 @@ $paid = (float) ($bill['paid_amount'] ?? 0);
 $short = round($total - $paid, 2);
 $pendingWriteoff = $bill['status'] === 'finalized' && $short > 0.001;
 
+// Review flags raised on this stay (all statuses — rejected stays visible).
+// Guarded: the table only exists after sql/2026_10_admission_bill_approvals.sql.
+$approvalRows = [];
+if (adm_approvals_ready($pdo)) {
+    $apQ = $pdo->prepare('
+        SELECT ap.*, ru.name AS requester_name, du.name AS decider_name
+        FROM admission_bill_approvals ap
+        LEFT JOIN users ru ON ru.id = ap.requested_by_id
+        LEFT JOIN users du ON du.id = ap.decided_by_id
+        WHERE ap.admission_id = ? ORDER BY ap.id');
+    $apQ->execute([$admissionId]);
+    $approvalRows = $apQ->fetchAll();
+}
+
 // Admission → discharge timing for the header strip.
 $dischargeTs = $adm['discharged_at'] ? strtotime($adm['discharged_at']) : time();
 $stayMins = max(0, (int) round(($dischargeTs - strtotime($adm['admitted_at'])) / 60));
@@ -481,14 +599,16 @@ require __DIR__ . '/partials/sidebar.php';
                                     <input type="hidden" name="item_id" value="<?= (int) $it['id'] ?>">
                                     <input type="text" name="description" value="<?= htmlspecialchars($it['description']) ?>">
                                     <input type="number" step="0.01" name="quantity" value="<?= htmlspecialchars((string) $it['quantity']) ?>">
-                                    <input type="number" step="0.01" name="unit_rate" value="<?= htmlspecialchars((string) $it['unit_rate']) ?>">
+                                    <input type="number" step="0.01" min="0" name="unit_rate" value="<?= htmlspecialchars((string) $it['unit_rate']) ?>">
                                     <span class="mono" style="white-space:nowrap;">Rs <?= number_format((float) $it['amount']) ?></span>
                                     <button type="submit" class="link-btn" style="color:var(--primary);">Save</button>
+                                    <input type="text" name="reason" maxlength="255" placeholder="Reason (required if the rate or line total goes down)" style="grid-column:1 / -1;" autocomplete="off">
                                 </form>
                             </td>
                             <td>
-                                <form method="POST" action="admission_discharge.php?id=<?= $admissionId ?>" onsubmit="return confirm('Remove line?');">
+                                <form method="POST" action="admission_discharge.php?id=<?= $admissionId ?>" onsubmit="var r = prompt('Reason for removing this line (required):'); if (!r || !r.trim()) { return false; } this.reason.value = r.trim(); return true;">
                                     <input type="hidden" name="action" value="remove_item">
+                                    <input type="hidden" name="reason" value="">
                                     <input type="hidden" name="item_id" value="<?= (int) $it['id'] ?>">
                                     <button type="submit" class="link-btn">×</button>
                                 </form>
@@ -560,6 +680,10 @@ require __DIR__ . '/partials/sidebar.php';
                             <label>Discount (% of Rs <?= number_format($total) ?>)</label>
                             <div class="in-wrap"><input type="number" step="0.01" min="0" max="100" name="discount_percent" placeholder="0"></div>
                         </div>
+                        <div class="disc-field" style="flex-basis:100%;">
+                            <label>Reason for the discount (required)</label>
+                            <div class="in-wrap"><input type="text" name="discount_reason" maxlength="255" placeholder="e.g. family of staff, approved by owner" autocomplete="off"></div>
+                        </div>
                         <button type="submit" class="btn secondary" style="white-space:nowrap;">Apply discount</button>
                     </form>
                 </div>
@@ -577,10 +701,30 @@ require __DIR__ . '/partials/sidebar.php';
                             <input type="number" step="0.01" min="0" name="paid_amount" value="<?= number_format($total, 2, '.', '') ?>">
                         </div>
                     </div>
+                    <?php
+                    // "Left before treatment" is offered only when it can be recorded (the
+                    // approvals table exists) and no live billable service is on the stay.
+                    $canLbt = adm_approvals_ready($pdo) && adm_billable_service_count($pdo, $admissionId) === 0;
+                    ?>
+                    <div class="pay-grid" style="margin-top:14px;">
+                        <?php if ($canLbt): ?>
+                        <div>
+                            <label>Outcome</label>
+                            <select name="outcome">
+                                <option value="">Normal discharge</option>
+                                <option value="LEFT_BEFORE_TREATMENT">Left before treatment</option>
+                            </select>
+                        </div>
+                        <?php endif; ?>
+                        <div<?= $canLbt ? '' : ' style="grid-column:1 / -1;"' ?>>
+                            <label><?= $canLbt ? 'Reason (required for left before treatment)' : 'Note for reviewer (optional)' ?></label>
+                            <input type="text" name="outcome_reason" maxlength="255" autocomplete="off" placeholder="e.g. parents declined treatment after 10 minutes">
+                        </div>
+                    </div>
                     <div style="display:flex;justify-content:flex-end;margin-top:16px;">
                         <button type="submit" class="btn">Record payment &amp; discharge</button>
                     </div>
-                    <div class="est-note" style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Collect less than the total to record a partial payment — the shortfall then needs admin/manager write-off approval.</div>
+                    <div class="est-note" style="font-size:11.5px;color:var(--text-muted);margin-top:8px;">Collect less than the total to record a partial payment — the shortfall then needs admin/manager write-off approval. A zero total, short payment or discount is allowed but is flagged for admin/manager review.</div>
                 </form>
                 <?php endif; ?>
 
@@ -600,6 +744,20 @@ require __DIR__ . '/partials/sidebar.php';
                 <?php endif; ?>
                 <?php endif; ?>
 
+                <?php if ($approvalRows): ?>
+                <div class="disc-box" style="margin-top:14px;">
+                    <div class="disc-head"><span class="t">Review flags on this stay</span><?php if ($canApproveWriteoff): ?><a href="admission_approvals.php" style="font-size:12px;color:var(--primary);font-weight:600;">All approvals</a><?php endif; ?></div>
+                    <?php foreach ($approvalRows as $ap): ?>
+                    <div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);">
+                        <b><?= htmlspecialchars(str_replace('_', ' ', $ap['kind'])) ?></b>
+                        &middot; <?= htmlspecialchars($ap['status']) ?>
+                        &middot; <?= htmlspecialchars((string) $ap['requester_name']) ?>, <?= date('d/m/Y H:i', strtotime($ap['requested_at'])) ?>
+                        <div class="muted" style="font-size:12px;"><?= htmlspecialchars((string) $ap['reason']) ?><?= $ap['decided_at'] ? ' &mdash; ' . htmlspecialchars((string) $ap['decider_name']) . ': ' . htmlspecialchars((string) $ap['decision_note']) : '' ?></div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+
                 <?php if ($bill['status'] === 'paid'): ?>
                 <div class="wo-note" style="margin-top:12px;background:var(--green-bg);color:var(--green-text);">
                     Closed. Collected Rs <?= number_format($paid) ?><?= $bill['write_off_amount'] > 0 ? ', wrote off Rs ' . number_format((float) $bill['write_off_amount']) : '' ?>.
@@ -611,6 +769,16 @@ require __DIR__ . '/partials/sidebar.php';
 </div>
 <script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 <script>
+// Double-submit guard: a second submit of the same form is swallowed and the
+// buttons lock once the first is on its way (the server also guards each write).
+document.querySelectorAll('form[method="POST"]').forEach(function (f) {
+    f.addEventListener('submit', function (e) {
+        if (e.defaultPrevented) return;
+        if (f.dataset.busy) { e.preventDefault(); return; }
+        f.dataset.busy = '1';
+        setTimeout(function () { f.querySelectorAll('button[type="submit"]').forEach(function (b) { b.disabled = true; }); }, 0);
+    });
+});
 // Discount type toggle — switch the visible field and the hidden mode flag.
 function discSetMode(mode) {
     var m = document.getElementById('discMode');

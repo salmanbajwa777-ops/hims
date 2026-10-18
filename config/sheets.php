@@ -14,6 +14,7 @@
 
 require_once __DIR__ . '/billing.php';   // admission_billed_hours()
 require_once __DIR__ . '/payment_methods.php';
+require_once __DIR__ . '/admission_bill.php';   // adm_svc_live(): voided services never reach the sheet
 
 /**
  * pay_method_label() for a spreadsheet cell.
@@ -202,7 +203,7 @@ function sheet_service_breakdown(PDO $pdo, int $admissionId): array {
         $s = $pdo->prepare('
             SELECT service_name, SUM(quantity) AS qty, SUM(calculated_charge) AS amt
             FROM admission_services
-            WHERE admission_id = ? AND is_billable = 1
+            WHERE admission_id = ? AND is_billable = 1' . adm_svc_live($pdo) . '
             GROUP BY service_name
             ORDER BY service_name
         ');

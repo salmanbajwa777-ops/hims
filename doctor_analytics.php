@@ -35,6 +35,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 refresh_session_permissions($pdo);
 require_once __DIR__ . '/config/billing.php';
+require_once __DIR__ . '/config/admission_bill.php';   // adm_svc_live()
 
 $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');
 $stmt->execute([$_SESSION['user_id']]);
@@ -542,6 +543,7 @@ if ($view === 'admissions') {
 
     // Active: this doctor's current stays, with nurse + latest handover status
     // + running total (stay-so-far at the type rate + billable logged services).
+    $svcLiveS = adm_svc_live($pdo, 's');   // '' pre-migration; else AND s.voided_at IS NULL
     $actQ = $pdo->prepare("
         SELECT a.id, a.admission_type, a.admitted_at, a.status,
                p.name AS patient_name, p.mrn,
@@ -550,9 +552,9 @@ if ($view === 'admissions') {
                (SELECT h.status_at_handover FROM admission_handovers h
                 WHERE h.admission_id = a.id ORDER BY h.handover_time DESC, h.id DESC LIMIT 1) AS last_status,
                (SELECT COALESCE(SUM(s.calculated_charge), 0) FROM admission_services s
-                WHERE s.admission_id = a.id AND s.is_billable = 1) AS services_total,
+                WHERE s.admission_id = a.id AND s.is_billable = 1 $svcLiveS) AS services_total,
                (SELECT COUNT(*) FROM admission_services s
-                WHERE s.admission_id = a.id AND s.is_billable = 1) AS services_n
+                WHERE s.admission_id = a.id AND s.is_billable = 1 $svcLiveS) AS services_n
         FROM admissions a
         JOIN visits v ON v.id = a.visit_id
         JOIN patients p ON p.id = v.patient_id

@@ -21,6 +21,8 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/notify.php';
+require_once __DIR__ . '/config/handover_helpers.php';
+require_once __DIR__ . '/config/er_direct_exceptions.php';   // ER-direct paper-register reconciliation
 refresh_session_permissions($pdo);
 // Printing a slip is a READ of a closing that has already happened, so it is
 // gated more widely than closing one. A handover receiver (admin or manager) is
@@ -122,10 +124,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
     $error = imp_block_money_action('Closing this shift');
 }
 
+// ---------------- Open-admission hand-off (pass on / accept) ----------------
+// Phase 4: the receptionist resolves each open short-stay admission by billing it
+// (admission_discharge.php) or passing it on with a note. Post-redirect-get, so a
+// refresh cannot replay a pass.
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $hoResult = ho_handle_post($pdo, $uid);
+    if ($hoResult !== null) {
+        $_SESSION['ho_flash'] = $hoResult;
+        header('Location: shift_closing.php' . ($isPastDay ? '?date=' . urlencode($today) : ''));
+        exit;
+    }
+}
+$hoFlash = $_SESSION['ho_flash'] ?? null;
+unset($_SESSION['ho_flash']);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_day' && $error === '') {
     $handoverToId = (int) ($_POST['handover_to_id'] ?? 0);
     $handoverDeclared = round((float) str_replace(',', '', $_POST['handover_declared'] ?? '0'), 2);
     $varianceNote = trim($_POST['variance_note'] ?? '');
+    $overrideReason = trim($_POST['override_reason'] ?? '');
+    $isAdminUser = ($_SESSION['base_role'] ?? '') === 'ADMIN';
 
     try {
         $pdo->beginTransaction();
@@ -147,7 +166,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                        . number_format(abs($variance), 2) . ' — a variance note is required.';
             } elseif ($handoverDeclared > $counted) {
                 $error = 'You cannot hand over more than the Rs ' . number_format($counted, 2) . ' counted.';
+            } elseif (($hoGate = close_gate_decision($pdo, $uid, $isAdminUser, !empty($_POST['override_open']), $overrideReason))['error'] !== '') {
+                // Unresolved admissions: bill them or pass them on first. Never
+                // fires pre-migration (the gate sees no open items then).
+                $error = $hoGate['error'];
+            } elseif (($erReg = er_register_resolve($pdo, $today, $uid, $_POST))['error'] !== '') {
+                // ER-direct register: a count or the "no register kept" tick is needed
+                // when ER bills exist; a mismatch needs a note but never blocks beyond that.
+                $error = $erReg['error'];
             } else {
+                if ($hoGate['override']) {
+                    // Admin override: logged inside the same transaction as the close.
+                    $ids = implode(', #', array_map(fn($r) => (int) $r['admission_id'], $hoGate['open']));
+                    audit_log($pdo, 'close_override_open_admissions',
+                        "Shift close for $today (cashier #$uid) forced past " . count($hoGate['open'])
+                        . " open admission(s) #$ids. Reason: $overrideReason", $uid);
+                }
                 $closingNumber = generate_closing_number($pdo);
 
                 $pdo->prepare('
@@ -172,6 +206,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                     $handoverDeclared, $handoverToId,
                 ]);
                 $closingId = (int) $pdo->lastInsertId();
+
+                // Same transaction as the closing row; no-op pre-migration.
+                er_register_store($pdo, $closingId, $erReg);
+                if ($erReg['mismatch']) {
+                    audit_log($pdo, 'er_register_mismatch', "Closing $closingNumber: ER-direct register "
+                        . (int) $erReg['count'] . ' vs ' . (int) $erReg['system'] . ' bills raised. Note: ' . $erReg['note'], $uid);
+                } elseif ($erReg['none'] && $erReg['system'] > 0) {
+                    audit_log($pdo, 'er_no_register', "Closing $closingNumber: no ER-direct register kept; "
+                        . (int) $erReg['system'] . ' ER bill(s) raised', $uid);
+                }
 
                 audit_log($pdo, 'shift_closed', "Closing $closingNumber for $today: counted Rs " . number_format($counted, 2) . ' vs expected Rs ' . number_format($tally['expected_cash'], 2) . ' (variance ' . number_format($variance, 2) . '), handover declared Rs ' . number_format($handoverDeclared, 2), $uid);
 
@@ -346,6 +390,13 @@ if (user_holds_drawer($pdo, $uid)) {
     $myUnclosed = unclosed_business_days($pdo, $uid, LATE_CLOSE_WINDOW_DAYS, false);
 }
 
+// Open short-stay admissions I own (must be billed or passed before I can close),
+// and passes addressed to me awaiting Accept. Both empty pre-migration => no block.
+$hoGate = close_block_state($pdo, $uid);
+$hoBlocked = $hoGate['blocked'] && !$closing;      // only matters while the shift is still open
+$hoIsAdmin = ($_SESSION['base_role'] ?? '') === 'ADMIN';
+$hoReceivers = ($hoGate['open'] || $hoGate['passed_to_me']) ? receptionists_with_drawer($pdo) : [];
+
 $pageTitle = 'Day Closing';
 require __DIR__ . '/partials/head.php';
 $navActive = 'shift_closing';
@@ -429,6 +480,21 @@ require __DIR__ . '/partials/sidebar.php';
 .closed-actions a { display: inline-flex; align-items: center; padding: 9px 16px; border-radius: var(--radius-btn); font-weight: 600; font-size: 13px; background: var(--card); color: var(--text); border: 1px solid var(--border); }
 .edit-banner { background: var(--amber-bg); color: var(--amber-text); border-radius: var(--radius-input); padding: 10px 14px; font-size: 12.5px; font-weight: 600; }
 .notice-stack { max-width: 900px; margin: 0 auto 14px; display: flex; flex-direction: column; gap: 10px; }
+/* Open-admission hand-off panel */
+.ho-card { max-width: 900px; margin: 0 auto 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-sm); padding: 14px 20px; }
+.ho-card.blocked { border-color: var(--amber); }
+.ho-card h2 { font-size: 14px; margin: 0 0 4px; }
+.ho-card .sub { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.ho-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 9px 0; border-top: 1px dotted var(--border); }
+.ho-row .pt { flex: 1 1 200px; min-width: 0; font-weight: 600; font-size: 13px; }
+.ho-row .pt small { display: block; font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
+.ho-row form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+.ho-row input[type=text], .ho-row select { padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 12.5px; background: var(--bg); color: var(--text); }
+.ho-btn { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: var(--radius-btn); font: inherit; font-weight: 600; font-size: 12.5px; padding: 7px 12px; cursor: pointer; text-decoration: none; display: inline-block; }
+.ho-btn.go { background: var(--primary-dark); color: #fff; border-color: var(--primary-dark); }
+.ho-btn.amber { background: var(--amber-bg); color: var(--amber-text); border-color: var(--amber); }
+.ho-ok { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-input); padding: 10px 14px; font-size: 13px; font-weight: 500; }
+.close-btn[disabled] { opacity: .5; cursor: not-allowed; }
 </style>
 
 <div class="content">
@@ -476,6 +542,58 @@ require __DIR__ . '/partials/sidebar.php';
                 Changes are logged old&rarr;new and admin is emailed. The shift's payments stay locked.
             </div>
         <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($hoFlash): ?>
+    <div class="notice-stack"><div class="<?= !empty($hoFlash['ok']) ? 'ho-ok' : 'alert-error' ?>"><?= htmlspecialchars($hoFlash['msg']) ?></div></div>
+    <?php endif; ?>
+
+    <?php if (!$closing && $hoGate['passed_to_me']): ?>
+    <div class="ho-card blocked">
+        <h2>Passed to you</h2>
+        <div class="sub">Accept each one to take it over. Accepted admissions then count at YOUR close.</div>
+        <?php foreach ($hoGate['passed_to_me'] as $h): ?>
+        <div class="ho-row">
+            <div class="pt"><?= htmlspecialchars(strtoupper($h['patient_name'])) ?>
+                <small>from <?= htmlspecialchars($h['from_name']) ?> &middot; <?= date('d/m/Y h:i A', strtotime($h['passed_at'])) ?> &middot; &ldquo;<?= htmlspecialchars($h['note']) ?>&rdquo;</small></div>
+            <form method="POST" action="shift_closing.php<?= $isPastDay ? '?date=' . htmlspecialchars($today) : '' ?>" onsubmit="var b=this.querySelector('button');b.disabled=true;">
+                <input type="hidden" name="action" value="accept_handover">
+                <input type="hidden" name="handover_id" value="<?= (int) $h['id'] ?>">
+                <input type="hidden" name="imp_csrf" value="<?= htmlspecialchars(imp_csrf_token()) ?>">
+                <?= imp_confirm_field('Accept this admission') ?>
+                <button class="ho-btn go" type="submit">Accept</button>
+            </form>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!$closing && $hoGate['open']): ?>
+    <div class="ho-card blocked">
+        <h2>Open admissions &mdash; bill or pass on before you close (<?= count($hoGate['open']) ?>)</h2>
+        <div class="sub">Every short-stay admission you own with no finalised bill must be billed, or passed to the next receptionist with a note. Closing is blocked until then.</div>
+        <?php foreach ($hoGate['open'] as $o): ?>
+        <div class="ho-row">
+            <div class="pt"><?= htmlspecialchars(strtoupper($o['patient_name'])) ?>
+                <small><?= htmlspecialchars($o['mrn']) ?> &middot; <?= htmlspecialchars(str_replace('_', ' ', $o['status'])) ?> &middot; admitted <?= date('d/m/Y h:i A', strtotime($o['admitted_at'])) ?></small></div>
+            <a class="ho-btn amber" href="admission_discharge.php?id=<?= (int) $o['admission_id'] ?>">Bill now &rarr;</a>
+            <form method="POST" action="shift_closing.php<?= $isPastDay ? '?date=' . htmlspecialchars($today) : '' ?>" onsubmit="var b=this.querySelector('button');b.disabled=true;">
+                <input type="hidden" name="action" value="pass_admission">
+                <input type="hidden" name="admission_id" value="<?= (int) $o['admission_id'] ?>">
+                <input type="hidden" name="imp_csrf" value="<?= htmlspecialchars(imp_csrf_token()) ?>">
+                <input type="text" name="note" maxlength="500" required placeholder="Note for next receptionist" size="26">
+                <select name="to_user_id" title="Pass to">
+                    <option value="0">Next receptionist (anyone)</option>
+                    <?php foreach ($hoReceivers as $rc): if ((int) $rc['id'] === $uid) { continue; } ?>
+                        <option value="<?= (int) $rc['id'] ?>"><?= htmlspecialchars(strtoupper($rc['name'])) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <?= imp_confirm_field('Pass this admission on') ?>
+                <button class="ho-btn" type="submit">Pass on</button>
+            </form>
+        </div>
+        <?php endforeach; ?>
     </div>
     <?php endif; ?>
 
@@ -690,6 +808,21 @@ require __DIR__ . '/partials/sidebar.php';
                               placeholder="Explain any difference"><?= $editMode ? htmlspecialchars($closing['variance_note'] ?? '') : '' ?></textarea>
                 </div>
 
+                <?php if (!$editMode && erx_closing_ready($pdo)): $erSys = er_register_system_count($pdo, $today, $uid); ?>
+                <div class="cfield" id="erRegBox">
+                    <label for="er_register_count">ER-direct paper register count
+                        <span style="font-weight:400;color:var(--text-muted)">(nurse's tally for this shift; you raised <?= (int) $erSys ?> ER bill<?= $erSys === 1 ? '' : 's' ?>)</span></label>
+                    <input id="er_register_count" name="er_register_count" type="number" min="0" max="9999" step="1" inputmode="numeric"
+                           value="<?= htmlspecialchars((string) ($_POST['er_register_count'] ?? '')) ?>">
+                    <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:400;">
+                        <input type="checkbox" name="er_register_none" value="1" id="erRegNone" <?= !empty($_POST['er_register_none']) ? 'checked' : '' ?>>
+                        No register kept (this is recorded)</label>
+                    <input type="text" name="er_register_note" id="er_register_note" maxlength="255" style="margin-top:8px;"
+                           placeholder="Note (required if the register count differs from bills raised)"
+                           value="<?= htmlspecialchars((string) ($_POST['er_register_note'] ?? '')) ?>">
+                </div>
+                <?php endif; ?>
+
                 <?php if ($editMode): ?>
                 <button class="close-btn amber" type="submit"
                         onclick="return confirm('Save the corrected figures? Admin will be notified immediately and the changes highlighted for approval.');">
@@ -697,7 +830,16 @@ require __DIR__ . '/partials/sidebar.php';
                 </button>
                 <p class="lock-note">Reprints the slip — sign the new copy and replace the filed one.</p>
                 <?php else: ?>
-                <button class="close-btn" type="submit"
+                <?php if ($hoBlocked && $hoIsAdmin): ?>
+                <div class="cfield" style="background:var(--amber-bg);border-radius:var(--radius-input);padding:10px 12px;">
+                    <label style="display:flex;gap:8px;align-items:center;color:var(--amber-text);">
+                        <input type="checkbox" name="override_open" value="1" id="overrideOpen">
+                        Admin override: close with <?= count($hoGate['open']) ?> open admission(s) unresolved</label>
+                    <input type="text" name="override_reason" id="overrideReason" maxlength="200" placeholder="Reason (required, logged to audit)">
+                </div>
+                <?php endif; ?>
+                <button class="close-btn" type="submit" id="closeSubmit"
+                        <?= ($hoBlocked && !$hoIsAdmin) ? 'disabled title="Bill or pass on every open admission first"' : '' ?>
                         onclick="return confirm('Close your shift? Your payments and refunds for today will be locked, and the A5 closing slip will open for printing.');">
                     Submit closing &amp; print A5 slip
                 </button>
@@ -725,6 +867,15 @@ function toggleExpenses(btn) {
     else { row.removeAttribute('hidden'); caret.classList.add('open'); }
     btn.setAttribute('aria-expanded', open ? 'false' : 'true');
 }
+
+// Admin override: the close button stays disabled until the box is ticked AND a reason typed.
+(function () {
+    var cb = document.getElementById('overrideOpen'), why = document.getElementById('overrideReason'),
+        btn = document.getElementById('closeSubmit');
+    if (!cb || !btn) return;
+    function sync() { btn.disabled = !(cb.checked && why.value.trim().length >= 8); }
+    cb.addEventListener('change', sync); why.addEventListener('input', sync); sync();
+})();
 
 // Live variance from the single counted-cash total. Server revalidates.
 (function () {

@@ -33,6 +33,13 @@ if (!has_permission('RECEPTION_REGISTER_PATIENTS')) {
 // through one code path (config/admission_actions.php).
 require_once __DIR__ . '/config/admission_actions.php';
 $admitError = '';
+// Non-blocking note from the admit handler (earlier ER/visit evidence > 30 min
+// before the admit clock). Shown once on the redirect target, then cleared.
+$admitNotice = '';
+if (isset($_GET['admitted']) && !empty($_SESSION['admit_notice'])) {
+    $admitNotice = (string) $_SESSION['admit_notice'];
+    unset($_SESSION['admit_notice']);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admit_patient') {
     $result = handle_admit_patient($pdo);
     if ($result['ok']) {
@@ -392,7 +399,9 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="content">
 
             <?php if ($admitError): ?><div class="alert error"><?= htmlspecialchars($admitError) ?></div><?php endif; ?>
-            <?php if (isset($_GET['admitted'])): ?><div class="alert success">Patient admitted — stay is now open.</div><?php endif; ?>
+            <?php if (isset($_GET['admitted'])): ?><div class="alert success">Patient admitted — stay is now open.</div>
+            <?php if (!empty($admitNotice)): ?><div class="alert" style="background:#fbf3e4;border:1px solid #ecd9ad;color:#6b4e12;"><?= htmlspecialchars($admitNotice) ?></div><?php endif; ?>
+            <?php endif; ?>
 
             <?php if ($mustChangePassword): ?>
             <div class="nag-banner">
@@ -516,7 +525,9 @@ require __DIR__ . '/partials/sidebar.php';
                             $invoiceHref = $row['bill_id']
                                 ? 'checkout.php?print=1&amp;bill_id=' . (int) $row['bill_id'] : '';
                             // admission_invoice.php is keyed by ADMISSION id, not bill id.
-                            $admInvoiceHref = $row['adm_bill_id']
+                            // A bill row now exists from the moment of admit (an empty DRAFT),
+                            // so its mere presence no longer means an invoice exists to print.
+                            $admInvoiceHref = ($row['adm_bill_id'] && ($row['adm_bill_status'] ?? '') !== 'draft')
                                 ? 'admission_invoice.php?id=' . (int) $row['admission_id'] : '';
                             $profileHref = 'patients.php?q=' . urlencode($row['mrn']);
 
@@ -899,6 +910,23 @@ require __DIR__ . '/partials/sidebar.php';
                         Accountable for this stay. Any nursing staff can still record vitals and services.
                     </div>
                 </div>
+
+                <!-- Reception admit: why the doctor did not mark it. One pick is all
+                     that is required (handle_admit_patient() enforces it once the
+                     reason column exists) - it never blocks an emergency. -->
+                <?php if (adm_has($pdo, 'admissions', 'reception_admit_reason')): ?>
+                <div class="admit-field">
+                    <label>Why is reception admitting? <span style="color:var(--red,#dc2626);">*</span></label>
+                    <select name="reception_admit_reason" id="admitRecReason" required>
+                        <option value="">Select reason&hellip;</option>
+                        <option value="Doctor did not mark it">Doctor did not mark it</option>
+                        <option value="Emergency - doctor busy">Emergency - doctor busy</option>
+                        <option value="Walk-in direct admit">Walk-in direct admit</option>
+                        <option value="Other">Other (type a reason)&hellip;</option>
+                    </select>
+                    <input type="text" name="reception_admit_reason_other" id="admitRecReasonOther" maxlength="150" placeholder="Reason" style="margin-top:8px;" hidden disabled>
+                </div>
+                <?php endif; ?>
             </div>
 
             <div class="admit-foot">
@@ -943,6 +971,15 @@ function admitSyncOther() {
 }
 document.addEventListener('change', function (e) {
     if (e.target && e.target.id === 'admitDoctor') { admitSyncOther(); }
+});
+// Reception-admit reason: the free-text box exists only while "Other" is picked.
+document.addEventListener('change', function (e) {
+    if (!e.target || e.target.id !== 'admitRecReason') { return; }
+    var o = document.getElementById('admitRecReasonOther');
+    if (!o) { return; }
+    var other = e.target.value === 'Other';
+    o.hidden = !other; o.disabled = !other; o.required = other;
+    if (!other) { o.value = ''; }
 });
 // "__OTHER__" is a UI sentinel, never a doctor id — drop it before it posts, so
 // the handler sees an empty id and stores the typed name instead.

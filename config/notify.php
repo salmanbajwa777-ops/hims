@@ -264,7 +264,7 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
             SELECT a.admitted_at, a.discharge_finalized_at,
                    COALESCE(du.name, a.admitting_doctor_manual, "—") AS doctor_name,
                    p.name AS patient_name, p.mrn,
-                   ab.invoice_number, ab.grand_total, ab.paid_amount, ab.payment_method
+                   ab.invoice_number, ab.grand_total, ab.paid_amount, ab.payment_method, ab.status AS bill_status
             FROM admissions a
             JOIN visits v ON v.id = a.visit_id
             JOIN patients p ON p.id = v.patient_id
@@ -286,6 +286,12 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
             'Paid'           => 'Rs ' . number_format((float) ($r['paid_amount'] ?? 0), 2)
                                 . ($r['payment_method'] ? ' (' . $r['payment_method'] . ')' : ''),
         ];
+        // Every admission now owns a DRAFT bill header from admit. A draft here would
+        // print a false "Rs 0.00 / Rs 0.00" as if billed: say it is not billed instead.
+        if (($r['bill_status'] ?? '') === 'draft') {
+            $rows['Bill total'] = 'Not billed (bill still a draft)';
+            $rows['Paid']       = '—';
+        }
         if ($writeOff > 0.001) {
             $rows['WRITTEN OFF'] = 'Rs ' . number_format($writeOff, 2) . ' — gone forever, patient flagged';
         }

@@ -17,6 +17,8 @@ require_once __DIR__ . '/config/notify.php';
 require_once __DIR__ . '/config/sheets.php';
 // Attending doctor is mandatory on an ER bill — shared resolver + last-seen default.
 require_once __DIR__ . '/config/doctors.php';
+// Nurse who gave the service + advice-session fields; adm_has() schema guards.
+require_once __DIR__ . '/config/er_direct_exceptions.php';
 refresh_session_permissions($pdo);
 require_permission('RECEPTION_RAISE_ER_BILL');
 
@@ -85,6 +87,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
     // bill that can't say which doctor the service was given under is unauditable.
     [$erDocId, $erDocManual] = resolve_doctor_pick($pdo, $_POST['doctor_id'] ?? 0, $_POST['doctor_manual'] ?? '');
 
+    // "Given by (nurse)": a system nurse/staff user, or a typed name for "Other".
+    // Required once the er_direct_controls migration is in; before it the field is
+    // not rendered and nothing here is enforced or stored.
+    $erCtl = erx_bill_ready($pdo);
+    $erNurseId = null; $erNurseManual = null; $erSessNo = null; $erSessTotal = null;
+    if ($erCtl) {
+        $nPost = (int) ($_POST['given_by_id'] ?? 0);
+        if ($nPost > 0) {
+            $nOk = $pdo->prepare("SELECT 1 FROM users WHERE id = ? AND is_active = 1 AND base_role = 'STAFF'");
+            $nOk->execute([$nPost]);
+            if ($nOk->fetchColumn()) { $erNurseId = $nPost; }
+        } else {
+            $m = mb_strtoupper(trim((string) ($_POST['given_by_manual'] ?? '')), 'UTF-8');
+            $erNurseManual = $m === '' ? null : mb_substr($m, 0, 255);
+        }
+        // Small optional ints: "session N" of "M per day". 1..20, else ignored.
+        $sn = trim((string) ($_POST['advice_session_no'] ?? ''));
+        $st = trim((string) ($_POST['advice_sessions_total'] ?? ''));
+        $erSessNo = (ctype_digit($sn) && (int) $sn >= 1 && (int) $sn <= 20) ? (int) $sn : null;
+        $erSessTotal = (ctype_digit($st) && (int) $st >= 1 && (int) $st <= 20) ? (int) $st : null;
+    }
+
     // Settling a bill moves money — refuse once the cashier's shift is closed.
     $dayLock = require_day_open($pdo);
 
@@ -127,6 +151,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
         $error = 'Select a registered patient first.';
     } elseif (!$erDocId && !$erDocManual) {
         $error = 'Select the doctor for this ER service — pick "Other" to type a name.';
+    } elseif ($erCtl && !$erNurseId && !$erNurseManual) {
+        $error = 'Select who gave this service (nurse) — pick "Other" to type a name.';
+    } elseif ($erCtl && $erSessNo !== null && $erSessTotal !== null && $erSessNo > $erSessTotal) {
+        $error = 'Session number cannot be more than the advised sessions per day.';
     } elseif (!$paymentMethod) {
         $error = 'Choose how the patient is paying (Cash or Online).';
     } elseif (!$lines) {
@@ -145,15 +173,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'raise
 
             $invoiceNumber = generate_er_invoice_number($pdo);
 
-            $pdo->prepare('
-                INSERT INTO er_bills
-                    (invoice_number, patient_id, doctor_id, doctor_manual, subtotal, grand_total, status,
-                     payment_method, paid_amount, paid_at, paid_by_id, created_by_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
-            ')->execute([
-                $invoiceNumber, $patientId, $erDocId, $erDocManual, $subtotal, $grandTotal, $status,
-                $paymentMethod, $grandTotal, (int) $_SESSION['user_id'], (int) $_SESSION['user_id'],
-            ]);
+            // Column list is built from the schema guard so a pre-migration database
+            // keeps the original INSERT. paid_at is the NOW() literal, not a bind.
+            $insCols = ['invoice_number', 'patient_id', 'doctor_id', 'doctor_manual', 'subtotal', 'grand_total', 'status',
+                        'payment_method', 'paid_amount', 'paid_at', 'paid_by_id', 'created_by_id'];
+            $insHold = ['?', '?', '?', '?', '?', '?', '?', '?', '?', 'NOW()', '?', '?'];
+            $insVals = [$invoiceNumber, $patientId, $erDocId, $erDocManual, $subtotal, $grandTotal, $status,
+                        $paymentMethod, $grandTotal, (int) $_SESSION['user_id'], (int) $_SESSION['user_id']];
+            if ($erCtl) {
+                $insCols = array_merge($insCols, ['service_given_by_id', 'service_given_by_manual', 'advice_session_no', 'advice_sessions_total']);
+                $insHold = array_merge($insHold, ['?', '?', '?', '?']);
+                $insVals = array_merge($insVals, [$erNurseId, $erNurseManual, $erSessNo, $erSessTotal]);
+            }
+            $pdo->prepare('INSERT INTO er_bills (' . implode(', ', $insCols) . ') VALUES (' . implode(', ', $insHold) . ')')
+                ->execute($insVals);
             $erBillId = (int) $pdo->lastInsertId();
 
             $itemIns = $pdo->prepare('
@@ -239,6 +272,19 @@ $erSelDoctorManual = trim((string) ($_POST['doctor_manual'] ?? ''));
 if (!$erSelDoctorId && $erSelDoctorManual === '' && $selectedPatient) {
     $erSelDoctorId = (int) (last_seen_doctor_id($pdo, $selectedId) ?? 0);
 }
+
+// "Given by (nurse)" picker — only once the controls migration is in. Kept across
+// a failed POST like the doctor picker.
+$erCtlForm = erx_bill_ready($pdo);
+$erNurses = [];
+if ($erCtlForm) {
+    // Receptionists are STAFF too and so appear in this list - accepted (no separate nurse role exists).
+    $erNurses = $pdo->query("SELECT id, name FROM users WHERE base_role = 'STAFF' AND is_active = 1 ORDER BY name")->fetchAll();
+}
+$erSelNurseId = (int) ($_POST['given_by_id'] ?? 0);
+$erSelNurseManual = trim((string) ($_POST['given_by_manual'] ?? ''));
+$erSelSessNo = trim((string) ($_POST['advice_session_no'] ?? ''));
+$erSelSessTotal = trim((string) ($_POST['advice_sessions_total'] ?? ''));
 
 // Recent ER bills for context (voidable inline for admins).
 $canVoid = has_permission('FINANCIAL_VOID_BILL');
@@ -394,6 +440,41 @@ require __DIR__ . '/partials/sidebar.php';
                                    <?= ($erSelDoctorManual !== '' && !$erSelDoctorId) ? '' : 'hidden' ?>>
                         </div>
                     </div>
+
+                    <?php if ($erCtlForm): ?>
+                    <!-- Raise the bill BEFORE / at the service. The nurse's name and the
+                         paper advice's session number make each bill checkable against
+                         the nurse's register at shift close. -->
+                    <div class="card">
+                        <h2>Service given by</h2>
+                        <p class="sub">Raise this bill before or as the service is given &mdash; one bill per session.</p>
+                        <div class="fld">
+                            <label for="erNurse">Given by (nurse) <span style="color:var(--red,#dc2626);">*</span></label>
+                            <select id="erNurse" name="given_by_id" required>
+                                <option value="">Select nurse / staff&hellip;</option>
+                                <?php foreach ($erNurses as $n): ?>
+                                <option value="<?= (int) $n['id'] ?>" <?= $erSelNurseId === (int) $n['id'] ? 'selected' : '' ?>><?= htmlspecialchars($n['name']) ?></option>
+                                <?php endforeach; ?>
+                                <option value="__OTHER__" <?= ($erSelNurseManual !== '' && !$erSelNurseId) ? 'selected' : '' ?>>Other (type a name)&hellip;</option>
+                            </select>
+                            <input type="text" id="erNurseManual" name="given_by_manual" class="uc" placeholder="Nurse's name"
+                                   value="<?= htmlspecialchars($erSelNurseManual) ?>" style="margin-top:8px;"
+                                   <?= ($erSelNurseManual !== '' && !$erSelNurseId) ? '' : 'hidden' ?>>
+                        </div>
+                        <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;">
+                            <div class="fld" style="max-width:150px;">
+                                <label for="erSessNo">This is session no. <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                                <input id="erSessNo" name="advice_session_no" type="number" min="1" max="20" step="1" inputmode="numeric"
+                                       value="<?= htmlspecialchars($erSelSessNo) ?>" style="padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-input);font:inherit;background:var(--bg);color:var(--text);">
+                            </div>
+                            <div class="fld" style="max-width:170px;">
+                                <label for="erSessTotal">Advised sessions / day <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                                <input id="erSessTotal" name="advice_sessions_total" type="number" min="1" max="20" step="1" inputmode="numeric"
+                                       value="<?= htmlspecialchars($erSelSessTotal) ?>" style="padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-input);font:inherit;background:var(--bg);color:var(--text);">
+                            </div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="card">
                         <h2>3 &middot; Add services</h2>
@@ -580,6 +661,26 @@ require __DIR__ . '/partials/sidebar.php';
     sel.addEventListener('change', sync);
     sync();
 
+    if (sel.form) {
+        sel.form.addEventListener('submit', function () {
+            if (sel.value === '__OTHER__') { sel.disabled = true; }
+        });
+    }
+})();
+
+/* "Given by (nurse)": same Other-reveals-a-text-box pattern as the doctor. */
+(function () {
+    var sel = document.getElementById('erNurse');
+    var manual = document.getElementById('erNurseManual');
+    if (!sel || !manual) { return; }
+    function sync() {
+        var isOther = sel.value === '__OTHER__';
+        manual.hidden = !isOther;
+        manual.required = isOther;
+        if (!isOther) { manual.value = ''; }
+    }
+    sel.addEventListener('change', sync);
+    sync();
     if (sel.form) {
         sel.form.addEventListener('submit', function () {
             if (sel.value === '__OTHER__') { sel.disabled = true; }

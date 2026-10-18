@@ -42,6 +42,14 @@ $stmt = $pdo->prepare("
 $stmt->execute([$admissionId]);
 $bill = $stmt->fetch();
 if (!$bill) { http_response_code(404); exit('Admission invoice not found.'); }
+// A draft header raised at admit has no lines or totals yet - don't print a blank invoice.
+if ($bill['status'] === 'draft') {
+    echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Not billed yet</title></head>'
+       . '<body style="font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;color:#333;"><h2>Not billed yet</h2>'
+       . '<p>This admission has not been billed. The invoice appears here once the bill is finalised at discharge.</p>'
+       . '<p><a href="admission_discharge.php?id=' . (int) $admissionId . '">Go to the discharge &amp; billing page</a></p></body></html>';
+    exit;
+}
 
 $items = $pdo->prepare('SELECT * FROM admission_bill_items WHERE admission_bill_id = ? ORDER BY item_kind DESC, id');
 $items->execute([(int) $bill['id']]);

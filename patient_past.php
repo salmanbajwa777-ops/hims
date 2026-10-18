@@ -177,7 +177,7 @@ $pull(
        JOIN admissions a ON a.id = ab.admission_id
        JOIN visits v ON v.id = a.visit_id
        LEFT JOIN users du ON du.id = a.admitting_doctor_id
-      WHERE v.patient_id = ?
+      WHERE v.patient_id = ? AND ab.status <> 'draft'
       ORDER BY ab.id DESC",
     [$patientId],
     function ($r) {

@@ -34,6 +34,29 @@ if (!has_permission('RECEPTION_REGISTER_PATIENTS') && !has_permission('NURSING_R
 
 $firstName = explode(' ', trim($user['name']))[0] ?? 'there';
 
+// Reception hand-off of open admissions (Phase 4). Pass/accept are receptionist
+// actions (the same drawer-holders who close a shift). PRG so a refresh can't replay.
+require_once __DIR__ . '/config/billing.php';   // receptionists_with_drawer()
+require_once __DIR__ . '/config/handover_helpers.php';
+$uid = (int) $_SESSION['user_id'];
+$canHandOver = has_permission('RECEPTION_CLOSE_DAY');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canHandOver) {
+    $hoResult = ho_handle_post($pdo, $uid);
+    if ($hoResult !== null) {
+        $_SESSION['ho_flash'] = $hoResult;
+        header('Location: admissions.php');
+        exit;
+    }
+}
+$hoFlash = $_SESSION['ho_flash'] ?? null;
+unset($_SESSION['ho_flash']);
+// All three are empty until sql/add_admission_reception_handovers.sql is run.
+$myOpen = $canHandOver ? open_admissions_for_user($pdo, $uid) : [];
+$myOpenIds = array_flip(array_map(fn($r) => (int) $r['admission_id'], $myOpen));
+$passedToMe = $canHandOver ? handovers_passed_to_user($pdo, $uid) : [];
+$unaccepted = has_permission('ADMIN_RECEIVE_HANDOVER') ? pending_handovers_unaccepted($pdo) : [];
+$hoReceivers = ($myOpen && $canHandOver) ? receptionists_with_drawer($pdo) : [];
+
 // Two tabs on one page:
 //   current (default) — the live admissions board: everyone still admitted, plus
 //                       today's discharges. Not date-scoped, so a stay
@@ -133,6 +156,17 @@ tbody tr:first-child td { border-top: none; }
 .filter-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .filter-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--surface, #fff); color: var(--text); }
 .filter-form .q-field { min-width: 190px; flex: 1 1 190px; }
+/* Hand-off cards */
+.ho-card { padding: 14px 18px; margin-bottom: 14px; border: 1px solid var(--amber); }
+.ho-card h2 { font-size: 14px; margin: 0 0 8px; }
+.ho-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 0; border-top: 1px dotted var(--border); font-size: 13px; }
+.ho-row .pt { flex: 1 1 220px; font-weight: 600; }
+.ho-row .pt small { display: block; font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
+.ho-row form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+.ho-row input[type=text], .ho-row select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: var(--surface, #fff); color: var(--text); }
+.ho-btn { border: 1px solid var(--border); background: var(--surface, #fff); color: var(--text); border-radius: 8px; font: inherit; font-weight: 600; font-size: 12.5px; padding: 6px 12px; cursor: pointer; }
+.ho-btn.go { background: var(--primary-dark); color: #fff; border-color: var(--primary-dark); }
+details.pass-on summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; font-weight: 600; margin-top: 4px; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -171,6 +205,41 @@ require __DIR__ . '/partials/sidebar.php';
             <?php endif; ?>
         </form>
     </div>
+
+    <?php if ($hoFlash): ?>
+    <div class="alert" style="<?= !empty($hoFlash['ok']) ? 'background:var(--green-bg);color:var(--green-text);' : 'background:var(--red-bg);color:var(--red-text);' ?>font-weight:600;"><?= htmlspecialchars($hoFlash['msg']) ?></div>
+    <?php endif; ?>
+
+    <?php if (!$isPast && $passedToMe): ?>
+    <div class="card ho-card">
+        <h2>Passed to you (<?= count($passedToMe) ?>) &mdash; accept to take them over</h2>
+        <?php foreach ($passedToMe as $h): ?>
+        <div class="ho-row">
+            <div class="pt"><?= htmlspecialchars(strtoupper($h['patient_name'])) ?>
+                <small>from <?= htmlspecialchars($h['from_name']) ?> &middot; <?= date('d/m/Y h:i A', strtotime($h['passed_at'])) ?> &middot; &ldquo;<?= htmlspecialchars($h['note']) ?>&rdquo;</small></div>
+            <form method="POST" action="admissions.php" onsubmit="this.querySelector('button').disabled=true;">
+                <input type="hidden" name="action" value="accept_handover">
+                <input type="hidden" name="handover_id" value="<?= (int) $h['id'] ?>">
+                <input type="hidden" name="imp_csrf" value="<?= htmlspecialchars(imp_csrf_token()) ?>">
+                <?= imp_confirm_field('Accept this admission') ?>
+                <button class="ho-btn go" type="submit">Accept</button>
+            </form>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!$isPast && $unaccepted): ?>
+    <div class="card ho-card">
+        <h2>Passed on, not yet accepted (<?= count($unaccepted) ?>)</h2>
+        <?php foreach ($unaccepted as $u): ?>
+        <div class="ho-row">
+            <div class="pt"><?= htmlspecialchars(strtoupper($u['patient_name'])) ?><?= $u['stale'] ? ' &mdash; <span style="color:var(--red-text)">waiting ' . (int) $u['age_hours'] . 'h</span>' : '' ?>
+                <small>from <?= htmlspecialchars($u['from_name']) ?> to <?= htmlspecialchars($u['to_name'] ?: 'next receptionist') ?> &middot; <?= date('d/m/Y h:i A', strtotime($u['passed_at'])) ?> &middot; &ldquo;<?= htmlspecialchars($u['note']) ?>&rdquo;</small></div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
 
     <?php
     // Surface nurse-submitted discharges to whoever can bill them.
@@ -251,6 +320,25 @@ require __DIR__ . '/partials/sidebar.php';
                             <a class="edit-link" href="admission_discharge.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--amber-text);font-weight:700;font-size:12.5px;">Bill now &rarr;</a>
                             <?php else: ?>
                             <a class="edit-link" href="admission.php?id=<?= (int) $r['admission_id'] ?>" style="color:var(--primary);font-weight:600;font-size:12.5px;">Manage &rarr;</a>
+                            <?php endif; ?>
+                            <?php if (isset($myOpenIds[(int) $r['admission_id']])): ?>
+                            <details class="pass-on ho-row" style="border:none;padding:0;">
+                                <summary>Pass on&hellip;</summary>
+                                <form method="POST" action="admissions.php" onsubmit="this.querySelector('button').disabled=true;">
+                                    <input type="hidden" name="action" value="pass_admission">
+                                    <input type="hidden" name="admission_id" value="<?= (int) $r['admission_id'] ?>">
+                                    <input type="hidden" name="imp_csrf" value="<?= htmlspecialchars(imp_csrf_token()) ?>">
+                                    <input type="text" name="note" maxlength="500" required placeholder="Note for next receptionist" size="22">
+                                    <select name="to_user_id">
+                                        <option value="0">Anyone</option>
+                                        <?php foreach ($hoReceivers as $rc): if ((int) $rc['id'] === $uid) { continue; } ?>
+                                            <option value="<?= (int) $rc['id'] ?>"><?= htmlspecialchars(strtoupper($rc['name'])) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <?= imp_confirm_field('Pass this admission on') ?>
+                                    <button class="ho-btn" type="submit">Pass</button>
+                                </form>
+                            </details>
                             <?php endif; ?>
                         </td>
                     </tr>

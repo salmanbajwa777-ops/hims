@@ -352,6 +352,76 @@ try {
     // Not migrated yet — skip the section rather than break the summary.
 }
 
+// ---- Revenue exceptions (short-stay ER admissions) ----
+//
+// Same detectors as exceptions_report.php (config/revenue_exceptions.php), run
+// for TODAY. Records that need a look, not accusations: the section says so
+// itself, and a record with no recorded person is "Unknown", never a name.
+try {
+    require_once __DIR__ . '/../config/revenue_exceptions.php';
+    $rx = rx_collect($pdo, $today, $today);
+    $rc = rx_counts($rx);
+    $rxLines = [];
+    if ($rc['short'] > 0)           { $rxLines[] = $rc['short'] . ' bill(s) paid short (' . $rc['short_unresolved'] . ' with no write-off)'; }
+    if ($rc['zero'] > 0)            { $rxLines[] = $rc['zero'] . ' bill(s) at Rs 0 or discounted'; }
+    if ($rc['unbilled_closed'] > 0) { $rxLines[] = $rc['unbilled_closed'] . ' discharged with no bill'; }
+    if ($rc['voids'] > 0)           { $rxLines[] = $rc['voids'] . ' bill(s) voided'; }
+    if ($rc['waived'] > 0)          { $rxLines[] = $rc['waived'] . ' ER bill(s) waived at Rs 0'; }
+    if ($rc['removed'] > 0)         { $rxLines[] = $rc['removed'] . ' service(s) removed or voided from an admission'; }
+    if ($rc['late'] > 0)            { $rxLines[] = $rc['late'] . ' late-admission candidate(s)'; }
+    if ($rc['unbilled_active'] > 0) { $rxLines[] = $rc['unbilled_active'] . ' admitted patient(s) with no bill yet (live)'; }
+    // Live counts (not limited to today); each is 0 until its migration has run.
+    if ($rc['approvals_pending'] > 0) { $rxLines[] = $rc['approvals_pending'] . ' approval request(s) still awaiting a manager/admin'; }
+    if ($rc['ho_unaccepted'] > 0)     { $rxLines[] = $rc['ho_unaccepted'] . ' hand-over(s) not accepted after 12+ hours'; }
+    if ($rc['ho_orphans'] > 0)        { $rxLines[] = $rc['ho_orphans'] . ' open stay(s) owned by someone with no cash drawer'; }
+    if ($rc['reception_admits'] > 0)  { $rxLines[] = $rc['reception_admits'] . ' admission(s) marked by reception today' . ($rc['reception_late'] > 0 ? ' (' . $rc['reception_late'] . ' with an earlier record over ' . RX_LATE_GAP_MIN . ' min before)' : ''); }
+    // ER-direct counts (own guard: a failure here must not drop the lines above).
+    try {
+        require_once __DIR__ . '/../config/er_direct_exceptions.php';
+        $erxT = erx_all($pdo, $today, $today);
+        $erxLab = [
+            'er_register_mismatch'    => '%d ER register count(s) not matching the bills raised',
+            'er_no_register'          => '%d closing(s) with no ER register kept',
+            'er_void_waive_rate'      => '%d person(s) with a high ER void/waive rate',
+            'er_session_skipped'      => '%d ER bill(s) for a session with an earlier one missing',
+            'er_repeat_beyond_advice' => '%d patient(s) with more ER bills than advised sessions',
+        ];
+        foreach ($erxLab as $k => $fmt) {
+            $n = count($erxT[$k] ?? []);
+            if ($n > 0) { $rxLines[] = sprintf($fmt, $n); }
+        }
+    } catch (Throwable $ex) {
+        // ER-direct migration/detectors unavailable: skip these lines only.
+    }
+    if ($rxLines) {
+        $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">Revenue exceptions</h3>'
+            . '<p style="margin:0 0 6px;font-size:12px;color:#6b7a79;">Records that need a look, not proof of wrongdoing. Full detail and date range: Analytics &rarr; Revenue Exceptions.</p>'
+            . '<ul style="margin:0;padding-left:18px;font-size:12.5px;color:#41504f;">';
+        foreach ($rxLines as $l) { $body .= '<li>' . htmlspecialchars($l) . '</li>'; }
+        $body .= '</ul>';
+        $rxm = rx_user_matrix($rx);
+        $rxPer = [];
+        foreach ($rxm['rows'] as $nm => $row) {
+            $parts = [];
+            foreach ($rxm['cols'] as $k => $lab) {
+                if ($k !== 'admits' && $row[$k] > 0) { $parts[] = $row[$k] . ' ' . strtolower($lab); }
+            }
+            if ($parts) { $rxPer[] = htmlspecialchars($nm) . ': ' . implode(', ', $parts); }
+        }
+        if ($rxPer) {
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#41504f;"><strong>By person:</strong> ' . implode(' &middot; ', $rxPer) . '</p>';
+        }
+        foreach ($rx['unbilled_active'] as $u) {
+            if ($u['hours_open'] !== null && $u['hours_open'] >= 24) {
+                $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#b45309;">Still admitted with no bill: '
+                    . htmlspecialchars(rx_upper($u['patient_name'])) . ' &mdash; ' . htmlspecialchars((string) $u['hours_open']) . ' hours open.</p>';
+            }
+        }
+    }
+} catch (Throwable $e) {
+    // Report library or tables unavailable — skip the section, never break the summary.
+}
+
 if ($mailFails > 0) {
     $body .= '<p style="margin:16px 0 0;font-size:13px;color:#b3261e;"><strong>' . $mailFails
         . ' notification email(s) failed to send today</strong> — check the email_log table.</p>';

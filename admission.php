@@ -13,6 +13,7 @@ require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/permissions.php';
 require_once __DIR__ . '/config/billing.php';
 require_once __DIR__ . '/config/tokens.php';
+require_once __DIR__ . '/config/admission_bill.php';   // adm_void_service(), adm_has()
 refresh_session_permissions($pdo);
 
 $baseRole = $_SESSION['base_role'] ?? '';
@@ -140,11 +141,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_s
 // ---------------- Remove a service ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remove_service' && $canLog) {
     $sid = (int) ($_POST['service_id'] ?? 0);
-    $pdo->prepare('DELETE FROM admission_services WHERE id = ? AND admission_id = ?')->execute([$sid, $admissionId]);
-    // Removing a chargeable line is a money-affecting edit — audit it (matches the
-    // audit discipline on every other bill mutation).
-    audit_log($pdo, 'admission_service_removed', "Removed service #$sid from admission #$admissionId", $uid);
-    $flash = 'Service removed.';
+    // Soft void (voided_at / voided_by_id / void_reason) with a mandatory reason;
+    // the original amount is kept. adm_void_service() audits with before-values and
+    // falls back to the old hard DELETE only on a pre-migration schema.
+    $vr = adm_void_service($pdo, $sid, $admissionId, (string) ($_POST['void_reason'] ?? ''), $uid);
+    if ($vr['ok']) {
+        $flash = $vr['mode'] === 'void' ? 'Service voided.' : 'Service removed.';
+        // A bill that is already seeded keeps its own copy of the lines.
+        if ($vr['mode'] === 'void' && adm_has($pdo, 'admission_bills', 'items_seeded_at')) {
+            $seeded = $pdo->prepare('SELECT 1 FROM admission_bills WHERE admission_id = ? AND items_seeded_at IS NOT NULL');
+            $seeded->execute([$admissionId]);
+            if ($seeded->fetchColumn()) {
+                $flash .= ' The admission bill was already raised — reception must remove its line on the discharge screen.';
+            }
+        }
+    } else {
+        $err = $vr['error'];
+    }
 }
 
 // ---------------- Record vitals ----------------
@@ -279,6 +292,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
 $services = $pdo->prepare('SELECT * FROM admission_services WHERE admission_id = ? ORDER BY logged_at');
 $services->execute([$admissionId]);
 $services = $services->fetchAll();
+// $services keeps voided rows (struck through, original amount shown); every count
+// and total below uses $liveServices only. voided_at is absent pre-migration, so
+// the ?? null makes every row live there.
+$liveServices = array_values(array_filter($services, function ($r) { return ($r['voided_at'] ?? null) === null; }));
 
 // Vitals timeline (newest first). Tolerate the table not existing yet so a mid-deploy
 // gap degrades to "no vitals" rather than fataling the whole stay page.
@@ -334,7 +351,7 @@ if (!empty($vitals) && !empty($vitals[0]['recorded_at'])) {
 $vitalsOverdue = $isOpen && ($minsSinceVitals === null || $minsSinceVitals >= $vitalsIntervalMin);
 
 $servicesTotal = 0.0;
-foreach ($services as $s) { if ($s['is_billable']) { $servicesTotal += (float) $s['calculated_charge']; } }
+foreach ($liveServices as $s) { if ($s['is_billable']) { $servicesTotal += (float) $s['calculated_charge']; } }
 
 $erServices = $pdo->query("SELECT id, service_type, service_name, charge_type, base_charge FROM er_services_master WHERE status = 'ACTIVE' ORDER BY service_type, service_name")->fetchAll();
 // "Nurses" available to attend a stay = anyone who holds the short-stay attendance
@@ -513,19 +530,24 @@ require __DIR__ . '/partials/sidebar.php';
                             <tr><td colspan="<?= $hideMoney ? 5 : 6 ?>" class="muted" style="padding:18px 10px;">No services logged yet.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($services as $s): ?>
-                            <tr>
+                            <?php $isVoided = ($s['voided_at'] ?? null) !== null; ?>
+                            <tr<?= $isVoided ? ' style="opacity:.55;text-decoration:line-through;"' : '' ?>>
                                 <td class="mono"><?= date('H:i', strtotime($s['logged_at'])) ?></td>
-                                <td style="font-weight:600;"><?= htmlspecialchars($s['service_name']) ?></td>
+                                <td style="font-weight:600;"><?= htmlspecialchars($s['service_name']) ?><?= $isVoided ? ' <span style="text-decoration:none;display:inline-block;font-size:11px;font-weight:700;">VOID: ' . htmlspecialchars((string) ($s['void_reason'] ?? '')) . '</span>' : '' ?></td>
                                 <td><?= $s['charge_type'] === 'HOURLY' ? ((int) $s['duration_minutes']) . ' min' : ('×' . (int) $s['quantity']) ?></td>
                                 <?php if (!$hideMoney): ?><td class="mono">Rs <?= number_format((float) $s['calculated_charge']) ?></td><?php endif; ?>
                                 <td class="muted"><?= htmlspecialchars($s['logged_by_role']) ?></td>
                                 <?php if ($canLog): ?>
                                 <td>
-                                    <form method="POST" action="admission.php?id=<?= $admissionId ?>" style="display:inline;" onsubmit="return confirm('Remove this service?');">
+                                    <?php if (!$isVoided): ?>
+                                    <?php $voidable = adm_has($pdo, 'admission_services', 'voided_at'); ?>
+                                    <form method="POST" action="admission.php?id=<?= $admissionId ?>" style="display:inline;" data-void-form="<?= $voidable ? '1' : '0' ?>" onsubmit="if (this.dataset.voidForm === '1') { var r = prompt('Reason for voiding this service (required):'); if (!r || !r.trim()) { return false; } this.void_reason.value = r.trim(); return true; } return confirm('Remove this service?');">
                                         <input type="hidden" name="action" value="remove_service">
                                         <input type="hidden" name="service_id" value="<?= (int) $s['id'] ?>">
-                                        <button type="submit" class="link-btn">Remove</button>
+                                        <input type="hidden" name="void_reason" value="">
+                                        <button type="submit" class="link-btn"><?= $voidable ? 'Void' : 'Remove' ?></button>
                                     </form>
+                                    <?php endif; ?>
                                 </td>
                                 <?php endif; ?>
                             </tr>
@@ -561,7 +583,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-sub">Final bill is raised at discharge.</div>
                     <div class="est">
                         <div class="est-row"><span>Stay (<?= $billedHours ?> hr <?= $typeLabels[$adm['admission_type']] ?? '' ?>)</span><span class="mono">Rs <?= number_format($stayCharge) ?></span></div>
-                        <div class="est-row"><span>Services (<?= count($services) ?>)</span><span class="mono">Rs <?= number_format($servicesTotal) ?></span></div>
+                        <div class="est-row"><span>Services (<?= count($liveServices) ?>)</span><span class="mono">Rs <?= number_format($servicesTotal) ?></span></div>
                         <div class="est-row total"><span>Estimated total</span><span class="mono">Rs <?= number_format($runningTotal) ?></span></div>
                         <div class="est-note">Under 45 min bills a flat half-hour; beyond that, rounded down to the previous quarter-hour.</div>
                     </div>

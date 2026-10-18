@@ -37,9 +37,35 @@ require_once __DIR__ . '/doctors.php';
 // this, so the function_exists() guard at the call site swallowed the alert and
 // that admit notified nobody. require_once is a no-op where it is already loaded.
 require_once __DIR__ . '/notify.php';
+// Draft admission bill header, raised inside the admit transaction (see below).
+require_once __DIR__ . '/admission_bill.php';
+// rx_pre_admit_evidence() / RX_LATE_GAP_MIN: the live admit-gap uses the SAME
+// signals as the late-admission detector on the exceptions page.
+require_once __DIR__ . '/revenue_exceptions.php';
+
+/** Fixed reasons reception must pick from when it (not a doctor) marks an admit. */
+const ADMIT_RECEPTION_REASONS = ['Doctor did not mark it', 'Emergency - doctor busy', 'Walk-in direct admit', 'Other'];
+
+/**
+ * Validate the reception reason. Returns [value, error]; value is what is stored
+ * ('Other: <text>' for Other). Picking a reason is the ONLY requirement - it never
+ * blocks an emergency beyond that one click.
+ */
+function resolve_reception_admit_reason($pick, $other): array {
+    $pick = trim((string) $pick);
+    if (!in_array($pick, ADMIT_RECEPTION_REASONS, true)) {
+        return [null, 'Pick why reception is marking this admission (the doctor did not).'];
+    }
+    if ($pick !== 'Other') { return [$pick, '']; }
+    $txt = trim((string) preg_replace('/\s+/', ' ', (string) $other));
+    $len = function_exists('mb_strlen') ? mb_strlen($txt) : strlen($txt);
+    if ($len < 3) { return [null, 'Type the reason when you pick "Other".']; }
+    $txt = function_exists('mb_substr') ? mb_substr($txt, 0, 150) : substr($txt, 0, 150);
+    return ['Other: ' . $txt, ''];
+}
 
 function handle_admit_patient(PDO $pdo): array {
-    $out = ['ok' => false, 'error' => '', 'admission_id' => null];
+    $out = ['ok' => false, 'error' => '', 'admission_id' => null, 'notice' => ''];
 
     // Single admit key now. The legacy RECEPTION_ADMIT_PATIENTS was unified into
     // ADMISSION_ADMIT_PATIENT and back-granted to every prior holder in
@@ -89,6 +115,20 @@ function handle_admit_patient(PDO $pdo): array {
     // 3-role world: base_role is ADMIN/DOCTOR/STAFF, all valid in the widened
     // admitted_by_role audit enum. Fall back to STAFF for any legacy value.
     $admitRole = in_array($baseRole, ['ADMIN','DOCTOR','STAFF'], true) ? $baseRole : 'STAFF';
+
+    // Reception (anyone who is not a DOCTOR) must say why the doctor did not mark
+    // this admit themselves. Doctors' own admits carry no reason. Pre-migration
+    // (column absent) nothing is asked or stored, exactly as before.
+    $recReason = null;
+    $isReceptionAdmit = ($baseRole !== 'DOCTOR');
+    $hasReasonCol = adm_has($pdo, 'admissions', 'reception_admit_reason');
+    if ($isReceptionAdmit && $hasReasonCol) {
+        [$recReason, $reasonErr] = resolve_reception_admit_reason($_POST['reception_admit_reason'] ?? '', $_POST['reception_admit_reason_other'] ?? '');
+        if ($recReason === null) {
+            $out['error'] = $reasonErr;
+            return $out;
+        }
+    }
 
     $pdo->beginTransaction();
     try {
@@ -160,19 +200,55 @@ function handle_admit_patient(PDO $pdo): array {
         // this same INSERT, so the "awaiting nurse" state is unreachable for new
         // admits. The enum value is kept for stays created before this change,
         // which admission.php can still assign a nurse to.
-        $pdo->prepare('
-            INSERT INTO admissions
-                (visit_id, admission_type, admitted_by_id, admitted_by_role, admitted_at,
-                 assigned_nurse_id, assigned_at, admitting_doctor_id, admitting_doctor_manual, status)
-            VALUES (?, ?, ?, ?, NOW(), ?, NOW(), ?, ?, \'ACTIVE\')
-        ')->execute([
-            $visitId, $admType, $uid, $admitRole,
-            $nurseId, $docId, $docManual,
-        ]);
+        // Reception admits: minutes between NOW and the earliest earlier ER /
+        // doctor-visit event for this patient (previous 24h), kept only when it
+        // exceeds RX_LATE_GAP_MIN. Best-effort - a failure here never blocks an admit.
+        $gapMin = null;
+        if ($isReceptionAdmit && $hasReasonCol && adm_has($pdo, 'admissions', 'admit_gap_minutes')) {
+            try {
+                $pq = $pdo->prepare('SELECT patient_id FROM visits WHERE id = ?');
+                $pq->execute([$visitId]);
+                $ev = rx_pre_admit_evidence($pdo, (int) $pq->fetchColumn(), time(), ['er', 'visit'], $visitId);
+                if ($ev && $ev['gap_min'] > RX_LATE_GAP_MIN) {
+                    $gapMin = (int) $ev['gap_min'];
+                    $out['notice'] = 'Noted: this patient had an earlier ' . strtolower($ev['source']) . ' about '
+                        . $gapMin . ' minutes before this admission. The admission is open and unaffected; the gap is recorded for review.';
+                }
+            } catch (Throwable $e) { $gapMin = null; }
+        }
+        $admCols = ['visit_id', 'admission_type', 'admitted_by_id', 'admitted_by_role', 'admitted_at',
+                    'assigned_nurse_id', 'assigned_at', 'admitting_doctor_id', 'admitting_doctor_manual', 'status'];
+        $admVals = '?, ?, ?, ?, NOW(), ?, NOW(), ?, ?, \'ACTIVE\'';
+        $admArgs = [$visitId, $admType, $uid, $admitRole, $nurseId, $docId, $docManual];
+        if ($recReason !== null) {
+            $admCols[] = 'reception_admit_reason'; $admVals .= ', ?'; $admArgs[] = $recReason;
+            if (adm_has($pdo, 'admissions', 'admit_gap_minutes')) {
+                $admCols[] = 'admit_gap_minutes'; $admVals .= ', ?'; $admArgs[] = $gapMin;
+            }
+        }
+        $pdo->prepare('INSERT INTO admissions (' . implode(', ', $admCols) . ') VALUES (' . $admVals . ')')
+            ->execute($admArgs);
         $admissionId = (int) $pdo->lastInsertId();
 
         $pdo->prepare('UPDATE visits SET disposition = \'SHORT_STAY\', admission_type = ?, admitted_at = NOW() WHERE id = ?')
             ->execute([$admType, $visitId]);
+
+        // >>> BILL-DRAFT (billing): raise the draft admission_bills header in THIS
+        // transaction so every admission owns an invoice number from minute zero.
+        // Lines are seeded later by ensure_admission_bill() from discharged_at.
+        // No-op until sql/2026_10_admission_bill_approvals.sql adds items_seeded_at.
+        $billPatient = $pdo->prepare('SELECT patient_id FROM visits WHERE id = ?');
+        $billPatient->execute([$visitId]);
+        // A header failure (e.g. duplicate invoice number) must NEVER roll back the
+        // admission. A failed single INSERT is rolled back by the engine at statement
+        // level and leaves the open transaction usable, so swallow + log; the lazy
+        // ensure_admission_bill() on the discharge page creates the bill instead.
+        try {
+            adm_create_bill_header($pdo, $admissionId, (int) $billPatient->fetchColumn(), $uid);
+        } catch (Throwable $e) {
+            error_log('admit: bill header skipped for admission #' . $admissionId . ': ' . $e->getMessage());
+        }
+        // <<< BILL-DRAFT
 
         audit_log($pdo, 'patient_admitted', "Admitted visit #$visitId ($admType), admission #$admissionId by $admitRole, primary nurse #$nurseId", $uid);
 
@@ -187,6 +263,22 @@ function handle_admit_patient(PDO $pdo): array {
         if (function_exists('sheet_push')) {
             sheet_push($pdo, 'ADMISSION', $admissionId, $uid);
         }
+
+        // The doctor named on a RECEPTION admit is told they did not mark it
+        // (best-effort, after commit; notify_users() never throws).
+        if ($isReceptionAdmit && $hasReasonCol && $docId && (int) $docId !== $uid && function_exists('notify_users')) {
+            try {
+                $pn = $pdo->prepare('SELECT p.name, p.mrn FROM visits v JOIN patients p ON p.id = v.patient_id WHERE v.id = ?');
+                $pn->execute([$visitId]);
+                $pr = $pn->fetch();
+                notify_users($pdo, [(int) $docId], 'patient_admitted_by_reception',
+                    'You were named as admitting doctor but did not mark this admission',
+                    ($pr ? $pr['name'] . ' (MRN ' . $pr['mrn'] . ')' : 'A patient')
+                        . ' was admitted by reception' . ($recReason !== null ? ' — reason: ' . $recReason : '') . '.',
+                    'admission.php?id=' . $admissionId, 'Admission #' . $admissionId);
+            } catch (Throwable $e) { /* best-effort */ }
+        }
+        if ($out['notice'] !== '') { $_SESSION['admit_notice'] = $out['notice']; }
 
         $out['ok'] = true;
         $out['admission_id'] = $admissionId;

@@ -141,7 +141,11 @@ $sbGroups = [
              'perm' => 'RECEPTION_GENERATE_INVOICES'],
             ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php',
              'perm' => 'NURSING_RECORD_ADMISSIONS'],
-            ['slug' => 'ipd',         'label' => 'In-Door (IPD)',   'icon' => 'bed',      'href' => 'ipd_admissions.php',
+            // Review queue for zero / short / discounted / left-before-treatment stay
+            // bills. Admin + manager only (ADMISSION_APPROVE_WRITEOFF, already seeded).
+            ['slug' => 'admission_approvals', 'label' => 'Bill Approvals', 'icon' => 'receipt', 'href' => 'admission_approvals.php',
+             'perm' => 'ADMISSION_APPROVE_WRITEOFF'],
+            ['slug' => 'ipd',        'label' => 'In-Door (IPD)',   'icon' => 'bed',      'href' => 'ipd_admissions.php',
              'perm' => 'IPD_VIEW_WARD'],
             ['slug' => 'bookings',    'label' => 'Bookings',        'icon' => 'calendar', 'href' => 'bookings.php',
              'perm' => 'RECEPTION_MANAGE_BOOKINGS'],
@@ -299,6 +303,12 @@ $sbGroups = [
                 // admin always sees this, same as visit_log.php's own gate
                 // (guard_admin.php, not require_permission()).
                 ['slug' => 'visit_log', 'label' => 'Visit Log', 'icon' => 'receipt', 'href' => 'visit_log.php'],
+                // HAS a 'perm' on purpose: unlike the two admin-only links above,
+                // a MANAGER holding FINANCIAL_VIEW_REVENUE_EXCEPTIONS must SEE
+                // this (children of an admin group are filtered to perm-granted
+                // ones for non-admins). Admin holds every key.
+                ['slug' => 'exceptions_report', 'label' => 'Revenue Exceptions', 'icon' => 'chart', 'href' => 'exceptions_report.php',
+                 'perm' => 'FINANCIAL_VIEW_REVENUE_EXCEPTIONS'],
                 ['slug' => 'reports', 'label' => 'More Reports', 'icon' => 'chart', 'href' => '#', 'disabled' => true],
             ]],
         ],

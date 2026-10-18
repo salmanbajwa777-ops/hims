@@ -286,15 +286,17 @@ echo "6. UN-BILLED CARE CAPTURE — what ER structurally cannot record\n";
 echo str_repeat('-', 78) . "\n";
 
 if ($hasCol('admission_services', 'clinical_note')) {
+    // Voided lines are not care that was delivered — exclude once the column exists.
+    $erVoid = $hasCol('admission_services', 'voided_at') ? ' AND s.voided_at IS NULL' : '';
     $erSvc = $scalar(
         "SELECT COUNT(*) FROM admission_services s
          JOIN admissions a ON a.id = s.admission_id
-         WHERE a.admitted_at >= DATE_SUB(NOW(), INTERVAL ? DAY)", [$days]);
+         WHERE a.admitted_at >= DATE_SUB(NOW(), INTERVAL ? DAY)" . $erVoid, [$days]);
     $erSvcNoted = $scalar(
         "SELECT COUNT(*) FROM admission_services s
          JOIN admissions a ON a.id = s.admission_id
          WHERE a.admitted_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-           AND s.clinical_note IS NOT NULL AND s.clinical_note <> ''", [$days]);
+           AND s.clinical_note IS NOT NULL AND s.clinical_note <> ''" . $erVoid, [$days]);
     printf("  ER service lines                         %s\n", $n($erSvc));
     printf("    ...carrying a clinical note            %s\n", $n($erSvcNoted));
 } else {
