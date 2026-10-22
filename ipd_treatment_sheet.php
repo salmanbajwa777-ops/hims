@@ -168,7 +168,7 @@ table.ts tr:last-child td { border-bottom: none; }
 .ts-instr { color: var(--text-muted); font-size: 12px; font-style: italic; margin-top: 2px; }
 
 /* High-alert rows read differently at a glance, per spec 4.3. */
-tr.ts-high td { background: #CCD0CF; }
+tr.ts-high td { background: #FAE3BC; }
 .ts-hi-badge { display: inline-block; background: var(--danger); color: #CCD0CF; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; letter-spacing: .05em; vertical-align: middle; margin-left: 5px; }
 
 /* Pending rows are visibly not-yet-live. */

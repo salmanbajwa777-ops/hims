@@ -241,7 +241,7 @@ if ($bkStats) {
     if ((int) $bkStats['no_show'] > 0)   { $bkLine .= ', ' . (int) $bkStats['no_show'] . ' no-show'; }
     $body .= '<p style="margin:10px 0 0;font-size:12.5px;color:#4A5C6A;">Phone bookings today: ' . $bkLine . '.</p>';
     if ((int) $bkStats['still_open'] > 0) {
-        $body .= '<p style="margin:4px 0 0;font-size:12.5px;color:#4A5C6A;"><strong>'
+        $body .= '<p style="margin:4px 0 0;font-size:12.5px;color:#933B00;"><strong>'
             . (int) $bkStats['still_open'] . ' booking(s) still unconsumed</strong> — the 10 pm sweep will mark them no-show unless the patient arrives.</p>';
     }
 }
@@ -287,7 +287,7 @@ if ($byCashier) {
             . ((int) $c['exp_cnt'] > 0 ? ', ' . (int) $c['exp_cnt'] . ' exp' : '') . ')</span></td>'
             . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;">' . $fmt($c['cash_in']) . '</td>'
             . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;">' . $fmt($c['online_in']) . '</td>'
-            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;color:' . ((float) $c['expense_out'] > 0 ? '#4A5C6A' : '#4A5C6A') . ';">'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;color:' . ((float) $c['expense_out'] > 0 ? '#A9111B' : '#4A5C6A') . ';">'
             . ((float) $c['expense_out'] > 0 ? '− ' . $fmt($c['expense_out']) : $fmt(0)) . '</td>'
             . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;font-weight:bold;">' . $fmt($expected) . '</td>'
             . '</tr>';
@@ -333,7 +333,7 @@ try {
              ORDER BY pb.discount_decided_at DESC
         ")->fetchAll();
         foreach ($obj as $o) {
-            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#4A5C6A;"><strong>Objected:</strong> '
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#A9111B;"><strong>Objected:</strong> '
                 . htmlspecialchars($o['invoice_number']) . ' · '
                 . htmlspecialchars(mb_strtoupper((string) $o['patient_name'])) . ' · Rs '
                 . number_format((float) $o['manual_discount_amount'], 0)
@@ -343,7 +343,7 @@ try {
         }
 
         if ((int) $pd['unanswered'] > 0 || $autoClosed > 0) {
-            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#4A5C6A;">'
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#933B00;">'
                 . max((int) $pd['unanswered'], $autoClosed)
                 . ' discount(s) closed with no answer from the doctor within 24 hours.</p>';
         }
@@ -413,7 +413,7 @@ try {
         }
         foreach ($rx['unbilled_active'] as $u) {
             if ($u['hours_open'] !== null && $u['hours_open'] >= 24) {
-                $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#4A5C6A;">Still admitted with no bill: '
+                $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#933B00;">Still admitted with no bill: '
                     . htmlspecialchars(rx_upper($u['patient_name'])) . ' &mdash; ' . htmlspecialchars((string) $u['hours_open']) . ' hours open.</p>';
             }
         }
@@ -423,7 +423,7 @@ try {
 }
 
 if ($mailFails > 0) {
-    $body .= '<p style="margin:16px 0 0;font-size:13px;color:#4A5C6A;"><strong>' . $mailFails
+    $body .= '<p style="margin:16px 0 0;font-size:13px;color:#A9111B;"><strong>' . $mailFails
         . ' notification email(s) failed to send today</strong> — check the email_log table.</p>';
 }
 

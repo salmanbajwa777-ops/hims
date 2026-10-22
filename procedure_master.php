@@ -367,7 +367,7 @@ $headExtra = <<<CSS
 .assign-row .tax-cell { display: flex; align-items: center; gap: 7px; }
 .assign-row .tax-cell input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--primary); flex-shrink: 0; }
 .assign-row .tax-cell input[type=number] { width: 70px; }
-.remove-row { width: 28px; height: 28px; border: none; border-radius: 8px; background: #CCD0CF; color: #4A5C6A; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.remove-row { width: 28px; height: 28px; border: none; border-radius: 8px; background: #F9D9D6; color: #A9111B; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .remove-row svg { width: 13px; height: 13px; }
 .assign-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
 .add-assign-btn { background: none; border: 1px dashed var(--border); border-radius: 10px; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 9px 16px; }

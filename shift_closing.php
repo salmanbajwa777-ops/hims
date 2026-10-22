@@ -469,7 +469,7 @@ require __DIR__ . '/partials/sidebar.php';
 
 .close-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: var(--radius-btn); font: inherit; font-weight: 600; font-size: 14px; padding: 12px 22px; cursor: pointer; background: var(--primary-dark); color: #CCD0CF; width: 100%; }
 .close-btn:hover { background: var(--primary); }
-.close-btn.amber { background: var(--amber); color: #253745; }
+.close-btn.amber { background: var(--amber); color: #933B00; }
 .lock-note { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
 .alert-error { background: var(--red-bg); color: var(--red-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 500; }
 .closed-box { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-card); padding: 20px 22px; }

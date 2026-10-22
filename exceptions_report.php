@@ -112,7 +112,7 @@ $headExtra = <<<CSS
 .kpi .k { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
 .kpi .v { font-size: 24px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.caveat { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: #CCD0CF; border: 1px solid #CCD0CF; color: #4A5C6A; font-size: 12.5px; line-height: 1.5; }
+.caveat { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: #FAE3BC; border: 1px solid #FAE3BC; color: #933B00; font-size: 12.5px; line-height: 1.5; }
 .tag { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); white-space: nowrap; display: inline-block; margin: 1px 2px 1px 0; }
 .empty { padding: 20px 10px; }
 @media print { .sidebar, .mobile-bar, .range-form, .nav-group { display: none !important; } .main { margin: 0 !important; } }

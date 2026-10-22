@@ -72,14 +72,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             padding: 40px;
             width: 100%;
             max-width: 400px;
-            box-shadow: 0 10px 25px rgba(6,20,27,.08);
-            border: 1px solid #CCD0CF;
+            box-shadow: 0 10px 25px rgba(10,132,255,.08);
+            border: 1px solid #D6E5FB;
         }
-        .card h1 { margin: 0 0 4px; font-size: 20px; color: #06141B; }
-        .card p.subtitle { margin: 0 0 24px; color: #06141B; font-size: 13.5px; }
+        .card h1 { margin: 0 0 4px; font-size: 20px; color: #0A47C2; }
+        .card p.subtitle { margin: 0 0 24px; color: #0A47C2; font-size: 13.5px; }
         label { display: block; font-size: 13px; font-weight: 600; color: #253745; margin-bottom: 6px; }
         input[type="password"] {
-            width: 100%; padding: 10px 12px; border: 1px solid #CCD0CF; border-radius: 12px;
+            width: 100%; padding: 10px 12px; border: 1px solid #D6E5FB; border-radius: 12px;
             font-size: 14px; margin-bottom: 16px;
         }
         input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
@@ -89,12 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: #CCD0CF; font-size: 14px; font-weight: 600; cursor: pointer;
         }
         button:hover { opacity: .92; }
-        .error { background: #CCD0CF; color: #4A5C6A; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
-        .success { background: #CCD0CF; color: #4A5C6A; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+        .error { background: #F9D9D6; color: #A9111B; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+        .success { background: #D2F0D9; color: #17602A; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
         .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: var(--primary-accent); }
         .pw-wrap { position: relative; margin-bottom: 16px; }
         .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
-        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #06141B; padding: 4px; width: auto; margin: 0; display: flex; }
+        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #0A47C2; padding: 4px; width: auto; margin: 0; display: flex; }
         .pw-eye:hover { color: var(--primary); }
         .pw-eye svg { width: 18px; height: 18px; }
     </style>
@@ -133,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function pwToggle(id, btn) {
             var i = document.getElementById(id);
             i.type = i.type === 'password' ? 'text' : 'password';
-            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#06141B';
+            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#0A47C2';
         }
         </script>
         <a class="back-link" href="<?= $landingPage ?>">&larr; Back to dashboard</a>

@@ -1041,7 +1041,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .mrn { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); }
 .gender-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: #CCD0CF; color: var(--text-secondary); }
 .wa-link { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); text-decoration: none; font-size: 12.5px; }
-.wa-link svg { width: 15px; height: 15px; color: #9BA8AB; flex-shrink: 0; }
+.wa-link svg { width: 15px; height: 15px; color: #34C759; flex-shrink: 0; }
 .wa-link:hover { color: #4A5C6A; text-decoration: underline; }
 .unpaid-badge { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--red-bg); color: var(--red-text); white-space: nowrap; }
 .dc-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); white-space: nowrap; }
@@ -1051,7 +1051,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .edit-link:hover { text-decoration: underline; }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
-.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
+.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(10,132,255,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
 .panel-overlay.open { display: block; }
 .panel { max-width: 860px; margin: 0 auto; }
 
@@ -1085,7 +1085,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; background: var(--bg); color: var(--text); }
 .field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: var(--card); }
 .field input:disabled { background: var(--border); cursor: not-allowed; color: var(--text-muted); }
-.field input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(74,92,106,.12); }
+.field input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(255,59,48,.12); }
 .field .hint { font-size: 11.5px; color: var(--text-muted); }
 .field .hint.warn { color: var(--red-text); font-weight: 600; }
 .field .hint.ok { color: var(--green-text); font-weight: 600; }
@@ -1119,7 +1119,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .f > select { padding-top: 16px; padding-bottom: 2px; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 14px center; }
 .f > input:focus, .f > select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .f > input:disabled, .f > select:disabled { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
-.f > input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(74,92,106,.12); }
+.f > input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(255,59,48,.12); }
 
 .f .flabel { position: absolute; left: 15px; top: 23px; transform: translateY(-50%); pointer-events: none; font-size: 13.5px; font-weight: 500; color: var(--text-muted); transition: all .15s ease; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .f > input:focus ~ .flabel,
@@ -1168,7 +1168,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .form-footer .foot-note svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--primary); }
 @media (max-width: 720px) { .form-footer .foot-note { display: none; } }
 
-.match-banner { display: none; background: var(--amber-bg); border: 1px solid #CCD0CF; border-radius: 14px; padding: 14px 16px; gap: 12px; align-items: flex-start; color: var(--amber-text); font-size: 12.5px; }
+.match-banner { display: none; background: var(--amber-bg); border: 1px solid #FAE3BC; border-radius: 14px; padding: 14px 16px; gap: 12px; align-items: flex-start; color: var(--amber-text); font-size: 12.5px; }
 .match-banner.show { display: flex; }
 .match-banner svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 .match-banner .match-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -1575,7 +1575,7 @@ require __DIR__ . '/partials/sidebar.php';
 
 <!-- Follow-up "New invoice" panel (returning patient) -->
 <style>
-.fu-overlay { display:none; position:fixed; inset:0; background:rgba(6,20,27,.45); z-index:60; align-items:center; justify-content:center; padding:20px; }
+.fu-overlay { display:none; position:fixed; inset:0; background:rgba(10,132,255,.45); z-index:60; align-items:center; justify-content:center; padding:20px; }
 .fu-overlay.open { display:flex; }
 .fu-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:460px; box-shadow:var(--shadow-lg); overflow:hidden; }
 .fu-head { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 22px 4px; }
@@ -1658,7 +1658,7 @@ require __DIR__ . '/partials/sidebar.php';
      registration). Corrects demographics captured wrong at intake: name spelling,
      DOB, phone, email, CNIC, city/area, address. No delete control lives here. -->
 <style>
-.ep-overlay { display:none; position:fixed; inset:0; background:rgba(6,20,27,.45); z-index:70; align-items:center; justify-content:center; padding:20px; }
+.ep-overlay { display:none; position:fixed; inset:0; background:rgba(10,132,255,.45); z-index:70; align-items:center; justify-content:center; padding:20px; }
 .ep-overlay.open { display:flex; }
 .ep-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:620px; max-height:90vh; overflow-y:auto; box-shadow:var(--shadow-lg); }
 .ep-head { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 22px 4px; }
@@ -1826,7 +1826,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') epClose(); }
      "Yes" pre-fills doctor/purpose (still editable) and stashes booking_id; the
      SAVE consumes the booking, not this click. "No" leaves the booking live. -->
 <style>
-.bg-overlay { display:none; position:fixed; inset:0; background:rgba(6,20,27,.45); z-index:80; align-items:center; justify-content:center; padding:20px; }
+.bg-overlay { display:none; position:fixed; inset:0; background:rgba(10,132,255,.45); z-index:80; align-items:center; justify-content:center; padding:20px; }
 .bg-overlay.open { display:flex; }
 .bg-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:460px; box-shadow:var(--shadow-lg); overflow:hidden; }
 .bg-head { padding:20px 22px 6px; }

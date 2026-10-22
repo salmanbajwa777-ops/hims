@@ -218,11 +218,11 @@ $notes->execute([$admissionId]);
 $notes = $notes->fetchAll();
 
 $progressMeta = [
-    'IMPROVING'     => ['🟢', 'Improving',        '#9BA8AB'],
-    'STABLE'        => ['🟡', 'Stable',           '#9BA8AB'],
-    'SLOW'          => ['🟠', 'Slow Improvement', '#9BA8AB'],
-    'DETERIORATING' => ['🔴', 'Deteriorating',    '#4A5C6A'],
-    'CRITICAL'      => ['⚫', 'Critically Ill',   '#06141B'],
+    'IMPROVING'     => ['🟢', 'Improving',        '#34C759'],
+    'STABLE'        => ['🟡', 'Stable',           '#FF9500'],
+    'SLOW'          => ['🟠', 'Slow Improvement', '#FF9500'],
+    'DETERIORATING' => ['🔴', 'Deteriorating',    '#A9111B'],
+    'CRITICAL'      => ['⚫', 'Critically Ill',   '#0A47C2'],
 ];
 $nextReviewLabels = [
     'EVENING' => 'Evening Review', 'TOMORROW_AM' => 'Tomorrow Morning',
@@ -253,7 +253,7 @@ $headExtra = <<<CSS
 }
 .wr-field textarea { resize:vertical; min-height:56px; }
 .wr-field input:focus, .wr-field textarea:focus, .wr-field select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); background:#CCD0CF; }
-.wr-req { color:var(--red-text,#4A5C6A); }
+.wr-req { color:var(--red-text,#A9111B); }
 .prog-opts { display:flex; flex-wrap:wrap; gap:10px; }
 .prog-opt { display:flex; align-items:center; gap:8px; border:1px solid var(--border); border-radius:12px; padding:9px 14px; cursor:pointer; font-size:13.5px; font-weight:600; }
 .prog-opt input { position:absolute; opacity:0; width:0; height:0; }

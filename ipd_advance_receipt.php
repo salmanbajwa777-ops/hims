@@ -95,7 +95,7 @@ $methodLabel = pay_method_label($r['payment_method']);
     .sigs { margin-top: 20px; display: flex; gap: 24px; }
     .sig { flex: 1; border-top: 1px solid #9BA8AB; padding-top: 4px; font-size: 9.5px; color: #4A5C6A; text-align: center; }
     .foot { margin-top: 14px; border-top: 1px solid #CCD0CF; padding-top: 6px; font-size: 8.5px; color: #9BA8AB; display: flex; justify-content: space-between; }
-    .void { position: fixed; top: 42%; left: 50%; transform: translate(-50%,-50%) rotate(-22deg); font-size: 62px; font-weight: 800; color: rgba(74,92,106,.16); letter-spacing: .1em; pointer-events: none; }
+    .void { position: fixed; top: 42%; left: 50%; transform: translate(-50%,-50%) rotate(-22deg); font-size: 62px; font-weight: 800; color: rgba(255,59,48,.16); letter-spacing: .1em; pointer-events: none; }
     @media print { .noprint { display: none; } }
     .noprint { text-align: center; margin: 14px 0; }
     .noprint button { padding: 8px 20px; font: inherit; font-size: 13px; font-weight: 600; background: #4A5C6A; color: #CCD0CF; border: none; border-radius: 7px; cursor: pointer; }
@@ -153,7 +153,7 @@ $methodLabel = pay_method_label($r['payment_method']);
             present this receipt when settling.
         <?php endif; ?>
         <?php if ($isVoid): ?>
-            <br><b style="color:#4A5C6A;">This receipt was cancelled<?= $r['void_reason'] ? ' — ' . htmlspecialchars($r['void_reason']) : '' ?>.</b>
+            <br><b style="color:#A9111B;">This receipt was cancelled<?= $r['void_reason'] ? ' — ' . htmlspecialchars($r['void_reason']) : '' ?>.</b>
         <?php endif; ?>
     </div>
 

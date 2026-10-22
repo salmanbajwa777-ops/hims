@@ -231,9 +231,9 @@ $headExtra = <<<CSS
 .section-title { font-size: 15px; font-weight: 700; }
 .section-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .q-count-pills { display: flex; gap: 8px; }
-.status-pill.waiting { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.waiting { background: #FAE3BC; color: #933B00; }
 .status-pill.in-consult { background: var(--primary-light); color: var(--primary-dark); }
-.status-pill.done { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.done { background: #D2F0D9; color: #17602A; }
 
 /* ---------------------------------------------------------------------------
    Queue row — "State Stripe + Tinted Roles".
@@ -273,7 +273,7 @@ $headExtra = <<<CSS
                      background: linear-gradient(90deg, var(--primary-light) 0px, transparent 240px); }
 /* Done rows recede: a muted stripe, no wash. Seen patients should not compete
    with the ones still waiting. */
-.q-item.is-done { border-left-color: #CCD0CF; }
+.q-item.is-done { border-left-color: #34C759; }
 
 .q-token { font-weight: 700; font-size: 12.5px; color: var(--text-secondary); background: var(--card-alt);
            border: 1px solid var(--border); border-radius: 9px; padding: 6px 0; text-align: center; }
@@ -282,9 +282,9 @@ $headExtra = <<<CSS
 .q-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
          background: var(--card-alt); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; color: var(--text-secondary); }
 .q-tag-admit { background: var(--neutral-bg); color: var(--neutral); border-color: var(--border-strong); }
-.q-tag-free { background: var(--ok-bg); color: var(--ok); border-color: #CCD0CF; }
-.q-tag-revisit { background: var(--warn-bg); color: var(--warn); border-color: #CCD0CF; }
-.q-tag-note { background: var(--primary-light); color: var(--primary); border-color: #CCD0CF; }
+.q-tag-free { background: var(--ok-bg); color: var(--ok); border-color: #34C759; }
+.q-tag-revisit { background: var(--warn-bg); color: var(--warn); border-color: #FF9500; }
+.q-tag-note { background: var(--primary-light); color: var(--primary); border-color: #34C759; }
 
 /* ---- Equal cells, flush edge ----
    The reported "chaotic alignment" was buttons sizing to their own text, so
@@ -326,22 +326,22 @@ $headExtra = <<<CSS
 .q-span-2 { grid-column: span 2; }
 
 /* Role tints. Sage = clinical, stone = records, clay = money-leaving. */
-.btn-note { background: var(--primary-light); color: var(--primary); border-color: #CCD0CF; }
-.btn-note:hover { background: #CCD0CF; }
+.btn-note { background: var(--primary-light); color: var(--primary); border-color: #34C759; }
+.btn-note:hover { background: #D2F0D9; }
 .btn-hist { background: var(--neutral-bg); color: var(--neutral); border-color: var(--border-strong); }
-.btn-hist:hover { background: #CCD0CF; }
-.btn-money { background: var(--danger-bg); color: var(--danger); border-color: #CCD0CF; }
-.btn-money:hover { background: #CCD0CF; }
+.btn-hist:hover { background: #D2F0D9; }
+.btn-money { background: var(--danger-bg); color: var(--danger); border-color: #FF9500; }
+.btn-money:hover { background: #F9D9D6; }
 
 .wait-time { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .inline-form { display: inline; }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); display: inline-block; }
 .empty-state { text-align: center; color: var(--text-muted); font-size: 13px; padding: 40px 16px; line-height: 1.7; }
-.flash { background: #CCD0CF; border: 1px solid #CCD0CF; color: #4A5C6A; border-radius: 10px;
+.flash { background: #D2F0D9; border: 1px solid #CCD0CF; color: #17602A; border-radius: 10px;
          padding: 10px 14px; font-size: 13px; margin-bottom: 14px; }
 
 /* Note + history drawer. One overlay reused by every row; JS swaps the content. */
-.mq-modal { position: fixed; inset: 0; background: rgba(6,20,27,.45); display: none;
+.mq-modal { position: fixed; inset: 0; background: rgba(10,132,255,.45); display: none;
             align-items: center; justify-content: center; padding: 20px; z-index: 60; }
 .mq-modal.open { display: flex; }
 .mq-box { background: var(--card); border-radius: 16px; width: 100%; max-width: 560px;

@@ -146,7 +146,7 @@ $headExtra = <<<CSS
    app bar brings its own from assets/app.css. */
 
 .note-box { font-size: 12.5px; color: var(--text-secondary); background: var(--primary-light); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; line-height: 1.6; }
-.note-box.warn { color: #4A5C6A; background: rgba(155,168,171,.10); }
+.note-box.warn { color: #933B00; background: rgba(255,149,0,.10); }
 .stat-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
 .stat-chip { display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; border-radius: 12px; border: 1px solid var(--border); background: #CCD0CF; text-decoration: none; min-width: 104px; }
 .stat-chip.on { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.12); }
@@ -159,8 +159,8 @@ $headExtra = <<<CSS
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
 .doc-tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 3px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
 .doc-tag.INVOICE { color: var(--primary); background: rgba(74,92,106,.10); border-color: rgba(74,92,106,.28); }
-.doc-tag.ADMISSION { color: #4A5C6A; background: rgba(74,92,106,.10); border-color: rgba(74,92,106,.28); }
-.doc-tag.DISCHARGE { color: #4A5C6A; background: rgba(155,168,171,.12); border-color: rgba(155,168,171,.30); }
+.doc-tag.ADMISSION { color: #6B3A9E; background: rgba(175,82,222,.10); border-color: rgba(175,82,222,.28); }
+.doc-tag.DISCHARGE { color: #933B00; background: rgba(255,149,0,.12); border-color: rgba(255,149,0,.30); }
 .setup-list { margin: 10px 0 0 18px; padding: 0; font-size: 12.5px; line-height: 1.9; color: var(--text-secondary); }
 .setup-list code { background: rgba(6,20,27,.05); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 /* Eight columns incl. a wrapped error message: let the TABLE scroll on narrow

@@ -411,7 +411,7 @@ $headExtra = <<<CSS
 .a-status { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
 .a-status.PENDING_ASSIGNMENT { background: var(--amber-bg); color: var(--amber-text); }
 .a-status.ACTIVE { background: var(--green-bg); color: var(--green-text); }
-.a-status.DISCHARGE_IN_PROGRESS { background: #CCD0CF; color: #4A5C6A; }
+.a-status.DISCHARGE_IN_PROGRESS { background: #E8DCF6; color: #6B3A9E; }
 .a-status.DISCHARGED { background: #CCD0CF; color: var(--text-secondary); }
 .a-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start; }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 2px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
@@ -440,7 +440,7 @@ $headExtra = <<<CSS
 .vit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
 .vit-cadence { margin: 8px 0 2px; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--border); }
 .vit-cadence.ok  { color: var(--primary); background: rgba(74,92,106,.08); border-color: rgba(74,92,106,.35); }
-.vit-cadence.due { color: #4A5C6A; background: rgba(155,168,171,.10); border-color: rgba(155,168,171,.40); }
+.vit-cadence.due { color: #933B00; background: rgba(255,149,0,.10); border-color: rgba(255,149,0,.40); }
 .vit-grid label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .vit-grid input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
 .vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
@@ -449,7 +449,7 @@ $headExtra = <<<CSS
 .vitals-log th, .care-log th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
 .care-log td { white-space: normal; }
 .ev-tag { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); }
-.ev-tag.HANDOVER { background: #CCD0CF; color: #4A5C6A; }
+.ev-tag.HANDOVER { background: #E8DCF6; color: #6B3A9E; }
 .ev-tag.DOCTOR_VISIT { background: var(--green-bg); color: var(--green-text); }
 .care-form { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: end; margin: 14px 0; }
 .care-form label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }

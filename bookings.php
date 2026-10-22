@@ -279,7 +279,7 @@ $headExtra = <<<CSS
 
 /* Click-to-WhatsApp on the caller's number in the list (matches patients.php) */
 .wa-link { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); text-decoration: none; }
-.wa-link svg { width: 14px; height: 14px; color: #9BA8AB; flex-shrink: 0; }
+.wa-link svg { width: 14px; height: 14px; color: #34C759; flex-shrink: 0; }
 .wa-link:hover { color: #4A5C6A; text-decoration: underline; }
 
 /* Patient matches on the phone */
@@ -298,7 +298,7 @@ $headExtra = <<<CSS
 .bk-none.show { display: block; }
 
 /* Warnings (never blocks) */
-.bk-warn { display: none; background: var(--amber-bg, #CCD0CF); border: 1px solid #CCD0CF; border-radius: 12px; padding: 10px 14px; font-size: 12.5px; color: #4A5C6A; }
+.bk-warn { display: none; background: var(--amber-bg, #FAE3BC); border: 1px solid #FAE3BC; border-radius: 12px; padding: 10px 14px; font-size: 12.5px; color: #933B00; }
 .bk-warn.show { display: block; }
 
 /* ---------- Day list ---------- */
@@ -316,14 +316,14 @@ $headExtra = <<<CSS
 .mono { font-variant-numeric: tabular-nums; }
 .bk-pill { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; white-space: nowrap; display: inline-block; }
 .bk-pill.booked { background: var(--primary-light); color: var(--primary-dark); }
-.bk-pill.arrived { background: #CCD0CF; color: #4A5C6A; }
-.bk-pill.cancelled { background: #CCD0CF; color: #4A5C6A; }
-.bk-pill.no_show { background: #CCD0CF; color: #4A5C6A; }
+.bk-pill.arrived { background: #E8DCF6; color: #6B3A9E; }
+.bk-pill.cancelled { background: #F9D9D6; color: #A9111B; }
+.bk-pill.no_show { background: #FAE3BC; color: #933B00; }
 .bk-acts { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 /* ---------- Cancel dialog ---------- */
-.cx-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
+.cx-overlay { display: none; position: fixed; inset: 0; background: rgba(10,132,255,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
 .cx-overlay.open { display: flex; }
 .cx-modal { background: var(--card); border-radius: var(--radius-card); width: 100%; max-width: 420px; box-shadow: var(--shadow-lg); overflow: hidden; }
 .cx-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 6px; }
@@ -551,7 +551,7 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
             <div class="cx-foot">
                 <button type="button" class="btn secondary" onclick="closeCancel()">Keep booking</button>
-                <button type="submit" class="btn" style="background:var(--red, #4A5C6A);">Cancel booking</button>
+                <button type="submit" class="btn" style="background:var(--red, #A9111B);">Cancel booking</button>
             </div>
         </form>
     </div>

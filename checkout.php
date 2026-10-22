@@ -292,10 +292,10 @@ $headExtra = <<<CSS
 <style>
 /* The page header styles are gone with the header itself — the shared
    app bar brings its own from assets/app.css. */
-.status-pill.draft { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.draft { background: #FAE3BC; color: #933B00; }
 .status-pill.finalized { background: var(--primary-light); color: var(--primary-dark); }
 .status-pill.paid { background: var(--green-bg); color: var(--green-text); }
-.status-pill.waived { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.waived { background: #D2F0D9; color: #17602A; }
 .item-row-form { display: grid; grid-template-columns: 1fr 90px 130px auto; gap: 10px; align-items: end; margin-top: 14px; }
 .item-row-form label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
 .item-row-form input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; }
@@ -443,13 +443,13 @@ require __DIR__ . '/partials/sidebar.php';
                             <a class="btn secondary" href="refund.php?bill_id=<?= (int) $activeBill['id'] ?>" style="color:var(--red-text);">Refund</a>
                         <?php endif; ?>
                         <?php if (array_key_exists('voided_at', $activeBill) && !empty($activeBill['voided_at'])): ?>
-                            <span style="align-self:center; font-size:12px; font-weight:700; color:#4A5C6A; background:#CCD0CF; padding:5px 10px; border-radius:6px;">VOIDED</span>
+                            <span style="align-self:center; font-size:12px; font-weight:700; color:#A9111B; background:#F9D9D6; padding:5px 10px; border-radius:6px;">VOIDED</span>
                         <?php elseif (has_permission('FINANCIAL_VOID_BILL')): ?>
                             <form method="POST" action="checkout.php" onsubmit="var r=prompt('Void invoice <?= htmlspecialchars($activeBill['invoice_number'], ENT_QUOTES) ?>? It stays on record but is removed from every total. Void any refund on it first.\n\nReason for voiding:'); if(!r){return false;} this.void_reason.value=r; return true;">
                                 <input type="hidden" name="action" value="void_bill">
                                 <input type="hidden" name="bill_id" value="<?= (int) $activeBill['id'] ?>">
                                 <input type="hidden" name="void_reason" value="">
-                                <button type="submit" class="btn secondary" style="color:#4A5C6A;">Void Invoice</button>
+                                <button type="submit" class="btn secondary" style="color:#A9111B;">Void Invoice</button>
                             </form>
                         <?php endif; ?>
                     <?php endif; ?>

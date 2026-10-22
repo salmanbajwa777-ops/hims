@@ -1015,10 +1015,10 @@ $headExtra = <<<CSS
 .limit-meter { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg); }
 .limit-meter .lm-row { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 7px; }
 .limit-meter .lm-row strong { color: var(--text); font-variant-numeric: tabular-nums; }
-.limit-bar { height: 7px; border-radius: 999px; background: rgba(6,20,27,.08); overflow: hidden; }
+.limit-bar { height: 7px; border-radius: 999px; background: rgba(10,132,255,.08); overflow: hidden; }
 .limit-bar span { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
-.limit-bar span.warn { background: #9BA8AB; }
-.limit-bar span.over { background: var(--red, #4A5C6A); }
+.limit-bar span.warn { background: #FF9500; }
+.limit-bar span.over { background: var(--red, #A9111B); }
 
 .filters { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 14px; }
 .filters .f-group { margin: 0; }
@@ -1028,20 +1028,20 @@ $headExtra = <<<CSS
 .row-voided .exp-amt { text-decoration: line-through; }
 .exp-amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .exp-no { font-size: 12px; font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
-.void-chip { font-size: 11px; font-weight: 700; color: var(--red-text); background: rgba(74,92,106,.09); border: 1px solid rgba(74,92,106,.24); border-radius: 20px; padding: 2px 8px; }
+.void-chip { font-size: 11px; font-weight: 700; color: var(--red-text); background: rgba(255,59,48,.09); border: 1px solid rgba(255,59,48,.24); border-radius: 20px; padding: 2px 8px; }
 .st-chip { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 9px; white-space: nowrap; display: inline-block; }
-.st-pending  { color: #4A5C6A; background: rgba(155,168,171,.13); border: 1px solid rgba(155,168,171,.34); }
+.st-pending  { color: #933B00; background: rgba(255,149,0,.13); border: 1px solid rgba(255,149,0,.34); }
 .st-approved { color: var(--primary); background: rgba(74,92,106,.11); border: 1px solid rgba(74,92,106,.28); }
-.st-rejected { color: var(--red-text, #4A5C6A); background: rgba(74,92,106,.09); border: 1px solid rgba(74,92,106,.24); }
-.st-over { color: #4A5C6A; background: rgba(155,168,171,.12); border: 1px solid rgba(155,168,171,.32); margin-top: 3px; }
-.over-warn { background: rgba(155,168,171,.10); border: 1px solid rgba(155,168,171,.30); color: #4A5C6A; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin: -4px 0 14px; display: none; }
+.st-rejected { color: var(--red-text, #A9111B); background: rgba(255,59,48,.09); border: 1px solid rgba(255,59,48,.24); }
+.st-over { color: #933B00; background: rgba(255,149,0,.12); border: 1px solid rgba(255,149,0,.32); margin-top: 3px; }
+.over-warn { background: rgba(255,149,0,.10); border: 1px solid rgba(255,149,0,.30); color: #933B00; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin: -4px 0 14px; display: none; }
 /* Earned-share readout under the doctor picker. Neutral while it reports a
    clean figure; amber once something needs a second look (nothing earned that
    month, or a disbursement already posted for it). */
 .earned-box { margin-top: 10px; border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5;
               background: var(--primary-light, rgba(74,92,106,.08)); border: 1px solid var(--border); }
 .earned-box .muted { color: var(--text-muted); font-weight: 400; }
-.earned-box.warn { background: rgba(155,168,171,.10); border-color: rgba(155,168,171,.30); color: #4A5C6A; }
+.earned-box.warn { background: rgba(255,149,0,.10); border-color: rgba(255,149,0,.30); color: #933B00; }
 .earned-box .warn-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(6,20,27,.15); }
 .earned-box .stream-line { margin-top: 4px; font-size: 12px; }
 .over-warn.show { display: block; }
@@ -1074,14 +1074,14 @@ $headExtra = <<<CSS
 .pending-head .ph-t { font-size: 11.5px; font-weight: 700; text-transform: uppercase;
                       letter-spacing: .06em; color: var(--text-secondary); }
 .pending-head .ph-badge { background: var(--amber-bg); color: var(--amber-text);
-                          border: 1px solid rgba(155,168,171,.34); border-radius: 20px;
+                          border: 1px solid rgba(255,149,0,.34); border-radius: 20px;
                           font-size: 11px; font-weight: 700; padding: 1px 8px;
                           font-variant-numeric: tabular-nums; }
 .pending-head .ph-note { font-size: 11.5px; color: var(--text-muted); }
 
 .pend-card { background: var(--card, #CCD0CF); border: 1px solid var(--border); border-radius: 12px;
              padding: 12px 14px; margin-bottom: 8px; }
-.pend-card.over { border-color: rgba(155,168,171,.40); background: var(--amber-bg); }
+.pend-card.over { border-color: rgba(255,149,0,.40); background: var(--amber-bg); }
 .pend-card.pend-extra { display: none; }
 .pend-card.pend-extra.show { display: block; }
 .pend-card .pc-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
@@ -1092,19 +1092,19 @@ $headExtra = <<<CSS
 .pend-card .pc-flags { margin-top: 7px; }
 .pend-card .pc-acts { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px;
                       border-top: 1px solid var(--border); }
-.pend-card.over .pc-acts { border-top-color: rgba(155,168,171,.34); }
+.pend-card.over .pc-acts { border-top-color: rgba(255,149,0,.34); }
 .pend-card .pc-status { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
                         font-size: 12px; color: var(--text-muted); font-weight: 600; }
-.pend-card.over .pc-status { border-top-color: rgba(155,168,171,.34); }
+.pend-card.over .pc-status { border-top-color: rgba(255,149,0,.34); }
 /* 44px matches the app-wide touch-target floor in assets/app.css — an approval
    tap on a phone is the primary use case for this whole screen. */
 .pbtn { width: 100%; min-height: 44px; border-radius: 9px; border: 1px solid transparent;
         font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .pbtn.p-ok { background: var(--primary); color: #CCD0CF; }
 .pbtn.p-ok:hover { background: var(--primary-dark); }
-.pbtn.p-no { background: transparent; color: var(--red-text); border-color: rgba(74,92,106,.34); }
+.pbtn.p-no { background: transparent; color: var(--red-text); border-color: rgba(255,59,48,.34); }
 .pbtn.p-no:hover { background: var(--red-bg); }
-.pbtn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(74,92,106,.28); }
+.pbtn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(52,199,89,.28); }
 .pend-more { display: block; width: 100%; padding: 10px; font: inherit; font-size: 12.5px;
              font-weight: 600; color: var(--primary); background: var(--card, #CCD0CF);
              border: 1px dashed var(--border-strong); border-radius: 10px; cursor: pointer; }
@@ -1117,7 +1117,7 @@ $headExtra = <<<CSS
            background: #CCD0CF; color: var(--text-secondary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .sub-btn:hover { border-color: var(--primary); }
 .sub-btn.on { background: var(--primary); color: #CCD0CF; border-color: var(--primary); }
-.sub-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(74,92,106,.28); }
+.sub-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(52,199,89,.28); }
 .meter-box { border: 1px solid var(--border); border-radius: 11px; padding: 12px 13px; background: var(--bg); margin-bottom: 13px; }
 .meter-head { font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;
               letter-spacing: .06em; margin-bottom: 9px; }
@@ -1126,14 +1126,14 @@ $headExtra = <<<CSS
 .meter-grid input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px;
                     font: inherit; font-size: 13.5px; background: #CCD0CF; font-variant-numeric: tabular-nums; }
 .meter-grid input:disabled { background: var(--bg); color: var(--text-muted); }
-.meter-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.18); }
+.meter-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(52,199,89,.18); }
 .meter-calc { margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border-strong);
               font-size: 12.5px; color: var(--text-secondary); }
 .meter-calc .mc-row { display: flex; justify-content: space-between; gap: 10px; }
 .meter-calc b { color: var(--text); font-variant-numeric: tabular-nums; }
 .meter-warn { margin-top: 9px; border-radius: 9px; padding: 9px 11px; font-size: 12.3px; font-weight: 600; line-height: 1.5; }
-.meter-warn.bad  { background: var(--red-bg); border: 1px solid rgba(74,92,106,.28); color: var(--red-text); }
-.meter-warn.warn { background: var(--amber-bg); border: 1px solid rgba(155,168,171,.34); color: var(--amber-text); }
+.meter-warn.bad  { background: var(--red-bg); border: 1px solid rgba(255,59,48,.28); color: var(--red-text); }
+.meter-warn.warn { background: var(--amber-bg); border: 1px solid rgba(255,149,0,.34); color: var(--amber-text); }
 
 /* Bulk approve bar. Sits above the table and stays put while the list scrolls
    under it, so a long pending run does not mean scrolling back up to act. */
@@ -1145,7 +1145,7 @@ $headExtra = <<<CSS
 .bulk-bar .bulk-actions { margin-left: auto; display: flex; gap: 8px; }
 .bulk-bar button[disabled] { opacity: .45; cursor: not-allowed; }
 .bulk-bar.has-sel { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.10); }
-.btn.ghost { background: none; color: var(--red-text, #4A5C6A); border: 1px solid rgba(74,92,106,.30); }
+.btn.ghost { background: none; color: var(--red-text, #A9111B); border: 1px solid rgba(255,59,48,.30); }
 input.bulk-pick, #bulkAll { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
 tr.row-sel td { background: rgba(74,92,106,.055); }
 

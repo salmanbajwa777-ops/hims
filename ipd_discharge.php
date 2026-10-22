@@ -314,7 +314,7 @@ $headExtra = <<<CSS
 .tot-row.due { font-weight:700; font-size:15.5px; background:var(--bg); margin:6px -8px 0; padding:9px 8px; border-radius:8px; }
 .tot-row.due.ret span { color:var(--red-text); }
 .adv-chip { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:20px; background:var(--primary-light); color:var(--primary-dark); margin-left:4px; }
-.adv-banner { background:#CCD0CF; border:1px solid #CCD0CF; color:#4A5C6A; border-radius:8px; padding:11px 13px; font-size:12.5px; margin-bottom:14px; }
+.adv-banner { background:#FAE3BC; border:1px solid #FAE3BC; color:#933B00; border-radius:8px; padding:11px 13px; font-size:12.5px; margin-bottom:14px; }
 .adv-banner b { display:block; margin-bottom:2px; font-size:13px; }
 .svc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
 .svc-table th, .svc-table td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--border); vertical-align:top; }

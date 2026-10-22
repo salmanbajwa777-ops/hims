@@ -166,14 +166,14 @@ $headExtra = <<<CSS
 
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
-.up { color: #4A5C6A; font-weight: 700; }
-.down { color: #4A5C6A; font-weight: 700; }
+.up { color: #17602A; font-weight: 700; }
+.down { color: #A9111B; font-weight: 700; }
 .flat { color: var(--text-muted); }
 
 /* Waterfall from gross to what the clinic keeps. */
 .ladder { list-style: none; margin: 0; padding: 0; max-width: 520px; }
 .ladder li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
-.ladder li.deduct .amt { color: #4A5C6A; }
+.ladder li.deduct .amt { color: #A9111B; }
 .ladder li.final { border-bottom: 0; border-top: 2px solid var(--border); font-weight: 800; font-size: 15px; padding-top: 12px; }
 .ladder .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ladder .lbl small { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 400; }
@@ -230,7 +230,7 @@ $periodQs = $mode === 'compare'
     ? 'mode=compare&from=' . urlencode($aStart) . '&to=' . urlencode($aEnd) . '&from2=' . urlencode($bStart) . '&to2=' . urlencode($bEnd)
     : ($mode === 'range' ? 'mode=range&from=' . urlencode($aStart) . '&to=' . urlencode($aEnd) : 'month=' . urlencode($month));
 
-$pieColors = ['#4A5C6A', '#4A5C6A', '#9BA8AB', '#9BA8AB', '#9BA8AB', '#9BA8AB'];
+$pieColors = ['#4A5C6A', '#4A5C6A', '#9BA8AB', '#34C759', '#FF9500', '#FF9500'];
 ?>
         <?php /* The page's own mini-header (title + date + Logout) is gone: the
                  shared app bar above carries date and Logout on every page,

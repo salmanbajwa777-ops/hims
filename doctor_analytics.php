@@ -652,8 +652,8 @@ $headExtra = <<<CSS
 
 /* Comparison line under the shared period chart */
 .cmp-line { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; }
-.cmp-line .up { color: #4A5C6A; font-weight: 700; }
-.cmp-line .down { color: #4A5C6A; font-weight: 700; }
+.cmp-line .up { color: #17602A; font-weight: 700; }
+.cmp-line .down { color: #A9111B; font-weight: 700; }
 .cmp-line .muted { color: var(--text-muted); }
 
 /* Summary cards */
@@ -677,7 +677,7 @@ $headExtra = <<<CSS
 .split-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; position: relative; overflow: hidden; }
 .split-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--stripe, var(--primary-accent)); }
 .split-card.opd { --stripe: var(--primary-accent); }
-.split-card.ipd { --stripe: #4A5C6A; }
+.split-card.ipd { --stripe: #0A47C2; }
 .split-card.proc { --stripe: #4A5C6A; }
 .split-card .split-top { margin-bottom: 12px; }
 .split-card .split-name { font-size: 13px; font-weight: 700; }
@@ -704,7 +704,7 @@ $headExtra = <<<CSS
 .settle-row.sub .val { font-size: 12.5px; font-weight: 500; color: var(--text-muted); }
 .settle-row.sub:last-of-type { padding-bottom: 14px; }
 .settle-final { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--primary-dark); color: var(--on-primary); padding: 20px; margin-top: 4px; }
-.settle-final .flab { font-size: 12px; font-weight: 600; color: var(--text-on-dark, #CCD0CF); text-transform: uppercase; letter-spacing: .05em; }
+.settle-final .flab { font-size: 12px; font-weight: 600; color: var(--text-on-dark, #D2F0D9); text-transform: uppercase; letter-spacing: .05em; }
 .settle-final .fnote { font-size: 11.5px; color: #4A5C6A; margin-top: 3px; }
 .settle-final .fval { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .settle-final .fval .cur { font-size: 14px; font-weight: 600; opacity: .75; margin-right: 4px; }
@@ -985,7 +985,7 @@ require __DIR__ . '/partials/head.php';
                         <span class="val tnum"><?= fmt_amt($poOpd) ?> PKR</span>
                     </div>
                     <div class="settle-row sub">
-                        <span class="lab"><span class="dotk" style="background:#4A5C6A"></span>IPD earned</span>
+                        <span class="lab"><span class="dotk" style="background:#0A47C2"></span>IPD earned</span>
                         <span class="val tnum"><?= fmt_amt($poIpd) ?> PKR</span>
                     </div>
                     <div class="settle-row sub">
@@ -1072,7 +1072,7 @@ require __DIR__ . '/partials/head.php';
                     <div class="rv-tiers">
                         <div class="rv-tier"><span class="dotk" style="background:var(--green)"></span>Free<b class="tnum"><?= $rvTierCounts['FREE_FOLLOWUP'] ?></b></div>
                         <div class="rv-tier"><span class="dotk" style="background:#9BA8AB"></span>50%<b class="tnum"><?= $rvTierCounts['HALF_FOLLOWUP'] ?></b></div>
-                        <div class="rv-tier"><span class="dotk" style="background:#9BA8AB"></span>75%<b class="tnum"><?= $rvTierCounts['THREE_QUARTER_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:#FF9500"></span>75%<b class="tnum"><?= $rvTierCounts['THREE_QUARTER_FOLLOWUP'] ?></b></div>
                         <div class="rv-tier"><span class="dotk" style="background:var(--primary)"></span>Full<b class="tnum"><?= $rvFullCount ?></b></div>
                     </div>
                 </div>
@@ -1148,7 +1148,7 @@ require __DIR__ . '/partials/head.php';
                         <div class="cnt tnum">Gross, before the split</div>
                     </div>
                     <div class="sum">
-                        <div class="lab"><span class="dotk" style="background:#9BA8AB"></span>Tax withheld</div>
+                        <div class="lab"><span class="dotk" style="background:#FF9500"></span>Tax withheld</div>
                         <div class="val tnum"><?= fmt_amt($procTot['tax']) ?> PKR</div>
                         <div class="cnt tnum">Taken off before your share</div>
                     </div>

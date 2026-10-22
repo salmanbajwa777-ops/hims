@@ -149,7 +149,7 @@ $headExtra = <<<CSS
 .ns-label { font-size: 14px; color: var(--text); font-weight: 600; }
 .ns-who { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
 .ns-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
-.ns-warn { font-size: 12px; color: #4A5C6A; background: #CCD0CF; border: 1px solid #CCD0CF;
+.ns-warn { font-size: 12px; color: #933B00; background: #FAE3BC; border: 1px solid #FAE3BC;
            border-radius: 7px; padding: 8px 11px; margin-top: 8px; line-height: 1.5; }
 
 /* In-app column: a fixed statement, never a control. */

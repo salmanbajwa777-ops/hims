@@ -88,7 +88,7 @@ $headExtra = <<<CSS
 .ap-st { font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; }
 .ap-st.PENDING { background:var(--amber-bg); color:var(--amber-text); }
 .ap-st.APPROVED { background:var(--green-bg); color:var(--green-text); }
-.ap-st.REJECTED { background:#CCD0CF; color:var(--red-text); }
+.ap-st.REJECTED { background:#F9D9D6; color:var(--red-text); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

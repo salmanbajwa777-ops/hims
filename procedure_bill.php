@@ -569,7 +569,7 @@ $headExtra = <<<CSS
 .raisebtn { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: var(--radius-btn); background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #CCD0CF; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
 .raisebtn[disabled] { opacity: .5; cursor: not-allowed; }
 .disc-note { font-size: 12px; color: var(--primary-dark); margin-top: 8px; }
-.consent-note { font-size: 12px; color: var(--amber-text, #4A5C6A); background: var(--amber-bg, #CCD0CF); border-radius: var(--radius-input); padding: 8px 11px; margin-top: 10px; }
+.consent-note { font-size: 12px; color: var(--amber-text, #933B00); background: var(--amber-bg, #FAE3BC); border-radius: var(--radius-input); padding: 8px 11px; margin-top: 10px; }
 /* Signer capture. Primary/sage rather than the amber above on purpose: this is
    not a warning. Nothing is blocked, the consent prints either way, and the
    fields only decide whether it prints pre-filled or with a rule to write on. */

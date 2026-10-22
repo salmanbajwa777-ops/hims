@@ -131,7 +131,7 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 tr.doc-row td { font-weight: 700; background: rgba(6,20,27,.02); }
 .self { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: rgba(74,92,106,.15); color: #4A5C6A; }
 .note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light, rgba(74,92,106,.08)); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
-.warn-note { border-left: 3px solid #4A5C6A; background: #CCD0CF; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 14px; }
+.warn-note { border-left: 3px solid #933B00; background: #FAE3BC; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 14px; }
 @media print {
     .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group, .appbar { display: none !important; }
     .main { margin: 0 !important; }

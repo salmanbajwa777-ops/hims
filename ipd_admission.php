@@ -355,12 +355,12 @@ $headExtra = <<<CSS
 .adv-row.void { opacity: .75; }
 .adv-row.void .adv-no, .adv-row.void .adv-amt { text-decoration: line-through; color: var(--text-muted); }
 .adv-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); margin-left: 5px; }
-.adv-tag.void, .adv-tag.ret { background: #CCD0CF; color: var(--red-text); }
+.adv-tag.void, .adv-tag.ret { background: #F9D9D6; color: var(--red-text); }
 
 .a-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .a-status { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
 .a-status.ACTIVE { background: var(--green-bg); color: var(--green-text); }
-.a-status.DISCHARGE_IN_PROGRESS { background: #CCD0CF; color: #4A5C6A; }
+.a-status.DISCHARGE_IN_PROGRESS { background: #E8DCF6; color: #6B3A9E; }
 .a-status.DISCHARGED { background: #CCD0CF; color: var(--text-secondary); }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 2px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 14px; }
 .kv > div { padding: 10px 14px; border-right: 1px solid var(--border); }
@@ -378,7 +378,7 @@ $headExtra = <<<CSS
 .vitals-log th, .care-log th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
 .care-log td { white-space: normal; }
 .ev-tag { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); }
-.ev-tag.HANDOVER { background: #CCD0CF; color: #4A5C6A; }
+.ev-tag.HANDOVER { background: #E8DCF6; color: #6B3A9E; }
 .ev-tag.DOCTOR_VISIT { background: var(--green-bg); color: var(--green-text); }
 .ho-item { border-top: 1px solid var(--border); padding: 10px 0; font-size: 12.5px; }
 .ho-item:first-child { border-top: none; }

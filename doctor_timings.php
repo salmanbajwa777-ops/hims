@@ -227,9 +227,9 @@ $headExtra = <<<CSS
 .status-seg input { position: absolute; opacity: 0; pointer-events: none; }
 .status-seg span { display: block; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--text-secondary); border-left: 1px solid var(--border); white-space: nowrap; }
 .status-seg label:first-child span { border-left: none; }
-.status-seg input:checked + span.s-avail { background: #CCD0CF; color: #4A5C6A; }
-.status-seg input:checked + span.s-delay { background: #CCD0CF; color: #4A5C6A; }
-.status-seg input:checked + span.s-off { background: #CCD0CF; color: #4A5C6A; }
+.status-seg input:checked + span.s-avail { background: #D2F0D9; color: #17602A; }
+.status-seg input:checked + span.s-delay { background: #FAE3BC; color: #933B00; }
+.status-seg input:checked + span.s-off { background: #F9D9D6; color: #A9111B; }
 
 .time-stack { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .time-pair { display: inline-flex; align-items: center; gap: 6px; }
@@ -247,7 +247,7 @@ tr.has-sess2 .sess2-row { display: inline-flex; }
 .sess2-add:disabled { display: none; }
 tr.has-sess2 .sess2-add { display: none; }
 .sess2-remove { background: none; border: none; padding: 0 4px; font-size: 15px; line-height: 1; color: var(--text-muted); cursor: pointer; }
-.sess2-remove:hover { color: #4A5C6A; }
+.sess2-remove:hover { color: #A9111B; }
 
 .note-input { width: 100%; min-width: 160px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); color: var(--text); }
 .note-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }

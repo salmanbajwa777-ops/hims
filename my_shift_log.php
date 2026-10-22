@@ -99,7 +99,7 @@ $headExtra = <<<CSS
 .msl-num.neg { color: var(--danger); }
 .msl-tag { font-weight: 700; font-size: 11px; padding: 3px 9px; border-radius: 7px; display: inline-block; white-space: nowrap; }
 .msl-invoice { background: var(--ok-bg); color: var(--ok); }
-.msl-discount { background: #CCD0CF; color: #4A5C6A; }
+.msl-discount { background: #E8DCF6; color: #6B3A9E; }
 .msl-refund { background: var(--danger-bg); color: var(--danger); }
 .msl-discharge { background: var(--primary-light); color: var(--primary-dark); }
 .msl-rail { position: relative; }

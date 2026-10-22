@@ -257,10 +257,10 @@ $history = $historyStmt->fetchAll();
 :root {
     --primary-dark: #253745; --primary: #253745; --primary-light: #CCD0CF;
     --primary-accent: #4A5C6A;
-    --bg: #CCD0CF; --card: #CCD0CF; --border: #CCD0CF;
+    --bg: #CCD0CF; --card: #CCD0CF; --border: #D2F0D9;
     --text: #11212D; --text-muted: #4A5C6A;
-    --red-bg: #CCD0CF; --red-text: #4A5C6A;
-    --green-bg: #CCD0CF; --green-text: #4A5C6A;
+    --red-bg: #F9D9D6; --red-text: #A9111B;
+    --green-bg: #CCD0CF; --green-text: #17602A;
     --radius: 10px;
 }
 * { box-sizing: border-box; }
@@ -292,7 +292,7 @@ label.lbl { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-tra
 .overcap.show { display: block; }
 .btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: var(--radius); border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #CCD0CF; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: none; }
 .btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
-.btn.danger { background: #4A5C6A; }
+.btn.danger { background: #A9111B; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
 .foot { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
 table { width: 100%; border-collapse: collapse; }
@@ -435,7 +435,7 @@ require __DIR__ . '/partials/impersonation_banner.php';
             <?php foreach ($history as $h): $isVoid = !empty($h['voided_at']); ?>
                 <tr<?= $isVoid ? ' style="opacity:.55; text-decoration:line-through;"' : '' ?>>
                     <td class="mono"><?= htmlspecialchars($h['refund_number']) ?>
-                        <?php if ($isVoid): ?><span style="text-decoration:none; display:inline-block; margin-left:6px; font-size:10px; font-weight:700; color:#4A5C6A; background:#CCD0CF; padding:1px 6px; border-radius:5px;">VOID</span><?php endif; ?>
+                        <?php if ($isVoid): ?><span style="text-decoration:none; display:inline-block; margin-left:6px; font-size:10px; font-weight:700; color:#A9111B; background:#F9D9D6; padding:1px 6px; border-radius:5px;">VOID</span><?php endif; ?>
                     </td>
                     <td class="mono">Rs <?= number_format((float) $h['amount'], 2) ?></td>
                     <td><?= htmlspecialchars($h['reason']) ?></td>
@@ -448,7 +448,7 @@ require __DIR__ . '/partials/impersonation_banner.php';
                             <input type="hidden" name="action" value="void_refund">
                             <input type="hidden" name="refund_id" value="<?= (int) $h['id'] ?>">
                             <input type="hidden" name="void_reason" value="">
-                            <button type="submit" class="btn-ghost" style="color:#4A5C6A; font-size:12px;">Void</button>
+                            <button type="submit" class="btn-ghost" style="color:#A9111B; font-size:12px;">Void</button>
                         </form>
                         <?php endif; ?>
                     </td>

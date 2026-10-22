@@ -36,9 +36,9 @@ function vehicle_cost_panel(PDO $pdo, int $expenseId): void {
     $isHigh = ($v !== null && $v >= 25);
     $isBad  = ($ctx['flag'] === 'rollback');
 
-    $tone = $isBad ? '#4A5C6A' : ($isHigh ? '#4A5C6A' : '#253745');
-    $bg   = $isBad ? '#CCD0CF' : ($isHigh ? '#CCD0CF' : '#CCD0CF');
-    $bd   = $isBad ? '#CCD0CF' : ($isHigh ? '#CCD0CF' : '#CCD0CF');
+    $tone = $isBad ? '#A9111B' : ($isHigh ? '#933B00' : '#253745');
+    $bg   = $isBad ? '#F9D9D6' : ($isHigh ? '#FAE3BC' : '#CCD0CF');
+    $bd   = $isBad ? '#CCD0CF' : ($isHigh ? '#FF9500' : '#34C759');
 
     $mono = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
     ?>
@@ -52,14 +52,14 @@ function vehicle_cost_panel(PDO $pdo, int $expenseId): void {
         </div>
 
         <?php if ($isBad): ?>
-        <div style="margin-bottom:8px;font-weight:600;color:#4A5C6A;">
+        <div style="margin-bottom:8px;font-weight:600;color:#A9111B;">
             Meter reading is <b><?= number_format(abs((int) $ctx['meter'] - (int) $ctx['prev_meter'])) ?> km lower</b>
             than this vehicle's last reading
             (<?= number_format((int) $ctx['prev_meter']) ?> on <?= htmlspecialchars(date('d/m', strtotime($ctx['prev_date']))) ?>).
             Cost per km cannot be worked out for this fill.
         </div>
         <?php elseif ($ctx['flag'] === 'jump'): ?>
-        <div style="margin-bottom:8px;font-weight:600;color:#4A5C6A;">
+        <div style="margin-bottom:8px;font-weight:600;color:#933B00;">
             Jump of <?= number_format((int) $ctx['meter'] - (int) $ctx['prev_meter']) ?> km since the last
             reading — larger than this vehicle's
             <?= number_format($ctx['jump_limit'] ?? VEH_MAX_PLAUSIBLE_GAP) ?> km limit,

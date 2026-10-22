@@ -109,7 +109,7 @@ $headExtra = <<<CSS
 .ph-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .ph-table td:first-child { white-space: nowrap; width: 1%; }
 .ph-table code { background: var(--primary-light); color: var(--primary-dark); padding: 1.5px 6px; border-radius: 4px; font-size: 12px; cursor: pointer; }
-.frozen-note { font-size: 12.5px; color: var(--amber-text, #4A5C6A); background: var(--amber-bg, #CCD0CF); border-radius: var(--radius-input); padding: 9px 12px; margin-top: 14px; }
+.frozen-note { font-size: 12.5px; color: var(--amber-text, #933B00); background: var(--amber-bg, #FAE3BC); border-radius: var(--radius-input); padding: 9px 12px; margin-top: 14px; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

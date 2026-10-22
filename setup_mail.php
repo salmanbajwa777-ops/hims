@@ -81,8 +81,8 @@ label { display: block; font-size: 13px; font-weight: 600; color: #11212D; margi
 input[type=password], input[type=text] { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #CCD0CF; border-radius: 8px; font-size: 14px; }
 button { margin-top: 18px; background: #253745; color: #CCD0CF; border: 0; border-radius: 8px; padding: 11px 24px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .msg { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 13px; }
-.ok { background: #CCD0CF; color: #253745; border: 1px solid #CCD0CF; }
-.bad { background: #CCD0CF; color: #4A5C6A; border: 1px solid #CCD0CF; }
+.ok { background: #CCD0CF; color: #253745; border: 1px solid #34C759; }
+.bad { background: #F9D9D6; color: #A9111B; border: 1px solid #FF3B30; }
 </style>
 </head>
 <body>

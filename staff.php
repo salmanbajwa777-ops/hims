@@ -598,7 +598,7 @@ $headExtra = <<<CSS
 .edit-link:hover { text-decoration: underline; }
 
 /* ---------- Add Staff full-page panel ---------- */
-.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
+.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(10,132,255,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
 .panel-overlay.open { display: block; }
 .panel { max-width: 860px; margin: 0 auto; }
 
@@ -665,7 +665,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 .perm-key { font-size: 11px; color: var(--text-muted); font-family: 'Courier New', monospace; }
 
 /* ---------- Document viewer panel ---------- */
-.docs-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
+.docs-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(10,132,255,.45); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
 .docs-panel-overlay.open { display: flex; }
 .docs-panel { background: var(--card); border-radius: 20px; padding: 24px; width: 100%; max-width: 460px; box-shadow: var(--shadow-md); max-height: 80vh; overflow-y: auto; }
 .docs-panel h2 { font-size: 16px; margin-bottom: 2px; }

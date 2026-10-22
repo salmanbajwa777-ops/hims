@@ -109,7 +109,7 @@ tbody tr:first-child td { border-top: none; }
 .mrn { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 12.5px; }
 .name { font-weight: 600; }
 .status-pill.active { background: var(--green-bg); color: var(--green-text); }
-.status-pill.progress { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.progress { background: #E8DCF6; color: #6B3A9E; }
 .status-pill.done { background: #CCD0CF; color: var(--text-secondary); }
 .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
 .admit-cta { display:flex; justify-content:flex-end; margin-bottom:14px; }

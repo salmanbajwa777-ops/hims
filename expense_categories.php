@@ -271,7 +271,7 @@ $headExtra = <<<CSS
 .link-btn.warn { color: var(--red-text); }
 .amt-inp { width: 110px; text-align: right; }
 .count-chip { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
-.count-chip.hot { color: #4A5C6A; background: rgba(155,168,171,.12); border-color: rgba(155,168,171,.30); }
+.count-chip.hot { color: #933B00; background: rgba(255,149,0,.12); border-color: rgba(255,149,0,.30); }
 .note-box { font-size: 12.5px; color: var(--text-secondary); background: var(--primary-light); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; line-height: 1.6; }
 .limit-row { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
 .limit-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }

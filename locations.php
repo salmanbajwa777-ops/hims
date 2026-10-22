@@ -86,10 +86,10 @@ $headExtra = <<<CSS
 /* The page header styles are gone with the header itself — the shared
    app bar brings its own from assets/app.css. */
 
-.pending-alert { background: var(--amber-bg); border: 1px solid #CCD0CF; border-radius: 14px; padding: 16px 18px; display: flex; align-items: flex-start; gap: 12px; }
+.pending-alert { background: var(--amber-bg); border: 1px solid #FAE3BC; border-radius: 14px; padding: 16px 18px; display: flex; align-items: flex-start; gap: 12px; }
 .pending-alert svg { width: 18px; height: 18px; color: var(--amber-text); flex-shrink: 0; margin-top: 1px; }
 .pending-alert .title { font-size: 13.5px; font-weight: 700; color: var(--amber-text); }
-.pending-alert .sub { font-size: 12.5px; color: #4A5C6A; opacity: .85; margin-top: 1px; }
+.pending-alert .sub { font-size: 12.5px; color: #933B00; opacity: .85; margin-top: 1px; }
 
 .pending-row { display: flex; align-items: center; gap: 14px; padding: 12px 4px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .pending-row .info { flex: 1; min-width: 220px; }

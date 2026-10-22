@@ -171,19 +171,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'shift
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HMIS timezone repair</title>
 <style>
-  body { font: 15px/1.6 system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #253745; }
+  body { font: 15px/1.6 system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #0A47C2; }
   h1 { font-size: 22px; margin-bottom: 4px; }
   .sub { color: #4A5C6A; margin-top: 0; }
-  .card { border: 1px solid #CCD0CF; border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
-  .ok { border-left: 4px solid #9BA8AB; }
-  .bad { border-left: 4px solid #4A5C6A; }
-  .warn { border-left: 4px solid #9BA8AB; }
+  .card { border: 1px solid #D6E5FB; border-radius: 10px; padding: 16px 18px; margin: 16px 0; }
+  .ok { border-left: 4px solid #34C759; }
+  .bad { border-left: 4px solid #A9111B; }
+  .warn { border-left: 4px solid #FF9500; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   td { padding: 5px 8px; border-bottom: 1px solid #CCD0CF; }
   td:first-child { color: #4A5C6A; width: 45%; }
   code, .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
   pre { background: #CCD0CF; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
-  button { background: #4A5C6A; color: #CCD0CF; border: 0; padding: 10px 16px; border-radius: 7px; font-size: 15px; cursor: pointer; }
+  button { background: #A9111B; color: #CCD0CF; border: 0; padding: 10px 16px; border-radius: 7px; font-size: 15px; cursor: pointer; }
 </style>
 
 <h1>HMIS timezone repair</h1>

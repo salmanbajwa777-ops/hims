@@ -281,7 +281,7 @@ $headExtra = <<<CSS
        is already in the app bar)
      - duplicate .card / .section-title / table / th / td declarations that
        assets/app.css already owns, with slightly different values
-     - this page's PRIVATE .status-pill dialect (#CCD0CF/#CCD0CF/#CCD0CF —
+     - this page's PRIVATE .status-pill dialect (#FAE3BC/#D2F0D9/#E8DCF6 —
        different hexes for the same states as app.css). Everything now uses
        the single .pill primitive.
      - the whole .queue-table / .qa / left-severity-stripe system, replaced by
@@ -309,7 +309,7 @@ a.kpi-card:hover { border-color: var(--primary-accent); }
 
 /* ---------- Queue row extras (base grid lives in app.css) ---------- */
 .wa-link { display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; vertical-align: middle; }
-.wa-link svg { width: 13px; height: 13px; color: #9BA8AB; flex-shrink: 0; }
+.wa-link svg { width: 13px; height: 13px; color: #34C759; flex-shrink: 0; }
 .wa-link:hover { color: #4A5C6A; text-decoration: underline; }
 .mono { font-variant-numeric: tabular-nums; }
 
@@ -344,7 +344,7 @@ a.kpi-card:hover { border-color: var(--primary-accent); }
 .type-name { font-weight: 600; font-size: var(--fs-cell); }
 .type-rate { font-size: var(--fs-meta); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .admit-field select, .admit-field input[type=text] { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); font: inherit; font-size: var(--fs-cell); background: var(--card); color: var(--text); }
-.admit-field select:focus, .admit-field input:focus { outline: none; border-color: var(--primary-accent); box-shadow: 0 0 0 3px rgba(74,92,106,.18); }
+.admit-field select:focus, .admit-field input:focus { outline: none; border-color: var(--primary-accent); box-shadow: 0 0 0 3px rgba(52,199,89,.18); }
 .admit-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 22px 22px; }
 
 /* ---------- Doctor-timings shift popup ---------- */
@@ -379,7 +379,7 @@ a.kpi-card:hover { border-color: var(--primary-accent); }
 
 /* ---------- Password nag ---------- */
 .nag-banner {
-    background: var(--warn-bg); border: 1px solid #CCD0CF; border-radius: var(--radius-card);
+    background: var(--warn-bg); border: 1px solid #FAE3BC; border-radius: var(--radius-card);
     padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
     font-size: var(--fs-cell); color: var(--warn);
 }
@@ -400,7 +400,7 @@ require __DIR__ . '/partials/sidebar.php';
 
             <?php if ($admitError): ?><div class="alert error"><?= htmlspecialchars($admitError) ?></div><?php endif; ?>
             <?php if (isset($_GET['admitted'])): ?><div class="alert success">Patient admitted — stay is now open.</div>
-            <?php if (!empty($admitNotice)): ?><div class="alert" style="background:#CCD0CF;border:1px solid #CCD0CF;color:#4A5C6A;"><?= htmlspecialchars($admitNotice) ?></div><?php endif; ?>
+            <?php if (!empty($admitNotice)): ?><div class="alert" style="background:#FAE3BC;border:1px solid #FAE3BC;color:#933B00;"><?= htmlspecialchars($admitNotice) ?></div><?php endif; ?>
             <?php endif; ?>
 
             <?php if ($mustChangePassword): ?>
@@ -884,7 +884,7 @@ require __DIR__ . '/partials/sidebar.php';
                 <!-- Admitting doctor — mandatory. Defaults to the visit's doctor;
                      "Other" reveals the box for a visiting/locum doctor. -->
                 <div class="admit-field">
-                    <label>Admitting doctor <span style="color:var(--red,#4A5C6A);">*</span></label>
+                    <label>Admitting doctor <span style="color:var(--red,#A9111B);">*</span></label>
                     <select name="admitting_doctor_id" id="admitDoctor" required>
                         <option value="">Select doctor&hellip;</option>
                         <?php foreach ($admDoctors as $d): ?>
@@ -899,7 +899,7 @@ require __DIR__ . '/partials/sidebar.php';
                      without one). Records accountability only: any nursing staff can
                      still record vitals and log services against this stay. -->
                 <div class="admit-field">
-                    <label>Primary nurse <span style="color:var(--red,#4A5C6A);">*</span></label>
+                    <label>Primary nurse <span style="color:var(--red,#A9111B);">*</span></label>
                     <select name="assigned_nurse_id" required>
                         <option value="">Select primary nurse&hellip;</option>
                         <?php foreach ($admNurses as $n): ?>
@@ -916,7 +916,7 @@ require __DIR__ . '/partials/sidebar.php';
                      reason column exists) - it never blocks an emergency. -->
                 <?php if (adm_has($pdo, 'admissions', 'reception_admit_reason')): ?>
                 <div class="admit-field">
-                    <label>Why is reception admitting? <span style="color:var(--red,#4A5C6A);">*</span></label>
+                    <label>Why is reception admitting? <span style="color:var(--red,#A9111B);">*</span></label>
                     <select name="reception_admit_reason" id="admitRecReason" required>
                         <option value="">Select reason&hellip;</option>
                         <option value="Doctor did not mark it">Doctor did not mark it</option>

@@ -235,8 +235,8 @@ a.nav-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md, va
 html[data-view="mobile"] .nav-card-grid { grid-template-columns: 1fr; }
 
 .status-pill { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
-.status-pill.waiting { background: #CCD0CF; color: #4A5C6A; }
-.status-pill.in-consult { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.waiting { background: #FAE3BC; color: #933B00; }
+.status-pill.in-consult { background: #D2F0D9; color: #17602A; }
 .status-pill.done { background: #CCD0CF; color: var(--text-secondary); }
 .btn-primary { background: var(--primary); color: #CCD0CF; border: none; font-weight: 600; font-size: 12.5px; padding: 8px 14px; border-radius: 10px; display: inline-flex; align-items: center; gap: 6px; transition: background .15s ease; }
 .btn-primary:hover { background: var(--primary-dark); }
@@ -244,9 +244,9 @@ html[data-view="mobile"] .nav-card-grid { grid-template-columns: 1fr; }
 .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); font-weight: 600; font-size: 12.5px; padding: 7px 13px; border-radius: 10px; }
 
 .mrn { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); }
-.nag-banner { background: #CCD0CF; border: 1px solid #CCD0CF; border-radius: 14px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13.5px; color: #4A5C6A; }
+.nag-banner { background: #FAE3BC; border: 1px solid #FAE3BC; border-radius: 14px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13.5px; color: #933B00; }
 .nag-banner a { font-weight: 700; text-decoration: underline; }
-.flash { background: #CCD0CF; border: 1px solid #CCD0CF; border-radius: 14px; padding: 12px 18px; font-size: 13.5px; color: #4A5C6A; }
+.flash { background: #D2F0D9; border: 1px solid #CCD0CF; border-radius: 14px; padding: 12px 18px; font-size: 13.5px; color: #17602A; }
 .build-notice { border-top: 1px dashed var(--border); padding-top: 10px; font-size: 11.5px; color: var(--text-muted); }
 
 /* This-month analytics — one-line rail rows (compact versions of doctor_analytics.php) */
@@ -267,9 +267,9 @@ html[data-view="mobile"] .nav-card-grid { grid-template-columns: 1fr; }
 .adm-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .adm-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; font-size: 12px; color: var(--text-muted); }
 .adm-foot b { color: var(--text-secondary); font-weight: 600; }
-.status-pill.green { background: #CCD0CF; color: #4A5C6A; }
-.status-pill.amber { background: #CCD0CF; color: #4A5C6A; }
-.status-pill.red   { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.green { background: #D2F0D9; color: #17602A; }
+.status-pill.amber { background: #FAE3BC; color: #933B00; }
+.status-pill.red   { background: #F9D9D6; color: #A9111B; }
 .status-pill.teal  { background: var(--primary-light); color: var(--primary-dark); }
 .card-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 

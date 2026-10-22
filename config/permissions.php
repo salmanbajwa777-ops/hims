@@ -215,17 +215,17 @@ function require_permission(string $key): void {
      palette is mirrored here. The --teal/--teal-2 names are kept because the
      rules below reference them; only the values moved. */
   :root { --teal:#253745; --teal-2:#4A5C6A; --ink:#11212D; --muted:#4A5C6A;
-          --bg:#CCD0CF; --card:#CCD0CF; --border:#CCD0CF; }
+          --bg:#CCD0CF; --card:#CCD0CF; --border:#D2F0D9; }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
          padding:24px; font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
          background:var(--bg); color:var(--ink); }
   .card { background:var(--card); border:1px solid var(--border); border-radius:16px;
-          box-shadow:0 10px 30px rgba(6,20,27,.08); max-width:440px; width:100%;
+          box-shadow:0 10px 30px rgba(10,132,255,.08); max-width:440px; width:100%;
           padding:34px 32px; text-align:center; }
   .badge { width:56px; height:56px; border-radius:14px; margin:0 auto 18px;
            display:flex; align-items:center; justify-content:center;
-           background:#CCD0CF; color:#4A5C6A; }
+           background:#F9D9D6; color:#A9111B; }
   .badge svg { width:28px; height:28px; }
   h1 { font-size:19px; margin:0 0 8px; font-weight:700; }
   p { font-size:14px; line-height:1.55; color:var(--muted); margin:0 0 14px; }

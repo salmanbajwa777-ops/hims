@@ -120,18 +120,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .login-card h1 {
             margin: 0 0 4px;
             font-size: 22px;
-            color: #06141B;
+            color: #0A47C2;
         }
         .login-card p.subtitle {
             margin: 0 0 24px;
-            color: #06141B;
+            color: #0A47C2;
             font-size: 14px;
         }
         label {
             display: block;
             font-size: 13px;
             font-weight: 600;
-            color: #06141B;
+            color: #0A47C2;
             margin-bottom: 6px;
         }
         input[type="text"], input[type="password"] {
@@ -145,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         input:focus {
             outline: none;
             border-color: var(--primary-accent);
-            box-shadow: 0 0 0 3px rgba(74,92,106,.18);
+            box-shadow: 0 0 0 3px rgba(52,199,89,.18);
         }
         button {
             width: 100%;
@@ -160,8 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         button:hover { opacity: 0.92; }
         .error {
-            background: #CCD0CF;
-            color: #4A5C6A;
+            background: #F9D9D6;
+            color: #A9111B;
             padding: 10px 12px;
             border-radius: 8px;
             font-size: 13px;
@@ -179,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
         .pw-eye {
             position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-            background: none; border: none; cursor: pointer; color: #06141B;
+            background: none; border: none; cursor: pointer; color: #0A47C2;
             padding: 4px; width: auto; margin: 0; display: flex;
         }
         .pw-eye:hover { opacity: 1; color: var(--primary); }
@@ -211,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function pwToggle(id, btn) {
             var i = document.getElementById(id);
             i.type = i.type === 'password' ? 'text' : 'password';
-            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#06141B';
+            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#0A47C2';
         }
         </script>
 

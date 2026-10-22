@@ -119,7 +119,7 @@ $headExtra = <<<CSS
 .ctable td { padding: 11px 8px; border-bottom: 1px solid var(--border); font-size: 13.5px; vertical-align: middle; }
 .ctable .sub { display: block; font-size: 11.5px; color: var(--text-muted); }
 .cpill { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2.5px 9px; border-radius: 999px; white-space: nowrap; }
-.cpill.pending { background: var(--amber-bg, #CCD0CF); color: var(--amber-text, #4A5C6A); }
+.cpill.pending { background: var(--amber-bg, #FAE3BC); color: var(--amber-text, #933B00); }
 .cpill.signed { background: var(--green-bg); color: var(--green-text); }
 .acts { display: flex; gap: 10px; align-items: center; justify-content: flex-end; white-space: nowrap; }
 .acts a { color: var(--primary-dark); font-weight: 600; font-size: 12.5px; text-decoration: underline; }

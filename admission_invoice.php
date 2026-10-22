@@ -154,11 +154,11 @@ $paymentModeNote = $bill['status'] !== 'draft'
             .no-print { display: none !important; }
         }
         .admin-bar { max-width: 148mm; margin: 10px auto 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
-        .admin-bar.ok { background: #CCD0CF; color: #4A5C6A; }
-        .admin-bar.err { background: #CCD0CF; color: #4A5C6A; }
-        .admin-bar.tools { background: #CCD0CF; color: #253745; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        .void-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #4A5C6A; background: #CCD0CF; padding: 2px 8px; border-radius: 6px; }
-        .btn-void { background: #4A5C6A; color: #CCD0CF; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .admin-bar.ok { background: #D2F0D9; color: #17602A; }
+        .admin-bar.err { background: #F9D9D6; color: #A9111B; }
+        .admin-bar.tools { background: #CCD0CF; color: #0A47C2; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .void-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #A9111B; background: #F9D9D6; padding: 2px 8px; border-radius: 6px; }
+        .btn-void { background: #A9111B; color: #CCD0CF; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
     </style>
 </head>
 <body>

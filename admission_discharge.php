@@ -523,7 +523,7 @@ $headExtra = <<<CSS
 .totbox .r { display:flex; justify-content:space-between; font-size:14px; }
 .totbox .r.grand { border-top:1px solid var(--border); padding-top:8px; font-weight:700; font-size:16px; }
 .short-note { background:var(--amber-bg); color:var(--amber-text); border-radius:12px; padding:12px 14px; font-size:13px; font-weight:600; }
-.wo-note { background:#CCD0CF; color:#4A5C6A; border-radius:12px; padding:12px 14px; font-size:13px; }
+.wo-note { background:#E8DCF6; color:#6B3A9E; border-radius:12px; padding:12px 14px; font-size:13px; }
 .locked-tag { background:var(--green-bg); color:var(--green-text); font-size:12px; font-weight:700; padding:4px 12px; border-radius:20px; }
 .time-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:2px; border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-top:14px; }
 .time-strip > div { padding:10px 14px; border-right:1px solid var(--border); }
@@ -543,7 +543,7 @@ $headExtra = <<<CSS
 .disc-field .in-wrap { position:relative; }
 .disc-field input { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:10px; font:inherit; font-size:14px; background:#CCD0CF; }
 .disc-field input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); }
-.disc-applied { display:flex; justify-content:space-between; align-items:center; gap:10px; background:#CCD0CF; border:1px solid #CCD0CF; color:#4A5C6A; border-radius:12px; padding:11px 14px; margin-top:14px; font-size:13px; font-weight:600; }
+.disc-applied { display:flex; justify-content:space-between; align-items:center; gap:10px; background:#D2F0D9; border:1px solid #CCD0CF; color:#17602A; border-radius:12px; padding:11px 14px; margin-top:14px; font-size:13px; font-weight:600; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

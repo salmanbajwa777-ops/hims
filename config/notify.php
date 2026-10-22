@@ -296,7 +296,7 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
             $rows['WRITTEN OFF'] = 'Rs ' . number_format($writeOff, 2) . ' — gone forever, patient flagged';
         }
         $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A patient has been discharged'
-              . ($writeOff > 0.001 ? ' <strong style="color:#4A5C6A;">with an approved write-off</strong>' : '')
+              . ($writeOff > 0.001 ? ' <strong style="color:#A9111B;">with an approved write-off</strong>' : '')
               . '.</p>' . mail_kv($rows);
         notify_users($pdo, notif_admin_ids($pdo), 'patient_discharged',
             ($writeOff > 0.001 ? 'Discharge with WRITE-OFF' : 'Patient discharged'),
@@ -612,7 +612,7 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
             : '60 minutes';
 
         $overBanner = $isOver
-            ? '<p style="font-size:14px;color:#4A5C6A;background:#CCD0CF;border:1px solid #CCD0CF;border-radius:8px;padding:11px 14px;margin:0 0 14px;font-weight:bold;">'
+            ? '<p style="font-size:14px;color:#933B00;background:#FAE3BC;border:1px solid #FAE3BC;border-radius:8px;padding:11px 14px;margin:0 0 14px;font-weight:bold;">'
               . '⚠️ Over shift limit — needs immediate approval.'
               . ($r['limit_note'] ? '<br><span style="font-weight:normal;">' . htmlspecialchars($r['limit_note']) . '</span>' : '')
               . '</p>'
@@ -726,7 +726,7 @@ function notify_expense_decided(PDO $pdo, int $expenseId): void {
         }
         $lead = $approved
             ? 'Your counter expense has been <strong style="color:#4A5C6A;">approved</strong>.'
-            : 'Your counter expense has been <strong style="color:#4A5C6A;">rejected</strong> — the cash should be returned to the drawer; this voucher drops out of the shift tally.';
+            : 'Your counter expense has been <strong style="color:#A9111B;">rejected</strong> — the cash should be returned to the drawer; this voucher drops out of the shift tally.';
         $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">' . $lead . '</p>' . mail_kv($kv);
         send_mail($pdo, $to,
             'Expense ' . ($approved ? 'approved' : 'REJECTED') . ' — ' . $r['expense_number']
@@ -846,7 +846,7 @@ function notify_closing_edited(PDO $pdo, int $closingId, int $round): void {
         if (!notif_email_enabled($pdo, 'closing_edited')) { return; }
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
-        $body = '<p style="font-size:14px;color:#4A5C6A;font-weight:bold;margin:0 0 14px;">'
+        $body = '<p style="font-size:14px;color:#933B00;font-weight:bold;margin:0 0 14px;">'
               . htmlspecialchars($c['cashier_name']) . ' EDITED their closed shift after submitting it. '
               . 'The changes below are already in force and are highlighted on the Cash Handovers page — '
               . 'marking the handover received approves them.</p>'

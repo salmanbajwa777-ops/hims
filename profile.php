@@ -210,7 +210,7 @@ $headExtra = <<<CSS
 .doc-up-row select { padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); flex-shrink: 0; }
 .doc-up-row input[type="file"] { flex: 1; min-width: 0; font-size: 13px; }
 .doc-rm { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 6px; }
-.doc-rm:hover { color: #4A5C6A; }
+.doc-rm:hover { color: #A9111B; }
 .doc-add { background: none; border: 1px dashed var(--border); color: var(--text-secondary); border-radius: var(--radius-input); padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .doc-add:hover { border-color: var(--primary); color: var(--primary); }
 @media (max-width: 620px) { .doc-up-row { flex-wrap: wrap; } .doc-up-row select { width: 100%; } }

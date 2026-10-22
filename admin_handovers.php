@@ -455,7 +455,7 @@ require __DIR__ . '/partials/sidebar.php';
 
 .edit-log { margin-top: 12px; border: 1px solid var(--amber); border-radius: var(--radius-input); background: var(--amber-bg); padding: 12px 14px; overflow-x: auto; }
 .edit-log-title { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--amber-text); margin-bottom: 8px; }
-.edit-log .htable td, .edit-log .htable th { border-color: rgba(74,92,106,.25); }
+.edit-log .htable td, .edit-log .htable th { border-color: rgba(255,149,0,.25); }
 .chg-old { color: var(--red-text); text-decoration: line-through; }
 .chg-new { color: var(--green-text); font-weight: 700; }
 .edit-log-note { font-size: 11.5px; color: var(--amber-text); margin-top: 8px; }
@@ -472,8 +472,8 @@ require __DIR__ . '/partials/sidebar.php';
 .var-live { display: none; margin-top: 7px; font-size: 12.5px; font-weight: 600;
     border-radius: var(--radius-input); padding: 9px 12px; line-height: 1.5; }
 .var-live.on { display: block; }
-.var-live.short { background: var(--red-bg); color: var(--red-text); border: 1px solid rgba(74,92,106,.28); }
-.var-live.over  { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(155,168,171,.34); }
+.var-live.short { background: var(--red-bg); color: var(--red-text); border: 1px solid rgba(255,59,48,.28); }
+.var-live.over  { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(255,149,0,.34); }
 .var-live b { font-variant-numeric: tabular-nums; }
 
 /* ---- Received-history filters ----
@@ -513,7 +513,7 @@ require __DIR__ . '/partials/sidebar.php';
 .txn-tab-amt { font-variant-numeric: tabular-nums; }
 .txn-row.void td { opacity: .5; text-decoration: line-through; }
 .txn-note { font-size: 11.5px; color: var(--text-muted); display: block; margin-top: 2px; }
-.txn-neg { color: var(--red-text, #4A5C6A); }
+.txn-neg { color: var(--red-text, #A9111B); }
 .txn-total td { font-weight: 700; border-top: 2px solid var(--border) !important; }
 
 .tie { border-radius: var(--radius-input); padding: 11px 14px; font-size: 12.5px; margin-bottom: 14px; }
@@ -523,7 +523,7 @@ require __DIR__ . '/partials/sidebar.php';
 
 .unc { margin-top: 22px; border: 1px solid var(--amber); border-radius: var(--radius-input); background: var(--amber-bg); padding: 12px 14px; }
 .unc summary { font-size: 12.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--amber-text); cursor: pointer; }
-.unc .htable td, .unc .htable th { border-color: rgba(74,92,106,.25); }
+.unc .htable td, .unc .htable th { border-color: rgba(255,149,0,.25); }
 .unc-why { font-size: 11.5px; color: var(--amber-text); }
 .unc-intro { font-size: 12px; color: var(--amber-text); margin: 10px 0 4px; }
 
@@ -910,7 +910,7 @@ require __DIR__ . '/partials/sidebar.php';
                     $ageTxt = $age === 0 ? 'today' : ($age === 1 ? 'yesterday' : $age . ' days ago');
                     $rowStyle = $isOverdue
                         ? 'border-color:var(--red);background:var(--red-bg);'
-                        : 'border-color:rgba(155,168,171,.45);background:var(--amber-bg);';
+                        : 'border-color:rgba(255,149,0,.45);background:var(--amber-bg);';
                     $fid = 'beh' . (int) $s['cashier_id'] . '_' . preg_replace('/\D/', '', $s['date']);
                     ?>
                     <div class="pend" style="<?= $rowStyle ?>">

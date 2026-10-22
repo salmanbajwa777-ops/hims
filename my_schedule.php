@@ -181,14 +181,14 @@ $headExtra = <<<CSS
 .add-sess { background: none; border: none; padding: 0; margin-top: 10px; font: 600 12.5px Inter, system-ui, sans-serif; color: var(--primary); cursor: pointer; }
 .add-sess:hover { text-decoration: underline; }
 .rm-sess { background: none; border: none; padding: 0 4px; font-size: 16px; line-height: 1; color: var(--text-muted); cursor: pointer; }
-.rm-sess:hover { color: #4A5C6A; }
+.rm-sess:hover { color: #A9111B; }
 
 /* Off-day picker — one chip per weekday, tap to mark off (red) */
 .day-chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .day-chip { position: relative; cursor: pointer; user-select: none; }
 .day-chip input { position: absolute; opacity: 0; pointer-events: none; }
 .day-chip span { display: flex; align-items: center; justify-content: center; min-width: 52px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); background: var(--card); transition: all .12s ease; }
-.day-chip input:checked + span { background: #CCD0CF; border-color: #CCD0CF; color: #4A5C6A; text-decoration: line-through; }
+.day-chip input:checked + span { background: #F9D9D6; border-color: #FF3B30; color: #A9111B; text-decoration: line-through; }
 .day-chip input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
 .chips-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 
@@ -197,7 +197,7 @@ $headExtra = <<<CSS
 .wk-line { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; padding: 4px 0; }
 .wk-line .d { color: var(--text-secondary); font-weight: 600; min-width: 90px; }
 .wk-line .t { color: var(--text); }
-.wk-line.off .t { color: #4A5C6A; font-weight: 600; }
+.wk-line.off .t { color: #A9111B; font-weight: 600; }
 .wk-line.today .d::after { content: " · today"; font-size: 10.5px; color: var(--primary); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 
 .sheet-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; flex-wrap: wrap; }

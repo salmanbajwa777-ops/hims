@@ -427,7 +427,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <h2>2 &middot; Doctor</h2>
                         <p class="sub">Who is this ER service being given under? Defaults to the patient's last-seen doctor.</p>
                         <div class="fld">
-                            <label for="erDoctor">Doctor <span style="color:var(--red,#4A5C6A);">*</span></label>
+                            <label for="erDoctor">Doctor <span style="color:var(--red,#A9111B);">*</span></label>
                             <select id="erDoctor" name="doctor_id" required>
                                 <option value="">Select doctor&hellip;</option>
                                 <?php foreach ($erDoctors as $d): ?>
@@ -449,7 +449,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <h2>Service given by</h2>
                         <p class="sub">Raise this bill before or as the service is given &mdash; one bill per session.</p>
                         <div class="fld">
-                            <label for="erNurse">Given by (nurse) <span style="color:var(--red,#4A5C6A);">*</span></label>
+                            <label for="erNurse">Given by (nurse) <span style="color:var(--red,#A9111B);">*</span></label>
                             <select id="erNurse" name="given_by_id" required>
                                 <option value="">Select nurse / staff&hellip;</option>
                                 <?php foreach ($erNurses as $n): ?>

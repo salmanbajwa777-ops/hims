@@ -406,8 +406,8 @@ $fmtDelta = function (float $d): string {
 
             // Fixed hues spaced around the wheel: distinguishable side by side,
             // stable between reloads, and legible in print.
-            $pieColors = ['#4A5C6A','#4A5C6A','#9BA8AB','#9BA8AB','#9BA8AB','#9BA8AB',
-                          '#9BA8AB','#4A5C6A','#4A5C6A','#4A5C6A','#9BA8AB','#9BA8AB'];
+            $pieColors = ['#4A5C6A','#4A5C6A','#9BA8AB','#34C759','#FF9500','#FF9500',
+                          '#933B00','#A9111B','#6B3A9E','#0A47C2','#0A84FF','#9BA8AB'];
             ?>
             <?php if ($pieSlices && $opTotal > 0): ?>
             <div class="card">

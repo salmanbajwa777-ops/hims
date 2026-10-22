@@ -28,7 +28,7 @@ $ipdNurses  = $ipdNurses ?? [];
 $ipdAdmitOk = $roomCategories && $ipdNurses;
 ?>
 <style>
-.ipd-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
+.ipd-overlay { display: none; position: fixed; inset: 0; background: rgba(10,132,255,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
 .ipd-overlay.open { display: flex; }
 .ipd-modal { background: var(--card,#CCD0CF); border-radius: 16px; width: 100%; max-width: 460px; box-shadow: 0 20px 50px rgba(6,20,27,.25); overflow: hidden; }
 .ipd-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 6px; }
@@ -38,7 +38,7 @@ $ipdAdmitOk = $roomCategories && $ipdNurses;
 .ipd-body { padding: 10px 22px 4px; display: flex; flex-direction: column; gap: 16px; max-height: 70vh; overflow-y: auto; }
 .ipd-field > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary,#4A5C6A); margin-bottom: 8px; }
 .ipd-field select, .ipd-field input[type="text"], .ipd-field input[type="number"], .ipd-field textarea {
-    width: 100%; padding: 10px 12px; border: 1px solid var(--border,#CCD0CF); border-radius: 12px; font: inherit; font-size: 13.5px; background: var(--bg,#CCD0CF);
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border,#D6E5FB); border-radius: 12px; font: inherit; font-size: 13.5px; background: var(--bg,#CCD0CF);
 }
 .ipd-field textarea { resize: vertical; min-height: 60px; }
 .ipd-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -81,7 +81,7 @@ $ipdAdmitOk = $roomCategories && $ipdNurses;
                 </div>
 
                 <div class="ipd-field">
-                    <label>Admitting consultant <span style="color:var(--red,#4A5C6A);">*</span></label>
+                    <label>Admitting consultant <span style="color:var(--red,#A9111B);">*</span></label>
                     <select name="admitting_consultant_id" id="ipdAdmitDoctor">
                         <option value="">&mdash; manual entry below &mdash;</option>
                         <?php foreach ($ipdDoctors as $d): ?>
@@ -92,7 +92,7 @@ $ipdAdmitOk = $roomCategories && $ipdNurses;
                 </div>
 
                 <div class="ipd-field">
-                    <label>Primary nurse <span style="color:var(--red,#4A5C6A);">*</span></label>
+                    <label>Primary nurse <span style="color:var(--red,#A9111B);">*</span></label>
                     <select name="assigned_nurse_id" required>
                         <option value="">Select primary nurse&hellip;</option>
                         <?php foreach ($ipdNurses as $n): ?>

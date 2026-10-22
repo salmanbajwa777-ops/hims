@@ -332,13 +332,13 @@ try {
     //  non-zero explicit-deny count is still worth surfacing to an admin.)
 } catch (Throwable $e) { $pending = 0; }
 if (($adm['discharging'] ?? 0) > 0) {
-    $notifs[] = ['icon' => 'bed', 'bg' => '#CCD0CF', 'fg' => '#4A5C6A', 'text' => $adm['discharging'] . ' discharge' . ($adm['discharging'] > 1 ? 's' : '') . ' awaiting payment', 'href' => 'admissions.php', 'action' => 'Open'];
+    $notifs[] = ['icon' => 'bed', 'bg' => '#FAE3BC', 'fg' => '#933B00', 'text' => $adm['discharging'] . ' discharge' . ($adm['discharging'] > 1 ? 's' : '') . ' awaiting payment', 'href' => 'admissions.php', 'action' => 'Open'];
 }
 if ($todayOutstanding > 0) {
-    $notifs[] = ['icon' => 'wallet', 'bg' => '#CCD0CF', 'fg' => '#4A5C6A', 'text' => 'Rs ' . number_format($todayOutstanding, 0) . ' outstanding today', 'href' => 'checkout.php', 'action' => 'View'];
+    $notifs[] = ['icon' => 'wallet', 'bg' => '#F9D9D6', 'fg' => '#A9111B', 'text' => 'Rs ' . number_format($todayOutstanding, 0) . ' outstanding today', 'href' => 'checkout.php', 'action' => 'View'];
 }
 if (($visitStats['waiting'] ?? 0) > 0) {
-    $notifs[] = ['icon' => 'user-group', 'bg' => '#CCD0CF', 'fg' => '#4A5C6A', 'text' => $visitStats['waiting'] . ' patient' . ($visitStats['waiting'] > 1 ? 's' : '') . ' waiting in queue', 'href' => 'receptionist.php', 'action' => 'Open'];
+    $notifs[] = ['icon' => 'user-group', 'bg' => '#D2F0D9', 'fg' => '#17602A', 'text' => $visitStats['waiting'] . ' patient' . ($visitStats['waiting'] > 1 ? 's' : '') . ' waiting in queue', 'href' => 'receptionist.php', 'action' => 'Open'];
 }
 
 // ---- Today's queue by doctor (replaces the fake inventory card) -----------
@@ -448,7 +448,7 @@ $headExtra = <<<CSS
     overflow: hidden;
 }
 /* Doctor share sits on TOP of the stack (visually above clinic). */
-.bar-doctor { position: absolute; top: 0; left: 0; right: 0; background: var(--amber, #9BA8AB); }
+.bar-doctor { position: absolute; top: 0; left: 0; right: 0; background: var(--amber, #FF9500); }
 /* Expense threshold marker. A dashed RULE, not a filled segment: expenses are a
    cost measured against the bar, not another slice of it, and the fill colours
    are already spoken for (clay is reserved for refunds/delete).
@@ -477,7 +477,7 @@ $headExtra = <<<CSS
 .lg-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 .lg-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .lg-clinic { background: linear-gradient(180deg, var(--primary), var(--primary-dark)); }
-.lg-doctor { background: var(--amber, #9BA8AB); }
+.lg-doctor { background: var(--amber, #FF9500); }
 /* Matches the dashed rule on the chart rather than a solid block. */
 .lg-expense {
     background: none; border-radius: 0; height: 0;
@@ -499,11 +499,11 @@ $headExtra = <<<CSS
 .summary-row { display: flex; justify-content: space-between; align-items: baseline; }
 .summary-row .label { font-size: 12.5px; color: var(--text-secondary); }
 .summary-row .value { font-size: 15px; font-weight: 700; }
-.summary-row .value.good { color: #4A5C6A; }
+.summary-row .value.good { color: #17602A; }
 .summary-row .value.neg { color: var(--text-secondary); }
 /* A negative net is the one number here that must not be mistaken for a good
    one, so it takes clay — the palette's "money leaving" hue. */
-.summary-row .value.bad, .ledger-table td.num.bad { color: var(--danger, #4A5C6A); }
+.summary-row .value.bad, .ledger-table td.num.bad { color: var(--danger, #A9111B); }
 .rev-note { margin: 12px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
 
 /* ---------- Snapshot ---------- */
@@ -543,8 +543,8 @@ tr.top-performer td:first-child::before { content: "★"; color: var(--amber); m
 .doc-name { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .doc-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--primary-light); color: var(--primary-dark); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
 .status-pill { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
-.status-pill.in-clinic { background: #CCD0CF; color: #4A5C6A; }
-.status-pill.on-leave { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.in-clinic { background: #D2F0D9; color: #17602A; }
+.status-pill.on-leave { background: #F9D9D6; color: #A9111B; }
 tabular { font-variant-numeric: tabular-nums; }
 
 /* ---------- Financial summary ---------- */
@@ -553,8 +553,8 @@ tabular { font-variant-numeric: tabular-nums; }
 .fin-card .label { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 6px; }
 .fin-card .value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 .fin-card .trend { font-size: 12px; font-weight: 600; }
-.fin-card .trend.up { color: #4A5C6A; }
-.fin-card .trend.down { color: #4A5C6A; }
+.fin-card .trend.up { color: #17602A; }
+.fin-card .trend.down { color: #A9111B; }
 
 /* ---------- Timeline ---------- */
 .timeline { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; }
@@ -582,7 +582,7 @@ tabular { font-variant-numeric: tabular-nums; }
 .inv-list { display: flex; flex-direction: column; gap: 10px; }
 .inv-item {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 14px; border-radius: 10px; background: #CCD0CF; border-left: 3px solid var(--red);
+    padding: 10px 14px; border-radius: 10px; background: #F9D9D6; border-left: 3px solid var(--red);
 }
 .inv-name { font-size: 13px; font-weight: 600; }
 .inv-qty { font-size: 12px; color: var(--text-secondary); }
@@ -598,9 +598,9 @@ tabular { font-variant-numeric: tabular-nums; }
 
 /* ---------- Password nag ---------- */
 .nag-banner {
-    background: #CCD0CF; border: 1px solid #CCD0CF; border-radius: 14px;
+    background: #FAE3BC; border: 1px solid #FAE3BC; border-radius: 14px;
     padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    font-size: 13.5px; color: #4A5C6A;
+    font-size: 13.5px; color: #933B00;
 }
 .nag-banner a { font-weight: 700; text-decoration: underline; }
 
@@ -843,11 +843,11 @@ require __DIR__ . '/partials/sidebar.php';
                             <span class="census-label">Currently Admitted</span>
                         </a>
                         <a class="census-item" href="admissions.php" style="text-decoration:none;color:inherit;">
-                            <span class="census-num" style="color:#4A5C6A;"><?= number_format($adm['discharging']) ?></span>
+                            <span class="census-num" style="color:#933B00;"><?= number_format($adm['discharging']) ?></span>
                             <span class="census-label">Awaiting Discharge</span>
                         </a>
                         <a class="census-item" href="admissions.php" style="text-decoration:none;color:inherit;">
-                            <span class="census-num" style="color:#4A5C6A;"><?= number_format($adm['today']) ?></span>
+                            <span class="census-num" style="color:#17602A;"><?= number_format($adm['today']) ?></span>
                             <span class="census-label">Admitted Today</span>
                         </a>
                     </div>
@@ -931,7 +931,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-sub">Needs your attention</div>
                     <div class="notif-list">
                         <?php if (!$notifs): ?>
-                            <div class="notif-item"><span class="notif-icon" style="background:#CCD0CF;color:#4A5C6A;"><?= icon('check-circle') ?></span><span class="notif-text">All clear — nothing needs your attention.</span></div>
+                            <div class="notif-item"><span class="notif-icon" style="background:#D2F0D9;color:#17602A;"><?= icon('check-circle') ?></span><span class="notif-text">All clear — nothing needs your attention.</span></div>
                         <?php else: foreach ($notifs as $n): ?>
                             <a class="notif-item" href="<?= htmlspecialchars($n['href']) ?>" style="text-decoration:none;color:inherit;">
                                 <span class="notif-icon" style="background:<?= $n['bg'] ?>;color:<?= $n['fg'] ?>;"><?= icon($n['icon']) ?></span>

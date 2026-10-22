@@ -351,7 +351,7 @@ $headExtra = <<<CSS
 .pp-tile .k { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); font-weight: 700; }
 .pp-tile .v { font-size: 19px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .pp-tile.net .v { color: var(--ok, #4A5C6A); }
-.pp-tile.ref .v { color: var(--danger, #4A5C6A); }
+.pp-tile.ref .v { color: var(--danger, #A9111B); }
 /* Gross, shown under the net so a refunded patient's tile still reconciles. */
 .pp-tile-note { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .pp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
@@ -368,10 +368,10 @@ $headExtra = <<<CSS
 .pp-line1 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .pp-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 2.5px 8px; border-radius: 5px; white-space: nowrap; }
 .k-opd { background: var(--primary-light); color: var(--primary-accent); }
-.k-er { background: var(--clay-bg, #CCD0CF); color: var(--clay, #4A5C6A); }
-.k-adm { background: var(--warn-bg, #CCD0CF); color: var(--warn, #4A5C6A); }
-.k-ipd { background: #CCD0CF; color: #4A5C6A; }
-.k-proc { background: var(--ok-bg, #CCD0CF); color: var(--ok, #4A5C6A); }
+.k-er { background: var(--clay-bg, #FAE3BC); color: var(--clay, #933B00); }
+.k-adm { background: var(--warn-bg, #FAE3BC); color: var(--warn, #933B00); }
+.k-ipd { background: #D6E5FB; color: #0A47C2; }
+.k-proc { background: var(--ok-bg, #D2F0D9); color: var(--ok, #4A5C6A); }
 .pp-title { font-weight: 600; }
 .pp-sub { color: var(--text-muted); font-size: 12.5px; margin-top: 3px; }
 .pp-items { color: var(--text-secondary); font-size: 12.5px; margin-top: 5px; }
@@ -382,11 +382,11 @@ $headExtra = <<<CSS
 .pp-inv a:hover { text-decoration: underline; }
 .pp-pay { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 .pp-tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: .4px; }
-.t-void, .t-ref { background: var(--danger-bg, #CCD0CF); color: var(--danger, #4A5C6A); }
+.t-void, .t-ref { background: var(--danger-bg, #F9D9D6); color: var(--danger, #A9111B); }
 .t-waive { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
-.t-unpaid { background: var(--warn-bg, #CCD0CF); color: var(--warn, #4A5C6A); }
+.t-unpaid { background: var(--warn-bg, #FAE3BC); color: var(--warn, #933B00); }
 .strike { text-decoration: line-through; color: var(--text-muted); }
-.pp-refline { border-top: 1px dashed var(--border); padding: 8px 16px 9px 126px; font-size: 12.5px; color: var(--danger, #4A5C6A); background: var(--danger-bg, #CCD0CF); }
+.pp-refline { border-top: 1px dashed var(--border); padding: 8px 16px 9px 126px; font-size: 12.5px; color: var(--danger, #A9111B); background: var(--danger-bg, #F9D9D6); }
 @media (max-width: 640px) {
   .pp-row { grid-template-columns: 1fr auto; }
   .pp-date { grid-column: 1 / -1; }
