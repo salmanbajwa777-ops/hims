@@ -101,21 +101,21 @@ $headExtra = <<<CSS
 .rate-card .basis { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
 .rate-card .amt-row { display: flex; align-items: center; gap: 8px; }
 .rate-card .amt-row .cur { font-weight: 700; color: var(--text-muted); }
-.rate-card input[type=number] { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; background: #fff; }
-.rate-card input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.rate-card input[type=number] { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; background: #CCD0CF; }
+.rate-card input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .rate-card .en { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); }
 
 .add-row { display: grid; grid-template-columns: 1.1fr 1.4fr 1fr .9fr auto; gap: 10px; align-items: end; }
 .add-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .add-row input, .add-row select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.add-row input:focus, .add-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.add-row input:focus, .add-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 
 .svc-type-tag { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); }
 .inline-edit { display: flex; gap: 6px; align-items: center; }
-.inline-edit select, .inline-edit input { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; }
+.inline-edit select, .inline-edit input { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #CCD0CF; }
 .inline-edit input { width: 90px; }
-.row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 100%; }
-.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #CCD0CF; max-width: 100%; }
+.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .btn.small { padding: 7px 14px; font-size: 12.5px; }
 .row-inactive td { opacity: .5; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
@@ -124,10 +124,10 @@ $headExtra = <<<CSS
 .active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
 .active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
-.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #CCD0CF; transition: transform .15s; box-shadow: 0 1px 2px rgba(6,20,27,.2); }
 .active-toggle input:checked + span { background: var(--primary); }
 .active-toggle input:checked + span::after { transform: translateX(18px); }
-.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(26,127,126,.25); }
+.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(74,92,106,.25); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

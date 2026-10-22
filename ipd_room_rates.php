@@ -190,18 +190,18 @@ $headExtra = <<<CSS
 .rate-table { width: 100%; border-collapse: collapse; }
 .rate-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .rate-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.row-inp { padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: #fff; width: 108px; }
-.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
-.name-inp { padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13.5px; font-weight: 600; background: #fff; width: 200px; }
-.name-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.row-inp { padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: #CCD0CF; width: 108px; }
+.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
+.name-inp { padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13.5px; font-weight: 600; background: #CCD0CF; width: 200px; }
+.name-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .add-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; margin-bottom: 20px; }
 .add-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .add-row input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
 .active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
-.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #CCD0CF; transition: transform .15s; box-shadow: 0 1px 2px rgba(6,20,27,.2); }
 .active-toggle input:checked + span { background: var(--primary); }
 .active-toggle input:checked + span::after { transform: translateX(18px); }
 .cur { color: var(--text-muted); font-weight: 600; font-size: 12px; }

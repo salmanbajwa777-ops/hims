@@ -183,7 +183,7 @@ $headExtra = <<<CSS
 .pf-field { margin-bottom: 14px; }
 .pf-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
 .pf-field input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 14px; background: var(--bg); }
-.pf-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.pf-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .pf-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
 
 .locked-list { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
@@ -210,7 +210,7 @@ $headExtra = <<<CSS
 .doc-up-row select { padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); flex-shrink: 0; }
 .doc-up-row input[type="file"] { flex: 1; min-width: 0; font-size: 13px; }
 .doc-rm { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 6px; }
-.doc-rm:hover { color: #b3261e; }
+.doc-rm:hover { color: #4A5C6A; }
 .doc-add { background: none; border: 1px dashed var(--border); color: var(--text-secondary); border-radius: var(--radius-input); padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .doc-add:hover { border-color: var(--primary); color: var(--primary); }
 @media (max-width: 620px) { .doc-up-row { flex-wrap: wrap; } .doc-up-row select { width: 100%; } }

@@ -90,42 +90,42 @@ if ($nbQs !== '') {
 .nb-btn { position: relative; }
 .nb-badge {
     position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px;
-    padding: 0 4px; border-radius: 9px; background: #C0392B; color: #fff;
+    padding: 0 4px; border-radius: 9px; background: #4A5C6A; color: #CCD0CF;
     font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
-    border: 1.5px solid #fff; box-sizing: content-box;
+    border: 1.5px solid #CCD0CF; box-sizing: content-box;
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .nb-panel {
     position: absolute; top: calc(100% + 10px); right: 0; width: 360px; max-width: calc(100vw - 24px);
-    background: #fff; border: 1px solid var(--border, #e3e6e4); border-radius: 14px;
-    box-shadow: 0 12px 34px rgba(16,32,30,.16); z-index: 300; overflow: hidden;
+    background: #CCD0CF; border: 1px solid var(--border, #CCD0CF); border-radius: 14px;
+    box-shadow: 0 12px 34px rgba(17,33,45,.16); z-index: 300; overflow: hidden;
 }
 .nb-panel[hidden] { display: none; }
-.nb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e3e6e4); }
-.nb-title { font-size: 13.5px; font-weight: 700; color: var(--text, #1b1f1e); }
-.nb-count { font-size: 11px; font-weight: 700; color: var(--primary-dark, #0E5456); background: var(--primary-light, #d9ecec); padding: 2px 7px; border-radius: 20px; margin-left: 4px; }
-.nb-readall { background: none; border: none; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--primary, #1A7F7E); cursor: pointer; white-space: nowrap; }
+.nb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border, #CCD0CF); }
+.nb-title { font-size: 13.5px; font-weight: 700; color: var(--text, #11212D); }
+.nb-count { font-size: 11px; font-weight: 700; color: var(--primary-dark, #4A5C6A); background: var(--primary-light, #CCD0CF); padding: 2px 7px; border-radius: 20px; margin-left: 4px; }
+.nb-readall { background: none; border: none; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--primary, #4A5C6A); cursor: pointer; white-space: nowrap; }
 .nb-readall:hover { text-decoration: underline; }
 
 .nb-list { max-height: 400px; overflow-y: auto; }
-.nb-item { display: flex; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--border, #eef1ef); text-decoration: none; color: inherit; align-items: flex-start; }
+.nb-item { display: flex; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--border, #CCD0CF); text-decoration: none; color: inherit; align-items: flex-start; }
 .nb-item:last-child { border-bottom: none; }
-.nb-item:hover { background: var(--bg, #f7f8f7); }
-.nb-item.unread { background: rgba(26,127,126,.045); }
+.nb-item:hover { background: var(--bg, #CCD0CF); }
+.nb-item.unread { background: rgba(74,92,106,.045); }
 .nb-item.unread .nb-item-title { font-weight: 700; }
-.nb-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex: none; background: #1A7F7E; }
-.nb-dot.warn { background: #C77700; }
-.nb-dot.danger { background: #C0392B; }
-.nb-dot.info { background: #2C6DB5; }
+.nb-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex: none; background: #4A5C6A; }
+.nb-dot.warn { background: #9BA8AB; }
+.nb-dot.danger { background: #4A5C6A; }
+.nb-dot.info { background: #4A5C6A; }
 .nb-body { min-width: 0; display: block; }
-.nb-item-title { display: block; font-size: 13px; font-weight: 600; color: var(--text, #1b1f1e); }
-.nb-item-sub { display: block; font-size: 12px; color: var(--text-secondary, #5b6360); margin-top: 2px; overflow-wrap: anywhere; }
-.nb-meta { display: block; font-size: 11px; color: var(--text-muted, #8a918e); margin-top: 3px; }
+.nb-item-title { display: block; font-size: 13px; font-weight: 600; color: var(--text, #11212D); }
+.nb-item-sub { display: block; font-size: 12px; color: var(--text-secondary, #4A5C6A); margin-top: 2px; overflow-wrap: anywhere; }
+.nb-meta { display: block; font-size: 11px; color: var(--text-muted, #9BA8AB); margin-top: 3px; }
 
-.nb-empty { padding: 30px 20px; text-align: center; color: var(--text-secondary, #5b6360); font-size: 13px; }
-.nb-empty svg { width: 26px; height: 26px; color: var(--text-muted, #b6bcb9); margin-bottom: 8px; }
-.nb-empty-sub { font-size: 11.5px; color: var(--text-muted, #8a918e); margin-top: 3px; }
+.nb-empty { padding: 30px 20px; text-align: center; color: var(--text-secondary, #4A5C6A); font-size: 13px; }
+.nb-empty svg { width: 26px; height: 26px; color: var(--text-muted, #CCD0CF); margin-bottom: 8px; }
+.nb-empty-sub { font-size: 11.5px; color: var(--text-muted, #9BA8AB); margin-top: 3px; }
 
 @media (max-width: 520px) {
     /* Anchored to the viewport instead of the button, which sits near the right

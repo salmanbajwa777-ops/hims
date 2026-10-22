@@ -306,7 +306,7 @@ $headExtra = <<<CSS
 .card .sub { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; }
 .searchbar { display: flex; gap: 10px; }
 .searchbar input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 14px; background: var(--bg); color: var(--text); }
-.searchbar button { padding: 10px 16px; border: none; border-radius: var(--radius-btn); background: var(--primary-dark); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.searchbar button { padding: 10px 16px; border: none; border-radius: var(--radius-btn); background: var(--primary-dark); color: #CCD0CF; font: inherit; font-weight: 600; cursor: pointer; }
 .plist { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .plist li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); }
 .plist .who { font-size: 13.5px; font-weight: 600; }
@@ -333,7 +333,7 @@ $headExtra = <<<CSS
 /* Payment toggle: .paytoggle in assets/app.css. This page posts CASH/DIGITAL
    rather than cash/card, so the markup is written out instead of coming from
    pay_method_toggle() — the look is shared, the values are not. */
-.raisebtn { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: var(--radius-btn); background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
+.raisebtn { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: var(--radius-btn); background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #CCD0CF; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
 .raisebtn[disabled] { opacity: .5; cursor: not-allowed; }
 .disc-note { font-size: 12px; color: var(--primary-dark); margin-top: 8px; }
 .rtable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -427,7 +427,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <h2>2 &middot; Doctor</h2>
                         <p class="sub">Who is this ER service being given under? Defaults to the patient's last-seen doctor.</p>
                         <div class="fld">
-                            <label for="erDoctor">Doctor <span style="color:var(--red,#dc2626);">*</span></label>
+                            <label for="erDoctor">Doctor <span style="color:var(--red,#4A5C6A);">*</span></label>
                             <select id="erDoctor" name="doctor_id" required>
                                 <option value="">Select doctor&hellip;</option>
                                 <?php foreach ($erDoctors as $d): ?>
@@ -449,7 +449,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <h2>Service given by</h2>
                         <p class="sub">Raise this bill before or as the service is given &mdash; one bill per session.</p>
                         <div class="fld">
-                            <label for="erNurse">Given by (nurse) <span style="color:var(--red,#dc2626);">*</span></label>
+                            <label for="erNurse">Given by (nurse) <span style="color:var(--red,#4A5C6A);">*</span></label>
                             <select id="erNurse" name="given_by_id" required>
                                 <option value="">Select nurse / staff&hellip;</option>
                                 <?php foreach ($erNurses as $n): ?>

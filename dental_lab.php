@@ -181,7 +181,7 @@ $headExtra = <<<CSS
   color:var(--text-secondary); font-size:var(--fs-btn); font-weight:600; text-decoration:none;
   border:1px solid var(--border); }
 .tabs a.on { background:var(--primary); color:var(--on-primary); border-color:var(--primary); }
-.tabs a.warn.on { background:var(--warn); border-color:var(--warn); color:#fff; }
+.tabs a.warn.on { background:var(--warn); border-color:var(--warn); color:#CCD0CF; }
 .tabs a .n { opacity:.72; margin-left:5px; }
 .tooth-pill { display:inline-block; min-width:32px; text-align:center; padding:2px 6px;
   border-radius:var(--radius-pill); background:var(--primary-light); color:var(--primary-dark);

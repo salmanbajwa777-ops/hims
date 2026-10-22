@@ -411,8 +411,8 @@ $headExtra = <<<CSS
 .a-status { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
 .a-status.PENDING_ASSIGNMENT { background: var(--amber-bg); color: var(--amber-text); }
 .a-status.ACTIVE { background: var(--green-bg); color: var(--green-text); }
-.a-status.DISCHARGE_IN_PROGRESS { background: #EDE7FB; color: #6D28D9; }
-.a-status.DISCHARGED { background: #F1F5F9; color: var(--text-secondary); }
+.a-status.DISCHARGE_IN_PROGRESS { background: #CCD0CF; color: #4A5C6A; }
+.a-status.DISCHARGED { background: #CCD0CF; color: var(--text-secondary); }
 .a-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; align-items: start; }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 2px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .kv > div { padding: 10px 14px; border-right: 1px solid var(--border); }
@@ -421,12 +421,12 @@ $headExtra = <<<CSS
 .svc-add { display: grid; grid-template-columns: 2fr .8fr .9fr auto; gap: 10px; align-items: end; }
 .svc-add label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .svc-add select, .svc-add input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.svc-add select:focus, .svc-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.svc-add select:focus, .svc-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .svc-detail { margin-top: 10px; }
 .svc-detail label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .svc-detail label .opt { font-weight: 500; color: var(--text-muted); font-size: 11px; margin-left: 4px; }
 .svc-detail input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.svc-detail input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.svc-detail input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .svc-note-row td { border-bottom: 1px solid var(--border); padding-top: 0; }
 .svc-note { font-size: 12px; color: var(--text-secondary); padding-left: 10px; }
 .est { display: flex; flex-direction: column; gap: 10px; }
@@ -439,22 +439,22 @@ $headExtra = <<<CSS
 .ho-item:first-child { border-top: none; }
 .vit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
 .vit-cadence { margin: 8px 0 2px; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--border); }
-.vit-cadence.ok  { color: var(--primary); background: rgba(26,127,126,.08); border-color: rgba(26,127,126,.35); }
-.vit-cadence.due { color: #9a3412; background: rgba(234,88,12,.10); border-color: rgba(234,88,12,.40); }
+.vit-cadence.ok  { color: var(--primary); background: rgba(74,92,106,.08); border-color: rgba(74,92,106,.35); }
+.vit-cadence.due { color: #4A5C6A; background: rgba(155,168,171,.10); border-color: rgba(155,168,171,.40); }
 .vit-grid label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .vit-grid input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
-.vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .vitals-log, .care-log { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .vitals-log th, .vitals-log td, .care-log th, .care-log td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .vitals-log th, .care-log th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
 .care-log td { white-space: normal; }
 .ev-tag { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); }
-.ev-tag.HANDOVER { background: #EDE7FB; color: #6D28D9; }
+.ev-tag.HANDOVER { background: #CCD0CF; color: #4A5C6A; }
 .ev-tag.DOCTOR_VISIT { background: var(--green-bg); color: var(--green-text); }
 .care-form { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: end; margin: 14px 0; }
 .care-form label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .care-form select, .care-form input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
-.care-form select:focus, .care-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.care-form select:focus, .care-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 @media (max-width: 960px) { .a-grid { grid-template-columns: 1fr; } .care-form { grid-template-columns: 1fr; } }
 </style>
 CSS;

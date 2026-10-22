@@ -184,8 +184,8 @@ $headExtra = <<<CSS
 
 .f-group { margin-bottom: 14px; }
 .f-group label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
-.f-group input, .f-group select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
-.f-group input:focus, .f-group select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.f-group input, .f-group select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #CCD0CF; }
+.f-group input:focus, .f-group select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .f-row { display: flex; gap: 10px; }
 .f-row .f-group { flex: 1; }
 
@@ -193,7 +193,7 @@ $headExtra = <<<CSS
    focusable, so keyboard and screen-reader behaviour is the native one. */
 .seg { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .seg-opt { flex: 1; margin: 0; text-align: center; font-size: 13px; font-weight: 600;
-           padding: 9px 8px; cursor: pointer; background: #fff; color: var(--text-muted);
+           padding: 9px 8px; cursor: pointer; background: #CCD0CF; color: var(--text-muted);
            transition: background .12s, color .12s; }
 .seg-opt + .seg-opt { border-left: 1px solid var(--border); }
 .seg-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -201,7 +201,7 @@ $headExtra = <<<CSS
    the class fallback, a browser lacking :has() shows no selected state at all
    and the control looks broken. */
 .seg-opt.is-on,
-.seg-opt:has(input:checked) { background: var(--primary); color: #fff; }
+.seg-opt:has(input:checked) { background: var(--primary); color: #CCD0CF; }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: -2px; }
 
 /* Filter bar: wraps to one control per row on a phone rather than squeezing
@@ -213,35 +213,35 @@ $headExtra = <<<CSS
 @media (max-width: 560px) { .filter-bar .f-group { flex-basis: 100%; } }
 
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.neg { color: #b42318; }
-.pos { color: #067647; }
-tr.claw td { background: rgba(180,35,24,.045); }
+.neg { color: #4A5C6A; }
+.pos { color: #4A5C6A; }
+tr.claw td { background: rgba(74,92,106,.045); }
 tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 
 .pill { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em; }
-.pill.draft  { background: rgba(234,88,12,.12); color: #9A3412; }
-.pill.paid   { background: rgba(6,118,71,.12); color: #067647; }
-.pill.voided { background: rgba(100,116,139,.15); color: #475569; }
+.pill.draft  { background: rgba(155,168,171,.12); color: #4A5C6A; }
+.pill.paid   { background: rgba(74,92,106,.12); color: #4A5C6A; }
+.pill.voided { background: rgba(74,92,106,.15); color: #4A5C6A; }
 
 .ladder { list-style: none; margin: 0; padding: 0; max-width: 560px; }
 .ladder li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 8px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
-.ladder li.deduct .amt { color: #b42318; }
+.ladder li.deduct .amt { color: #4A5C6A; }
 .ladder li.final { border-bottom: 0; border-top: 2px solid var(--border); font-weight: 800; font-size: 16px; padding-top: 12px; }
 .ladder .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ladder .lbl small { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 400; }
 
 .alert { border-radius: 10px; padding: 11px 14px; font-size: 13px; margin-bottom: 16px; }
-.alert.ok  { background: rgba(6,118,71,.10); border: 1px solid rgba(6,118,71,.30); color: #067647; }
-.alert.err { background: rgba(180,35,24,.10); border: 1px solid rgba(180,35,24,.30); color: #b42318; }
-.note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light, rgba(26,127,126,.08)); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
-.warn-note { border-left: 3px solid #b54708; background: #fffaeb; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
+.alert.ok  { background: rgba(74,92,106,.10); border: 1px solid rgba(74,92,106,.30); color: #4A5C6A; }
+.alert.err { background: rgba(74,92,106,.10); border: 1px solid rgba(74,92,106,.30); color: #4A5C6A; }
+.note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light, rgba(74,92,106,.08)); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
+.warn-note { border-left: 3px solid #4A5C6A; background: #CCD0CF; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
 .grid2 { display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 18px; align-items: start; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
 
 @media print {
     .sidebar, .mobile-bar, .header, .nav-group, .appbar, .no-print { display: none !important; }
     .main { margin: 0 !important; }
-    .card { box-shadow: none !important; border: 1px solid #ccc; break-inside: avoid; }
+    .card { box-shadow: none !important; border: 1px solid #CCD0CF; break-inside: avoid; }
 }
 </style>
 CSS;

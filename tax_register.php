@@ -119,7 +119,7 @@ $headExtra = <<<CSS
 /* The page header styles are gone with the header itself — the shared
    app bar brings its own from assets/app.css. */
 .month-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.month-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; width: 110px; }
+.month-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #CCD0CF; width: 110px; }
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow-sm); }
 .kpi .k { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
@@ -128,14 +128,14 @@ $headExtra = <<<CSS
 .kpi.total .v { color: var(--primary-dark); }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
-tr.doc-row td { font-weight: 700; background: rgba(0,0,0,.02); }
-.self { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: rgba(100,116,139,.15); color: #475569; }
-.note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light, rgba(26,127,126,.08)); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
-.warn-note { border-left: 3px solid #b54708; background: #fffaeb; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 14px; }
+tr.doc-row td { font-weight: 700; background: rgba(6,20,27,.02); }
+.self { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: rgba(74,92,106,.15); color: #4A5C6A; }
+.note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light, rgba(74,92,106,.08)); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
+.warn-note { border-left: 3px solid #4A5C6A; background: #CCD0CF; padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 12.5px; margin-bottom: 14px; }
 @media print {
     .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group, .appbar { display: none !important; }
     .main { margin: 0 !important; }
-    .card { box-shadow: none !important; border: 1px solid #ccc; break-inside: avoid; }
+    .card { box-shadow: none !important; border: 1px solid #CCD0CF; break-inside: avoid; }
 }
 </style>
 CSS;

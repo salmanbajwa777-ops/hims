@@ -339,14 +339,14 @@ $headExtra = <<<CSS
 .add-row { display: grid; grid-template-columns: 1.6fr 1fr auto auto; gap: 10px; align-items: end; }
 .add-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .add-row input[type=text], .add-row input[type=number] { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .consent-check { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; padding: 10px 0; }
 .consent-check input { width: 15px; height: 15px; accent-color: var(--primary); }
-.tpl-link { display: inline-block; margin-top: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; text-decoration: none; background: var(--surface-2, #eee); color: var(--text-muted); white-space: nowrap; }
+.tpl-link { display: inline-block; margin-top: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; text-decoration: none; background: var(--surface-2, #CCD0CF); color: var(--text-muted); white-space: nowrap; }
 .tpl-link.has { background: var(--green-bg); color: var(--green-text); }
 
-.row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 100%; }
-.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #CCD0CF; max-width: 100%; }
+.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .btn.small { padding: 7px 14px; font-size: 12.5px; }
 .row-inactive td { opacity: .5; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
@@ -356,18 +356,18 @@ $headExtra = <<<CSS
 .doc-pick { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; max-width: 520px; }
 .doc-pick label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .doc-pick select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.doc-pick select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.doc-pick select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 
 .assign-head, .assign-row { display: grid; grid-template-columns: 1.5fr 130px 130px 150px 90px 32px; gap: 10px; align-items: center; }
 .assign-head { margin-top: 18px; padding: 0 2px 7px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border-bottom: 1px solid var(--border); }
 .assign-row { padding: 9px 2px; border-bottom: 1px solid var(--border); }
-.assign-row select, .assign-row input[type=number] { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: #fff; }
-.assign-row select:focus, .assign-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.assign-row select, .assign-row input[type=number] { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: #CCD0CF; }
+.assign-row select:focus, .assign-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .assign-row .sub { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; }
 .assign-row .tax-cell { display: flex; align-items: center; gap: 7px; }
 .assign-row .tax-cell input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--primary); flex-shrink: 0; }
 .assign-row .tax-cell input[type=number] { width: 70px; }
-.remove-row { width: 28px; height: 28px; border: none; border-radius: 8px; background: #FEE2E2; color: #B91C1C; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.remove-row { width: 28px; height: 28px; border: none; border-radius: 8px; background: #CCD0CF; color: #4A5C6A; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .remove-row svg { width: 13px; height: 13px; }
 .assign-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
 .add-assign-btn { background: none; border: 1px dashed var(--border); border-radius: 10px; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 9px 16px; }
@@ -377,10 +377,10 @@ $headExtra = <<<CSS
 .active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
 .active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
-.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #CCD0CF; transition: transform .15s; box-shadow: 0 1px 2px rgba(6,20,27,.2); }
 .active-toggle input:checked + span { background: var(--primary); }
 .active-toggle input:checked + span::after { transform: translateX(18px); }
-.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(26,127,126,.25); }
+.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(74,92,106,.25); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

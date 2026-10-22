@@ -143,18 +143,18 @@ tbody tr:first-child td { border-top: none; }
 .name { font-weight: 600; }
 .status-pill.waiting { background: var(--amber-bg); color: var(--amber-text); }
 .status-pill.in-consult { background: var(--green-bg); color: var(--green-text); }
-.status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
+.status-pill.done { background: #CCD0CF; color: var(--text-secondary); }
 .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
 /* Filter bar sits in its own card above the table, matching the expense
    report's period picker. Wraps on narrow/mobile instead of overflowing. */
 .pick-card { padding: 14px 16px; margin-bottom: 14px; }
 /* Current / Past toggle. Anchors, not buttons — each tab is a real URL, so it
    is linkable, bookmarkable and works with the browser's back button. */
-.mode-tabs { display: inline-flex; gap: 4px; padding: 3px; background: var(--bg, #F1F5F9); border-radius: 9px; margin-bottom: 12px; }
+.mode-tabs { display: inline-flex; gap: 4px; padding: 3px; background: var(--bg, #CCD0CF); border-radius: 9px; margin-bottom: 12px; }
 .mode-tab { padding: 7px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); text-decoration: none; white-space: nowrap; }
-.mode-tab.on { background: var(--surface, #fff); color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.mode-tab.on { background: var(--surface, #CCD0CF); color: var(--primary); box-shadow: 0 1px 2px rgba(6,20,27,.06); }
 .filter-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.filter-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--surface, #fff); color: var(--text); }
+.filter-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--surface, #CCD0CF); color: var(--text); }
 .filter-form .q-field { min-width: 190px; flex: 1 1 190px; }
 /* Hand-off cards */
 .ho-card { padding: 14px 18px; margin-bottom: 14px; border: 1px solid var(--amber); }
@@ -163,9 +163,9 @@ tbody tr:first-child td { border-top: none; }
 .ho-row .pt { flex: 1 1 220px; font-weight: 600; }
 .ho-row .pt small { display: block; font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
 .ho-row form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
-.ho-row input[type=text], .ho-row select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: var(--surface, #fff); color: var(--text); }
-.ho-btn { border: 1px solid var(--border); background: var(--surface, #fff); color: var(--text); border-radius: 8px; font: inherit; font-weight: 600; font-size: 12.5px; padding: 6px 12px; cursor: pointer; }
-.ho-btn.go { background: var(--primary-dark); color: #fff; border-color: var(--primary-dark); }
+.ho-row input[type=text], .ho-row select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: var(--surface, #CCD0CF); color: var(--text); }
+.ho-btn { border: 1px solid var(--border); background: var(--surface, #CCD0CF); color: var(--text); border-radius: 8px; font: inherit; font-weight: 600; font-size: 12.5px; padding: 6px 12px; cursor: pointer; }
+.ho-btn.go { background: var(--primary-dark); color: #CCD0CF; border-color: var(--primary-dark); }
 details.pass-on summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; font-weight: 600; margin-top: 4px; }
 </style>
 CSS;

@@ -113,19 +113,19 @@ $headExtra = <<<CSS
 <style>
 .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .filters a { padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px; text-decoration: none; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.filters a.on { background: var(--primary-dark); border-color: var(--primary-dark); color: #fff; }
+.filters a.on { background: var(--primary-dark); border-color: var(--primary-dark); color: #CCD0CF; }
 .ctable { width: 100%; border-collapse: collapse; }
 .ctable th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .ctable td { padding: 11px 8px; border-bottom: 1px solid var(--border); font-size: 13.5px; vertical-align: middle; }
 .ctable .sub { display: block; font-size: 11.5px; color: var(--text-muted); }
 .cpill { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2.5px 9px; border-radius: 999px; white-space: nowrap; }
-.cpill.pending { background: var(--amber-bg, #fef3c7); color: var(--amber-text, #92400e); }
+.cpill.pending { background: var(--amber-bg, #CCD0CF); color: var(--amber-text, #4A5C6A); }
 .cpill.signed { background: var(--green-bg); color: var(--green-text); }
 .acts { display: flex; gap: 10px; align-items: center; justify-content: flex-end; white-space: nowrap; }
 .acts a { color: var(--primary-dark); font-weight: 600; font-size: 12.5px; text-decoration: underline; }
 .upform { display: flex; gap: 7px; align-items: center; }
 .upform input[type=file] { font-size: 11.5px; max-width: 168px; }
-.upform button { padding: 5px 11px; border: 1px solid var(--primary-dark); background: var(--primary-dark); color: #fff; border-radius: var(--radius-input); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.upform button { padding: 5px 11px; border: 1px solid var(--primary-dark); background: var(--primary-dark); color: #CCD0CF; border-radius: var(--radius-input); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .empty-note { padding: 26px; text-align: center; color: var(--text-muted); font-size: 14px; }
 </style>
 CSS;

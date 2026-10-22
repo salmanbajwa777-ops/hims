@@ -144,27 +144,27 @@ $pageTitle = 'Expense Approval';
 require __DIR__ . '/partials/head.php';
 ?>
 <style>
-.appr-wrap { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; background: var(--bg, #f1f5f4); }
-.appr-card { width: 100%; max-width: 460px; background: #fff; border: 1px solid var(--border, #dde5e4); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(15,23,42,.06); }
-.appr-head { background: var(--primary, var(--primary)); color: #fff; padding: 18px 24px; font-size: 16px; font-weight: 700; }
+.appr-wrap { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; background: var(--bg, #CCD0CF); }
+.appr-card { width: 100%; max-width: 460px; background: #CCD0CF; border: 1px solid var(--border, #CCD0CF); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(6,20,27,.06); }
+.appr-head { background: var(--primary, var(--primary)); color: #CCD0CF; padding: 18px 24px; font-size: 16px; font-weight: 700; }
 .appr-body { padding: 22px 24px; }
 .appr-kv { width: 100%; border-collapse: collapse; margin: 6px 0 18px; }
-.appr-kv td { padding: 8px 10px; border: 1px solid var(--border, #e5ecec); font-size: 13.5px; }
-.appr-kv td:first-child { background: #f7fafa; color: var(--text-secondary, #41504f); width: 42%; }
-.appr-kv td:last-child { font-weight: 600; color: var(--text, #17211f); }
+.appr-kv td { padding: 8px 10px; border: 1px solid var(--border, #CCD0CF); font-size: 13.5px; }
+.appr-kv td:first-child { background: #CCD0CF; color: var(--text-secondary, #4A5C6A); width: 42%; }
+.appr-kv td:last-child { font-weight: 600; color: var(--text, #11212D); }
 .appr-amt { font-size: 22px; font-weight: 800; color: var(--primary, var(--primary)); font-variant-numeric: tabular-nums; margin: 0 0 4px; }
 .appr-actions { display: flex; gap: 10px; margin-top: 6px; }
 .appr-btn { flex: 1; border: none; border-radius: 10px; padding: 13px; font: inherit; font-size: 14.5px; font-weight: 700; cursor: pointer; }
-.appr-approve { background: var(--primary, var(--primary)); color: #fff; }
-.appr-reject { background: #fff; color: var(--red-text, #b3261e); border: 1px solid rgba(225,29,72,.4); }
-.appr-note { font-size: 12.5px; color: var(--text-muted, #6b7c7b); margin-top: 14px; line-height: 1.5; }
+.appr-approve { background: var(--primary, var(--primary)); color: #CCD0CF; }
+.appr-reject { background: #CCD0CF; color: var(--red-text, #4A5C6A); border: 1px solid rgba(74,92,106,.4); }
+.appr-note { font-size: 12.5px; color: var(--text-muted, #4A5C6A); margin-top: 14px; line-height: 1.5; }
 .appr-flash { border-radius: 10px; padding: 12px 14px; font-size: 13.5px; margin-bottom: 16px; }
-.appr-flash.ok  { background: rgba(26,127,126,.10); border: 1px solid rgba(26,127,126,.3); color: var(--primary); }
-.appr-flash.err { background: rgba(225,29,72,.08); border: 1px solid rgba(225,29,72,.28); color: var(--red-text, #b3261e); }
+.appr-flash.ok  { background: rgba(74,92,106,.10); border: 1px solid rgba(74,92,106,.3); color: var(--primary); }
+.appr-flash.err { background: rgba(74,92,106,.08); border: 1px solid rgba(74,92,106,.28); color: var(--red-text, #4A5C6A); }
 .appr-badge { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 20px; padding: 4px 12px; }
-.b-pending  { color: #92590B; background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.34); }
-.b-approved { color: var(--primary); background: rgba(26,127,126,.11); border: 1px solid rgba(26,127,126,.28); }
-.b-rejected { color: var(--red-text, #b3261e); background: rgba(225,29,72,.09); border: 1px solid rgba(225,29,72,.24); }
+.b-pending  { color: #4A5C6A; background: rgba(155,168,171,.13); border: 1px solid rgba(155,168,171,.34); }
+.b-approved { color: var(--primary); background: rgba(74,92,106,.11); border: 1px solid rgba(74,92,106,.28); }
+.b-rejected { color: var(--red-text, #4A5C6A); background: rgba(74,92,106,.09); border: 1px solid rgba(74,92,106,.24); }
 .appr-link { color: var(--primary, var(--primary)); font-weight: 600; text-decoration: none; }
 </style>
 
@@ -179,10 +179,10 @@ require __DIR__ . '/partials/head.php';
 
             <?php if (!$expense): ?>
                 <?php if ($tokenReason === 'not_found' || !$hasToken && !$loggedInApprover): ?>
-                    <p style="font-size:14px;color:#41504f;">This approval link is not valid. If you were sent it by email, it may have already been used, or the address was mistyped.</p>
+                    <p style="font-size:14px;color:#4A5C6A;">This approval link is not valid. If you were sent it by email, it may have already been used, or the address was mistyped.</p>
                     <p class="appr-note">Signed-in admins and managers can review pending expenses from the Expenses page in the app.</p>
                 <?php else: ?>
-                    <p style="font-size:14px;color:#41504f;">That expense could not be found.</p>
+                    <p style="font-size:14px;color:#4A5C6A;">That expense could not be found.</p>
                 <?php endif; ?>
 
             <?php else: ?>

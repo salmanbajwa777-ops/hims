@@ -350,13 +350,13 @@ $headExtra = <<<CSS
 .pp-tile { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
 .pp-tile .k { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); font-weight: 700; }
 .pp-tile .v { font-size: 19px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
-.pp-tile.net .v { color: var(--ok, #2F6D4F); }
-.pp-tile.ref .v { color: var(--danger, #A33A32); }
+.pp-tile.net .v { color: var(--ok, #4A5C6A); }
+.pp-tile.ref .v { color: var(--danger, #4A5C6A); }
 /* Gross, shown under the net so a refunded patient's tile still reconciles. */
 .pp-tile-note { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .pp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .pp-chip { padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 600; text-decoration: none; background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary); }
-.pp-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.pp-chip.on { background: var(--primary); border-color: var(--primary); color: #CCD0CF; }
 .pp-chip .n { opacity: .65; margin-left: 5px; font-variant-numeric: tabular-nums; }
 .pp-year { font-size: 12px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--text-muted); margin: 22px 0 8px 2px; }
 .pp-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 9px; overflow: hidden; }
@@ -368,10 +368,10 @@ $headExtra = <<<CSS
 .pp-line1 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .pp-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 2.5px 8px; border-radius: 5px; white-space: nowrap; }
 .k-opd { background: var(--primary-light); color: var(--primary-accent); }
-.k-er { background: var(--clay-bg, #F5E8E0); color: var(--clay, #A6603F); }
-.k-adm { background: var(--warn-bg, #F6EEDC); color: var(--warn, #8A6318); }
-.k-ipd { background: #E2E8F5; color: #3B5488; }
-.k-proc { background: var(--ok-bg, #E4F0E8); color: var(--ok, #2F6D4F); }
+.k-er { background: var(--clay-bg, #CCD0CF); color: var(--clay, #4A5C6A); }
+.k-adm { background: var(--warn-bg, #CCD0CF); color: var(--warn, #4A5C6A); }
+.k-ipd { background: #CCD0CF; color: #4A5C6A; }
+.k-proc { background: var(--ok-bg, #CCD0CF); color: var(--ok, #4A5C6A); }
 .pp-title { font-weight: 600; }
 .pp-sub { color: var(--text-muted); font-size: 12.5px; margin-top: 3px; }
 .pp-items { color: var(--text-secondary); font-size: 12.5px; margin-top: 5px; }
@@ -382,11 +382,11 @@ $headExtra = <<<CSS
 .pp-inv a:hover { text-decoration: underline; }
 .pp-pay { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 .pp-tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: .4px; }
-.t-void, .t-ref { background: var(--danger-bg, #F7E6E4); color: var(--danger, #A33A32); }
+.t-void, .t-ref { background: var(--danger-bg, #CCD0CF); color: var(--danger, #4A5C6A); }
 .t-waive { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
-.t-unpaid { background: var(--warn-bg, #F6EEDC); color: var(--warn, #8A6318); }
+.t-unpaid { background: var(--warn-bg, #CCD0CF); color: var(--warn, #4A5C6A); }
 .strike { text-decoration: line-through; color: var(--text-muted); }
-.pp-refline { border-top: 1px dashed var(--border); padding: 8px 16px 9px 126px; font-size: 12.5px; color: var(--danger, #A33A32); background: var(--danger-bg, #F7E6E4); }
+.pp-refline { border-top: 1px dashed var(--border); padding: 8px 16px 9px 126px; font-size: 12.5px; color: var(--danger, #4A5C6A); background: var(--danger-bg, #CCD0CF); }
 @media (max-width: 640px) {
   .pp-row { grid-template-columns: 1fr auto; }
   .pp-date { grid-column: 1 / -1; }

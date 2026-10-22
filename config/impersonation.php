@@ -145,9 +145,9 @@ function imp_confirm_field(string $whatItIs): string
     if (!is_impersonating()) {
         return '';
     }
-    return '<label style="display:flex;gap:8px;align-items:flex-start;background:#FFF7E8;'
-         . 'border:1px solid #FBCFB0;border-radius:8px;padding:10px 12px;margin:10px 0;'
-         . 'font-size:12.5px;color:#8a5a00;font-weight:600;cursor:pointer;">'
+    return '<label style="display:flex;gap:8px;align-items:flex-start;background:#CCD0CF;'
+         . 'border:1px solid #CCD0CF;border-radius:8px;padding:10px 12px;margin:10px 0;'
+         . 'font-size:12.5px;color:#4A5C6A;font-weight:600;cursor:pointer;">'
          . '<input type="checkbox" name="imp_confirm" value="1" required style="margin-top:2px;flex:none;">'
          . '<span>' . htmlspecialchars($whatItIs) . ' as <b>' . htmlspecialchars(imp_target_name())
          . '</b> — this is their cash drawer, not yours.</span></label>';

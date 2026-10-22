@@ -119,7 +119,7 @@ function reprint_watermark(array $row): string
         transform: translate(-50%, -50%) rotate(-32deg);
         font-family: Arial, Helvetica, sans-serif;
         font-size: 22mm; font-weight: bold; letter-spacing: .06em;
-        color: rgba(0, 0, 0, .11);
+        color: rgba(6,20,27,.11);
         white-space: nowrap; pointer-events: none; user-select: none;
         z-index: 0;
     }

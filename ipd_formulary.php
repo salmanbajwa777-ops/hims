@@ -193,10 +193,10 @@ table.fm th { text-align: left; background: var(--card-alt); padding: 8px 10px; 
 table.fm td { padding: 8px 10px; border-bottom: 1px solid var(--row-line); }
 .fm-gen { font-weight: 700; }
 .fm-brand { color: var(--text-secondary); font-size: 12.5px; }
-.fm-hi { background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 5px; }
+.fm-hi { background: var(--danger); color: #CCD0CF; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 5px; }
 .fm-off { opacity: .5; }
 .fm-btn { border: 1px solid var(--border-strong); background: var(--card); border-radius: var(--radius-btn); padding: 5px 12px; font-size: var(--fs-btn-sm); font-weight: 600; cursor: pointer; color: var(--text-secondary); text-decoration: none; display: inline-block; }
-.fm-btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+.fm-btn-ok { background: var(--ok); border-color: var(--ok); color: #CCD0CF; }
 .fm-flash { padding: 10px 14px; border-radius: var(--radius-input); margin-bottom: 14px; font-size: var(--fs-cell); font-weight: 500; }
 .fm-flash-ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
 .fm-flash-err { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger); }

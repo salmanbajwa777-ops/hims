@@ -1003,9 +1003,9 @@ $headExtra = <<<CSS
 .section-title { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
 .section-sub { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
 
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--radius-btn); border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--radius-btn); border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #CCD0CF; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .btn:hover { opacity: .92; }
-.btn.secondary { background: #fff; color: var(--text-secondary); border: 1px solid var(--border); }
+.btn.secondary { background: #CCD0CF; color: var(--text-secondary); border: 1px solid var(--border); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .row-acts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
@@ -1020,7 +1020,7 @@ $headExtra = <<<CSS
 .search-card { display: flex; align-items: center; gap: 12px; }
 .search-field { flex: 1; position: relative; }
 .search-field input { width: 100%; padding: 12px 14px 12px 42px; border-radius: var(--radius-input); border: 1px solid var(--border); background: var(--bg); font-size: 14px; color: var(--text); font-family: inherit; }
-.search-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.12); background: #fff; }
+.search-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.12); background: #CCD0CF; }
 .search-field .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); display: flex; }
 .search-field .icon svg { width: 17px; height: 17px; }
 
@@ -1030,7 +1030,7 @@ $headExtra = <<<CSS
 .range-field { display: flex; flex-direction: column; gap: 4px; }
 .range-field label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 .range-field input[type=date] { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); color: var(--text); }
-.range-field input[type=date]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.12); background: #fff; }
+.range-field input[type=date]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.12); background: #CCD0CF; }
 
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
@@ -1039,19 +1039,19 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 .person-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-light); color: var(--primary-dark); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
 .muted { color: var(--text-muted); font-size: 12.5px; }
 .mrn { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); }
-.gender-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: #F1F5F9; color: var(--text-secondary); }
+.gender-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: #CCD0CF; color: var(--text-secondary); }
 .wa-link { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); text-decoration: none; font-size: 12.5px; }
-.wa-link svg { width: 15px; height: 15px; color: #25D366; flex-shrink: 0; }
-.wa-link:hover { color: #128C7E; text-decoration: underline; }
+.wa-link svg { width: 15px; height: 15px; color: #9BA8AB; flex-shrink: 0; }
+.wa-link:hover { color: #4A5C6A; text-decoration: underline; }
 .unpaid-badge { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--red-bg); color: var(--red-text); white-space: nowrap; }
 .dc-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); white-space: nowrap; }
-.dc-select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12px; background: #fff; color: var(--text-secondary); max-width: 140px; }
-.dc-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.12); }
+.dc-select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12px; background: #CCD0CF; color: var(--text-secondary); max-width: 140px; }
+.dc-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.12); }
 .edit-link { font-size: 12.5px; font-weight: 600; color: var(--primary); }
 .edit-link:hover { text-decoration: underline; }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
-.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
+.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
 .panel-overlay.open { display: block; }
 .panel { max-width: 860px; margin: 0 auto; }
 
@@ -1083,9 +1083,9 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .field label .locked-tag { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
 .field label .auto-tag { font-size: 10.5px; font-weight: 700; color: var(--green-text); background: var(--green-bg); padding: 1px 7px; border-radius: 20px; text-transform: uppercase; letter-spacing: .02em; }
 .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; background: var(--bg); color: var(--text); }
-.field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: var(--card); }
+.field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: var(--card); }
 .field input:disabled { background: var(--border); cursor: not-allowed; color: var(--text-muted); }
-.field input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
+.field input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(74,92,106,.12); }
 .field .hint { font-size: 11.5px; color: var(--text-muted); }
 .field .hint.warn { color: var(--red-text); font-weight: 600; }
 .field .hint.ok { color: var(--green-text); font-weight: 600; }
@@ -1117,9 +1117,9 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .f.full { grid-column: 1 / -1; }
 .f > input, .f > select { width: 100%; height: 46px; padding: 18px 14px 4px; border: 1px solid var(--border-strong); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; background: var(--card); color: var(--text); transition: border-color .15s, box-shadow .15s; }
 .f > select { padding-top: 16px; padding-bottom: 2px; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 14px center; }
-.f > input:focus, .f > select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.f > input:focus, .f > select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .f > input:disabled, .f > select:disabled { background: var(--bg); color: var(--text-muted); cursor: not-allowed; }
-.f > input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
+.f > input.over-cap { border-color: var(--red); box-shadow: 0 0 0 3px rgba(74,92,106,.12); }
 
 .f .flabel { position: absolute; left: 15px; top: 23px; transform: translateY(-50%); pointer-events: none; font-size: 13.5px; font-weight: 500; color: var(--text-muted); transition: all .15s ease; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .f > input:focus ~ .flabel,
@@ -1148,7 +1148,7 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 
 /* phone: country code + number in one connected control */
 .phone-wrap { position: relative; display: flex; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--radius-input); background: var(--card); transition: border-color .15s, box-shadow .15s; }
-.phone-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.phone-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .cc-select { flex: 0 0 auto; width: 90px; border: none; background: transparent; color: var(--text); font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 18px 22px 4px 14px; border-radius: var(--radius-input) 0 0 var(--radius-input); cursor: pointer; appearance: none; height: 46px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; }
 .cc-select:focus { outline: none; }
 .cc-divider { width: 1px; background: var(--border); margin: 10px 0; }
@@ -1168,11 +1168,11 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 .form-footer .foot-note svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--primary); }
 @media (max-width: 720px) { .form-footer .foot-note { display: none; } }
 
-.match-banner { display: none; background: var(--amber-bg); border: 1px solid #FDE68A; border-radius: 14px; padding: 14px 16px; gap: 12px; align-items: flex-start; color: var(--amber-text); font-size: 12.5px; }
+.match-banner { display: none; background: var(--amber-bg); border: 1px solid #CCD0CF; border-radius: 14px; padding: 14px 16px; gap: 12px; align-items: flex-start; color: var(--amber-text); font-size: 12.5px; }
 .match-banner.show { display: flex; }
 .match-banner svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 .match-banner .match-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-.match-row { display: flex; align-items: center; justify-content: space-between; background: #fff; border-radius: 10px; padding: 8px 12px; }
+.match-row { display: flex; align-items: center; justify-content: space-between; background: #CCD0CF; border-radius: 10px; padding: 8px 12px; }
 .match-row .name { font-weight: 600; color: var(--text); font-size: 13px; }
 .match-row .meta { font-size: 11.5px; color: var(--text-muted); }
 
@@ -1575,7 +1575,7 @@ require __DIR__ . '/partials/sidebar.php';
 
 <!-- Follow-up "New invoice" panel (returning patient) -->
 <style>
-.fu-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:60; align-items:center; justify-content:center; padding:20px; }
+.fu-overlay { display:none; position:fixed; inset:0; background:rgba(6,20,27,.45); z-index:60; align-items:center; justify-content:center; padding:20px; }
 .fu-overlay.open { display:flex; }
 .fu-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:460px; box-shadow:var(--shadow-lg); overflow:hidden; }
 .fu-head { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 22px 4px; }
@@ -1585,7 +1585,7 @@ require __DIR__ . '/partials/sidebar.php';
 .fu-body { padding:10px 22px 4px; display:flex; flex-direction:column; gap:14px; }
 .fu-body label { display:block; font-size:12.5px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
 .fu-body select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-input); font:inherit; font-size:13.5px; background:var(--bg); color:var(--text); }
-.fu-body select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); background:#fff; }
+.fu-body select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); background:#CCD0CF; }
 .fu-quote { border:1px solid var(--border); border-radius:12px; padding:12px 14px; background:var(--bg); display:flex; justify-content:space-between; align-items:center; }
 .fu-quote .lbl { font-size:12.5px; color:var(--text-secondary); }
 .fu-quote .fee { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -1658,7 +1658,7 @@ require __DIR__ . '/partials/sidebar.php';
      registration). Corrects demographics captured wrong at intake: name spelling,
      DOB, phone, email, CNIC, city/area, address. No delete control lives here. -->
 <style>
-.ep-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:70; align-items:center; justify-content:center; padding:20px; }
+.ep-overlay { display:none; position:fixed; inset:0; background:rgba(6,20,27,.45); z-index:70; align-items:center; justify-content:center; padding:20px; }
 .ep-overlay.open { display:flex; }
 .ep-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:620px; max-height:90vh; overflow-y:auto; box-shadow:var(--shadow-lg); }
 .ep-head { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 22px 4px; }
@@ -1672,7 +1672,7 @@ require __DIR__ . '/partials/sidebar.php';
 .ep-body label { font-size:12.5px; font-weight:600; color:var(--text-secondary); }
 .ep-body label .opt { font-weight:500; color:var(--text-muted); }
 .ep-body input, .ep-body select { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-input); font-size:13.5px; font-family:inherit; background:var(--bg); color:var(--text); }
-.ep-body input:focus, .ep-body select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); background:#fff; }
+.ep-body input:focus, .ep-body select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); background:#CCD0CF; }
 .ep-body .radio-row { display:flex; gap:8px; }
 .ep-body .radio-pill { flex:1; }
 .ep-body .radio-pill input { position:absolute; opacity:0; width:0; height:0; }
@@ -1826,7 +1826,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') epClose(); }
      "Yes" pre-fills doctor/purpose (still editable) and stashes booking_id; the
      SAVE consumes the booking, not this click. "No" leaves the booking live. -->
 <style>
-.bg-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:80; align-items:center; justify-content:center; padding:20px; }
+.bg-overlay { display:none; position:fixed; inset:0; background:rgba(6,20,27,.45); z-index:80; align-items:center; justify-content:center; padding:20px; }
 .bg-overlay.open { display:flex; }
 .bg-modal { background:var(--card); border-radius:var(--radius-card); width:100%; max-width:460px; box-shadow:var(--shadow-lg); overflow:hidden; }
 .bg-head { padding:20px 22px 6px; }

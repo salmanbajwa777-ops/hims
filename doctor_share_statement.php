@@ -302,9 +302,9 @@ $headExtra = <<<CSS
 .tile .v { font-size: 23px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
 .tile .foot { font-size: 11.5px; color: var(--text-secondary); margin-top: 3px; }
 .tile.hero { background: var(--primary); border-color: var(--primary); }
-.tile.hero .k { color: rgba(255,255,255,.72); }
-.tile.hero .v, .tile.hero .foot { color: #fff; }
-.tile.hero .foot { color: rgba(255,255,255,.8); }
+.tile.hero .k { color: rgba(204,208,207,.72); }
+.tile.hero .v, .tile.hero .foot { color: #CCD0CF; }
+.tile.hero .foot { color: rgba(204,208,207,.8); }
 
 /* Doctor identity strip above the breakdown. */
 .who-bar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;
@@ -342,9 +342,9 @@ $headExtra = <<<CSS
 .rail .step.neg .n { color: var(--red-text); }
 .rail .step.muted, .rail .step.muted .n { color: var(--text-muted); font-weight: 400; }
 .rail .payable { display: flex; justify-content: space-between; align-items: baseline;
-                 background: var(--primary-dark); color: #fff; border-radius: var(--radius-input);
+                 background: var(--primary-dark); color: #CCD0CF; border-radius: var(--radius-input);
                  padding: 12px 15px; margin-top: 14px; }
-.rail .payable .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #9BD4CF; }
+.rail .payable .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #CCD0CF; }
 .rail .payable .v { font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 
 .empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13.5px; }

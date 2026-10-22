@@ -526,7 +526,7 @@ $headExtra = <<<CSS
 .card .sub { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; }
 .searchbar { display: flex; gap: 10px; }
 .searchbar input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 14px; background: var(--bg); color: var(--text); }
-.searchbar button { padding: 10px 16px; border: none; border-radius: var(--radius-btn); background: var(--primary-dark); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.searchbar button { padding: 10px 16px; border: none; border-radius: var(--radius-btn); background: var(--primary-dark); color: #CCD0CF; font: inherit; font-weight: 600; cursor: pointer; }
 .plist { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .plist li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); }
 .plist .who { font-size: 13.5px; font-weight: 600; }
@@ -563,13 +563,13 @@ $headExtra = <<<CSS
 .mdisc { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 8px; }
 .mdisc label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .mdisc input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 14px; background: var(--bg); box-sizing: border-box; }
-.mdisc input:focus { outline: none; border-color: var(--primary); background: #fff; }
+.mdisc input:focus { outline: none; border-color: var(--primary); background: #CCD0CF; }
 .mdisc input[type="number"] { font-weight: 700; font-variant-numeric: tabular-nums; }
 .mdisc-note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
-.raisebtn { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: var(--radius-btn); background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
+.raisebtn { margin-top: 18px; width: 100%; padding: 13px; border: none; border-radius: var(--radius-btn); background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #CCD0CF; font: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
 .raisebtn[disabled] { opacity: .5; cursor: not-allowed; }
 .disc-note { font-size: 12px; color: var(--primary-dark); margin-top: 8px; }
-.consent-note { font-size: 12px; color: var(--amber-text, #92400e); background: var(--amber-bg, #fef3c7); border-radius: var(--radius-input); padding: 8px 11px; margin-top: 10px; }
+.consent-note { font-size: 12px; color: var(--amber-text, #4A5C6A); background: var(--amber-bg, #CCD0CF); border-radius: var(--radius-input); padding: 8px 11px; margin-top: 10px; }
 /* Signer capture. Primary/sage rather than the amber above on purpose: this is
    not a warning. Nothing is blocked, the consent prints either way, and the
    fields only decide whether it prints pre-filled or with a rule to write on. */

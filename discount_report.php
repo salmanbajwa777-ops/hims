@@ -110,8 +110,8 @@ $headExtra = <<<CSS
    app bar brings its own from assets/app.css. */
 
 .month-form { display: flex; align-items: center; gap: 10px; }
-.month-form input[type=month] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
-.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.month-form input[type=month] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #CCD0CF; }
+.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow-sm); }
@@ -126,7 +126,7 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 @media print {
     .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group { display: none !important; }
     .main { margin: 0 !important; }
-    .card { box-shadow: none !important; border: 1px solid #ccc; }
+    .card { box-shadow: none !important; border: 1px solid #CCD0CF; }
 }
 </style>
 CSS;

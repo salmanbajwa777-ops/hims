@@ -45,7 +45,7 @@ if (!$bill) { http_response_code(404); exit('Admission invoice not found.'); }
 // A draft header raised at admit has no lines or totals yet - don't print a blank invoice.
 if ($bill['status'] === 'draft') {
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Not billed yet</title></head>'
-       . '<body style="font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;color:#333;"><h2>Not billed yet</h2>'
+       . '<body style="font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;color:#253745;"><h2>Not billed yet</h2>'
        . '<p>This admission has not been billed. The invoice appears here once the bill is finalised at discharge.</p>'
        . '<p><a href="admission_discharge.php?id=' . (int) $admissionId . '">Go to the discharge &amp; billing page</a></p></body></html>';
     exit;
@@ -96,33 +96,33 @@ $paymentModeNote = $bill['status'] !== 'draft'
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; margin: 0; padding: 0; }
-        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #000; background: #fff; }
+        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #06141B; background: #CCD0CF; }
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; }
 
-        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1mm; display: flex; gap: 5mm; align-items: stretch; }
+        .head-box { border: 1px solid #9BA8AB; padding: 3mm 3.5mm 1mm; display: flex; gap: 5mm; align-items: stretch; }
         .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
         .head-left > .ids, .head-right > .meta { margin-top: auto; }
         .brandline { display: flex; align-items: center; gap: 3px; }
-        .clinic-logo { height: 30px; display: block; background: #fff; }
+        .clinic-logo { height: 30px; display: block; background: #CCD0CF; }
         .brandtext { display: flex; flex-direction: column; justify-content: center; height: 30px; }
-        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #0F7362; white-space: nowrap; line-height: 1; }
-        .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A4A4A; line-height: 1; margin-top: 2px; }
+        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #4A5C6A; white-space: nowrap; line-height: 1; }
+        .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A5C6A; line-height: 1; margin-top: 2px; }
         .addr { font-size: 9px; line-height: 1.35; margin-top: 5px; margin-bottom: 4px; }
         .tagline { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.15; margin-bottom: 9px; white-space: nowrap; }
         .meta { width: 100%; border-collapse: collapse; font-size: 9px; }
         /* Fixed row height + nowrap so a long value can never grow a row taller than
            its opposite number in the ID table — keeping the two halves symmetric.
            Overlong values are shrunk (see .fit) rather than wrapped or clipped. */
-        .meta td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; vertical-align: middle; white-space: nowrap; overflow: hidden; }
-        .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
+        .meta td { border: 1px solid #CCD0CF; padding: 0 5px; height: 18px; vertical-align: middle; white-space: nowrap; overflow: hidden; }
+        .meta td.k { background: #CCD0CF; font-weight: bold; color: #06141B; width: 40%; }
         .meta td.v { font-weight: bold; }
         /* Payment mode as a light note centred in the footnote row (matches the
            consultation slip's foot). */
-        .pay-note { font-weight: normal; color: #555; white-space: nowrap; text-align: center; }
+        .pay-note { font-weight: normal; color: #4A5C6A; white-space: nowrap; text-align: center; }
         .clinic-contact { margin-top: 0; margin-bottom: 4px; }
         .ids { width: 100%; border-collapse: collapse; font-size: 9px; }
-        .ids td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; vertical-align: middle; white-space: nowrap; overflow: hidden; }
-        .ids td.k { background: #F4F4F4; font-weight: bold; width: 42%; }
+        .ids td { border: 1px solid #CCD0CF; padding: 0 5px; height: 18px; vertical-align: middle; white-space: nowrap; overflow: hidden; }
+        .ids td.k { background: #CCD0CF; font-weight: bold; width: 42%; }
         .ids td.v { font-weight: bold; }
         /* A value too long for its cell is scaled down in place: the cell keeps its
            width and height, only the text shrinks so the whole sheet stays symmetric.
@@ -131,20 +131,20 @@ $paymentModeNote = $bill['status'] !== 'draft'
 
         .doc-title { text-align: center; font-weight: bold; font-size: 11px; letter-spacing: 1px; margin: 3mm 0 1mm; }
         .items { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 0; }
-        .items th, .items td { border: 1px solid #C8C8C8; padding: 4px 6px; }
-        .items th { background: #F4F4F4; font-weight: bold; text-align: center; }
+        .items th, .items td { border: 1px solid #CCD0CF; padding: 4px 6px; }
+        .items th { background: #CCD0CF; font-weight: bold; text-align: center; }
         .items .desc { text-align: left; }
         .items .num { text-align: right; white-space: nowrap; }
-        .items .kind { color: #111; font-size: 8px; }
+        .items .kind { color: #06141B; font-size: 8px; }
         .totals { width: 55%; margin-left: auto; border-collapse: collapse; font-size: 10px; margin-top: -1px; }
-        .totals td { border: 1px solid #C8C8C8; padding: 4px 6px; }
-        .totals td.k { background: #F4F4F4; font-weight: bold; }
+        .totals td { border: 1px solid #CCD0CF; padding: 4px 6px; }
+        .totals td.k { background: #CCD0CF; font-weight: bold; }
         .totals td.v { text-align: right; font-weight: bold; white-space: nowrap; }
         .totals tr.grand td { font-size: 11px; }
         .paystat { margin-top: 3mm; font-size: 9.5px; }
         .paystat b { font-weight: bold; }
         .quote { text-align: center; font-size: 9.5px; font-style: italic; margin-top: auto; padding-top: 5mm; }
-        .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #B0B0B0; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px; }
+        .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #9BA8AB; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px; }
 
         @media print {
             html, body { width: 148mm; height: 210mm; }
@@ -154,11 +154,11 @@ $paymentModeNote = $bill['status'] !== 'draft'
             .no-print { display: none !important; }
         }
         .admin-bar { max-width: 148mm; margin: 10px auto 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
-        .admin-bar.ok { background: #DCFCE7; color: #166534; }
-        .admin-bar.err { background: #FEE2E2; color: #991B1B; }
-        .admin-bar.tools { background: #F1F5F9; color: #334155; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        .void-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #991B1B; background: #FEE2E2; padding: 2px 8px; border-radius: 6px; }
-        .btn-void { background: #991B1B; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .admin-bar.ok { background: #CCD0CF; color: #4A5C6A; }
+        .admin-bar.err { background: #CCD0CF; color: #4A5C6A; }
+        .admin-bar.tools { background: #CCD0CF; color: #253745; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .void-badge { display: inline-block; font-size: 11px; font-weight: 700; color: #4A5C6A; background: #CCD0CF; padding: 2px 8px; border-radius: 6px; }
+        .btn-void { background: #4A5C6A; color: #CCD0CF; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
     </style>
 </head>
 <body>

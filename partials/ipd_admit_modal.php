@@ -28,17 +28,17 @@ $ipdNurses  = $ipdNurses ?? [];
 $ipdAdmitOk = $roomCategories && $ipdNurses;
 ?>
 <style>
-.ipd-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
+.ipd-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
 .ipd-overlay.open { display: flex; }
-.ipd-modal { background: var(--card,#fff); border-radius: 16px; width: 100%; max-width: 460px; box-shadow: 0 20px 50px rgba(0,0,0,.25); overflow: hidden; }
+.ipd-modal { background: var(--card,#CCD0CF); border-radius: 16px; width: 100%; max-width: 460px; box-shadow: 0 20px 50px rgba(6,20,27,.25); overflow: hidden; }
 .ipd-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 6px; }
-.ipd-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted,#64748b); }
+.ipd-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted,#4A5C6A); }
 .ipd-name { font-size: 18px; font-weight: 700; margin-top: 2px; }
-.ipd-x { background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-muted,#64748b); cursor: pointer; }
+.ipd-x { background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-muted,#4A5C6A); cursor: pointer; }
 .ipd-body { padding: 10px 22px 4px; display: flex; flex-direction: column; gap: 16px; max-height: 70vh; overflow-y: auto; }
-.ipd-field > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary,#475569); margin-bottom: 8px; }
+.ipd-field > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary,#4A5C6A); margin-bottom: 8px; }
 .ipd-field select, .ipd-field input[type="text"], .ipd-field input[type="number"], .ipd-field textarea {
-    width: 100%; padding: 10px 12px; border: 1px solid var(--border,#e2e8f0); border-radius: 12px; font: inherit; font-size: 13.5px; background: var(--bg,#f8fafc);
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border,#CCD0CF); border-radius: 12px; font: inherit; font-size: 13.5px; background: var(--bg,#CCD0CF);
 }
 .ipd-field textarea { resize: vertical; min-height: 60px; }
 .ipd-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -81,7 +81,7 @@ $ipdAdmitOk = $roomCategories && $ipdNurses;
                 </div>
 
                 <div class="ipd-field">
-                    <label>Admitting consultant <span style="color:var(--red,#dc2626);">*</span></label>
+                    <label>Admitting consultant <span style="color:var(--red,#4A5C6A);">*</span></label>
                     <select name="admitting_consultant_id" id="ipdAdmitDoctor">
                         <option value="">&mdash; manual entry below &mdash;</option>
                         <?php foreach ($ipdDoctors as $d): ?>
@@ -92,7 +92,7 @@ $ipdAdmitOk = $roomCategories && $ipdNurses;
                 </div>
 
                 <div class="ipd-field">
-                    <label>Primary nurse <span style="color:var(--red,#dc2626);">*</span></label>
+                    <label>Primary nurse <span style="color:var(--red,#4A5C6A);">*</span></label>
                     <select name="assigned_nurse_id" required>
                         <option value="">Select primary nurse&hellip;</option>
                         <?php foreach ($ipdNurses as $n): ?>

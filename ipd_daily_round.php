@@ -218,11 +218,11 @@ $notes->execute([$admissionId]);
 $notes = $notes->fetchAll();
 
 $progressMeta = [
-    'IMPROVING'     => ['🟢', 'Improving',        '#16a34a'],
-    'STABLE'        => ['🟡', 'Stable',           '#ca8a04'],
-    'SLOW'          => ['🟠', 'Slow Improvement', '#ea580c'],
-    'DETERIORATING' => ['🔴', 'Deteriorating',    '#dc2626'],
-    'CRITICAL'      => ['⚫', 'Critically Ill',   '#111827'],
+    'IMPROVING'     => ['🟢', 'Improving',        '#9BA8AB'],
+    'STABLE'        => ['🟡', 'Stable',           '#9BA8AB'],
+    'SLOW'          => ['🟠', 'Slow Improvement', '#9BA8AB'],
+    'DETERIORATING' => ['🔴', 'Deteriorating',    '#4A5C6A'],
+    'CRITICAL'      => ['⚫', 'Critically Ill',   '#06141B'],
 ];
 $nextReviewLabels = [
     'EVENING' => 'Evening Review', 'TOMORROW_AM' => 'Tomorrow Morning',
@@ -252,12 +252,12 @@ $headExtra = <<<CSS
     width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; font:inherit; font-size:13.5px; background:var(--bg);
 }
 .wr-field textarea { resize:vertical; min-height:56px; }
-.wr-field input:focus, .wr-field textarea:focus, .wr-field select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); background:#fff; }
-.wr-req { color:var(--red-text,#dc2626); }
+.wr-field input:focus, .wr-field textarea:focus, .wr-field select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); background:#CCD0CF; }
+.wr-req { color:var(--red-text,#4A5C6A); }
 .prog-opts { display:flex; flex-wrap:wrap; gap:10px; }
 .prog-opt { display:flex; align-items:center; gap:8px; border:1px solid var(--border); border-radius:12px; padding:9px 14px; cursor:pointer; font-size:13.5px; font-weight:600; }
 .prog-opt input { position:absolute; opacity:0; width:0; height:0; }
-.prog-opt:has(input:checked) { border-color:var(--primary); background:var(--primary-light); box-shadow:0 0 0 2px rgba(26,127,126,.2); }
+.prog-opt:has(input:checked) { border-color:var(--primary); background:var(--primary-light); box-shadow:0 0 0 2px rgba(74,92,106,.2); }
 .vit-strip { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
 .vit-chip { border:1px solid var(--border); border-radius:9px; padding:6px 11px; font-size:12.5px; background:var(--bg); }
 .vit-chip b { font-weight:700; }
@@ -306,7 +306,7 @@ require __DIR__ . '/partials/sidebar.php';
             </div>
 
             <?php if (!$isOpen): ?>
-            <div class="alert" style="background:#F1F5F9;color:var(--text-secondary);">This admission is <?= htmlspecialchars(strtolower(str_replace('_',' ',$adm['status']))) ?> — new daily-round notes are closed. Existing notes remain below.</div>
+            <div class="alert" style="background:#CCD0CF;color:var(--text-secondary);">This admission is <?= htmlspecialchars(strtolower(str_replace('_',' ',$adm['status']))) ?> — new daily-round notes are closed. Existing notes remain below.</div>
             <?php elseif ($canWrite): ?>
             <form method="POST" action="ipd_daily_round.php?id=<?= $admissionId ?>">
                 <input type="hidden" name="action" value="save_round">
@@ -399,7 +399,7 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
             </form>
             <?php else: ?>
-            <div class="alert" style="background:#F1F5F9;color:var(--text-secondary);">You can view the daily-round history but not write notes.</div>
+            <div class="alert" style="background:#CCD0CF;color:var(--text-secondary);">You can view the daily-round history but not write notes.</div>
             <?php endif; ?>
 
             <!-- Read-only note timeline -->

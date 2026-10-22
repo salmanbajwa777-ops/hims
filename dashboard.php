@@ -332,13 +332,13 @@ try {
     //  non-zero explicit-deny count is still worth surfacing to an admin.)
 } catch (Throwable $e) { $pending = 0; }
 if (($adm['discharging'] ?? 0) > 0) {
-    $notifs[] = ['icon' => 'bed', 'bg' => '#FFFBEB', 'fg' => '#92400E', 'text' => $adm['discharging'] . ' discharge' . ($adm['discharging'] > 1 ? 's' : '') . ' awaiting payment', 'href' => 'admissions.php', 'action' => 'Open'];
+    $notifs[] = ['icon' => 'bed', 'bg' => '#CCD0CF', 'fg' => '#4A5C6A', 'text' => $adm['discharging'] . ' discharge' . ($adm['discharging'] > 1 ? 's' : '') . ' awaiting payment', 'href' => 'admissions.php', 'action' => 'Open'];
 }
 if ($todayOutstanding > 0) {
-    $notifs[] = ['icon' => 'wallet', 'bg' => '#FEF2F2', 'fg' => '#B91C1C', 'text' => 'Rs ' . number_format($todayOutstanding, 0) . ' outstanding today', 'href' => 'checkout.php', 'action' => 'View'];
+    $notifs[] = ['icon' => 'wallet', 'bg' => '#CCD0CF', 'fg' => '#4A5C6A', 'text' => 'Rs ' . number_format($todayOutstanding, 0) . ' outstanding today', 'href' => 'checkout.php', 'action' => 'View'];
 }
 if (($visitStats['waiting'] ?? 0) > 0) {
-    $notifs[] = ['icon' => 'user-group', 'bg' => '#ECFDF5', 'fg' => '#047857', 'text' => $visitStats['waiting'] . ' patient' . ($visitStats['waiting'] > 1 ? 's' : '') . ' waiting in queue', 'href' => 'receptionist.php', 'action' => 'Open'];
+    $notifs[] = ['icon' => 'user-group', 'bg' => '#CCD0CF', 'fg' => '#4A5C6A', 'text' => $visitStats['waiting'] . ' patient' . ($visitStats['waiting'] > 1 ? 's' : '') . ' waiting in queue', 'href' => 'receptionist.php', 'action' => 'Open'];
 }
 
 // ---- Today's queue by doctor (replaces the fake inventory card) -----------
@@ -429,9 +429,9 @@ $headExtra = <<<CSS
 .row-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; align-items: start; }
 
 /* ---------- Revenue chart ---------- */
-.chart-tabs { display: flex; gap: 6px; background: #F1F5F9; padding: 4px; border-radius: 10px; width: fit-content; }
+.chart-tabs { display: flex; gap: 6px; background: #CCD0CF; padding: 4px; border-radius: 10px; width: fit-content; }
 .chart-tab { padding: 6px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); cursor: pointer; }
-.chart-tab.active { background: #fff; color: var(--primary-dark); box-shadow: var(--shadow-sm); }
+.chart-tab.active { background: #CCD0CF; color: var(--primary-dark); box-shadow: var(--shadow-sm); }
 .chart-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
 .rev-panel { display: none; }
 .rev-panel.active { display: block; }
@@ -448,7 +448,7 @@ $headExtra = <<<CSS
     overflow: hidden;
 }
 /* Doctor share sits on TOP of the stack (visually above clinic). */
-.bar-doctor { position: absolute; top: 0; left: 0; right: 0; background: var(--amber, #F59E0B); }
+.bar-doctor { position: absolute; top: 0; left: 0; right: 0; background: var(--amber, #9BA8AB); }
 /* Expense threshold marker. A dashed RULE, not a filled segment: expenses are a
    cost measured against the bar, not another slice of it, and the fill colours
    are already spoken for (clay is reserved for refunds/delete).
@@ -459,7 +459,7 @@ $headExtra = <<<CSS
 .bar-exp {
     position: absolute; left: 50%; transform: translateX(-50%);
     width: 34px; height: 0;
-    border-top: 2px dashed var(--text-secondary, #4A574F);
+    border-top: 2px dashed var(--text-secondary, #4A5C6A);
 }
 /* When expenses exceed revenue the marker floats well above its bar, and with
    nothing joining the two it reads as a stray line. This drops a hairline from
@@ -468,7 +468,7 @@ $headExtra = <<<CSS
     content: ''; position: absolute;
     left: 50%; top: 0; width: 1px; height: var(--exp-drop, 0px);
     transform: translateX(-50%);
-    background: linear-gradient(180deg, var(--text-secondary, #4A574F), transparent);
+    background: linear-gradient(180deg, var(--text-secondary, #4A5C6A), transparent);
     opacity: .45;
 }
 .bar-day { font-size: 11px; color: var(--text-muted); }
@@ -477,11 +477,11 @@ $headExtra = <<<CSS
 .lg-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
 .lg-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .lg-clinic { background: linear-gradient(180deg, var(--primary), var(--primary-dark)); }
-.lg-doctor { background: var(--amber, #F59E0B); }
+.lg-doctor { background: var(--amber, #9BA8AB); }
 /* Matches the dashed rule on the chart rather than a solid block. */
 .lg-expense {
     background: none; border-radius: 0; height: 0;
-    border-top: 2px dashed var(--text-secondary, #4A574F);
+    border-top: 2px dashed var(--text-secondary, #4A5C6A);
 }
 /* Ledger */
 .ledger-toggle {
@@ -499,11 +499,11 @@ $headExtra = <<<CSS
 .summary-row { display: flex; justify-content: space-between; align-items: baseline; }
 .summary-row .label { font-size: 12.5px; color: var(--text-secondary); }
 .summary-row .value { font-size: 15px; font-weight: 700; }
-.summary-row .value.good { color: #047857; }
+.summary-row .value.good { color: #4A5C6A; }
 .summary-row .value.neg { color: var(--text-secondary); }
 /* A negative net is the one number here that must not be mistaken for a good
    one, so it takes clay — the palette's "money leaving" hue. */
-.summary-row .value.bad, .ledger-table td.num.bad { color: var(--danger, #9E4E34); }
+.summary-row .value.bad, .ledger-table td.num.bad { color: var(--danger, #4A5C6A); }
 .rev-note { margin: 12px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
 
 /* ---------- Snapshot ---------- */
@@ -518,7 +518,7 @@ $headExtra = <<<CSS
 .flow-stage { flex: 1; text-align: center; }
 .flow-stage .num { font-size: 24px; font-weight: 700; }
 .flow-stage .name { font-size: 12px; color: var(--text-secondary); margin: 4px 0 8px; }
-.flow-bar { height: 6px; border-radius: 4px; background: #F1F5F9; overflow: hidden; }
+.flow-bar { height: 6px; border-radius: 4px; background: #CCD0CF; overflow: hidden; }
 .flow-bar-fill { height: 100%; background: var(--primary); border-radius: 4px; }
 .flow-pct { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 .flow-arrow { display: flex; align-items: center; color: var(--text-muted); font-size: 14px; padding-top: 30px; }
@@ -527,7 +527,7 @@ $headExtra = <<<CSS
 .census-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 8px; }
 .census-item {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 6px; padding: 22px 10px; border-radius: 14px; background: #F8FAFC; border: 1px solid var(--border);
+    gap: 6px; padding: 22px 10px; border-radius: 14px; background: #CCD0CF; border: 1px solid var(--border);
     text-align: center; transition: background .15s ease;
 }
 .census-item:hover { background: var(--primary-light); }
@@ -543,8 +543,8 @@ tr.top-performer td:first-child::before { content: "★"; color: var(--amber); m
 .doc-name { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .doc-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--primary-light); color: var(--primary-dark); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
 .status-pill { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
-.status-pill.in-clinic { background: #ECFDF5; color: #047857; }
-.status-pill.on-leave { background: #FEF2F2; color: #B91C1C; }
+.status-pill.in-clinic { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.on-leave { background: #CCD0CF; color: #4A5C6A; }
 tabular { font-variant-numeric: tabular-nums; }
 
 /* ---------- Financial summary ---------- */
@@ -553,8 +553,8 @@ tabular { font-variant-numeric: tabular-nums; }
 .fin-card .label { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 6px; }
 .fin-card .value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 .fin-card .trend { font-size: 12px; font-weight: 600; }
-.fin-card .trend.up { color: #047857; }
-.fin-card .trend.down { color: #B91C1C; }
+.fin-card .trend.up { color: #4A5C6A; }
+.fin-card .trend.down { color: #4A5C6A; }
 
 /* ---------- Timeline ---------- */
 .timeline { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; }
@@ -582,7 +582,7 @@ tabular { font-variant-numeric: tabular-nums; }
 .inv-list { display: flex; flex-direction: column; gap: 10px; }
 .inv-item {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 14px; border-radius: 10px; background: #FEF2F2; border-left: 3px solid var(--red);
+    padding: 10px 14px; border-radius: 10px; background: #CCD0CF; border-left: 3px solid var(--red);
 }
 .inv-name { font-size: 13px; font-weight: 600; }
 .inv-qty { font-size: 12px; color: var(--text-secondary); }
@@ -592,15 +592,15 @@ tabular { font-variant-numeric: tabular-nums; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; }
 .cal-dow { font-size: 11px; color: var(--text-muted); font-weight: 600; padding-bottom: 6px; }
 .cal-day { font-size: 13px; padding: 8px 0; border-radius: 8px; position: relative; color: var(--text-secondary); }
-.cal-day.today { background: var(--primary); color: #fff; font-weight: 700; }
+.cal-day.today { background: var(--primary); color: #CCD0CF; font-weight: 700; }
 .cal-day.has-event::after { content: ""; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--amber); }
 .cal-day.muted { color: var(--text-muted); opacity: .4; }
 
 /* ---------- Password nag ---------- */
 .nag-banner {
-    background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 14px;
+    background: #CCD0CF; border: 1px solid #CCD0CF; border-radius: 14px;
     padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    font-size: 13.5px; color: #92400E;
+    font-size: 13.5px; color: #4A5C6A;
 }
 .nag-banner a { font-weight: 700; text-decoration: underline; }
 
@@ -843,11 +843,11 @@ require __DIR__ . '/partials/sidebar.php';
                             <span class="census-label">Currently Admitted</span>
                         </a>
                         <a class="census-item" href="admissions.php" style="text-decoration:none;color:inherit;">
-                            <span class="census-num" style="color:#B45309;"><?= number_format($adm['discharging']) ?></span>
+                            <span class="census-num" style="color:#4A5C6A;"><?= number_format($adm['discharging']) ?></span>
                             <span class="census-label">Awaiting Discharge</span>
                         </a>
                         <a class="census-item" href="admissions.php" style="text-decoration:none;color:inherit;">
-                            <span class="census-num" style="color:#047857;"><?= number_format($adm['today']) ?></span>
+                            <span class="census-num" style="color:#4A5C6A;"><?= number_format($adm['today']) ?></span>
                             <span class="census-label">Admitted Today</span>
                         </a>
                     </div>
@@ -931,7 +931,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <div class="section-sub">Needs your attention</div>
                     <div class="notif-list">
                         <?php if (!$notifs): ?>
-                            <div class="notif-item"><span class="notif-icon" style="background:#ECFDF5;color:#047857;"><?= icon('check-circle') ?></span><span class="notif-text">All clear — nothing needs your attention.</span></div>
+                            <div class="notif-item"><span class="notif-icon" style="background:#CCD0CF;color:#4A5C6A;"><?= icon('check-circle') ?></span><span class="notif-text">All clear — nothing needs your attention.</span></div>
                         <?php else: foreach ($notifs as $n): ?>
                             <a class="notif-item" href="<?= htmlspecialchars($n['href']) ?>" style="text-decoration:none;color:inherit;">
                                 <span class="notif-icon" style="background:<?= $n['bg'] ?>;color:<?= $n['fg'] ?>;"><?= icon($n['icon']) ?></span>
@@ -954,7 +954,7 @@ require __DIR__ . '/partials/sidebar.php';
                         <?php else: foreach ($queueByDoctor as $q):
                             $pending = (int) $q['pending']; $total = (int) $q['total']; $seen = $total - $pending;
                         ?>
-                            <div class="inv-item" style="background:#F8FAFC;border-left-color:var(--primary);">
+                            <div class="inv-item" style="background:#CCD0CF;border-left-color:var(--primary);">
                                 <div>
                                     <div class="inv-name"><?= htmlspecialchars($q['name']) ?></div>
                                     <div class="inv-qty"><?= $seen ?> seen &middot; <?= $pending ?> waiting</div>

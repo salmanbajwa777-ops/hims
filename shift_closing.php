@@ -433,7 +433,7 @@ require __DIR__ . '/partials/sidebar.php';
 .ltab tr.kid td:first-child { padding-left: 16px; color: var(--text-secondary); }
 .ltab tr.kid.zero td { color: var(--text-muted); }
 .cpill { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 9px; background: var(--primary-light); color: var(--primary-dark); font-size: 10.5px; font-weight: 700; text-align: center; }
-.cpill.z { background: #eef0ef; color: var(--text-muted); }
+.cpill.z { background: #CCD0CF; color: var(--text-muted); }
 
 /* Expandable per-voucher expense detail. */
 .exp-toggle { background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: var(--primary-dark); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -449,8 +449,8 @@ require __DIR__ . '/partials/sidebar.php';
 .exp-to { color: var(--text-muted); }
 .exp-amt { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
 
-.expect { display: flex; justify-content: space-between; align-items: baseline; background: var(--primary-dark); color: #fff; border-radius: var(--radius-input); padding: 12px 15px; margin-bottom: 14px; }
-.expect .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #9BD4CF; }
+.expect { display: flex; justify-content: space-between; align-items: baseline; background: var(--primary-dark); color: #CCD0CF; border-radius: var(--radius-input); padding: 12px 15px; margin-bottom: 14px; }
+.expect .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #CCD0CF; }
 .expect .v { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 
 .variance-strip { display: flex; justify-content: space-between; align-items: center; border-radius: var(--radius-input); padding: 9px 13px; margin: -4px 0 14px; font-weight: 600; font-size: 12.5px; }
@@ -467,9 +467,9 @@ require __DIR__ . '/partials/sidebar.php';
 .two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .two-up .cfield { margin-bottom: 12px; }
 
-.close-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: var(--radius-btn); font: inherit; font-weight: 600; font-size: 14px; padding: 12px 22px; cursor: pointer; background: var(--primary-dark); color: #fff; width: 100%; }
+.close-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: var(--radius-btn); font: inherit; font-weight: 600; font-size: 14px; padding: 12px 22px; cursor: pointer; background: var(--primary-dark); color: #CCD0CF; width: 100%; }
 .close-btn:hover { background: var(--primary); }
-.close-btn.amber { background: var(--amber); color: #3B2E08; }
+.close-btn.amber { background: var(--amber); color: #253745; }
 .lock-note { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
 .alert-error { background: var(--red-bg); color: var(--red-text); border-radius: var(--radius-input); padding: 12px 16px; font-size: 13px; font-weight: 500; }
 .closed-box { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-card); padding: 20px 22px; }
@@ -491,7 +491,7 @@ require __DIR__ . '/partials/sidebar.php';
 .ho-row form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
 .ho-row input[type=text], .ho-row select { padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 12.5px; background: var(--bg); color: var(--text); }
 .ho-btn { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: var(--radius-btn); font: inherit; font-weight: 600; font-size: 12.5px; padding: 7px 12px; cursor: pointer; text-decoration: none; display: inline-block; }
-.ho-btn.go { background: var(--primary-dark); color: #fff; border-color: var(--primary-dark); }
+.ho-btn.go { background: var(--primary-dark); color: #CCD0CF; border-color: var(--primary-dark); }
 .ho-btn.amber { background: var(--amber-bg); color: var(--amber-text); border-color: var(--amber); }
 .ho-ok { background: var(--green-bg); color: var(--green-text); border-radius: var(--radius-input); padding: 10px 14px; font-size: 13px; font-weight: 500; }
 .close-btn[disabled] { opacity: .5; cursor: not-allowed; }

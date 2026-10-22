@@ -598,7 +598,7 @@ $headExtra = <<<CSS
 .edit-link:hover { text-decoration: underline; }
 
 /* ---------- Add Staff full-page panel ---------- */
-.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
+.panel-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 50; overflow-y: auto; padding: 40px 20px; }
 .panel-overlay.open { display: block; }
 .panel { max-width: 860px; margin: 0 auto; }
 
@@ -630,12 +630,12 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 .field label { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; }
 .field label .opt { font-weight: 500; color: var(--text-muted); }
 .field input, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; background: var(--bg); color: var(--text); }
-.field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: var(--card); }
+.field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: var(--card); }
 
 .doc-list { display: flex; flex-direction: column; gap: 10px; }
 .doc-row { display: grid; grid-template-columns: 240px 1fr auto; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; background: var(--bg); }
 .doc-row select { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; font-family: inherit; background: var(--card); color: var(--text); }
-.doc-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.doc-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .doc-file-input { width: 100%; font-size: 12.5px; color: var(--text-secondary); }
 .doc-file-input::file-selector-button {
     font-family: inherit; font-size: 12px; font-weight: 600; color: var(--primary); background: var(--primary-light);
@@ -646,7 +646,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 .doc-row .remove-row svg { width: 14px; height: 14px; }
 
 .add-doc-btn { display: flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px dashed var(--border-strong); border-radius: 14px; padding: 12px; font-size: 13px; font-weight: 600; color: var(--text-secondary); cursor: pointer; background: transparent; font-family: inherit; width: 100%; margin-top: 12px; }
-.add-doc-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(26,127,126,.04); }
+.add-doc-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(74,92,106,.04); }
 .add-doc-btn svg { width: 15px; height: 15px; }
 
 .info-banner { display: flex; gap: 12px; align-items: flex-start; background: var(--primary-light); border-radius: 14px; padding: 14px 16px; color: var(--primary-dark); font-size: 12.5px; }
@@ -665,7 +665,7 @@ form.staff-form { display: flex; flex-direction: column; gap: 20px; }
 .perm-key { font-size: 11px; color: var(--text-muted); font-family: 'Courier New', monospace; }
 
 /* ---------- Document viewer panel ---------- */
-.docs-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
+.docs-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 50; align-items: center; justify-content: center; padding: 20px; }
 .docs-panel-overlay.open { display: flex; }
 .docs-panel { background: var(--card); border-radius: 20px; padding: 24px; width: 100%; max-width: 460px; box-shadow: var(--shadow-md); max-height: 80vh; overflow-y: auto; }
 .docs-panel h2 { font-size: 16px; margin-bottom: 2px; }

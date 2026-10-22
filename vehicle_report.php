@@ -140,10 +140,10 @@ $headExtra = <<<CSS
 .filters input, .filters select { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px;
     font: inherit; font-size: 13.5px; background: var(--bg); }
 .filters input:focus, .filters select:focus { outline: none; border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(63,122,99,.18); background: #fff; }
+    box-shadow: 0 0 0 3px rgba(74,92,106,.18); background: #CCD0CF; }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
-.kpi { background: var(--card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; }
+.kpi { background: var(--card, #CCD0CF); border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; }
 .kpi .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 700; }
 .kpi .v { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 3px; letter-spacing: -.02em; }
 .kpi .d { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
@@ -156,12 +156,12 @@ $headExtra = <<<CSS
 .chip { display: inline-block; font-size: 10.5px; font-weight: 700; border-radius: 20px; padding: 2px 9px;
         white-space: nowrap; border: 1px solid transparent; }
 .c-fuel  { background: var(--primary-light); color: var(--primary); border-color: var(--border-strong); }
-.c-warn  { background: var(--amber-bg); color: var(--amber-text); border-color: rgba(245,158,11,.34); }
-.c-bad   { background: var(--red-bg); color: var(--red-text); border-color: rgba(225,29,72,.24); }
+.c-warn  { background: var(--amber-bg); color: var(--amber-text); border-color: rgba(155,168,171,.34); }
+.c-bad   { background: var(--red-bg); color: var(--red-text); border-color: rgba(74,92,106,.24); }
 .row-focus td { background: var(--primary-light); }
 .row-inactive td { opacity: .55; }
 .muted-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
-.warnbox { background: var(--amber-bg); border: 1px solid rgba(245,158,11,.34); border-radius: 11px;
+.warnbox { background: var(--amber-bg); border: 1px solid rgba(155,168,171,.34); border-radius: 11px;
            padding: 12px 15px; font-size: 12.8px; line-height: 1.6; margin-bottom: 16px; }
 .notebox { background: var(--primary-light); border: 1px solid var(--border); border-radius: 11px;
            padding: 12px 16px; font-size: 12.8px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 16px; }
@@ -194,7 +194,7 @@ tr.suspect td:first-child { box-shadow: inset 3px 0 0 var(--red-text); }
 .att .what b { font-size: 13.5px; }
 .att .what span { display: block; font-size: 12.5px; color: var(--text-secondary); }
 .att .fix { font-size: 12.5px; font-weight: 700; color: var(--primary); text-decoration: none;
-    border: 1px solid var(--border-strong); background: var(--card, #fff); border-radius: 8px;
+    border: 1px solid var(--border-strong); background: var(--card, #CCD0CF); border-radius: 8px;
     padding: 0 13px; min-height: 40px; display: inline-flex; align-items: center; white-space: nowrap; }
 .att .fix:hover { background: var(--primary-light); }
 
@@ -283,7 +283,7 @@ require __DIR__ . '/partials/sidebar.php';
                 </div>
                 <?php endif; ?>
                 <?php if ($fleet['partial_blocked'] > 0): ?>
-                <div style="<?= $fleet['bad_gaps'] > 0 ? 'margin-top:8px;padding-top:8px;border-top:1px dashed rgba(245,158,11,.40);' : '' ?>">
+                <div style="<?= $fleet['bad_gaps'] > 0 ? 'margin-top:8px;padding-top:8px;border-top:1px dashed rgba(155,168,171,.40);' : '' ?>">
                     <b><?= $fleet['partial_blocked'] ?> segment<?= $fleet['partial_blocked'] === 1 ? '' : 's' ?> excluded from km/L (partial fill).</b>
                     This is not an error — a part fill's litres cannot be matched to a distance. Those
                     fills still count toward cost per km, and the <b>approx km/L</b> column below covers

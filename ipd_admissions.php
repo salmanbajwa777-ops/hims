@@ -109,8 +109,8 @@ tbody tr:first-child td { border-top: none; }
 .mrn { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 12.5px; }
 .name { font-weight: 600; }
 .status-pill.active { background: var(--green-bg); color: var(--green-text); }
-.status-pill.progress { background: #EDE7FB; color: #6D28D9; }
-.status-pill.done { background: #F1F5F9; color: var(--text-secondary); }
+.status-pill.progress { background: #CCD0CF; color: #4A5C6A; }
+.status-pill.done { background: #CCD0CF; color: var(--text-secondary); }
 .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; font-weight: 600; }
 .admit-cta { display:flex; justify-content:flex-end; margin-bottom:14px; }
 .file-link { display:block; margin-top:3px; color:var(--text-secondary); font-weight:600; font-size:11.5px; }
@@ -118,11 +118,11 @@ tbody tr:first-child td { border-top: none; }
 /* Current / Past toggle + filter bar — kept identical to admissions.php so the
    two admission boards read as one control. Anchors, so each tab is a real URL. */
 .pick-card { padding: 14px 16px; margin-bottom: 14px; }
-.mode-tabs { display: inline-flex; gap: 4px; padding: 3px; background: var(--bg, #F1F5F9); border-radius: 9px; margin-bottom: 12px; }
+.mode-tabs { display: inline-flex; gap: 4px; padding: 3px; background: var(--bg, #CCD0CF); border-radius: 9px; margin-bottom: 12px; }
 .mode-tab { padding: 7px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); text-decoration: none; white-space: nowrap; }
-.mode-tab.on { background: var(--surface, #fff); color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.mode-tab.on { background: var(--surface, #CCD0CF); color: var(--primary); box-shadow: 0 1px 2px rgba(6,20,27,.06); }
 .filter-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.filter-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--surface, #fff); color: var(--text); }
+.filter-form input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 13.5px; background: var(--surface, #CCD0CF); color: var(--text); }
 .filter-form .q-field { min-width: 190px; flex: 1 1 190px; }
 /* Treatment-sheet flags on the ward list — an unsigned drug chart must be
    visible from the list, not only after opening the stay. */

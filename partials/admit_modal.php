@@ -52,22 +52,22 @@ $admitIpdOk = $admitShowIpd && $roomCategories && $ipdNurses;
 $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
 ?>
 <style>
-.admit-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
+.admit-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.45); z-index: 60; align-items: center; justify-content: center; padding: 20px; }
 .admit-overlay.open { display: flex; }
-.admit-modal { background: var(--card,#fff); border-radius: 16px; width: 100%; max-width: 460px; box-shadow: 0 20px 50px rgba(0,0,0,.25); overflow: hidden; }
+.admit-modal { background: var(--card,#CCD0CF); border-radius: 16px; width: 100%; max-width: 460px; box-shadow: 0 20px 50px rgba(6,20,27,.25); overflow: hidden; }
 .admit-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 22px 6px; }
-.admit-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted,#64748b); }
+.admit-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted,#4A5C6A); }
 .admit-name { font-size: 18px; font-weight: 700; margin-top: 2px; }
-.admit-x { background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-muted,#64748b); cursor: pointer; }
+.admit-x { background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-muted,#4A5C6A); cursor: pointer; }
 .admit-body { padding: 10px 22px 4px; display: flex; flex-direction: column; gap: 16px; }
-.admit-field > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary,#475569); margin-bottom: 8px; }
+.admit-field > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary,#4A5C6A); margin-bottom: 8px; }
 .type-opts { display: flex; flex-direction: column; gap: 8px; }
-.type-opt { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border,#e2e8f0); border-radius: 12px; padding: 11px 14px; cursor: pointer; }
-.type-opt:has(input:checked) { border-color: var(--primary,#1a7f7e); background: var(--primary-light,#e6f4f4); }
+.type-opt { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border,#CCD0CF); border-radius: 12px; padding: 11px 14px; cursor: pointer; }
+.type-opt:has(input:checked) { border-color: var(--primary,#4A5C6A); background: var(--primary-light,#CCD0CF); }
 .type-opt .type-body { display: flex; flex-direction: column; }
 .type-opt .type-name { font-size: 13.5px; font-weight: 600; }
-.type-opt .type-rate { font-size: 12px; color: var(--text-muted,#64748b); }
-.admit-field select, .admit-field input[type="text"], .admit-field input[type="number"], .admit-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border,#e2e8f0); border-radius: 12px; font: inherit; font-size: 13.5px; background: var(--bg,#f8fafc); }
+.type-opt .type-rate { font-size: 12px; color: var(--text-muted,#4A5C6A); }
+.admit-field select, .admit-field input[type="text"], .admit-field input[type="number"], .admit-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border,#CCD0CF); border-radius: 12px; font: inherit; font-size: 13.5px; background: var(--bg,#CCD0CF); }
 .admit-field textarea { resize: vertical; min-height: 60px; }
 .admit-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px 20px; }
 /* In-Door merge: the body can now grow past the viewport (room category + room +
@@ -139,7 +139,7 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                          saw this patient (set by openAdmit); "Other" reveals the
                          free-text box for a visiting/locum doctor. -->
                     <div class="admit-field">
-                        <label>Admitting doctor <span style="color:var(--red,#dc2626);">*</span></label>
+                        <label>Admitting doctor <span style="color:var(--red,#4A5C6A);">*</span></label>
                         <select name="admitting_doctor_id" id="admitDoctor" data-opd-required>
                             <option value="">Select doctor&hellip;</option>
                             <?php foreach ($admDoctors as $d): ?>
@@ -153,7 +153,7 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                     <!-- Primary nurse — mandatory. `required` is toggled by JS so a
                          hidden picker can never block the other route's submit. -->
                     <div class="admit-field" style="margin-top:16px;">
-                        <label>Primary nurse <span style="color:var(--red,#dc2626);">*</span></label>
+                        <label>Primary nurse <span style="color:var(--red,#4A5C6A);">*</span></label>
                         <select name="assigned_nurse_id" id="admitNurse" data-opd-required>
                             <option value="">Select primary nurse&hellip;</option>
                             <?php foreach ($admNurses as $n): ?>
@@ -177,7 +177,7 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                          reception_admit_reason(+_other); the handler ignores it for
                          doctors and before the reason column exists. -->
                     <div class="admit-field" style="margin-top:16px;">
-                        <label>Why is reception admitting? <span style="color:var(--red,#dc2626);">*</span></label>
+                        <label>Why is reception admitting? <span style="color:var(--red,#4A5C6A);">*</span></label>
                         <select name="reception_admit_reason" id="admitRecReason" data-opd-required <?= $admitShowIpd ? '' : 'required' ?>>
                             <option value="">Select reason&hellip;</option>
                             <option value="Doctor did not mark it">Doctor did not mark it</option>
@@ -229,7 +229,7 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                     </div>
 
                     <div class="admit-field" style="margin-top:16px;">
-                        <label>Admitting consultant <span style="color:var(--red,#dc2626);">*</span></label>
+                        <label>Admitting consultant <span style="color:var(--red,#4A5C6A);">*</span></label>
                         <select name="admitting_consultant_id" id="admitIpdDoctor" data-ipd-required>
                             <option value="">Select consultant&hellip;</option>
                             <?php foreach ($ipdDoctors as $d): ?>
@@ -241,7 +241,7 @@ $admitHasAnyRoute = $admitOpdOk || $admitIpdOk;
                     </div>
 
                     <div class="admit-field" style="margin-top:16px;">
-                        <label>Primary nurse <span style="color:var(--red,#dc2626);">*</span></label>
+                        <label>Primary nurse <span style="color:var(--red,#4A5C6A);">*</span></label>
                         <select name="assigned_nurse_id" id="admitIpdNurse" data-ipd-required>
                             <option value="">Select primary nurse&hellip;</option>
                             <?php foreach ($ipdNurses as $n): ?>

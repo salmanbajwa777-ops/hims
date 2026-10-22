@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary-dark: #223A31; --primary: #2C4A3E; --primary-accent: #3F7A63; }
+        :root { --primary-dark: #253745; --primary: #253745; --primary-accent: #4A5C6A; }
         * { box-sizing: border-box; }
         body {
             margin: 0;
@@ -64,37 +64,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #F8FAFC;
+            background: #CCD0CF;
         }
         .card {
-            background: #fff;
+            background: #CCD0CF;
             border-radius: 20px;
             padding: 40px;
             width: 100%;
             max-width: 400px;
-            box-shadow: 0 10px 25px rgba(15,23,42,.08);
-            border: 1px solid #E2E8F0;
+            box-shadow: 0 10px 25px rgba(6,20,27,.08);
+            border: 1px solid #CCD0CF;
         }
-        .card h1 { margin: 0 0 4px; font-size: 20px; color: #0F172A; }
-        .card p.subtitle { margin: 0 0 24px; color: #0A0F1A; font-size: 13.5px; }
-        label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+        .card h1 { margin: 0 0 4px; font-size: 20px; color: #06141B; }
+        .card p.subtitle { margin: 0 0 24px; color: #06141B; font-size: 13.5px; }
+        label { display: block; font-size: 13px; font-weight: 600; color: #253745; margin-bottom: 6px; }
         input[type="password"] {
-            width: 100%; padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 12px;
+            width: 100%; padding: 10px 12px; border: 1px solid #CCD0CF; border-radius: 12px;
             font-size: 14px; margin-bottom: 16px;
         }
-        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
         button {
             width: 100%; padding: 11px; border: none; border-radius: 14px;
             background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-            color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+            color: #CCD0CF; font-size: 14px; font-weight: 600; cursor: pointer;
         }
         button:hover { opacity: .92; }
-        .error { background: #FEF2F2; color: #B91C1C; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
-        .success { background: #ECFDF5; color: #047857; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+        .error { background: #CCD0CF; color: #4A5C6A; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+        .success { background: #CCD0CF; color: #4A5C6A; padding: 10px 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
         .back-link { display: block; text-align: center; margin-top: 16px; font-size: 13px; color: var(--primary-accent); }
         .pw-wrap { position: relative; margin-bottom: 16px; }
         .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
-        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #111827; padding: 4px; width: auto; margin: 0; display: flex; }
+        .pw-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #06141B; padding: 4px; width: auto; margin: 0; display: flex; }
         .pw-eye:hover { color: var(--primary); }
         .pw-eye svg { width: 18px; height: 18px; }
     </style>
@@ -133,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function pwToggle(id, btn) {
             var i = document.getElementById(id);
             i.type = i.type === 'password' ? 'text' : 'password';
-            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#111827';
+            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#06141B';
         }
         </script>
         <a class="back-link" href="<?= $landingPage ?>">&larr; Back to dashboard</a>

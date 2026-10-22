@@ -103,13 +103,13 @@ $headExtra = <<<CSS
 .proc-list a.on { background: var(--primary-light); color: var(--primary-dark); font-weight: 600; }
 .proc-list .tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
 .proc-list .tag.has { background: var(--green-bg); color: var(--green-text); }
-.proc-list .tag.no { background: var(--surface-2, #eee); color: var(--text-muted); }
+.proc-list .tag.no { background: var(--surface-2, #CCD0CF); color: var(--text-muted); }
 .tpl-area { width: 100%; min-height: 230px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.65; resize: vertical; background: var(--surface); color: var(--text-primary); }
 .ph-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
 .ph-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .ph-table td:first-child { white-space: nowrap; width: 1%; }
 .ph-table code { background: var(--primary-light); color: var(--primary-dark); padding: 1.5px 6px; border-radius: 4px; font-size: 12px; cursor: pointer; }
-.frozen-note { font-size: 12.5px; color: var(--amber-text, #92400e); background: var(--amber-bg, #fef3c7); border-radius: var(--radius-input); padding: 9px 12px; margin-top: 14px; }
+.frozen-note { font-size: 12.5px; color: var(--amber-text, #4A5C6A); background: var(--amber-bg, #CCD0CF); border-radius: var(--radius-input); padding: 9px 12px; margin-top: 14px; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

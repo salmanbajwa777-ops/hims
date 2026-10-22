@@ -197,16 +197,16 @@ $headExtra = <<<CSS
    app bar brings its own from assets/app.css. */
 
 .month-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.month-form input[type=month] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
-.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.month-form input[type=month] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #CCD0CF; }
+.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow-sm); }
 .kpi .k { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
 .kpi .v { font-size: 22px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .kpi .sub { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
-.kpi.profit .v { color: #067647; }
-.kpi.loss .v { color: #b42318; }
+.kpi.profit .v { color: #4A5C6A; }
+.kpi.loss .v { color: #4A5C6A; }
 
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
@@ -214,29 +214,29 @@ $headExtra = <<<CSS
 .pnl { list-style: none; margin: 0; padding: 0; max-width: 620px; }
 .pnl li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 8px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
 .pnl li.sub { padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); border-bottom: 1px dotted var(--border); }
-.pnl li.deduct .amt { color: #b42318; }
+.pnl li.deduct .amt { color: #4A5C6A; }
 .pnl li.rule { border-bottom: 0; border-top: 2px solid var(--border); font-weight: 800; font-size: 15px; padding-top: 11px; margin-top: 2px; }
-.pnl li.final { border-bottom: 0; border-top: 3px double var(--text-primary, #16211C); font-weight: 800; font-size: 17px; padding-top: 13px; margin-top: 4px; }
-.pnl li.final.pos .amt { color: #067647; }
-.pnl li.final.neg .amt { color: #b42318; }
+.pnl li.final { border-bottom: 0; border-top: 3px double var(--text-primary, #11212D); font-weight: 800; font-size: 17px; padding-top: 13px; margin-top: 4px; }
+.pnl li.final.pos .amt { color: #4A5C6A; }
+.pnl li.final.neg .amt { color: #4A5C6A; }
 .pnl .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pnl .lbl small { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 400; margin-top: 1px; }
 
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em; }
-.badge.open   { background: rgba(234,88,12,.12); color: #9A3412; }
-.badge.closed { background: rgba(6,118,71,.12); color: #067647; }
+.badge.open   { background: rgba(155,168,171,.12); color: #4A5C6A; }
+.badge.closed { background: rgba(74,92,106,.12); color: #4A5C6A; }
 
 .close-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
              border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--card); margin-bottom: 18px; }
 .close-bar .txt { font-size: 12.5px; line-height: 1.55; flex: 1 1 320px; }
 .alert { border-radius: 10px; padding: 11px 14px; font-size: 13px; margin-bottom: 16px; }
-.alert.ok  { background: rgba(6,118,71,.10); border: 1px solid rgba(6,118,71,.30); color: #067647; }
-.alert.err { background: rgba(180,35,24,.10); border: 1px solid rgba(180,35,24,.30); color: #b42318; }
+.alert.ok  { background: rgba(74,92,106,.10); border: 1px solid rgba(74,92,106,.30); color: #4A5C6A; }
+.alert.err { background: rgba(74,92,106,.10); border: 1px solid rgba(74,92,106,.30); color: #4A5C6A; }
 
 @media print {
     .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group, .appbar, .close-bar { display: none !important; }
     .main { margin: 0 !important; }
-    .card { box-shadow: none !important; border: 1px solid #ccc; break-inside: avoid; }
+    .card { box-shadow: none !important; border: 1px solid #CCD0CF; break-inside: avoid; }
     .badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>

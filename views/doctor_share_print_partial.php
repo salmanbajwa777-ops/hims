@@ -45,37 +45,37 @@ $n2 = fn(float $v) => number_format($v, 2);
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; height: 210mm; margin: 0; padding: 0; }
-        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 11px; line-height: 1.3; color: #000; background: #fff; }
+        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 11px; line-height: 1.3; color: #06141B; background: #fff; }
         .slip-container { width: 100%; height: 100%; padding: 8mm; overflow: hidden; display: flex; flex-direction: column; }
         .header { text-align: center; margin-bottom: 4px; }
         .clinic-logo { height: 28px; vertical-align: middle; margin-right: 4px; background: #fff; }
-        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #0A6B5E; }
-        .website { font-family: Arial, Helvetica, sans-serif; font-size: 9px; font-weight: bold; letter-spacing: 2px; margin-bottom: 2px; color: #0A6B5E; }
+        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #4A5C6A; }
+        .website { font-family: Arial, Helvetica, sans-serif; font-size: 9px; font-weight: bold; letter-spacing: 2px; margin-bottom: 2px; color: #4A5C6A; }
         .clinic-tagline { font-size: 10px; margin: 2px 0; font-weight: bold; }
         .contact-info { font-size: 9px; line-height: 1.2; margin-top: 2px; }
         .contact-info p { margin: 1px 0; }
         .doctype { text-align: center; font-weight: bold; font-size: 12px; letter-spacing: 2px; margin: 6px 0 2px; }
         .refno { text-align: center; font-size: 10px; }
-        hr { border: none; border-top: 1px solid #000; margin: 4px 0; }
-        .meta-table { width: 100%; border: 1px solid #000; border-collapse: collapse; font-size: 10px; margin-bottom: 4px; }
-        .meta-table td { border: 1px solid #000; padding: 2px 3px; vertical-align: top; }
-        .meta-table td.k { width: 26%; background-color: #f0f0f0; font-weight: bold; }
-        .amounts-table { width: 100%; border-collapse: collapse; border: 1px solid #000; font-size: 10px; margin-bottom: 4px; }
-        .amounts-table th { border: 1px solid #000; padding: 2px 3px; background-color: #f0f0f0; text-align: left; font-size: 9px; letter-spacing: .5px; }
-        .amounts-table td { border: 1px solid #000; padding: 2px 3px; }
+        hr { border: none; border-top: 1px solid #06141B; margin: 4px 0; }
+        .meta-table { width: 100%; border: 1px solid #06141B; border-collapse: collapse; font-size: 10px; margin-bottom: 4px; }
+        .meta-table td { border: 1px solid #06141B; padding: 2px 3px; vertical-align: top; }
+        .meta-table td.k { width: 26%; background-color: #CCD0CF; font-weight: bold; }
+        .amounts-table { width: 100%; border-collapse: collapse; border: 1px solid #06141B; font-size: 10px; margin-bottom: 4px; }
+        .amounts-table th { border: 1px solid #06141B; padding: 2px 3px; background-color: #CCD0CF; text-align: left; font-size: 9px; letter-spacing: .5px; }
+        .amounts-table td { border: 1px solid #06141B; padding: 2px 3px; }
         .text-right { text-align: right; }
         /* Sub-total inside a stream (OPD collected); the grand total uses .net. */
-        .amounts-table .sub td { background-color: #f7f7f7; font-weight: bold; }
-        .amounts-table .net { background-color: #f0f0f0; font-weight: bold; border-top: 2px solid #000; font-size: 11px; }
+        .amounts-table .sub td { background-color: #CCD0CF; font-weight: bold; }
+        .amounts-table .net { background-color: #CCD0CF; font-weight: bold; border-top: 2px solid #06141B; font-size: 11px; }
         .amounts-table .none td { font-style: italic; }
         .section-title { font-size: 9px; font-weight: bold; letter-spacing: 1px; margin: 4px 0 2px; }
         .detail { font-size: 9.5px; margin: 2px 0; }
         .signatures { display: flex; gap: 12px; margin-top: auto; padding-top: 24px; }
         .sig { flex: 1; text-align: center; }
-        .sig .line { border-top: 1px solid #000; margin-bottom: 3px; }
+        .sig .line { border-top: 1px solid #06141B; margin-bottom: 3px; }
         .sig .role { font-size: 8.5px; font-weight: bold; letter-spacing: .5px; }
         .sig .nm { font-size: 8.5px; }
-        .footer { text-align: center; font-size: 8px; line-height: 1.2; margin-top: 8px; border-top: 1px solid #000; padding-top: 2px; display: flex; justify-content: space-between; }
+        .footer { text-align: center; font-size: 8px; line-height: 1.2; margin-top: 8px; border-top: 1px solid #06141B; padding-top: 2px; display: flex; justify-content: space-between; }
         @media print {
             body { margin: 0; padding: 0; width: 148mm; height: 210mm; }
             .slip-container { margin: 0; padding: 8mm; height: 210mm; }

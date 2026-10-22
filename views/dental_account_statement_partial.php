@@ -48,42 +48,42 @@ require_once __DIR__ . '/../config/payment_methods.php';
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; margin: 0; padding: 0; }
-        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #000; background: #fff; }
+        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #06141B; background: #fff; }
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; }
 
-        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
+        .head-box { border: 1px solid #9BA8AB; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
         .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
         .band-1 { height: 30px; display: flex; align-items: center; }
         .band-2 { height: 27px; display: flex; flex-direction: column; justify-content: center; margin-bottom: 3px; }
         .brandline { display: flex; align-items: center; gap: 3px; }
         .clinic-logo { height: 30px; display: block; background: #fff; }
         .brandtext { display: flex; flex-direction: column; justify-content: center; height: 30px; }
-        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #0F7362; white-space: nowrap; line-height: 1; }
-        .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A4A4A; line-height: 1; margin-top: 2px; }
+        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #4A5C6A; white-space: nowrap; line-height: 1; }
+        .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A5C6A; line-height: 1; margin-top: 2px; }
         .addr { font-size: 9px; line-height: 1.35; }
         .tagline { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.15; white-space: nowrap; }
 
         .ids, .meta { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: auto; }
-        .ids td, .meta td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-        .ids td.k, .meta td.k { background: #F4F4F4; font-weight: bold; width: 40%; }
+        .ids td, .meta td { border: 1px solid #CCD0CF; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+        .ids td.k, .meta td.k { background: #CCD0CF; font-weight: bold; width: 40%; }
         .ids td.v, .meta td.v { font-weight: bold; }
 
         .doctype { text-align: center; font-weight: bold; font-size: 11px; letter-spacing: 2px; margin: 3mm 0 1mm; }
-        .statusmark { text-align: center; font-size: 10px; font-weight: bold; letter-spacing: 1px; border: 1.5px solid #000; padding: 2px 6px; margin: 0 auto 2mm; width: fit-content; }
+        .statusmark { text-align: center; font-size: 10px; font-weight: bold; letter-spacing: 1px; border: 1.5px solid #06141B; padding: 2px 6px; margin: 0 auto 2mm; width: fit-content; }
 
         .sect { font-size: 9px; font-weight: bold; letter-spacing: 1px; margin: 3mm 0 1mm; text-transform: uppercase; }
 
         .tbl { width: 100%; border-collapse: collapse; font-size: 9px; }
-        .tbl td, .tbl th { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; vertical-align: middle; }
-        .tbl th { background: #F4F4F4; font-weight: bold; text-align: left; }
+        .tbl td, .tbl th { border: 1px solid #CCD0CF; padding: 0 5px; height: 18px; vertical-align: middle; }
+        .tbl th { background: #CCD0CF; font-weight: bold; text-align: left; }
         .tbl .num { text-align: right; }
         .tbl .ctr { text-align: center; }
         .tbl tr.sub td { font-weight: normal; }
-        .tbl tr.total td { background: #F4F4F4; font-weight: bold; border-top: 1.5px solid #000; }
-        .tbl tr.bal td { background: #EDEDED; font-weight: bold; font-size: 10.5px; height: 22px; border-top: 1.5px solid #000; }
+        .tbl tr.total td { background: #CCD0CF; font-weight: bold; border-top: 1.5px solid #06141B; }
+        .tbl tr.bal td { background: #CCD0CF; font-weight: bold; font-size: 10.5px; height: 22px; border-top: 1.5px solid #06141B; }
 
-        .note { font-size: 8.5px; color: #444; margin-top: 3mm; line-height: 1.45; }
-        .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #B0B0B0; margin-top: 5mm; padding-top: 2px; font-size: 7.5px; }
+        .note { font-size: 8.5px; color: #253745; margin-top: 3mm; line-height: 1.45; }
+        .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #9BA8AB; margin-top: 5mm; padding-top: 2px; font-size: 7.5px; }
 
         @media print {
             html, body { width: 148mm; }

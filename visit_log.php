@@ -81,15 +81,15 @@ $headExtra = <<<CSS
 <style>
 .vl-filterbar { display: flex; flex-direction: column; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
 .vl-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.vl-row input[type=date], .vl-row select, .vl-row input[type=text] { padding: 8px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 12.5px; background: #fff; }
+.vl-row input[type=date], .vl-row select, .vl-row input[type=text] { padding: 8px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 12.5px; background: #CCD0CF; }
 .vl-row input[type=text] { flex: 1; min-width: 180px; }
 .vl-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .vl-stream { font-weight: 700; font-size: 11px; padding: 3px 9px; border-radius: 7px; display: inline-block; white-space: nowrap; }
 .vl-stream-OPD { background: var(--primary-light); color: var(--primary-dark); }
 .vl-stream-ER { background: var(--danger-bg); color: var(--danger); }
-.vl-stream-IPD { background: #eef0fb; color: #4c5bb2; }
-.vl-stream-DENTAL { background: #f3ecfa; color: #7c4ea8; }
-.vl-stream-PROCEDURE { background: #fdf0e3; color: #c07018; }
+.vl-stream-IPD { background: #CCD0CF; color: #4A5C6A; }
+.vl-stream-DENTAL { background: #CCD0CF; color: #4A5C6A; }
+.vl-stream-PROCEDURE { background: #CCD0CF; color: #9BA8AB; }
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow-sm); }
 .kpi .k { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }

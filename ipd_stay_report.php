@@ -85,34 +85,34 @@ $logoFile = brand_logo($adm['consultant_specialty'] ?? null);
 <style>
 /* @page is written by partials/paper_size.php so the size can be switched. */
 * { box-sizing: border-box; }
-body { font-family: 'Lora', Georgia, serif; color: #1a1a1a; margin: 0; padding: 16px; font-size: 12.5px; }
+body { font-family: 'Lora', Georgia, serif; color: #11212D; margin: 0; padding: 16px; font-size: 12.5px; }
 .wrap { max-width: 148mm; margin: 0 auto; }
 :root[data-paper="A4"] .wrap { max-width: 186mm; }
-.hdr { border: 1.5px solid #1a1a1a; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; text-align: center; }
-.clinic-logo { height: 34px; display: block; background: #fff; margin: 0 auto 2px; }
+.hdr { border: 1.5px solid #11212D; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; text-align: center; }
+.clinic-logo { height: 34px; display: block; background: #CCD0CF; margin: 0 auto 2px; }
 .hdr h1 { font-size: 18px; margin: 0 0 2px; letter-spacing: .02em; }
-.hdr .sub { font-size: 11px; color: #444; }
+.hdr .sub { font-size: 11px; color: #253745; }
 .meta { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .meta table { font-size: 11.5px; }
 .meta td { padding: 1px 0; }
-.meta td:first-child { color: #555; padding-right: 10px; }
+.meta td:first-child { color: #4A5C6A; padding-right: 10px; }
 table.items { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-table.items th, table.items td { padding: 6px 8px; border-bottom: 1px solid #ccc; text-align: left; vertical-align: top; }
-table.items th { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #555; }
+table.items th, table.items td { padding: 6px 8px; border-bottom: 1px solid #CCD0CF; text-align: left; vertical-align: top; }
+table.items th { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #4A5C6A; }
 table.items td.amt, table.items th.amt { text-align: right; white-space: nowrap; }
 table.items td.when { white-space: nowrap; }
-table.items tr.off td { color: #777; }
+table.items tr.off td { color: #4A5C6A; }
 table.items tr.off td.svc { text-decoration: line-through; }
-.note { font-size: 10.5px; color: #666; font-style: italic; }
+.note { font-size: 10.5px; color: #4A5C6A; font-style: italic; }
 .tot { width: 60%; margin-left: auto; }
 .tot .r { display: flex; justify-content: space-between; padding: 3px 8px; font-size: 12.5px; }
-.tot .r.grand { border-top: 1.5px solid #1a1a1a; font-weight: 700; font-size: 14px; margin-top: 4px; padding-top: 6px; }
-.tally { margin-top: 14px; border-top: 1px solid #ccc; padding-top: 8px; font-size: 11px; color: #444; }
-.tally b { color: #1a1a1a; }
-.foot { margin-top: 20px; font-size: 10.5px; color: #666; text-align: center; }
-.empty { padding: 20px; text-align: center; color: #666; font-size: 12px; }
+.tot .r.grand { border-top: 1.5px solid #11212D; font-weight: 700; font-size: 14px; margin-top: 4px; padding-top: 6px; }
+.tally { margin-top: 14px; border-top: 1px solid #CCD0CF; padding-top: 8px; font-size: 11px; color: #253745; }
+.tally b { color: #11212D; }
+.foot { margin-top: 20px; font-size: 10.5px; color: #4A5C6A; text-align: center; }
+.empty { padding: 20px; text-align: center; color: #4A5C6A; font-size: 12px; }
 .print-btn { margin: 12px 0; display: flex; align-items: center; gap: 14px; }
-.print-btn .paper-pick { padding-left: 14px; border-left: 1px solid #ccc; }
+.print-btn .paper-pick { padding-left: 14px; border-left: 1px solid #CCD0CF; }
 @media print { .print-btn { display: none; } body { padding: 0; } }
 </style>
 </head>

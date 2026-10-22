@@ -86,10 +86,10 @@ $headExtra = <<<CSS
 /* The page header styles are gone with the header itself — the shared
    app bar brings its own from assets/app.css. */
 
-.pending-alert { background: var(--amber-bg); border: 1px solid #FDE68A; border-radius: 14px; padding: 16px 18px; display: flex; align-items: flex-start; gap: 12px; }
+.pending-alert { background: var(--amber-bg); border: 1px solid #CCD0CF; border-radius: 14px; padding: 16px 18px; display: flex; align-items: flex-start; gap: 12px; }
 .pending-alert svg { width: 18px; height: 18px; color: var(--amber-text); flex-shrink: 0; margin-top: 1px; }
 .pending-alert .title { font-size: 13.5px; font-weight: 700; color: var(--amber-text); }
-.pending-alert .sub { font-size: 12.5px; color: #92400E; opacity: .85; margin-top: 1px; }
+.pending-alert .sub { font-size: 12.5px; color: #4A5C6A; opacity: .85; margin-top: 1px; }
 
 .pending-row { display: flex; align-items: center; gap: 14px; padding: 12px 4px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .pending-row .info { flex: 1; min-width: 220px; }
@@ -108,14 +108,14 @@ $headExtra = <<<CSS
 .city-row.active .city-name { color: var(--primary-dark); font-weight: 700; }
 .city-name { font-size: 13.5px; font-weight: 600; }
 .city-count { font-size: 11.5px; color: var(--text-muted); background: var(--bg); border-radius: 20px; padding: 2px 9px; flex-shrink: 0; }
-.city-row.active .city-count { background: #fff; }
+.city-row.active .city-count { background: #CCD0CF; }
 
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 0 10px 10px; font-weight: 600; }
 td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px; }
 .muted { color: var(--text-muted); font-size: 12.5px; }
 .source-tag { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; }
-.source-tag.admin { background: #F1F5F9; color: var(--text-secondary); }
+.source-tag.admin { background: #CCD0CF; color: var(--text-secondary); }
 .source-tag.reception { background: var(--primary-light); color: var(--primary-dark); }
 .status-pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
 .status-pill.active { background: var(--green-bg); color: var(--green-text); }
@@ -125,7 +125,7 @@ td { padding: 12px 10px; border-top: 1px solid var(--border); font-size: 13.5px;
 
 .inline-add { display: flex; gap: 10px; margin-top: 14px; }
 .inline-add input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: 13.5px; font-family: inherit; background: var(--bg); color: var(--text); }
-.inline-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: var(--card); }
+.inline-add input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: var(--card); }
 .empty-state { padding: 32px 10px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 @media (max-width: 900px) {

@@ -124,10 +124,10 @@ $headExtra = <<<CSS
 .add-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr 2fr auto; gap: 10px; align-items: end; }
 .add-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .add-row input, .add-row select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.add-row input:focus, .add-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.add-row input:focus, .add-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 
 .filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
-.filter-row select, .filter-row input { padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: #fff; }
+.filter-row select, .filter-row input { padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: #CCD0CF; }
 
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }

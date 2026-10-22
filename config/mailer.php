@@ -139,18 +139,18 @@ function mail_header_encode(string $s): string {
 function mail_template(string $title, string $bodyHtml, string $footerNote = ''): string {
     $base = (mail_config() ?? [])['base_url'] ?? 'https://hims.babymedics.com';
     $foot = $footerNote !== '' ? $footerNote : 'This is an automated notification from the Babymedics HMIS.';
-    return '<!doctype html><html><body style="margin:0;padding:0;background:#f1f5f4;font-family:Arial,Helvetica,sans-serif;">'
+    return '<!doctype html><html><body style="margin:0;padding:0;background:#CCD0CF;font-family:Arial,Helvetica,sans-serif;">'
         . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px;">'
-        . '<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #dde5e4;">'
-        . '<tr><td style="background:#0E5456;padding:18px 24px;">'
-        . '<span style="color:#ffffff;font-size:17px;font-weight:bold;letter-spacing:.3px;">Babymedics HMIS</span></td></tr>'
+        . '<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#CCD0CF;border-radius:10px;overflow:hidden;border:1px solid #CCD0CF;">'
+        . '<tr><td style="background:#4A5C6A;padding:18px 24px;">'
+        . '<span style="color:#CCD0CF;font-size:17px;font-weight:bold;letter-spacing:.3px;">Babymedics HMIS</span></td></tr>'
         . '<tr><td style="padding:24px;">'
-        . '<h2 style="margin:0 0 14px;font-size:18px;color:#0E5456;">' . htmlspecialchars($title) . '</h2>'
+        . '<h2 style="margin:0 0 14px;font-size:18px;color:#4A5C6A;">' . htmlspecialchars($title) . '</h2>'
         . $bodyHtml
         . '</td></tr>'
-        . '<tr><td style="padding:14px 24px;background:#f7fafa;border-top:1px solid #e5ecec;">'
-        . '<p style="margin:0;font-size:12px;color:#6b7c7b;">' . $foot . '<br>'
-        . '<a href="' . htmlspecialchars($base) . '" style="color:#1A7F7E;">' . htmlspecialchars($base) . '</a></p>'
+        . '<tr><td style="padding:14px 24px;background:#CCD0CF;border-top:1px solid #CCD0CF;">'
+        . '<p style="margin:0;font-size:12px;color:#4A5C6A;">' . $foot . '<br>'
+        . '<a href="' . htmlspecialchars($base) . '" style="color:#4A5C6A;">' . htmlspecialchars($base) . '</a></p>'
         . '</td></tr></table></td></tr></table></body></html>';
 }
 
@@ -159,8 +159,8 @@ function mail_kv(array $rows): string {
     $html = '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 14px;">';
     foreach ($rows as $k => $v) {
         $html .= '<tr>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#f7fafa;font-size:13px;color:#41504f;width:40%;">' . htmlspecialchars($k) . '</td>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;color:#17211f;font-weight:bold;">' . htmlspecialchars((string) $v) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#CCD0CF;font-size:13px;color:#4A5C6A;width:40%;">' . htmlspecialchars($k) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;color:#11212D;font-weight:bold;">' . htmlspecialchars((string) $v) . '</td>'
             . '</tr>';
     }
     return $html . '</table>';

@@ -71,7 +71,7 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
         // restarting each session needs no extra qualifier here.
         $tokenText = token_code($r['token_prefix'] ?? null, $r['doctor_name'] ?? '', $r['token_no']);
 
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been registered under your name and their invoice has been raised.</p>'
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A patient has been registered under your name and their invoice has been raised.</p>'
             . mail_kv([
                 'Patient'       => $r['patient_name'] . ' (MRN ' . $r['mrn'] . ')',
                 'Token'         => $tokenText,
@@ -114,7 +114,7 @@ function notify_refund_issued(PDO $pdo, int $refundId): void {
         if (!notif_email_enabled($pdo, 'refund_issued')) { return; }
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $r['approved_by_id'])]);
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A refund voucher has been issued.</p>'
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A refund voucher has been issued.</p>'
             . mail_kv([
                 'Refund voucher' => $r['refund_number'],
                 'Against invoice'=> $r['invoice_number'],
@@ -157,7 +157,7 @@ function notify_patient_admitted(PDO $pdo, int $admissionId): void {
             'Admitting doctor' => $r['doctor_name'],
             'Admitted at'      => date('d/m/Y, h:i A', strtotime($r['admitted_at'])),
         ];
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted.</p>' . mail_kv($rows);
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A patient has been admitted.</p>' . mail_kv($rows);
 
         notify_users($pdo, array_merge(notif_admin_ids($pdo), [(int) $r['admitting_doctor_id']]), 'patient_admitted',
             'Patient admitted — ' . ($typeLabels[$r['admission_type']] ?? $r['admission_type']),
@@ -174,7 +174,7 @@ function notify_patient_admitted(PDO $pdo, int $admissionId): void {
 
         $docEmail = user_email($pdo, (int) $r['admitting_doctor_id']);
         if ($docEmail) {
-            $docBody = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted under your care.</p>' . mail_kv($rows);
+            $docBody = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A patient has been admitted under your care.</p>' . mail_kv($rows);
             send_mail($pdo, $docEmail,
                 'Patient admitted under your care — ' . $r['patient_name'],
                 mail_template('Patient Admitted Under Your Care', $docBody),
@@ -224,7 +224,7 @@ function notify_ipd_patient_admitted(PDO $pdo, int $admissionId): void {
         if (trim((string) $r['provisional_diagnosis']) !== '') {
             $rows['Provisional diagnosis'] = $r['provisional_diagnosis'];
         }
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted to In-Door.</p>' . mail_kv($rows);
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A patient has been admitted to In-Door.</p>' . mail_kv($rows);
 
         // Reuses the 'patient_admitted' type so the bell icon/tone matches the ER
         // admit — notif_tone() matches on substring, and a new string would earn
@@ -248,7 +248,7 @@ function notify_ipd_patient_admitted(PDO $pdo, int $admissionId): void {
 
         $docEmail = user_email($pdo, (int) $r['admitting_consultant_id']);
         if ($docEmail) {
-            $docBody = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been admitted to In-Door under your care.</p>' . mail_kv($rows);
+            $docBody = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A patient has been admitted to In-Door under your care.</p>' . mail_kv($rows);
             send_mail($pdo, $docEmail,
                 'In-Door patient admitted under your care — ' . $r['patient_name'],
                 mail_template('In-Door Patient Under Your Care', $docBody),
@@ -295,8 +295,8 @@ function notify_patient_discharged(PDO $pdo, int $admissionId, float $writeOff =
         if ($writeOff > 0.001) {
             $rows['WRITTEN OFF'] = 'Rs ' . number_format($writeOff, 2) . ' — gone forever, patient flagged';
         }
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">A patient has been discharged'
-              . ($writeOff > 0.001 ? ' <strong style="color:#b3261e;">with an approved write-off</strong>' : '')
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">A patient has been discharged'
+              . ($writeOff > 0.001 ? ' <strong style="color:#4A5C6A;">with an approved write-off</strong>' : '')
               . '.</p>' . mail_kv($rows);
         notify_users($pdo, notif_admin_ids($pdo), 'patient_discharged',
             ($writeOff > 0.001 ? 'Discharge with WRITE-OFF' : 'Patient discharged'),
@@ -331,7 +331,7 @@ function notify_staff_welcome(PDO $pdo, int $userId, string $tempPassword): void
 
         $base = (mail_config() ?? [])['base_url'] ?? 'https://hims.babymedics.com';
         $login = ($u['email'] ?: '');
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Welcome to the Babymedics Hospital Management System, '
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">Welcome to the Babymedics Hospital Management System, '
               . htmlspecialchars(explode(' ', trim($u['name']))[0]) . '! Your account has been created.</p>'
             . mail_kv([
                 'Name'               => $u['name'],
@@ -339,9 +339,9 @@ function notify_staff_welcome(PDO $pdo, int $userId, string $tempPassword): void
                 'Sign-in email'      => $login,
                 'Temporary password' => $tempPassword,
             ])
-            . '<p style="font-size:14px;color:#41504f;margin:0 0 18px;">You will be asked to set your own password the first time you sign in.</p>'
-            . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 6px;"><tr><td style="background:#0E5456;border-radius:8px;">'
-            . '<a href="' . htmlspecialchars($base) . '/index.php" style="display:inline-block;padding:11px 26px;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;">Sign in to HMIS</a>'
+            . '<p style="font-size:14px;color:#4A5C6A;margin:0 0 18px;">You will be asked to set your own password the first time you sign in.</p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 6px;"><tr><td style="background:#4A5C6A;border-radius:8px;">'
+            . '<a href="' . htmlspecialchars($base) . '/index.php" style="display:inline-block;padding:11px 26px;color:#CCD0CF;font-size:14px;font-weight:bold;text-decoration:none;">Sign in to HMIS</a>'
             . '</td></tr></table>';
         send_mail($pdo, $u['email'],
             'Your Babymedics HMIS account',
@@ -394,7 +394,7 @@ function notify_booking_created(PDO $pdo, int $bookingId): void {
         $kv['Phone']    = $r['phone'];
         $kv['Taken by'] = $r['taken_by'] ?: 'Reception';
 
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Reception has booked an appointment under your name.</p>'
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">Reception has booked an appointment under your name.</p>'
             . mail_kv($kv);
         send_mail($pdo, $docEmail,
             'New booking — ' . $r['person_name'] . ' (' . $r['purpose'] . ', ' . date('d/m', strtotime($r['booking_date'])) . ')',
@@ -435,7 +435,7 @@ function notify_booking_cancelled(PDO $pdo, int $bookingId): void {
         $docEmail = user_email($pdo, (int) $r['doctor_id']);
         if (!$docEmail) { return; }
 
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">An appointment booked under your name has been cancelled.</p>'
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">An appointment booked under your name has been cancelled.</p>'
             . mail_kv([
                 'Patient'      => $who,
                 'Purpose'      => $r['purpose'],
@@ -612,13 +612,13 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
             : '60 minutes';
 
         $overBanner = $isOver
-            ? '<p style="font-size:14px;color:#9A3412;background:#FFF4ED;border:1px solid #FBCFB0;border-radius:8px;padding:11px 14px;margin:0 0 14px;font-weight:bold;">'
+            ? '<p style="font-size:14px;color:#4A5C6A;background:#CCD0CF;border:1px solid #CCD0CF;border-radius:8px;padding:11px 14px;margin:0 0 14px;font-weight:bold;">'
               . '⚠️ Over shift limit — needs immediate approval.'
               . ($r['limit_note'] ? '<br><span style="font-weight:normal;">' . htmlspecialchars($r['limit_note']) . '</span>' : '')
               . '</p>'
             : '';
         $body = $overBanner
-            . '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+            . '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">'
               . htmlspecialchars($r['posted_by_name']) . ' has posted a counter expense that needs your approval. '
               . 'Cash has already left the drawer against this voucher.</p>'
             . mail_kv([
@@ -630,11 +630,11 @@ function notify_expense_posted(PDO $pdo, int $expenseId, string $rawToken): void
                 'Posted by' => $r['posted_by_name'],
                 'Date'      => date('d/m/Y', strtotime($r['expense_date'])),
             ])
-            . '<p style="font-size:14px;color:#41504f;margin:0 0 18px;">Tap below to approve or reject. '
+            . '<p style="font-size:14px;color:#4A5C6A;margin:0 0 18px;">Tap below to approve or reject. '
             . 'This one-click link works without signing in and expires at <strong>' . htmlspecialchars($expiresTxt)
             . '</strong>. After it expires you can still act from the Expenses page in the app.</p>'
-            . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 6px;"><tr><td style="background:#0E5456;border-radius:8px;">'
-            . '<a href="' . htmlspecialchars($link) . '" style="display:inline-block;padding:11px 26px;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;">Review this expense</a>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 6px;"><tr><td style="background:#4A5C6A;border-radius:8px;">'
+            . '<a href="' . htmlspecialchars($link) . '" style="display:inline-block;padding:11px 26px;color:#CCD0CF;font-size:14px;font-weight:bold;text-decoration:none;">Review this expense</a>'
             . '</td></tr></table>';
         send_mail($pdo, $to,
             ($isOver ? '⚠️ OVER-LIMIT expense approval — ' : 'Expense approval — ')
@@ -725,9 +725,9 @@ function notify_expense_decided(PDO $pdo, int $expenseId): void {
             $kv['Reason'] = $r['rejection_reason'];
         }
         $lead = $approved
-            ? 'Your counter expense has been <strong style="color:#0E5456;">approved</strong>.'
-            : 'Your counter expense has been <strong style="color:#b3261e;">rejected</strong> — the cash should be returned to the drawer; this voucher drops out of the shift tally.';
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">' . $lead . '</p>' . mail_kv($kv);
+            ? 'Your counter expense has been <strong style="color:#4A5C6A;">approved</strong>.'
+            : 'Your counter expense has been <strong style="color:#4A5C6A;">rejected</strong> — the cash should be returned to the drawer; this voucher drops out of the shift tally.';
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">' . $lead . '</p>' . mail_kv($kv);
         send_mail($pdo, $to,
             'Expense ' . ($approved ? 'approved' : 'REJECTED') . ' — ' . $r['expense_number']
             . ' (Rs ' . number_format((float) $r['amount'], 0) . ')',
@@ -765,7 +765,7 @@ function notify_day_closed(PDO $pdo, int $closingId): void {
         if (!notif_email_enabled($pdo, 'day_closed')) { return; }
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">'
               . htmlspecialchars($c['cashier_name']) . ' has closed their shift. '
               . 'The cash handover is awaiting your acknowledgment in the admin portal '
               . '(Cash Handovers → recount + confirm the signed slip is filed).</p>'
@@ -846,7 +846,7 @@ function notify_closing_edited(PDO $pdo, int $closingId, int $round): void {
         if (!notif_email_enabled($pdo, 'closing_edited')) { return; }
 
         $to = array_filter([admin_alert_email(), user_email($pdo, (int) $c['handover_to_id'])]);
-        $body = '<p style="font-size:14px;color:#B45309;font-weight:bold;margin:0 0 14px;">'
+        $body = '<p style="font-size:14px;color:#4A5C6A;font-weight:bold;margin:0 0 14px;">'
               . htmlspecialchars($c['cashier_name']) . ' EDITED their closed shift after submitting it. '
               . 'The changes below are already in force and are highlighted on the Cash Handovers page — '
               . 'marking the handover received approves them.</p>'
@@ -964,7 +964,7 @@ function notify_procedure_discount(PDO $pdo, int $procBillId): void {
         if ($doctorLoss > 0) {
             $kv['Effect on your share'] = 'Rs ' . number_format($doctorLoss, 2) . ' lower';
         }
-        $mailBody = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+        $mailBody = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">'
               . 'Reception gave a flat discount on a procedure bill performed under your name. '
               . '<strong>The patient has already paid and this is not an authorisation request</strong> — '
               . 'recording your view within 24 hours moves no money either way, but it does land on '
@@ -1029,7 +1029,7 @@ function notify_ipd_med_order_pending(PDO $pdo, int $orderId): void {
 
         if (!notif_email_enabled($pdo, 'ipd_med_order_pending')) { return; }
 
-        $body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">'
+        $body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">'
               . 'A medication order has been written for an admitted patient and is '
               . '<strong>waiting for a doctor to approve it</strong>. No dose can be given until it is signed.</p>'
             . mail_kv([

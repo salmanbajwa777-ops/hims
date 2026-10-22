@@ -65,24 +65,24 @@ $impAdmin  = htmlspecialchars(imp_admin_name(), ENT_QUOTES);
       position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
       height: var(--imp-bar-h);
       display: flex; align-items: center; justify-content: center; gap: 14px;
-      background: #9A3412; color: #fff;
+      background: #4A5C6A; color: #CCD0CF;
       font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       font-size: 13px; font-weight: 600;
-      padding: 0 14px; box-shadow: 0 2px 8px rgba(0,0,0,.18);
+      padding: 0 14px; box-shadow: 0 2px 8px rgba(6,20,27,.18);
   }
   .imp-bar .imp-eye { width: 15px; height: 15px; flex: none; }
   .imp-bar .imp-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .imp-bar .imp-role {
-      background: rgba(255,255,255,.2); border-radius: 5px;
+      background: rgba(204,208,207,.2); border-radius: 5px;
       padding: 2px 7px; font-size: 11px; letter-spacing: .03em;
   }
   .imp-bar form { margin: 0; }
   .imp-bar button {
-      background: #fff; color: #9A3412; border: none; border-radius: 8px;
+      background: #CCD0CF; color: #4A5C6A; border: none; border-radius: 8px;
       padding: 6px 13px; font: inherit; font-size: 12.5px; font-weight: 700;
       cursor: pointer; white-space: nowrap;
   }
-  .imp-bar button:hover { background: #FFEDD5; }
+  .imp-bar button:hover { background: #CCD0CF; }
   /* Print: zero the TOKEN rather than each rule, so the padding and all four
      derived offsets above collapse together. A5 slips are printed constantly
      from checkout/refund, and a 40px push on every one of them would be a

@@ -7,15 +7,15 @@
    partials/head.php and keep only their genuinely page-specific rules.
 
    THEME — "Sage & Clay" (design spec 1D, adopted 2026-07-26). Replaces the
-   teal #0E5456/#1A7F7E theme. Three deliberate changes:
+   teal #4A5C6A/#4A5C6A theme. Three deliberate changes:
 
-     1. A softened canvas. No pure white anywhere — reception stares at this
-        for a full shift. Page #E7ECE4, cards #F8FAF6.
+     1. A softened canvas. No pure #CCD0CF anywhere — reception stares at this
+        for a full shift. Page #CCD0CF, cards #CCD0CF.
      2. A REAL text ramp. The 2026-07-23 "darken everything for non-4K
-        readability" pass left #000/#0A0F1A/#111827 visually identical, so
+        readability" pass left #06141B/#06141B/#06141B visually identical, so
         hierarchy collapsed. The three levels below sit ~7 contrast points
         apart and stay legible on a 1366x768 TN panel.
-     3. Clay #A8553A is reserved for money-leaving actions ONLY (refund,
+     3. Clay #4A5C6A is reserved for money-leaving actions ONLY (refund,
         delete, unpaid). It appears nowhere else, so it always means the
         same thing.
 
@@ -29,56 +29,56 @@
 
 :root {
     /* ---- Brand ---- */
-    --primary-dark:   #223A31;   /* sidebar / darkest chrome */
-    --primary:        #2C4A3E;   /* solid primary buttons */
-    --primary-accent: #3F7A63;   /* avatars, logo mark, active nav fill */
-    --primary-light:  #E7F0EA;   /* brand tint (pills, active nav on light bg) */
-    --on-primary:     #FFFFFF;
+    --primary-dark:   #06141B;   /* sidebar / darkest chrome */
+    --primary:        #253745;   /* solid primary buttons */
+    --primary-accent: #4A5C6A;   /* avatars, logo mark, active nav fill */
+    --primary-light:  #9BA8AB;   /* brand tint (pills, active nav on light bg) */
+    --on-primary:     #CCD0CF;
 
-    /* ---- Surfaces: softened for long shifts, no pure white ---- */
-    --bg:            #E7ECE4;   /* page canvas */
-    --card:          #F8FAF6;   /* cards, table, header bar, inputs */
-    --card-alt:      #EFF2EA;   /* table head, search field, zebra */
-    --border:        #D6DDD0;   /* default hairline */
-    --border-strong: #C3CDBF;   /* button outlines, focus ring base */
-    --row-line:      #E4E9DC;   /* table row separators */
+    /* ---- Surfaces: softened for long shifts, no pure #CCD0CF ---- */
+    --bg:            #CCD0CF;   /* page canvas */
+    --card:          #CCD0CF;   /* cards, table, header bar, inputs */
+    --card-alt:      #9BA8AB;   /* table head, search field, zebra */
+    --border:        #9BA8AB;   /* default hairline */
+    --border-strong: #4A5C6A;   /* button outlines, focus ring base */
+    --row-line:      #9BA8AB;   /* table row separators */
 
     /* ---- Text ramp: three genuinely distinct levels ----
-       Measured (not estimated) contrast, card #F8FAF6 / canvas #E7ECE4:
+       Measured (not estimated) contrast, card #CCD0CF / canvas #CCD0CF:
          --text            15.8:1 card · 13.8:1 bg
          --text-secondary   7.2:1 card ·  6.3:1 bg
          --text-muted       5.2:1 card ·  4.5:1 bg
-       The spec drafted --text-muted as #6E7A72, but that measures 3.73:1 on
+       The spec drafted --text-muted as #4A5C6A, but that measures 3.73:1 on
        the CANVAS — below AA — and muted text does appear on the canvas
        (page-meta under a page title sits on --bg, not on a card). Darkened
-       one step to #616D65 so the token is AA on BOTH grounds and the rule
+       one step to #4A5C6A so the token is AA on BOTH grounds and the rule
        below cannot be violated by placement. The three levels remain
        visibly distinct, which was the point of the ramp.
 
        --text-muted is still permitted only at --fs-micro and >=500 weight,
        and never for a value the user must read in order to act. */
-    --text:               #16211C;
-    --text-secondary:     #4A574F;
-    --text-muted:         #616D65;
-    --text-on-dark:       #CFDCD4;   /* sidebar links, 8.6:1 on --primary-dark */
-    --text-on-dark-muted: #9DB3A7;   /* 5.5:1 on --primary-dark */
+    --text:               #06141B;
+    --text-secondary:     #253745;
+    --text-muted:         #4A5C6A;
+    --text-on-dark:       #CCD0CF;   /* sidebar links, 8.6:1 on --primary-dark */
+    --text-on-dark-muted: #9BA8AB;   /* 5.5:1 on --primary-dark */
 
     /* ---- Status ----
        Each hue is AA (>=4.5:1) against its own tint, so a pill is readable
        without relying on the word alone:
          ok 5.3:1 · warn 5.1:1 · danger 4.9:1 · neutral 6.0:1 · brand 8.4:1
-       Clay drafted as #A8553A measured 4.41:1 on its tint — a hair under —
+       Clay drafted as #4A5C6A measured 4.41:1 on its tint — a hair under —
        so it is one step deeper here. It stays unmistakably clay, and clay
        still appears NOWHERE except money-leaving actions. */
-    --ok:      #2C6E49;  --ok-bg:      #E6F1E9;
-    --warn:    #8A5A08;  --warn-bg:    #F6EDDA;
-    --danger:  #9E4E34;  --danger-bg:  #F7E9E5;   /* clay — refunds & delete ONLY */
-    --neutral: #4A574F;  --neutral-bg: #E2E7DB;
+    --ok:      #253745;  --ok-bg:      #9BA8AB;
+    --warn:    #11212D;  --warn-bg:    #9BA8AB;
+    --danger:  #06141B;  --danger-bg:  #9BA8AB;   /* clay — refunds & delete ONLY */
+    --neutral: #253745;  --neutral-bg: #9BA8AB;
 
     /* ---- Elevation ---- */
-    --shadow-sm: 0 1px 2px rgba(22,33,28,.08);
-    --shadow-md: 0 4px 12px rgba(22,33,28,.10);
-    --shadow-lg: 0 8px 24px rgba(22,33,28,.14);
+    --shadow-sm: 0 1px 2px rgba(6,20,27,.08);
+    --shadow-md: 0 4px 12px rgba(6,20,27,.10);
+    --shadow-lg: 0 8px 24px rgba(6,20,27,.14);
 
     /* ---- Radii ---- */
     --radius-card:  14px;
@@ -204,14 +204,14 @@ button { font-family: inherit; }
        default light-on-dark one from eating ~14px of the text column and
        clashing with the dark chrome. */
     scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,.22) transparent;
+    scrollbar-color: rgba(204,208,207,.22) transparent;
 }
 .sidebar::-webkit-scrollbar { width: 8px; }
 .sidebar::-webkit-scrollbar-track { background: transparent; }
 .sidebar::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,.18); border-radius: var(--radius-pill);
+    background: rgba(204,208,207,.18); border-radius: var(--radius-pill);
 }
-.sidebar:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,.28); }
+.sidebar:hover::-webkit-scrollbar-thumb { background: rgba(204,208,207,.28); }
 .sidebar-brand {
     display: flex; align-items: center; gap: 9px; padding: 0 6px 20px;
     font-weight: 700; font-size: var(--fs-card); color: var(--on-primary);
@@ -242,7 +242,7 @@ button { font-family: inherit; }
    flex item that shrinks. min-width:0 is required or a flex child refuses to
    go below its intrinsic text width and the ellipsis never appears. */
 .nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.nav-item:hover { background: rgba(255,255,255,.07); color: var(--on-primary); }
+.nav-item:hover { background: rgba(204,208,207,.07); color: var(--on-primary); }
 .nav-item.active { background: var(--primary-accent); color: var(--on-primary); font-weight: 600; }
 .nav-item.disabled { opacity: .4; cursor: not-allowed; }
 .nav-item.disabled:hover { background: none; color: var(--text-on-dark); }
@@ -254,7 +254,7 @@ button { font-family: inherit; }
     background: var(--primary-accent); color: var(--on-primary);
     border-radius: var(--radius-pill); padding: 1px 8px;
 }
-.nav-item.active .count { background: rgba(255,255,255,.22); }
+.nav-item.active .count { background: rgba(204,208,207,.22); }
 
 /* ---- Collapsible sub-navigation (Settings, Finances, Analytics) ----
    The parent is a <button>, so it needs the button reset the <a> items don't:
@@ -278,7 +278,7 @@ button { font-family: inherit; }
 /* Indent trimmed 20px -> 14px: the border rule already signals the nesting, and
    sub-items are the longest labels in the tree, so every px here is the px that
    decides whether they fit on one line. */
-.nav-sub { display: none; margin: 2px 0 2px 8px; padding-left: 6px; border-left: 1px solid rgba(255,255,255,.14); }
+.nav-sub { display: none; margin: 2px 0 2px 8px; padding-left: 6px; border-left: 1px solid rgba(204,208,207,.14); }
 .nav-sub.open { display: block; }
 /* Children keep the nav link size (--fs-cell); the indent + rule already carry
    the hierarchy, and --fs-micro is a row-meta size, too small to click. */
@@ -296,7 +296,7 @@ button { font-family: inherit; }
 .sidebar :focus-visible { outline-color: var(--on-primary); }
 .sidebar-foot {
     margin-top: 8px; padding: 11px; border-radius: var(--radius-btn);
-    background: rgba(255,255,255,.07); font-size: var(--fs-micro); color: var(--text-on-dark);
+    background: rgba(204,208,207,.07); font-size: var(--fs-micro); color: var(--text-on-dark);
 }
 .sidebar-foot b { color: var(--on-primary); }
 
@@ -316,7 +316,7 @@ button { font-family: inherit; }
     display: flex; align-items: center; justify-content: center;
     color: var(--on-primary); font-weight: 700; font-size: var(--fs-btn-sm);
 }
-.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(22,33,28,.48); z-index: 40; }
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(6,20,27,.48); z-index: 40; }
 
 @media (max-width: 900px) {
     .mobile-bar, .doc-mobile-bar {
@@ -476,7 +476,7 @@ html[data-view="mobile"] .appbar-date { display: none !important; }
 .field textarea { height: auto; padding: 10px 12px; }
 .field input:focus, .field select:focus, .field textarea:focus {
     outline: none; border-color: var(--primary-accent);
-    box-shadow: 0 0 0 3px rgba(63,122,99,.18);
+    box-shadow: 0 0 0 3px rgba(74,92,106,.18);
 }
 .field input:disabled, .field select:disabled {
     background: var(--card-alt); color: var(--text-muted); cursor: not-allowed;
@@ -882,7 +882,7 @@ html[data-view="mobile"] .main { max-width: 480px; margin: 0 auto; width: 100%; 
     background: var(--card);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-input);
-    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+    box-shadow: 0 12px 32px rgba(6,20,27,0.18);
     padding: 10px;
     width: 244px;
     font-family: inherit;
@@ -938,7 +938,7 @@ html[data-view="mobile"] .main { max-width: 480px; margin: 0 auto; width: 100%; 
 }
 .ddmy-day:hover { background: var(--primary-light); color: var(--primary-dark); }
 .ddmy-day.today { box-shadow: inset 0 0 0 1px var(--border-strong); font-weight: 700; }
-.ddmy-day.sel { background: var(--primary); color: #fff; font-weight: 700; }
+.ddmy-day.sel { background: var(--primary); color: #CCD0CF; font-weight: 700; }
 .ddmy-day.sel:hover { background: var(--primary-dark); }
 .ddmy-day.disabled { color: var(--border-strong); cursor: not-allowed; }
 .ddmy-day.disabled:hover { background: transparent; color: var(--border-strong); }
@@ -963,7 +963,7 @@ html[data-view="mobile"] .main { max-width: 480px; margin: 0 auto; width: 100%; 
 }
 .ddmy-cell:hover { background: var(--primary-light); color: var(--primary-dark); }
 .ddmy-cell.today { box-shadow: inset 0 0 0 1px var(--border-strong); font-weight: 700; }
-.ddmy-cell.sel { background: var(--primary); color: #fff; font-weight: 700; }
+.ddmy-cell.sel { background: var(--primary); color: #CCD0CF; font-weight: 700; }
 .ddmy-cell.sel:hover { background: var(--primary-dark); }
 
 /* ============================================================================
@@ -992,7 +992,7 @@ html[data-view="mobile"] .main { max-width: 480px; margin: 0 auto; width: 100%; 
 .pchart-seg a:hover { color: var(--text); }
 .pchart-seg a.on {
     background: var(--card); color: var(--primary-accent); font-weight: 700;
-    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    box-shadow: 0 1px 3px rgba(6,20,27,.08);
 }
 
 /* ‹ 07.2026 › */
@@ -1021,7 +1021,7 @@ html[data-view="mobile"] .main { max-width: 480px; margin: 0 auto; width: 100%; 
 .pchart-key { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); font-weight: 500; }
 .pchart-key i {
     width: 13px; height: 13px; border-radius: 50%; display: inline-block;
-    background: linear-gradient(180deg, var(--primary-accent), rgba(63,122,99,.25));
+    background: linear-gradient(180deg, var(--primary-accent), rgba(74,92,106,.25));
 }
 
 /* plot */
@@ -1059,4 +1059,4 @@ html[data-view="mobile"] .pchart-foot .pcf { flex-direction: row; justify-conten
 }
 
 /* Paired second series (Year view: previous year beside current). */
-.pchart-key.alt i { background: linear-gradient(180deg, rgba(74,87,79,.55), rgba(74,87,79,.12)); }
+.pchart-key.alt i { background: linear-gradient(180deg, rgba(74,92,106,.55), rgba(74,92,106,.12)); }

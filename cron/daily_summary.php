@@ -213,7 +213,7 @@ try {
 // ---- Compose ----
 $fmt = function ($n) { return 'Rs ' . number_format((float) $n, 0); };
 
-$body = '<p style="font-size:14px;color:#41504f;margin:0 0 14px;">Here is the day\'s summary for <strong>' . $niceDate . '</strong>.</p>'
+$body = '<p style="font-size:14px;color:#4A5C6A;margin:0 0 14px;">Here is the day\'s summary for <strong>' . $niceDate . '</strong>.</p>'
     . mail_kv([
         'New patients registered' => $newPatients,
         'Consultations billed'    => $reg['visits'] . ' — ' . $fmt($reg['billed']),
@@ -231,7 +231,7 @@ if ($expByCat) {
     foreach ($expByCat as $c) {
         $expLines[] = htmlspecialchars($c['name']) . ' ' . $fmt($c['total']);
     }
-    $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#41504f;">Expenses by category: '
+    $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#4A5C6A;">Expenses by category: '
         . implode(' · ', $expLines) . '</p>';
 }
 
@@ -239,26 +239,26 @@ if ($bkStats) {
     $bkLine = (int) $bkStats['total'] . ' booked — ' . (int) $bkStats['arrived'] . ' arrived';
     if ((int) $bkStats['cancelled'] > 0) { $bkLine .= ', ' . (int) $bkStats['cancelled'] . ' cancelled'; }
     if ((int) $bkStats['no_show'] > 0)   { $bkLine .= ', ' . (int) $bkStats['no_show'] . ' no-show'; }
-    $body .= '<p style="margin:10px 0 0;font-size:12.5px;color:#41504f;">Phone bookings today: ' . $bkLine . '.</p>';
+    $body .= '<p style="margin:10px 0 0;font-size:12.5px;color:#4A5C6A;">Phone bookings today: ' . $bkLine . '.</p>';
     if ((int) $bkStats['still_open'] > 0) {
-        $body .= '<p style="margin:4px 0 0;font-size:12.5px;color:#b45309;"><strong>'
+        $body .= '<p style="margin:4px 0 0;font-size:12.5px;color:#4A5C6A;"><strong>'
             . (int) $bkStats['still_open'] . ' booking(s) still unconsumed</strong> — the 10 pm sweep will mark them no-show unless the patient arrives.</p>';
     }
 }
 
 if ($byDoctor) {
-    $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">By doctor</h3>'
+    $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#4A5C6A;">By doctor</h3>'
         . '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">'
         . '<tr>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Doctor</td>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Visits</td>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Billed</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Doctor</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Visits</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Billed</td>'
         . '</tr>';
     foreach ($byDoctor as $d) {
         $body .= '<tr>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . htmlspecialchars($d['doctor']) . '</td>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . (int) $d['visits'] . '</td>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;font-weight:bold;">' . $fmt($d['billed']) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;">' . htmlspecialchars($d['doctor']) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;">' . (int) $d['visits'] . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;font-weight:bold;">' . $fmt($d['billed']) . '</td>'
             . '</tr>';
     }
     $body .= '</table>';
@@ -269,27 +269,27 @@ if ($byDoctor) {
 // own cash refunds would net here too, but refunds aren't attributed per user
 // in this rollup; the shift-closing page is the authoritative per-user tally).
 if ($byCashier) {
-    $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">Cash accountability by cashier</h3>'
-        . '<p style="margin:0 0 8px;font-size:12px;color:#6b7a79;">Each user is responsible for the money they collected and the expenses they paid out — not the day as a whole.</p>'
+    $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#4A5C6A;">Cash accountability by cashier</h3>'
+        . '<p style="margin:0 0 8px;font-size:12px;color:#4A5C6A;">Each user is responsible for the money they collected and the expenses they paid out — not the day as a whole.</p>'
         . '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">'
         . '<tr>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Cashier</td>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Cash in</td>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Online in</td>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Expenses</td>'
-        . '<td style="padding:7px 10px;border:1px solid #e5ecec;background:#0E5456;color:#fff;font-size:12px;">Expected cash</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Cashier</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Cash in</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Online in</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Expenses</td>'
+        . '<td style="padding:7px 10px;border:1px solid #CCD0CF;background:#4A5C6A;color:#CCD0CF;font-size:12px;">Expected cash</td>'
         . '</tr>';
     foreach ($byCashier as $c) {
         $expected = (float) $c['cash_in'] - (float) $c['expense_out'];
         $body .= '<tr>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . htmlspecialchars($c['cashier'])
-            . ' <span style="color:#6b7a79;font-size:11px;">(' . (int) $c['pay_cnt'] . ' pay'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;">' . htmlspecialchars($c['cashier'])
+            . ' <span style="color:#4A5C6A;font-size:11px;">(' . (int) $c['pay_cnt'] . ' pay'
             . ((int) $c['exp_cnt'] > 0 ? ', ' . (int) $c['exp_cnt'] . ' exp' : '') . ')</span></td>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . $fmt($c['cash_in']) . '</td>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;">' . $fmt($c['online_in']) . '</td>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;color:' . ((float) $c['expense_out'] > 0 ? '#b3261e' : '#41504f') . ';">'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;">' . $fmt($c['cash_in']) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;">' . $fmt($c['online_in']) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;color:' . ((float) $c['expense_out'] > 0 ? '#4A5C6A' : '#4A5C6A') . ';">'
             . ((float) $c['expense_out'] > 0 ? '− ' . $fmt($c['expense_out']) : $fmt(0)) . '</td>'
-            . '<td style="padding:7px 10px;border:1px solid #e5ecec;font-size:13px;font-weight:bold;">' . $fmt($expected) . '</td>'
+            . '<td style="padding:7px 10px;border:1px solid #CCD0CF;font-size:13px;font-weight:bold;">' . $fmt($expected) . '</td>'
             . '</tr>';
     }
     $body .= '</table>';
@@ -313,8 +313,8 @@ try {
     ")->fetch();
 
     if ($pd && (int) $pd['n'] > 0) {
-        $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">Procedure discounts</h3>'
-            . '<p style="margin:0;font-size:12.5px;color:#41504f;">'
+        $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#4A5C6A;">Procedure discounts</h3>'
+            . '<p style="margin:0;font-size:12.5px;color:#4A5C6A;">'
             . (int) $pd['n'] . ' discount(s) today totalling <strong>Rs '
             . number_format((float) $pd['total'], 0) . '</strong>'
             . ((int) $pd['pending'] > 0 ? ' · ' . (int) $pd['pending'] . ' still awaiting a doctor' : '')
@@ -333,7 +333,7 @@ try {
              ORDER BY pb.discount_decided_at DESC
         ")->fetchAll();
         foreach ($obj as $o) {
-            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#b3261e;"><strong>Objected:</strong> '
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#4A5C6A;"><strong>Objected:</strong> '
                 . htmlspecialchars($o['invoice_number']) . ' · '
                 . htmlspecialchars(mb_strtoupper((string) $o['patient_name'])) . ' · Rs '
                 . number_format((float) $o['manual_discount_amount'], 0)
@@ -343,7 +343,7 @@ try {
         }
 
         if ((int) $pd['unanswered'] > 0 || $autoClosed > 0) {
-            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#b45309;">'
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#4A5C6A;">'
                 . max((int) $pd['unanswered'], $autoClosed)
                 . ' discount(s) closed with no answer from the doctor within 24 hours.</p>';
         }
@@ -394,9 +394,9 @@ try {
         // ER-direct migration/detectors unavailable: skip these lines only.
     }
     if ($rxLines) {
-        $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#0E5456;">Revenue exceptions</h3>'
-            . '<p style="margin:0 0 6px;font-size:12px;color:#6b7a79;">Records that need a look, not proof of wrongdoing. Full detail and date range: Analytics &rarr; Revenue Exceptions.</p>'
-            . '<ul style="margin:0;padding-left:18px;font-size:12.5px;color:#41504f;">';
+        $body .= '<h3 style="margin:18px 0 8px;font-size:14px;color:#4A5C6A;">Revenue exceptions</h3>'
+            . '<p style="margin:0 0 6px;font-size:12px;color:#4A5C6A;">Records that need a look, not proof of wrongdoing. Full detail and date range: Analytics &rarr; Revenue Exceptions.</p>'
+            . '<ul style="margin:0;padding-left:18px;font-size:12.5px;color:#4A5C6A;">';
         foreach ($rxLines as $l) { $body .= '<li>' . htmlspecialchars($l) . '</li>'; }
         $body .= '</ul>';
         $rxm = rx_user_matrix($rx);
@@ -409,11 +409,11 @@ try {
             if ($parts) { $rxPer[] = htmlspecialchars($nm) . ': ' . implode(', ', $parts); }
         }
         if ($rxPer) {
-            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#41504f;"><strong>By person:</strong> ' . implode(' &middot; ', $rxPer) . '</p>';
+            $body .= '<p style="margin:8px 0 0;font-size:12.5px;color:#4A5C6A;"><strong>By person:</strong> ' . implode(' &middot; ', $rxPer) . '</p>';
         }
         foreach ($rx['unbilled_active'] as $u) {
             if ($u['hours_open'] !== null && $u['hours_open'] >= 24) {
-                $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#b45309;">Still admitted with no bill: '
+                $body .= '<p style="margin:6px 0 0;font-size:12.5px;color:#4A5C6A;">Still admitted with no bill: '
                     . htmlspecialchars(rx_upper($u['patient_name'])) . ' &mdash; ' . htmlspecialchars((string) $u['hours_open']) . ' hours open.</p>';
             }
         }
@@ -423,7 +423,7 @@ try {
 }
 
 if ($mailFails > 0) {
-    $body .= '<p style="margin:16px 0 0;font-size:13px;color:#b3261e;"><strong>' . $mailFails
+    $body .= '<p style="margin:16px 0 0;font-size:13px;color:#4A5C6A;"><strong>' . $mailFails
         . ' notification email(s) failed to send today</strong> — check the email_log table.</p>';
 }
 

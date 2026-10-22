@@ -23,7 +23,7 @@ define('HIMS_VIEW_TOGGLE_RENDERED', true);
 /* Sits inside the dark sidebar, so it is styled on dark chrome. */
 .view-toggle { margin-top: 10px; }
 .view-toggle .vt-label { font-size: var(--fs-eyebrow); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-on-dark-muted); padding: 0 4px 6px; }
-.view-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.10); border-radius: var(--radius-btn); padding: 3px; }
+.view-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; background: rgba(6,20,27,.22); border: 1px solid rgba(204,208,207,.10); border-radius: var(--radius-btn); padding: 3px; }
 .view-seg button {
     appearance: none; border: none; background: transparent; cursor: pointer;
     font: inherit; font-size: var(--fs-pill); font-weight: 600; color: var(--text-on-dark);
@@ -31,7 +31,7 @@ define('HIMS_VIEW_TOGGLE_RENDERED', true);
     align-items: center; gap: 3px; line-height: 1; transition: background .15s ease, color .15s ease;
 }
 .view-seg button svg { width: 15px; height: 15px; }
-.view-seg button:hover { background: rgba(255,255,255,.07); color: var(--on-primary); }
+.view-seg button:hover { background: rgba(204,208,207,.07); color: var(--on-primary); }
 .view-seg button[aria-pressed="true"] { background: var(--primary-accent); color: var(--on-primary); }
 .view-seg button:focus-visible { outline: 2px solid var(--on-primary); outline-offset: 1px; }
 </style>

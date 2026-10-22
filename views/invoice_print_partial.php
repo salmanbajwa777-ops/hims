@@ -94,7 +94,7 @@ $pageSize = $isA4 ? 'A4' : 'A5';
         html, body { width: <?= $pageW ?>; margin: 0; padding: 0; }
         body {
             font-family: 'Lora', Georgia, 'Times New Roman', serif;
-            font-size: 9.5px; line-height: 1.3; color: #000; background: #fff;
+            font-size: 9.5px; line-height: 1.3; color: #06141B; background: #fff;
         }
         /* position:relative anchors the reprint DUPLICATE mark to the sheet rather
            than the browser window — see config/reprint.php. */
@@ -103,7 +103,7 @@ $pageSize = $isA4 ? 'A4' : 'A5';
         /* ---------- Header box ---------- */
         /* Bottom padding is ~1.4mm so the tables sit hard against the box edge and the
            fee table below butts straight onto it. */
-        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
+        .head-box { border: 1px solid #9BA8AB; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
         /* Both halves are two-band flex columns so the two sides are structurally
            identical top to bottom:
              band-1 = brand lockup (left) / tagline (right)
@@ -128,11 +128,11 @@ $pageSize = $isA4 ? 'A4' : 'A5';
         .brandtext { display: flex; flex-direction: column; justify-content: center; height: 30px; }
         .clinic-name {
             font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold;
-            letter-spacing: .2px; color: #0F7362; white-space: nowrap; line-height: 1;
+            letter-spacing: .2px; color: #4A5C6A; white-space: nowrap; line-height: 1;
         }
         .website {
             font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold;
-            letter-spacing: 1.7px; color: #4A4A4A; line-height: 1; margin-top: 2px;
+            letter-spacing: 1.7px; color: #4A5C6A; line-height: 1; margin-top: 2px;
         }
         /* Address sits inside band-2, which owns its vertical spacing; no own margins. */
         .addr { font-size: 9px; line-height: 1.35; }
@@ -150,16 +150,16 @@ $pageSize = $isA4 ? 'A4' : 'A5';
            on overflow) so a long name or doctor can never make one row taller. */
         .ids, .meta { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: auto; }
         .ids td, .meta td {
-            border: 1px solid #C8C8C8; padding: 0 5px; height: 18px;
+            border: 1px solid #CCD0CF; padding: 0 5px; height: 18px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
         }
-        .ids td.k, .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
+        .ids td.k, .meta td.k { background: #CCD0CF; font-weight: bold; color: #06141B; width: 40%; }
         .ids td.v, .meta td.v { font-weight: bold; }
 
         /* ---------- Fee line + vitals ---------- */
         .fee-table, .vitals-table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
         /* Payment mode as a light note centred in the footnote row. */
-        .pay-note { font-weight: normal; color: #555; white-space: nowrap; text-align: center; }
+        .pay-note { font-weight: normal; color: #4A5C6A; white-space: nowrap; text-align: center; }
         /* Butted straight against the header box: -1px so the two share a single rule
            rather than showing a gap or a doubled border. */
         .fee-table { margin-top: -1px; }
@@ -170,11 +170,11 @@ $pageSize = $isA4 ? 'A4' : 'A5';
            down the whole sheet. Only horizontal padding is kept. */
         .fee-table td, .fee-table th,
         .vitals-table td, .vitals-table th {
-            border: 1px solid #C8C8C8; padding: 0 6px; height: 18px; vertical-align: middle;
+            border: 1px solid #CCD0CF; padding: 0 6px; height: 18px; vertical-align: middle;
         }
         /* Heading cells share the same greyscale ground as the header tables' label
            column, so every heading on the sheet reads as one system: grey + bold. */
-        .fee-table th, .vitals-table th { background: #F4F4F4; font-weight: bold; text-align: center; }
+        .fee-table th, .vitals-table th { background: #CCD0CF; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: center; }
         .vitals-table { margin-top: -1px; }
@@ -192,7 +192,7 @@ $pageSize = $isA4 ? 'A4' : 'A5';
         }
         .foot {
             display: flex; justify-content: space-between; gap: 10px;
-            border-top: 1px solid #B0B0B0; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px;
+            border-top: 1px solid #9BA8AB; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px;
         }
 
         @media print {

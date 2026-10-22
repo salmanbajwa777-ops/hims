@@ -244,7 +244,7 @@ $headExtra = <<<CSS
 .pie:hover .slice { opacity: .45; }
 .pie .slice:hover { opacity: 1; }
 .pie-total { transform: rotate(90deg); transform-origin: 21px 21px; text-anchor: middle;
-             font-size: 6px; font-weight: 800; fill: var(--text-primary, #16211C); }
+             font-size: 6px; font-weight: 800; fill: var(--text-primary, #11212D); }
 .pie-cap { transform: rotate(90deg); transform-origin: 21px 21px; text-anchor: middle;
            font-size: 2.4px; font-weight: 600; fill: var(--text-muted); letter-spacing: .04em; }
 .pie-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 260px; min-width: 240px; }
@@ -290,7 +290,7 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
     /* Keep slice colours in print — the report is unreadable in greyscale. */
     .pie, .pie-legend .dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .main { margin: 0 !important; }
-    .card { box-shadow: none !important; border: 1px solid #ccc; break-inside: avoid; }
+    .card { box-shadow: none !important; border: 1px solid #CCD0CF; break-inside: avoid; }
 }
 </style>
 CSS;
@@ -406,8 +406,8 @@ $fmtDelta = function (float $d): string {
 
             // Fixed hues spaced around the wheel: distinguishable side by side,
             // stable between reloads, and legible in print.
-            $pieColors = ['#0E5456','#1A7F7E','#2E9E86','#7FB069','#C7B446','#E08D3C',
-                          '#D2603A','#B4456B','#8355A8','#4C6EB5','#5E8CA8','#7D8B99'];
+            $pieColors = ['#4A5C6A','#4A5C6A','#9BA8AB','#9BA8AB','#9BA8AB','#9BA8AB',
+                          '#9BA8AB','#4A5C6A','#4A5C6A','#4A5C6A','#9BA8AB','#9BA8AB'];
             ?>
             <?php if ($pieSlices && $opTotal > 0): ?>
             <div class="card">

@@ -64,50 +64,50 @@ $paymentModeDisplay = pay_method_label($payment['payment_method'] ?? '');
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 148mm; margin: 0; padding: 0; }
-        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #000; background: #fff; }
+        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 9.5px; line-height: 1.3; color: #06141B; background: #fff; }
         /* position:relative anchors the reprint DUPLICATE mark to the sheet rather
            than the browser window — see config/reprint.php. */
         .sheet { width: 100%; padding: 6mm 6mm 4mm; display: flex; flex-direction: column; min-height: 210mm; position: relative; }
 
-        .head-box { border: 1px solid #B0B0B0; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
+        .head-box { border: 1px solid #9BA8AB; padding: 3mm 3.5mm 1.4mm; display: flex; gap: 5mm; }
         .head-left, .head-right { width: 50%; display: flex; flex-direction: column; }
         .band-1 { height: 30px; display: flex; align-items: center; }
         .band-2 { height: 27px; display: flex; flex-direction: column; justify-content: center; margin-bottom: 3px; }
         .brandline { display: flex; align-items: center; gap: 3px; }
         .clinic-logo { height: 30px; display: block; background: #fff; }
         .brandtext { display: flex; flex-direction: column; justify-content: center; height: 30px; }
-        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #0F7362; white-space: nowrap; line-height: 1; }
-        .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A4A4A; line-height: 1; margin-top: 2px; }
+        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #4A5C6A; white-space: nowrap; line-height: 1; }
+        .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A5C6A; line-height: 1; margin-top: 2px; }
         .addr { font-size: 9px; line-height: 1.35; }
         .tagline { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.15; white-space: nowrap; }
 
         .ids, .meta { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: auto; }
-        .ids td, .meta td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-        .ids td.k, .meta td.k { background: #F4F4F4; font-weight: bold; color: #000; width: 40%; }
+        .ids td, .meta td { border: 1px solid #CCD0CF; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+        .ids td.k, .meta td.k { background: #CCD0CF; font-weight: bold; color: #06141B; width: 40%; }
         .ids td.v, .meta td.v { font-weight: bold; }
 
         .doctype { text-align: center; font-weight: bold; font-size: 11px; letter-spacing: 2px; margin: 3mm 0 1mm; }
-        .voidmark { text-align: center; font-size: 10px; font-weight: bold; letter-spacing: 1px; border: 1.5px solid #000; padding: 2px 6px; margin: 2mm auto 0; width: fit-content; }
+        .voidmark { text-align: center; font-size: 10px; font-weight: bold; letter-spacing: 1px; border: 1.5px solid #06141B; padding: 2px 6px; margin: 2mm auto 0; width: fit-content; }
 
         .docrow { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: -1px; }
-        .docrow td { border: 1px solid #C8C8C8; padding: 0 6px; height: 18px; vertical-align: middle; }
-        .docrow td.k { background: #F4F4F4; font-weight: bold; width: 30%; }
+        .docrow td { border: 1px solid #CCD0CF; padding: 0 6px; height: 18px; vertical-align: middle; }
+        .docrow td.k { background: #CCD0CF; font-weight: bold; width: 30%; }
         .docrow td.v { font-weight: bold; }
 
         .fee-table { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 2mm; }
-        .fee-table td, .fee-table th { border: 1px solid #C8C8C8; padding: 0 6px; height: 19px; vertical-align: middle; }
-        .fee-table th { background: #F4F4F4; font-weight: bold; text-align: left; }
+        .fee-table td, .fee-table th { border: 1px solid #CCD0CF; padding: 0 6px; height: 19px; vertical-align: middle; }
+        .fee-table th { background: #CCD0CF; font-weight: bold; text-align: left; }
         .fee-table .num { text-align: right; }
-        .fee-table tr.paid td { background: #F4F4F4; font-weight: bold; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; font-size: 11px; height: 24px; }
+        .fee-table tr.paid td { background: #CCD0CF; font-weight: bold; border-top: 1.5px solid #06141B; border-bottom: 1.5px solid #06141B; font-size: 11px; height: 24px; }
         .fee-table tr.bal td { font-weight: bold; }
 
-        .note { font-size: 8.5px; color: #444; margin-top: 2mm; line-height: 1.4; }
+        .note { font-size: 8.5px; color: #253745; margin-top: 2mm; line-height: 1.4; }
         .sigblock { display: flex; justify-content: space-between; gap: 12mm; margin-top: 8mm; }
         .sigbox { flex: 1; text-align: center; }
-        .sigline { border-top: 1px solid #666; margin-top: 12mm; padding-top: 2px; font-size: 8px; }
+        .sigline { border-top: 1px solid #4A5C6A; margin-top: 12mm; padding-top: 2px; font-size: 8px; }
 
         .quote { text-align: center; font-size: 9.5px; font-style: italic; margin-top: auto; padding-top: 5mm; }
-        .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #B0B0B0; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px; }
+        .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #9BA8AB; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px; }
 
         @media print {
             html, body { width: 148mm; height: 210mm; }

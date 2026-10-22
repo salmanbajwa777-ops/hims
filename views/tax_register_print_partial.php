@@ -41,32 +41,32 @@ $n2 = fn(float $v) => number_format($v, 2);
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 210mm; min-height: 297mm; margin: 0; padding: 0; }
-        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 12px; line-height: 1.3; color: #000; background: #fff; }
+        body { font-family: 'Lora', Georgia, 'Times New Roman', serif; font-size: 12px; line-height: 1.3; color: #06141B; background: #fff; }
         .sheet { width: 100%; padding: 14mm; display: flex; flex-direction: column; min-height: 297mm; }
         .header { text-align: center; margin-bottom: 6px; }
         .clinic-logo { height: 32px; vertical-align: middle; margin-right: 5px; background: #fff; }
-        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 19px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #0A6B5E; }
-        .website { font-family: Arial, Helvetica, sans-serif; font-size: 10px; font-weight: bold; letter-spacing: 2px; margin-bottom: 2px; color: #0A6B5E; }
+        .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 19px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #4A5C6A; }
+        .website { font-family: Arial, Helvetica, sans-serif; font-size: 10px; font-weight: bold; letter-spacing: 2px; margin-bottom: 2px; color: #4A5C6A; }
         .clinic-tagline { font-size: 11px; margin: 2px 0; font-weight: bold; }
         .contact-info { font-size: 10px; line-height: 1.2; margin-top: 2px; }
         .contact-info p { margin: 1px 0; }
         .doctype { text-align: center; font-weight: bold; font-size: 14px; letter-spacing: 2px; margin: 10px 0 2px; }
         .refno { text-align: center; font-size: 11px; }
-        hr { border: none; border-top: 1px solid #000; margin: 6px 0; }
-        .reg-table { width: 100%; border-collapse: collapse; border: 1px solid #000; font-size: 11px; margin: 10px 0; }
-        .reg-table th { border: 1px solid #000; padding: 4px 6px; background-color: #f0f0f0; text-align: left; font-size: 10px; letter-spacing: .3px; }
-        .reg-table td { border: 1px solid #000; padding: 4px 6px; }
+        hr { border: none; border-top: 1px solid #06141B; margin: 6px 0; }
+        .reg-table { width: 100%; border-collapse: collapse; border: 1px solid #06141B; font-size: 11px; margin: 10px 0; }
+        .reg-table th { border: 1px solid #06141B; padding: 4px 6px; background-color: #CCD0CF; text-align: left; font-size: 10px; letter-spacing: .3px; }
+        .reg-table td { border: 1px solid #06141B; padding: 4px 6px; }
         .text-right { text-align: right; font-variant-numeric: tabular-nums; }
         .reg-table .none td { font-style: italic; }
-        .reg-table .grand { background-color: #f0f0f0; font-weight: bold; border-top: 2px solid #000; font-size: 12px; }
+        .reg-table .grand { background-color: #CCD0CF; font-weight: bold; border-top: 2px solid #06141B; font-size: 12px; }
         .self-tag { font-size: 9px; font-style: italic; }
         .detail { font-size: 10px; margin: 8px 0; }
         .signatures { display: flex; gap: 16px; margin-top: auto; padding-top: 40px; }
         .sig { flex: 1; text-align: center; }
-        .sig .line { border-top: 1px solid #000; margin-bottom: 3px; }
+        .sig .line { border-top: 1px solid #06141B; margin-bottom: 3px; }
         .sig .role { font-size: 9.5px; font-weight: bold; letter-spacing: .5px; }
         .sig .nm { font-size: 9.5px; }
-        .footer { text-align: center; font-size: 9px; line-height: 1.2; margin-top: 10px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; }
+        .footer { text-align: center; font-size: 9px; line-height: 1.2; margin-top: 10px; border-top: 1px solid #06141B; padding-top: 3px; display: flex; justify-content: space-between; }
         @media print {
             body { margin: 0; padding: 0; width: 210mm; }
             .sheet { margin: 0; padding: 14mm; }

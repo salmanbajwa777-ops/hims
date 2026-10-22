@@ -255,12 +255,12 @@ $history = $historyStmt->fetchAll();
    palette is mirrored here. Refund is the canonical money-leaving action, so
    --red-* map to clay, which appears nowhere else in the UI. */
 :root {
-    --primary-dark: #223A31; --primary: #2C4A3E; --primary-light: #E7F0EA;
-    --primary-accent: #3F7A63;
-    --bg: #E7ECE4; --card: #F8FAF6; --border: #D6DDD0;
-    --text: #16211C; --text-muted: #616D65;
-    --red-bg: #F7E9E5; --red-text: #9E4E34;
-    --green-bg: #E6F1E9; --green-text: #2C6E49;
+    --primary-dark: #253745; --primary: #253745; --primary-light: #CCD0CF;
+    --primary-accent: #4A5C6A;
+    --bg: #CCD0CF; --card: #CCD0CF; --border: #CCD0CF;
+    --text: #11212D; --text-muted: #4A5C6A;
+    --red-bg: #CCD0CF; --red-text: #4A5C6A;
+    --green-bg: #CCD0CF; --green-text: #4A5C6A;
     --radius: 10px;
 }
 * { box-sizing: border-box; }
@@ -271,14 +271,14 @@ body { font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; b
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
 .alert { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; }
 .alert.error { background: var(--red-bg); color: var(--red-text); }
-.ctx { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #fff; }
+.ctx { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #CCD0CF; }
 .ctx > div { padding: 10px 14px; border-right: 1px solid var(--border); }
 .ctx > div:last-child { border-right: none; }
 .ctx .k { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
 .ctx .v { font-weight: 650; font-size: 14px; margin-top: 2px; }
 .mono { font-variant-numeric: tabular-nums; }
 label.lbl { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 5px; }
-.inp { width: 100%; border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: var(--radius); padding: 10px 12px; font: 400 14px inherit; font-family: inherit; }
+.inp { width: 100%; border: 1px solid var(--border); background: #CCD0CF; color: var(--text); border-radius: var(--radius); padding: 10px 12px; font: 400 14px inherit; font-family: inherit; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .amtbox { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--bg); display: flex; flex-direction: column; gap: 10px; }
 .amtline { display: flex; align-items: baseline; gap: 10px; }
@@ -287,12 +287,12 @@ label.lbl { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-tra
 .amt:focus { outline: none; }
 .amtfoot { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex-wrap: wrap; gap: 8px; }
 .quick { display: flex; gap: 6px; flex-wrap: wrap; }
-.qbtn { border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: 999px; padding: 4px 11px; font: 600 12px inherit; font-family: inherit; cursor: pointer; }
+.qbtn { border: 1px solid var(--border); background: #CCD0CF; color: var(--text); border-radius: 999px; padding: 4px 11px; font: 600 12px inherit; font-family: inherit; cursor: pointer; }
 .overcap { display: none; margin-top: 10px; background: var(--red-bg); color: var(--red-text); border-radius: 8px; padding: 9px 13px; font-size: 12.5px; font-weight: 600; }
 .overcap.show { display: block; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: var(--radius); border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: none; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: var(--radius); border: none; background: linear-gradient(135deg, var(--primary-dark), var(--primary)); color: #CCD0CF; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: none; }
 .btn.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
-.btn.danger { background: #B91C1C; }
+.btn.danger { background: #4A5C6A; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
 .foot { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
 table { width: 100%; border-collapse: collapse; }
@@ -435,7 +435,7 @@ require __DIR__ . '/partials/impersonation_banner.php';
             <?php foreach ($history as $h): $isVoid = !empty($h['voided_at']); ?>
                 <tr<?= $isVoid ? ' style="opacity:.55; text-decoration:line-through;"' : '' ?>>
                     <td class="mono"><?= htmlspecialchars($h['refund_number']) ?>
-                        <?php if ($isVoid): ?><span style="text-decoration:none; display:inline-block; margin-left:6px; font-size:10px; font-weight:700; color:#991B1B; background:#FEE2E2; padding:1px 6px; border-radius:5px;">VOID</span><?php endif; ?>
+                        <?php if ($isVoid): ?><span style="text-decoration:none; display:inline-block; margin-left:6px; font-size:10px; font-weight:700; color:#4A5C6A; background:#CCD0CF; padding:1px 6px; border-radius:5px;">VOID</span><?php endif; ?>
                     </td>
                     <td class="mono">Rs <?= number_format((float) $h['amount'], 2) ?></td>
                     <td><?= htmlspecialchars($h['reason']) ?></td>
@@ -448,7 +448,7 @@ require __DIR__ . '/partials/impersonation_banner.php';
                             <input type="hidden" name="action" value="void_refund">
                             <input type="hidden" name="refund_id" value="<?= (int) $h['id'] ?>">
                             <input type="hidden" name="void_reason" value="">
-                            <button type="submit" class="btn-ghost" style="color:#991B1B; font-size:12px;">Void</button>
+                            <button type="submit" class="btn-ghost" style="color:#4A5C6A; font-size:12px;">Void</button>
                         </form>
                         <?php endif; ?>
                     </td>

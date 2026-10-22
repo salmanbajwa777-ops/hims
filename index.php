@@ -95,9 +95,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
            Sage & Clay palette is mirrored here. Keep in step with the :root
            block in assets/app.css if the brand ever moves again. */
         :root {
-            --primary-dark:   #223A31;
-            --primary:        #2C4A3E;
-            --primary-accent: #3F7A63;
+            --primary-dark:   #253745;
+            --primary:        #253745;
+            --primary-accent: #4A5C6A;
         }
         * { box-sizing: border-box; }
         body {
@@ -110,34 +110,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: linear-gradient(135deg, var(--primary-dark), var(--primary));
         }
         .login-card {
-            background: #fff;
+            background: #CCD0CF;
             border-radius: 20px;
             padding: 40px;
             width: 100%;
             max-width: 380px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+            box-shadow: 0 20px 50px rgba(6,20,27,0.2);
         }
         .login-card h1 {
             margin: 0 0 4px;
             font-size: 22px;
-            color: #111827;
+            color: #06141B;
         }
         .login-card p.subtitle {
             margin: 0 0 24px;
-            color: #0A0F1A;
+            color: #06141B;
             font-size: 14px;
         }
         label {
             display: block;
             font-size: 13px;
             font-weight: 600;
-            color: #0A0F1A;
+            color: #06141B;
             margin-bottom: 6px;
         }
         input[type="text"], input[type="password"] {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid #D1D5DB;
+            border: 1px solid #CCD0CF;
             border-radius: 12px;
             font-size: 14px;
             margin-bottom: 18px;
@@ -145,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         input:focus {
             outline: none;
             border-color: var(--primary-accent);
-            box-shadow: 0 0 0 3px rgba(63,122,99,.18);
+            box-shadow: 0 0 0 3px rgba(74,92,106,.18);
         }
         button {
             width: 100%;
@@ -153,15 +153,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border: none;
             border-radius: 14px;
             background: linear-gradient(135deg, var(--primary-dark), var(--primary));
-            color: #fff;
+            color: #CCD0CF;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
         }
         button:hover { opacity: 0.92; }
         .error {
-            background: #FEF2F2;
-            color: #B91C1C;
+            background: #CCD0CF;
+            color: #4A5C6A;
             padding: 10px 12px;
             border-radius: 8px;
             font-size: 13px;
@@ -179,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .pw-wrap input { padding-right: 42px; margin-bottom: 0; }
         .pw-eye {
             position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-            background: none; border: none; cursor: pointer; color: #111827;
+            background: none; border: none; cursor: pointer; color: #06141B;
             padding: 4px; width: auto; margin: 0; display: flex;
         }
         .pw-eye:hover { opacity: 1; color: var(--primary); }
@@ -211,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function pwToggle(id, btn) {
             var i = document.getElementById(id);
             i.type = i.type === 'password' ? 'text' : 'password';
-            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#111827';
+            btn.style.color = i.type === 'text' ? 'var(--primary)' : '#06141B';
         }
         </script>
 

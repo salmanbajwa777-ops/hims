@@ -336,12 +336,12 @@ $pageTitle = 'In-Door — ' . $adm['patient_name'];
 $headExtra = <<<CSS
 <style>
 /* ---- Advance payments panel ---- */
-.adv-held { display: flex; justify-content: space-between; align-items: baseline; background: var(--primary-dark); color: #fff; border-radius: var(--radius-input); padding: 12px 15px; margin-bottom: 14px; }
-.adv-held .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #9BD4CF; }
+.adv-held { display: flex; justify-content: space-between; align-items: baseline; background: var(--primary-dark); color: #CCD0CF; border-radius: var(--radius-input); padding: 12px 15px; margin-bottom: 14px; }
+.adv-held .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #CCD0CF; }
 .adv-held .v { font-size: 23px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .adv-form label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
 .adv-form input, .adv-form select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13.5px; background: var(--bg); box-sizing: border-box; }
-.adv-form input:focus, .adv-form select:focus { outline: none; border-color: var(--primary); background: #fff; }
+.adv-form input:focus, .adv-form select:focus { outline: none; border-color: var(--primary); background: #CCD0CF; }
 .adv-grid { display: grid; grid-template-columns: 1.2fr 1fr auto; gap: 12px; align-items: end; }
 @media (max-width: 620px) { .adv-grid { grid-template-columns: 1fr; } }
 .adv-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; }
@@ -355,13 +355,13 @@ $headExtra = <<<CSS
 .adv-row.void { opacity: .75; }
 .adv-row.void .adv-no, .adv-row.void .adv-amt { text-decoration: line-through; color: var(--text-muted); }
 .adv-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); margin-left: 5px; }
-.adv-tag.void, .adv-tag.ret { background: #fdeaea; color: var(--red-text); }
+.adv-tag.void, .adv-tag.ret { background: #CCD0CF; color: var(--red-text); }
 
 .a-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .a-status { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
 .a-status.ACTIVE { background: var(--green-bg); color: var(--green-text); }
-.a-status.DISCHARGE_IN_PROGRESS { background: #EDE7FB; color: #6D28D9; }
-.a-status.DISCHARGED { background: #F1F5F9; color: var(--text-secondary); }
+.a-status.DISCHARGE_IN_PROGRESS { background: #CCD0CF; color: #4A5C6A; }
+.a-status.DISCHARGED { background: #CCD0CF; color: var(--text-secondary); }
 .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 2px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 14px; }
 .kv > div { padding: 10px 14px; border-right: 1px solid var(--border); }
 .kv .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 700; }
@@ -372,18 +372,18 @@ $headExtra = <<<CSS
 .vit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px; }
 .vit-grid label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .vit-grid input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; background: var(--bg); }
-.vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.vit-grid input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .vitals-log, .care-log { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .vitals-log th, .vitals-log td, .care-log th, .care-log td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .vitals-log th, .care-log th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
 .care-log td { white-space: normal; }
 .ev-tag { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); }
-.ev-tag.HANDOVER { background: #EDE7FB; color: #6D28D9; }
+.ev-tag.HANDOVER { background: #CCD0CF; color: #4A5C6A; }
 .ev-tag.DOCTOR_VISIT { background: var(--green-bg); color: var(--green-text); }
 .ho-item { border-top: 1px solid var(--border); padding: 10px 0; font-size: 12.5px; }
 .ho-item:first-child { border-top: none; }
 .mini-form input, .mini-form select, .mini-form textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13px; background: var(--bg); }
-.mini-form input:focus, .mini-form select:focus, .mini-form textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.mini-form input:focus, .mini-form select:focus, .mini-form textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .mini-form label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .svc-form { display: grid; grid-template-columns: 2fr .6fr .7fr; gap: 10px; align-items: end; margin: 14px 0; }
 .svc-form .svc-note { grid-column: 1 / 3; }

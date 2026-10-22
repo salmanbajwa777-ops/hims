@@ -149,13 +149,13 @@ $headExtra = <<<CSS
 .ns-label { font-size: 14px; color: var(--text); font-weight: 600; }
 .ns-who { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
 .ns-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
-.ns-warn { font-size: 12px; color: #9A3412; background: #FFF4ED; border: 1px solid #FBCFB0;
+.ns-warn { font-size: 12px; color: #4A5C6A; background: #CCD0CF; border: 1px solid #CCD0CF;
            border-radius: 7px; padding: 8px 11px; margin-top: 8px; line-height: 1.5; }
 
 /* In-app column: a fixed statement, never a control. */
 .ns-inapp { flex-shrink: 0; width: 96px; text-align: center; padding-top: 2px; }
 .ns-always { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .3px;
-             color: var(--primary); background: rgba(14,84,86,.08); border-radius: 20px; padding: 4px 10px; }
+             color: var(--primary); background: rgba(74,92,106,.08); border-radius: 20px; padding: 4px 10px; }
 .ns-dash { font-size: 12px; color: var(--text-muted); }
 
 .ns-email { flex-shrink: 0; width: 76px; display: flex; justify-content: center; padding-top: 2px; }

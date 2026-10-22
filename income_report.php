@@ -148,14 +148,14 @@ $headExtra = <<<CSS
    app bar brings its own from assets/app.css. */
 
 .month-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.month-form input[type=month], .month-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
-.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.month-form input[type=month], .month-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #CCD0CF; }
+.month-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .month-form .to-sep { font-size: 12.5px; color: var(--text-muted); margin: 0 2px; }
 .mode-fields { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .vs-sep { font-size: 12px; font-weight: 700; color: var(--text-muted); }
-.mode-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+.mode-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #CCD0CF; }
 .mode-tab { border: 0; background: transparent; font: inherit; font-size: 12.5px; font-weight: 600; padding: 9px 13px; cursor: pointer; color: var(--text-secondary); }
-.mode-tab.on { background: var(--primary, #1A7F7E); color: #fff; }
+.mode-tab.on { background: var(--primary, #4A5C6A); color: #CCD0CF; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow-sm); }
@@ -166,14 +166,14 @@ $headExtra = <<<CSS
 
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
-.up { color: #067647; font-weight: 700; }
-.down { color: #b42318; font-weight: 700; }
+.up { color: #4A5C6A; font-weight: 700; }
+.down { color: #4A5C6A; font-weight: 700; }
 .flat { color: var(--text-muted); }
 
 /* Waterfall from gross to what the clinic keeps. */
 .ladder { list-style: none; margin: 0; padding: 0; max-width: 520px; }
 .ladder li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
-.ladder li.deduct .amt { color: #b42318; }
+.ladder li.deduct .amt { color: #4A5C6A; }
 .ladder li.final { border-bottom: 0; border-top: 2px solid var(--border); font-weight: 800; font-size: 15px; padding-top: 12px; }
 .ladder .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ladder .lbl small { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 400; }
@@ -184,7 +184,7 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 .pie:hover .slice { opacity: .45; }
 .pie .slice { transition: opacity .12s; }
 .pie .slice:hover { opacity: 1; }
-.pie-total { transform: rotate(90deg); transform-origin: 21px 21px; text-anchor: middle; font-size: 6px; font-weight: 800; fill: var(--text-primary, #16211C); }
+.pie-total { transform: rotate(90deg); transform-origin: 21px 21px; text-anchor: middle; font-size: 6px; font-weight: 800; fill: var(--text-primary, #11212D); }
 .pie-cap { transform: rotate(90deg); transform-origin: 21px 21px; text-anchor: middle; font-size: 2.4px; font-weight: 600; fill: var(--text-muted); letter-spacing: .04em; }
 .pie-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 260px; min-width: 240px; }
 .pie-legend li { display: flex; align-items: center; gap: 9px; padding: 5px 0; font-size: 12.5px; border-bottom: 1px solid var(--border); }
@@ -199,19 +199,19 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 .cbars .grp { flex: 1 1 0; min-width: 78px; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
 .cbars .pair { display: flex; align-items: flex-end; justify-content: center; gap: 6px; height: 100%; }
 .cbars .bar { width: 26px; border-radius: 5px 5px 0 0; min-height: 2px; }
-.cbars .bar.a { background: var(--primary, #1A7F7E); }
-.cbars .bar.b { background: #B4C4BC; }
+.cbars .bar.a { background: var(--primary, #4A5C6A); }
+.cbars .bar.b { background: #CCD0CF; }
 .cbars .lbl { font-size: 10.5px; color: var(--text-muted); text-align: center; margin-top: 7px; line-height: 1.3; }
 .legend-key { display: flex; gap: 16px; font-size: 12px; margin-bottom: 4px; }
 .legend-key span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-key i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 
-.note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light, rgba(26,127,126,.08)); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
+.note { border-left: 3px solid var(--primary); padding: 10px 14px; background: var(--primary-light, rgba(74,92,106,.08)); border-radius: 0 10px 10px 0; font-size: 12.5px; line-height: 1.55; margin-bottom: 14px; }
 
 @media print {
     .sidebar, .mobile-bar, .header, .month-form, .print-btn, .nav-group, .mode-tabs, .appbar { display: none !important; }
     .main { margin: 0 !important; }
-    .card { box-shadow: none !important; border: 1px solid #ccc; break-inside: avoid; }
+    .card { box-shadow: none !important; border: 1px solid #CCD0CF; break-inside: avoid; }
     .pie, .pie-legend .dot, .cbars .bar, .legend-key i { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 </style>
@@ -230,7 +230,7 @@ $periodQs = $mode === 'compare'
     ? 'mode=compare&from=' . urlencode($aStart) . '&to=' . urlencode($aEnd) . '&from2=' . urlencode($bStart) . '&to2=' . urlencode($bEnd)
     : ($mode === 'range' ? 'mode=range&from=' . urlencode($aStart) . '&to=' . urlencode($aEnd) : 'month=' . urlencode($month));
 
-$pieColors = ['#0E5456', '#1A7F7E', '#2E9E86', '#7FB069', '#C7B446', '#E08D3C'];
+$pieColors = ['#4A5C6A', '#4A5C6A', '#9BA8AB', '#9BA8AB', '#9BA8AB', '#9BA8AB'];
 ?>
         <?php /* The page's own mini-header (title + date + Logout) is gone: the
                  shared app bar above carries date and Logout on every page,
@@ -410,8 +410,8 @@ $pieColors = ['#0E5456', '#1A7F7E', '#2E9E86', '#7FB069', '#C7B446', '#E08D3C'];
                     <?= $aDays !== $bDays ? '<strong>The periods are different lengths</strong> — compare the per-day averages below, not the totals.' : '' ?>
                 </div>
                 <div class="legend-key">
-                    <span><i style="background:var(--primary,#1A7F7E);"></i> <?= htmlspecialchars($aLabel) ?></span>
-                    <span><i style="background:#B4C4BC;"></i> <?= htmlspecialchars($bLabel) ?></span>
+                    <span><i style="background:var(--primary,#4A5C6A);"></i> <?= htmlspecialchars($aLabel) ?></span>
+                    <span><i style="background:#CCD0CF;"></i> <?= htmlspecialchars($bLabel) ?></span>
                 </div>
                 <?php
                 $maxBar = 1.0;

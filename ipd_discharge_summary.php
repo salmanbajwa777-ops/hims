@@ -95,7 +95,7 @@ $headExtra = <<<CSS
 .ds-field label { display:block; font-size:12.5px; font-weight:600; color:var(--text-secondary); margin-bottom:6px; }
 .ds-field input, .ds-field textarea { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; font:inherit; font-size:13.5px; background:var(--bg); }
 .ds-field textarea { resize:vertical; min-height:280px; line-height:1.6; }
-.ds-field input:focus, .ds-field textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); background:#fff; }
+.ds-field input:focus, .ds-field textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); background:#CCD0CF; }
 .ref-note { border:1px solid var(--border); border-radius:10px; padding:11px 13px; margin-bottom:10px; font-size:12.5px; }
 .ref-note .top { font-weight:700; margin-bottom:3px; }
 .ref-note .sec { margin-top:4px; } .ref-note .lbl { color:var(--text-muted); font-weight:700; font-size:10.5px; text-transform:uppercase; }

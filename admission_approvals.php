@@ -76,9 +76,9 @@ $pageTitle = 'Bill Approvals';
 $headExtra = <<<CSS
 <style>
 .ap-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-.ap-tabs a { padding:7px 14px; border:1px solid var(--border); border-radius:var(--radius-pill); font-size:13px; font-weight:600; color:var(--text-secondary); text-decoration:none; background:#fff; }
-.ap-tabs a.on { background:var(--primary); border-color:var(--primary); color:#fff; }
-.ap-row { border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; background:#fff; }
+.ap-tabs a { padding:7px 14px; border:1px solid var(--border); border-radius:var(--radius-pill); font-size:13px; font-weight:600; color:var(--text-secondary); text-decoration:none; background:#CCD0CF; }
+.ap-tabs a.on { background:var(--primary); border-color:var(--primary); color:#CCD0CF; }
+.ap-row { border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; background:#CCD0CF; }
 .ap-top { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:flex-start; }
 .ap-kind { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-secondary); }
 .ap-reason { margin:8px 0; font-size:13.5px; }
@@ -88,7 +88,7 @@ $headExtra = <<<CSS
 .ap-st { font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; }
 .ap-st.PENDING { background:var(--amber-bg); color:var(--amber-text); }
 .ap-st.APPROVED { background:var(--green-bg); color:var(--green-text); }
-.ap-st.REJECTED { background:#FDE8E8; color:var(--red-text); }
+.ap-st.REJECTED { background:#CCD0CF; color:var(--red-text); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

@@ -164,7 +164,7 @@ require __DIR__ . '/partials/sidebar.php';
 
 .pd-act { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; flex-wrap: wrap; }
 .pd-act input[type="text"] { flex: 1; min-width: 200px; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-input); font: inherit; font-size: 13px; background: var(--bg); }
-.pd-act input[type="text"]:focus { outline: none; border-color: var(--primary); background: #fff; }
+.pd-act input[type="text"]:focus { outline: none; border-color: var(--primary); background: #CCD0CF; }
 .pd-empty { color: var(--text-muted); font-size: 13.5px; }
 /* Stacked, the reason box must stretch like the buttons do — min-width alone
    leaves it short of the card edge and it reads as a broken half-field. */

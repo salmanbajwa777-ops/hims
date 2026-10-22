@@ -106,13 +106,13 @@ $pageTitle = 'Revenue Exceptions';
 $headExtra = <<<CSS
 <style>
 .range-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.range-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #fff; }
+.range-form input[type=date] { padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: #CCD0CF; }
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--card); box-shadow: var(--shadow-sm); }
 .kpi .k { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
 .kpi .v { font-size: 24px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.caveat { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: #fbf3e4; border: 1px solid #ecd9ad; color: #6b4e12; font-size: 12.5px; line-height: 1.5; }
+.caveat { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: #CCD0CF; border: 1px solid #CCD0CF; color: #4A5C6A; font-size: 12.5px; line-height: 1.5; }
 .tag { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; background: var(--primary-light); color: var(--primary-dark); white-space: nowrap; display: inline-block; margin: 1px 2px 1px 0; }
 .empty { padding: 20px 10px; }
 @media print { .sidebar, .mobile-bar, .range-form, .nav-group { display: none !important; } .main { margin: 0 !important; } }
@@ -139,10 +139,10 @@ require __DIR__ . '/partials/sidebar.php';
             <div class="caveat"><strong>Read this first.</strong> Everything below is a list of records that need a look, <strong>not proof of wrongdoing</strong>. Each has ordinary explanations (a patient who could not pay, a bill raised on the wrong patient, a doctor who admitted before reception was free). Older records predate some of these checks and may have no data: a blank person is shown as &ldquo;<?= $e(RX_UNKNOWN) ?>&rdquo; and is never attributed to anyone. Use the counts to start a conversation, not to conclude one.</div>
 
             <?php foreach ($d['notes'] as $n): ?>
-            <div class="caveat" style="background:#eef3f3;border-color:#d3dede;color:#41504f;"><?= $e($n) ?></div>
+            <div class="caveat" style="background:#CCD0CF;border-color:#CCD0CF;color:#4A5C6A;"><?= $e($n) ?></div>
             <?php endforeach; ?>
             <?php foreach ($erxNotes as $n): ?>
-            <div class="caveat" style="background:#eef3f3;border-color:#d3dede;color:#41504f;"><?= $e($n) ?></div>
+            <div class="caveat" style="background:#CCD0CF;border-color:#CCD0CF;color:#4A5C6A;"><?= $e($n) ?></div>
             <?php endforeach; ?>
 
             <div class="kpi-row">

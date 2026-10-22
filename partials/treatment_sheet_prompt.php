@@ -46,7 +46,7 @@ $tsCanApprove = function_exists('has_permission') && has_permission('IPD_APPROVE
 .tsp-cta { background: var(--primary); color: var(--on-primary); border: none; border-radius: var(--radius-btn); padding: 9px 18px; font-size: var(--fs-btn); font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap; }
 .tsp-cta:hover { filter: brightness(1.08); }
 dialog.tsp-modal { border: none; border-radius: var(--radius-card); padding: 0; max-width: 470px; width: 92vw; box-shadow: var(--shadow-lg); }
-dialog.tsp-modal::backdrop { background: rgba(22,33,28,.5); }
+dialog.tsp-modal::backdrop { background: rgba(17,33,45,.5); }
 .tsp-in { padding: 24px 26px; }
 .tsp-in h3 { margin: 0 0 8px; font-size: var(--fs-page); }
 .tsp-in p { font-size: var(--fs-cell); color: var(--text-secondary); margin: 0 0 10px; line-height: 1.55; }

@@ -512,18 +512,18 @@ $headExtra = <<<CSS
 .bill-head { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; align-items:flex-start; }
 .bill-meta { font-size:12.5px; color:var(--text-muted); }
 .iedit { display:grid; grid-template-columns: 1fr 70px 90px auto auto; gap:8px; align-items:center; }
-.iedit input { padding:7px 9px; border:1px solid var(--border); border-radius:8px; font:inherit; font-size:12.5px; background:#fff; width:100%; }
-.iedit input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); }
+.iedit input { padding:7px 9px; border:1px solid var(--border); border-radius:8px; font:inherit; font-size:12.5px; background:#CCD0CF; width:100%; }
+.iedit input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); }
 .link-btn { background:none; border:none; color:var(--red-text); font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
 .pay-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
 .pay-grid label { font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:5px; }
 .pay-grid select, .pay-grid input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-input); font:inherit; font-size:14px; background:var(--bg); }
-.pay-grid select:focus, .pay-grid input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); background:#fff; }
+.pay-grid select:focus, .pay-grid input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); background:#CCD0CF; }
 .totbox { display:flex; flex-direction:column; gap:8px; margin:14px 0; }
 .totbox .r { display:flex; justify-content:space-between; font-size:14px; }
 .totbox .r.grand { border-top:1px solid var(--border); padding-top:8px; font-weight:700; font-size:16px; }
 .short-note { background:var(--amber-bg); color:var(--amber-text); border-radius:12px; padding:12px 14px; font-size:13px; font-weight:600; }
-.wo-note { background:#EDE7FB; color:#6D28D9; border-radius:12px; padding:12px 14px; font-size:13px; }
+.wo-note { background:#CCD0CF; color:#4A5C6A; border-radius:12px; padding:12px 14px; font-size:13px; }
 .locked-tag { background:var(--green-bg); color:var(--green-text); font-size:12px; font-weight:700; padding:4px 12px; border-radius:20px; }
 .time-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:2px; border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-top:14px; }
 .time-strip > div { padding:10px 14px; border-right:1px solid var(--border); }
@@ -535,15 +535,15 @@ $headExtra = <<<CSS
 .disc-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
 .disc-head .t { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-secondary); }
 .disc-row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
-.disc-seg { display:inline-flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:#fff; }
+.disc-seg { display:inline-flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:#CCD0CF; }
 .disc-seg button { appearance:none; border:none; background:transparent; font:inherit; font-size:12.5px; font-weight:600; color:var(--text-secondary); padding:9px 14px; cursor:pointer; }
-.disc-seg button[aria-pressed="true"] { background:var(--primary); color:#fff; }
+.disc-seg button[aria-pressed="true"] { background:var(--primary); color:#CCD0CF; }
 .disc-field { flex:1; min-width:140px; }
 .disc-field label { font-size:11.5px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px; }
 .disc-field .in-wrap { position:relative; }
-.disc-field input { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:10px; font:inherit; font-size:14px; background:#fff; }
-.disc-field input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); }
-.disc-applied { display:flex; justify-content:space-between; align-items:center; gap:10px; background:#ECFDF5; border:1px solid #A7F3D0; color:#047857; border-radius:12px; padding:11px 14px; margin-top:14px; font-size:13px; font-weight:600; }
+.disc-field input { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:10px; font:inherit; font-size:14px; background:#CCD0CF; }
+.disc-field input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); }
+.disc-applied { display:flex; justify-content:space-between; align-items:center; gap:10px; background:#CCD0CF; border:1px solid #CCD0CF; color:#4A5C6A; border-radius:12px; padding:11px 14px; margin-top:14px; font-size:13px; font-weight:600; }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';

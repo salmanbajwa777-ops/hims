@@ -302,7 +302,7 @@ $headExtra = <<<CSS
 .bill-table th, .bill-table td { text-align:left; padding:9px 11px; border-bottom:1px solid var(--border); }
 .bill-table th { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); font-weight:700; }
 .bill-table td.amt, .bill-table th.amt { text-align:right; font-variant-numeric:tabular-nums; }
-.kind-tag { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; background:#F1F5F9; color:var(--text-secondary); }
+.kind-tag { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; background:#CCD0CF; color:var(--text-secondary); }
 .two-col { display:grid; grid-template-columns:1.5fr 1fr; gap:20px; align-items:start; }
 @media (max-width:960px){ .two-col{ grid-template-columns:1fr; } }
 .svc-add { display:grid; grid-template-columns:2fr .7fr .9fr auto; gap:10px; align-items:end; }
@@ -314,7 +314,7 @@ $headExtra = <<<CSS
 .tot-row.due { font-weight:700; font-size:15.5px; background:var(--bg); margin:6px -8px 0; padding:9px 8px; border-radius:8px; }
 .tot-row.due.ret span { color:var(--red-text); }
 .adv-chip { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:20px; background:var(--primary-light); color:var(--primary-dark); margin-left:4px; }
-.adv-banner { background:#FFF7E8; border:1px solid #FBCFB0; color:#8a5a00; border-radius:8px; padding:11px 13px; font-size:12.5px; margin-bottom:14px; }
+.adv-banner { background:#CCD0CF; border:1px solid #CCD0CF; color:#4A5C6A; border-radius:8px; padding:11px 13px; font-size:12.5px; margin-bottom:14px; }
 .adv-banner b { display:block; margin-bottom:2px; font-size:13px; }
 .svc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
 .svc-table th, .svc-table td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--border); vertical-align:top; }
@@ -328,8 +328,8 @@ $headExtra = <<<CSS
 .svc-act { background:none; border:none; padding:2px 4px; font:inherit; font-size:12px; font-weight:600; color:var(--primary); cursor:pointer; text-decoration:underline; }
 .svc-act.danger { color:var(--red-text); }
 .rate-inp { width:92px; padding:5px 8px; border:1px solid var(--border); border-radius:8px;
-    font:inherit; font-size:12.5px; text-align:right; background:#fff; font-variant-numeric:tabular-nums; }
-.rate-inp:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(26,127,126,.15); }
+    font:inherit; font-size:12.5px; text-align:right; background:#CCD0CF; font-variant-numeric:tabular-nums; }
+.rate-inp:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(74,92,106,.15); }
 .rate-go { border:1px solid var(--border); background:var(--bg); color:var(--primary);
     border-radius:8px; padding:4px 8px; font-size:12px; cursor:pointer; line-height:1; }
 .rate-go:hover { background:var(--primary-light); }

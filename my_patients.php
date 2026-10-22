@@ -178,9 +178,9 @@ $dsWaitingCount = 0;
                 <tr class="mp-day-sep"><td colspan="5"><?= date('l, d M Y', strtotime($day)) ?></td></tr>
                 <?php foreach ($dayRows as $r): $age = my_patients_age($r['dob']); ?>
                 <?php $isRefund = $r['event_type'] === 'REFUND'; ?>
-                <tr<?= $isRefund ? ' style="background:var(--red-bg, #F7E9E5);' . ($r['status'] === 'voided' ? 'opacity:.55;' : '') . '"' : '' ?>>
+                <tr<?= $isRefund ? ' style="background:var(--red-bg, #CCD0CF);' . ($r['status'] === 'voided' ? 'opacity:.55;' : '') . '"' : '' ?>>
                     <td style="font-weight:600;"><?= htmlspecialchars($r['patient_name']) ?>
-                        <?php if ($isRefund): ?><span class="muted" style="font-size:11px;font-weight:700;color:#9E4E34;">REFUND<?= $r['note'] ? ' &middot; ' . htmlspecialchars($r['note']) : '' ?></span><?php endif; ?>
+                        <?php if ($isRefund): ?><span class="muted" style="font-size:11px;font-weight:700;color:#4A5C6A;">REFUND<?= $r['note'] ? ' &middot; ' . htmlspecialchars($r['note']) : '' ?></span><?php endif; ?>
                         <div class="muted mono" style="font-size:11.5px;"><?= htmlspecialchars($r['mrn']) ?><?= $age !== '' ? " &middot; {$age}y" : '' ?><?= $r['gender'] ? ' &middot; ' . htmlspecialchars($r['gender']) : '' ?></div>
                     </td>
                     <td class="mono"><?= htmlspecialchars($r['invoice_number'] ?? '—') ?></td>

@@ -261,31 +261,31 @@ $headExtra = <<<CSS
 .add-row { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: end; }
 .add-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .add-row input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); }
-.add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.add-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 
-.row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 100%; }
-.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); }
+.row-inp { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 12.5px; background: #CCD0CF; max-width: 100%; }
+.row-inp:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); }
 .btn.small { padding: 7px 14px; font-size: 12.5px; }
 .row-inactive td { opacity: .5; }
 .link-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 .link-btn.warn { color: var(--red-text); }
 .amt-inp { width: 110px; text-align: right; }
 .count-chip { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; white-space: nowrap; }
-.count-chip.hot { color: #92400E; background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.30); }
+.count-chip.hot { color: #4A5C6A; background: rgba(155,168,171,.12); border-color: rgba(155,168,171,.30); }
 .note-box { font-size: 12.5px; color: var(--text-secondary); background: var(--primary-light); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; line-height: 1.6; }
 .limit-row { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
 .limit-row label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
 .limit-row input { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 13.5px; background: var(--bg); width: 180px; text-align: right; }
-.limit-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,127,126,.15); background: #fff; }
+.limit-row input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.15); background: #CCD0CF; }
 .muted-inline { font-size: 12px; color: var(--text-muted); align-self: center; padding-bottom: 10px; }
 /* Active toggle — checkbox styled as a small pill switch */
 .active-toggle { display: inline-flex; align-items: center; cursor: pointer; }
 .active-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .active-toggle span { width: 40px; height: 22px; border-radius: 20px; background: var(--border); position: relative; transition: background .15s; display: inline-block; }
-.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.active-toggle span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #CCD0CF; transition: transform .15s; box-shadow: 0 1px 2px rgba(6,20,27,.2); }
 .active-toggle input:checked + span { background: var(--primary); }
 .active-toggle input:checked + span::after { transform: translateX(18px); }
-.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(26,127,126,.25); }
+.active-toggle input:focus-visible + span { box-shadow: 0 0 0 3px rgba(74,92,106,.25); }
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
