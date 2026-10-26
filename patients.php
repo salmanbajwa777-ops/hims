@@ -156,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'revisit
     // quotes what will actually be billed. Overriding to full fee still keeps
     // the category discount (it's the patient's standing entitlement — only the
     // follow-up portion is overridable), which the JS mirrors.
-    $cat = patient_discount_category($pdo, $pid);
+    $cat = empty($quote['cross_doctor']) ? patient_discount_category($pdo, $pid) : null;   // cross-doctor 50%: no stacking
     if ($cat) {
         $quote['category_name'] = $cat['name'];
         $quote['category_pct'] = (float) $cat['consultation_pct'];
@@ -638,6 +638,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
         $fullFee = (float) $ctRow['fee'];
         $quote = revisit_consultation_fee($pdo, $patientId, $doctorId, $consultTypeId, $fullFee);
 
+        $noStack = !empty($quote['cross_doctor']);   // other-doctor 50%: NO discounts stack
+
         // Receptionist override: charge full instead of the proposed follow-up rate.
         if ($override) {
             $quote = ['fee' => $fullFee, 'discount_pct' => 0.0, 'fee_type' => 'FULL',
@@ -649,7 +651,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
         // category discount is the patient's standing entitlement and survives.
         // Snapshot the rate used so later rate edits never rewrite this visit,
         // and month-end reporting can attribute the discount to its category.
-        $cat = patient_discount_category($pdo, $patientId);
+        $cat = $noStack ? null : patient_discount_category($pdo, $patientId);
         $categoryPct = $cat ? (float) $cat['consultation_pct'] : 0.0;
         $categoryId = $cat ? (int) $cat['id'] : null;
         $categoryAmount = 0.0;

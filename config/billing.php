@@ -461,6 +461,38 @@ function stack_discount_pct(float $basePct, float $categoryPct): float {
 // Applies only to consult-types the admin flagged is_revisit_eligible.
 // ============================================================================
 
+// Cross-doctor rule: a patient who paid FULL to doctor A and, while A's free
+// follow-up window (<= 5 days) is still open, consults a DIFFERENT doctor B pays
+// 50% of B's list fee. NO other discount stacks on it (callers skip the patient
+// category discount — see the 'cross_doctor' flag). Only an eligible consult type
+// on A's side opens the window, and a voided bill never does. Returns null when
+// the rule doesn't apply, so the caller falls back to the FULL quote.
+function cross_doctor_half_fee(PDO $pdo, int $patientId, int $doctorId, float $fullFee): ?array {
+    $since = date('Y-m-d', strtotime('-5 days'));
+    $st = $pdo->prepare("
+        SELECT v.id, v.visit_date
+        FROM visits v
+        JOIN doctor_consult_types dct ON dct.id = v.doctor_consult_type_id AND dct.is_revisit_eligible = 1
+        JOIN bills b ON b.visit_id = v.id
+        WHERE v.patient_id = ? AND v.doctor_id <> ?
+          AND v.consultation_fee_type = 'FULL'
+          AND v.visit_date >= ? AND v.visit_date <= ?
+          AND b.id IS NOT NULL AND b.voided_at IS NULL   -- IPD/short-stay shell visits carry no bill
+        ORDER BY v.visit_date DESC, v.id DESC
+        LIMIT 1
+    ");
+    $st->execute([$patientId, $doctorId, $since, date('Y-m-d')]);
+    $other = $st->fetch();
+    if (!$other) { return null; }
+    $days = (int) (new DateTime($other['visit_date']))->diff(new DateTime(date('Y-m-d')))->days;
+    return [
+        'fee' => round($fullFee * 0.5, 2), 'discount_pct' => 50.0, 'fee_type' => 'HALF_FOLLOWUP',
+        'reason' => 'Seen by another doctor ' . $days . ' day(s) ago — 50% of this doctor\'s fee, no other discounts',
+        'anchor_visit_id' => (int) $other['id'], 'days_since' => $days,
+        'label' => '50% (seen by another doctor)', 'cross_doctor' => true,
+    ];
+}
+
 // Returns the proposed fee for a (possibly returning) consultation:
 //   ['fee', 'discount_pct', 'fee_type', 'reason', 'anchor_visit_id', 'days_since', 'label']
 // $fullFee is the consult-type's list fee (the current visit's own fee — the
@@ -482,34 +514,49 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
 
     // Latest FULL-paid consultation of this exact trio = the window anchor.
     $anchorStmt = $pdo->prepare("
-        SELECT id, visit_date
-        FROM visits
-        WHERE patient_id = ? AND doctor_id = ? AND doctor_consult_type_id = ?
-          AND consultation_fee_type = 'FULL'
-        ORDER BY visit_date DESC, id DESC
+        SELECT v.id, v.visit_date
+        FROM visits v
+        LEFT JOIN bills b ON b.visit_id = v.id
+        WHERE v.patient_id = ? AND v.doctor_id = ? AND v.doctor_consult_type_id = ?
+          AND v.consultation_fee_type = 'FULL'
+          AND (b.id IS NULL OR b.voided_at IS NULL)
+          AND (v.disposition IS NULL OR v.disposition NOT IN ('IN_DOOR','SHORT_STAY'))   -- IPD shell visits are not consultations
+        ORDER BY v.visit_date DESC, v.id DESC
         LIMIT 1
     ");
     $anchorStmt->execute([$patientId, $doctorId, $consultTypeId]);
     $anchor = $anchorStmt->fetch();
     if (!$anchor) {
-        return $full;   // never had a full consultation of this type with this doctor
+        // Never had a full consultation of this type with this doctor — but a visit to
+        // a DIFFERENT doctor inside its free window still earns the cross-doctor rate.
+        return cross_doctor_half_fee($pdo, $patientId, $doctorId, $fullFee) ?? $full;
     }
 
     $anchorDate = new DateTime($anchor['visit_date']);
     $today = new DateTime(date('Y-m-d'));
     $days = (int) $anchorDate->diff($today)->days;
 
+    if ($days === 0) {
+        // Anchor is TODAY: this is a deliberate second same-day consult ("Register
+        // anyway"), a separate paid sitting — never a free follow-up of itself.
+        return $full;
+    }
+
     if ($days > 15) {
-        return $full;   // window expired — this visit is a fresh full anchor
+        // Own window expired — this visit would be a fresh full anchor, unless the
+        // patient was seen by another doctor within the last 5 days.
+        return cross_doctor_half_fee($pdo, $patientId, $doctorId, $fullFee) ?? $full;
     }
 
     if ($days <= 5) {
         // Count paid follow-ups already taken in this window (after the anchor).
         $cnt = $pdo->prepare("
-            SELECT COUNT(*) FROM visits
-            WHERE patient_id = ? AND doctor_id = ? AND doctor_consult_type_id = ?
-              AND id <> ? AND visit_date >= ? AND visit_date <= CURDATE()
-              AND consultation_fee_type IN ('FREE_FOLLOWUP','HALF_FOLLOWUP','THREE_QUARTER_FOLLOWUP')
+            SELECT COUNT(*) FROM visits v
+            LEFT JOIN bills b ON b.visit_id = v.id
+            WHERE v.patient_id = ? AND v.doctor_id = ? AND v.doctor_consult_type_id = ?
+              AND v.id <> ? AND v.visit_date >= ? AND v.visit_date <= CURDATE()
+              AND (b.id IS NULL OR b.voided_at IS NULL)
+              AND v.consultation_fee_type IN ('FREE_FOLLOWUP','HALF_FOLLOWUP','THREE_QUARTER_FOLLOWUP')
         ");
         $cnt->execute([$patientId, $doctorId, $consultTypeId, (int) $anchor['id'], $anchor['visit_date']]);
         $priorRevisits = (int) $cnt->fetchColumn();
