@@ -490,12 +490,19 @@ function revisit_pay_label(float $discountPct): string {
 function revisit_has_cross_type(PDO $pdo): bool {
     static $has = null;
     if ($has !== null) { return $has; }
+    $has = false;
     try {
-        $st = $pdo->prepare("SELECT column_type FROM information_schema.columns
-                             WHERE table_schema = DATABASE() AND table_name = 'visits' AND column_name = 'consultation_fee_type'");
-        $st->execute();
-        $has = stripos((string) $st->fetchColumn(), 'CROSS_DOCTOR_HALF') !== false;
-    } catch (Throwable $e) { $has = false; }
+        // SHOW COLUMNS needs no grant on information_schema (some host users are denied it).
+        $row = $pdo->query("SHOW COLUMNS FROM visits LIKE 'consultation_fee_type'")->fetch();
+        $has = $row && stripos((string) ($row['Type'] ?? ''), 'CROSS_DOCTOR_HALF') !== false;
+    } catch (Throwable $e) {
+        try {
+            $st = $pdo->prepare("SELECT column_type FROM information_schema.columns
+                                 WHERE table_schema = DATABASE() AND table_name = 'visits' AND column_name = 'consultation_fee_type'");
+            $st->execute();
+            $has = stripos((string) $st->fetchColumn(), 'CROSS_DOCTOR_HALF') !== false;
+        } catch (Throwable $e2) { $has = false; }
+    }
     return $has;
 }
 

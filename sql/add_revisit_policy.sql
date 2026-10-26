@@ -34,5 +34,4 @@ ALTER TABLE visits MODIFY COLUMN consultation_fee_type
 
 -- Verify
 SELECT * FROM revisit_policy;
-SELECT column_type FROM information_schema.columns
- WHERE table_schema = DATABASE() AND table_name = 'visits' AND column_name = 'consultation_fee_type';
+SHOW COLUMNS FROM visits LIKE 'consultation_fee_type';
