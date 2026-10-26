@@ -214,6 +214,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'booking
     exit;
 }
 
+// ---------------- AJAX: find-first patient search ----------------
+// Front-desk lookup by any of name / DOB / phone. Doctors are scoped to their own
+// patients elsewhere on this page, so they get nothing from this all-patients search.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'find_patients') {
+    header('Content-Type: application/json');
+    if ($isDoctorReadonly) { echo json_encode(['matches' => []]); exit; }
+    echo json_encode(['matches' => find_patient_matches($pdo, trim($_GET['n'] ?? ''), trim($_GET['d'] ?? ''), trim($_GET['p'] ?? ''))]);
+    exit;
+}
+
 // ---------------- AJAX: duplicate-patient check ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'check_duplicate') {
     header('Content-Type: application/json');
@@ -236,6 +246,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'check_d
     $match = $stmt->fetch();
     echo json_encode(['match' => $match ?: null]);
     exit;
+}
+
+/**
+ * Duplicate-patient matcher shared by the find-first search (AJAX) and the
+ * server-side gate on both save paths, so the two can never disagree.
+ *
+ * Inputs are loose on purpose — any of name / DOB (yyyy-mm-dd) / phone may be
+ * empty. Names are compared token by token after folding the common spelling
+ * variants (MOHAMMAD/MUHAMMED/… → MUHAMMAD): a typed token matches by prefix
+ * ("exact", so partial typing works) or within one edit ("near").
+ *
+ * Returns rows best-first, each carrying nm (0/1/2), db (0/2), ph (0/1/2) and
+ * `strong` — the combinations that mean "this is almost certainly the same
+ * person": phone + name, name + DOB, or phone + DOB. A phone match with a
+ * different name is NOT strong (a family shares one number), it is shown with
+ * a note instead.
+ */
+function patient_name_tokens(string $s): array {
+    static $variants = ['MOHAMMAD' => 'MUHAMMAD', 'MUHAMMED' => 'MUHAMMAD', 'MOHAMMED' => 'MUHAMMAD', 'MOHAMED' => 'MUHAMMAD', 'MOHD' => 'MUHAMMAD', 'MD' => 'MUHAMMAD', 'ALY' => 'ALI'];
+    $s = preg_replace('/[^A-Z ]/', ' ', mb_strtoupper($s, 'UTF-8'));
+    $out = [];
+    foreach (preg_split('/\s+/', trim($s)) as $t) {
+        if ($t !== '') { $out[] = $variants[$t] ?? $t; }
+    }
+    return $out;
+}
+
+function find_patient_matches(PDO $pdo, string $name, string $dobIso, string $phone, int $limit = 15): array {
+    $qTokens = patient_name_tokens($name);
+    $qDigits = ltrim(preg_replace('/\D/', '', $phone), '0');
+    if (strlen($qDigits) > 10) { $qDigits = substr($qDigits, -10); }
+    $qName = mb_strlen(trim($name)) >= 2 && $qTokens;
+    $qPhone = strlen($qDigits) >= 4;
+    $qDob = preg_match('/^\d{4}-\d{2}-\d{2}$/', $dobIso) === 1;
+    if (!$qName && !$qPhone && !$qDob) { return []; }
+
+    // Candidate prefilter in SQL; scoring happens in PHP below.
+    $where = []; $args = [];
+    if ($qPhone) { $where[] = 'p.phone LIKE ?'; $args[] = '%' . $qDigits . '%'; }
+    if ($qDob)   { $where[] = 'p.dob = ?';      $args[] = $dobIso; }
+    if ($qName) {
+        foreach ($qTokens as $t) {
+            if (strlen($t) < 3) { continue; }
+            $where[] = 'p.name LIKE ?';
+            // The MUHAMMAD family spells many ways; one underscore pattern catches them all.
+            $args[] = $t === 'MUHAMMAD' ? '%M_HAM%' : '%' . substr($t, 0, 3) . '%';
+        }
+    }
+    if (!$where) { return []; }
+
+    $stmt = $pdo->prepare('
+        SELECT p.id, p.name, p.father_name, p.dob, p.phone, p.mrn,
+            (SELECT MAX(v.visit_date) FROM visits v WHERE v.patient_id = p.id) AS last_visit,
+            (SELECT v.doctor_id FROM visits v WHERE v.patient_id = p.id ORDER BY v.visit_date DESC, v.id DESC LIMIT 1) AS last_doctor_id
+        FROM patients p
+        WHERE ' . implode(' OR ', $where) . '
+        ORDER BY p.id DESC LIMIT 300
+    ');
+    $stmt->execute($args);
+
+    $out = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $nm = 0;
+        if ($qName) {
+            $pt = patient_name_tokens($r['name']);
+            $exact = 0; $near = 0;
+            foreach ($qTokens as $t) {
+                $hit = false;
+                foreach ($pt as $x) { if (strpos($x, $t) === 0) { $hit = true; break; } }
+                if ($hit) { $exact++; continue; }
+                if (strlen($t) >= 4) {
+                    foreach ($pt as $x) { if (levenshtein($t, $x) <= 1) { $near++; break; } }
+                }
+            }
+            $nm = $exact === count($qTokens) ? 2 : ($exact + $near === count($qTokens) ? 1 : 0);
+        }
+        $pDigits = substr(preg_replace('/\D/', '', (string) $r['phone']), -10);
+        $ph = 0;
+        if ($qPhone) {
+            if (strlen($qDigits) === 10) { $ph = $pDigits === $qDigits ? 2 : 0; }
+            else { $ph = strpos($pDigits, $qDigits) !== false ? 1 : 0; }
+        }
+        $db = ($qDob && $r['dob'] === $dobIso) ? 2 : 0;
+        $score = $nm * 2 + $ph * 2 + $db * 2;
+        if ($score === 0) { continue; }
+        $out[] = [
+            'id' => (int) $r['id'], 'name' => $r['name'], 'father' => $r['father_name'] ?? '',
+            'dob' => $r['dob'] ? date('d/m/Y', strtotime($r['dob'])) : '',
+            'phone' => $r['phone'], 'mrn' => $r['mrn'],
+            'last_visit' => $r['last_visit'] ? date('d/m/Y', strtotime($r['last_visit'])) : '',
+            'last_doctor_id' => (int) ($r['last_doctor_id'] ?? 0),
+            'nm' => $nm, 'ph' => $ph, 'db' => $db, 'score' => $score,
+            'strong' => ($ph === 2 && $nm >= 1) || ($db === 2 && $nm === 2) || ($ph === 2 && $db === 2),
+        ];
+    }
+    usort($out, fn($a, $b) => $b['score'] <=> $a['score'] ?: $a['id'] <=> $b['id']);
+    return array_slice($out, 0, $limit);
 }
 
 /**
@@ -330,6 +437,9 @@ $successVisit = null;
 // Set when the server-side guard interrupts a submit: re-renders the form with
 // the booking question asked as a banner instead of the JS popup.
 $pendingBookings = [];
+// Strong duplicate matches that interrupted a submit (see the gate in register_patient).
+$dupPatients = [];
+$overrideNote = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register_patient') {
     // Names are stored in ALL CAPS so every consumer (lists, invoices, slips)
@@ -386,10 +496,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
     // fields are simply ignored on this path.
     $registerOnly = ($_POST['register_only'] ?? '') === '1';
 
+    // Server-side twin of the find-first search: the desk can reach this form by a
+    // direct link, or edit the prefilled name/phone into someone already on file.
+    // A STRONG match stops the save until the desk says "different person"
+    // (confirm_new=1); that override is written to the audit log.
+    $dupStrong = [];
+    if ($name !== '' && $phone !== '' && $phoneError === '') {
+        $dupStrong = array_values(array_filter(
+            find_patient_matches($pdo, $name, (string) $dob, $phone),
+            fn($m) => $m['strong']
+        ));
+    }
+    $dupOverride = ($_POST['confirm_new'] ?? '') === '1';
+    $overrideNote = ($dupOverride && $dupStrong)
+        ? ' | DUPLICATE OVERRIDE: desk confirmed a different person despite match with '
+            . implode(', ', array_map(fn($m) => $m['name'] . ' MRN ' . $m['mrn'], $dupStrong))
+        : '';
+
     if ($name === '' || $phone === '' || !in_array($gender, ['MALE', 'FEMALE', 'OTHER'], true)) {
         $error = 'Name, phone, and gender are required.';
     } elseif ($phoneError !== '') {
         $error = $phoneError;
+    } elseif ($dupStrong && !$dupOverride) {
+        $dupPatients = $dupStrong;
+        $error = 'This looks like a patient who is already registered. Open their record, or confirm this is a different person.';
     } elseif ($registerOnly) {
         // Register-only path: minimal validation, then commit patient + MRN only.
         try {
@@ -421,7 +551,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                 . str_pad((string) $month, 2, '0', STR_PAD_LEFT);
             $pdo->prepare('UPDATE patients SET mrn = ? WHERE id = ?')->execute([$mrn, $patientId]);
 
-            audit_log($pdo, 'patient_registered_only', "Registered patient #$patientId ($name, MRN $mrn) — record only, no visit/invoice", $_SESSION['user_id']);
+            audit_log($pdo, 'patient_registered_only', "Registered patient #$patientId ($name, MRN $mrn) — record only, no visit/invoice" . $overrideNote, $_SESSION['user_id']);
 
             $pdo->commit();
 
@@ -538,7 +668,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'regis
                     $paymentMode
                 );
 
-                audit_log($pdo, 'patient_registered', "Registered patient #$patientId ($name, MRN $mrn), visit #$visitId with doctor #$doctorId, token #$tokenNo" . ($discountPct > 0 ? ", {$discountPct}% discount applied" : ''), $_SESSION['user_id']);
+                audit_log($pdo, 'patient_registered', "Registered patient #$patientId ($name, MRN $mrn), visit #$visitId with doctor #$doctorId, token #$tokenNo" . ($discountPct > 0 ? ", {$discountPct}% discount applied" : '') . $overrideNote, $_SESSION['user_id']);
 
                 $billRow = $pdo->prepare('SELECT invoice_number, paid_amount FROM bills WHERE id = ?');
                 $billRow->execute([$billId]);
@@ -963,6 +1093,13 @@ if ($isDoctorReadonly) {
 // Also forced open when a submit failed validation so the entered data survives.
 // Never for doctors — they get read-only lookup, so ?register=1 is ignored.
 $showRegister = !$isDoctorReadonly && (isset($_GET['register']) || $error !== '');
+// Find-first: a blank registration form is never the entry point. The desk searches by
+// name / DOB / phone, opens the patient if they are listed, and only "Add as new" reveals
+// the form (prefilled with what was typed). A failed submit (or ?new=1) skips straight
+// to the form so entered data survives.
+$showFind = $showRegister && $error === '' && !isset($_GET['new']);
+// Values to restore after a failed submit — the form used to come back blank.
+$repost = ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register_patient') ? $_POST : [];
 $qhActive = $showRegister ? 'register' : 'patients';
 $qhBrand = false; // the sidebar already carries the HIMS mark
 
@@ -1172,6 +1309,35 @@ form.patient-form { display: flex; flex-direction: column; gap: 20px; }
 
 .match-banner { display: none; background: var(--amber-bg); border: 1px solid #FAE3BC; border-radius: 14px; padding: 14px 16px; gap: 12px; align-items: flex-start; color: var(--amber-text); font-size: 12.5px; }
 .match-banner.show { display: flex; }
+
+/* ---- Find-first registration ---- */
+.patient-form[hidden], .find-card[hidden], .find-confirm[hidden] { display: none !important; }
+.find-card { display: flex; flex-direction: column; gap: 14px; }
+.find-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 14px; }
+.find-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-secondary); min-width: 0; }
+.find-grid label .opt { font-weight: 400; color: var(--text-muted); }
+.find-grid input, .find-grid select { width: 100%; min-width: 0; padding: 11px 12px; border-radius: var(--radius-input); border: 1px solid var(--border); background: var(--bg); font: inherit; font-size: 14px; color: var(--text); }
+.find-grid input:focus, .find-grid select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,92,106,.12); background: #CCD0CF; }
+.find-phone { display: flex; gap: 6px; }
+.find-phone select { width: auto; flex: 0 0 auto; }
+.find-head { font-size: 12.5px; font-weight: 700; color: var(--text-secondary); }
+.find-empty { padding: 16px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 12px; font-size: 13px; }
+.find-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
+.find-row + .find-row { margin-top: 8px; }
+.find-row.strong { border-color: var(--red-text); }
+.find-who { min-width: 0; flex: 1 1 260px; }
+.find-nm { font-weight: 700; font-size: 14.5px; }
+.find-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.find-note { font-size: 12px; color: var(--amber-text); margin-top: 3px; }
+.find-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.find-tag { font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-secondary); }
+.find-tag.hit { background: var(--green-bg); color: var(--green-text); border-color: var(--green-text); }
+.find-tag.near { background: var(--amber-bg); color: var(--amber-text); border-color: var(--amber-text); }
+.find-add { border-top: 1px solid var(--border); padding-top: 14px; display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.find-add .hint { flex: 1 1 260px; }
+.find-confirm { border: 1px solid var(--red-text); background: var(--red-bg); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.find-confirm .find-row { background: transparent; }
+.find-confirm .row-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .match-banner svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 .match-banner .match-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .match-row { display: flex; align-items: center; justify-content: space-between; background: #CCD0CF; border-radius: 10px; padding: 8px 12px; }
@@ -1381,6 +1547,62 @@ require __DIR__ . '/partials/sidebar.php';
             <?php if ($showRegister): ?>
             <!-- Register Patient — full page -->
             <div class="reg-page">
+                <!-- Step 1 — find the patient first. Typing searches live; "Add as new patient"
+                     unlocks only after a name and a full phone are in, and carries them into
+                     the form below so nothing is typed twice. -->
+                <div class="card find-card" id="findCard" <?= $showFind ? '' : 'hidden' ?>>
+                    <div>
+                        <div class="section-title">Find the patient</div>
+                        <div class="section-sub">Fill what you have — a partial name or the last digits of the phone is enough. Matching patients appear as you type.</div>
+                    </div>
+                    <div class="find-grid">
+                        <label>Patient name
+                            <input type="text" id="f_name" class="uc" autocomplete="off" placeholder="e.g. Muhammad Ali" autofocus>
+                        </label>
+                        <label>Date of birth <span class="opt">(optional)</span>
+                            <input type="date" id="f_dob" max="<?= date('Y-m-d') ?>">
+                        </label>
+                        <label>Phone
+                            <span class="find-phone">
+                                <select id="f_cc" aria-label="Country code">
+                                    <option value="+92" selected>🇵🇰 +92</option>
+                                    <option value="+1">🇺🇸 +1</option>
+                                    <option value="+44">🇬🇧 +44</option>
+                                    <option value="+91">🇮🇳 +91</option>
+                                    <option value="+971">🇦🇪 +971</option>
+                                    <option value="+966">🇸🇦 +966</option>
+                                </select>
+                                <input type="tel" id="f_phone" inputmode="numeric" autocomplete="off" placeholder="3001234567" maxlength="10">
+                            </span>
+                        </label>
+                    </div>
+                    <div class="find-head" id="findHead">Matches</div>
+                    <div id="findResults"><div class="find-empty">Type a name, a date of birth or a phone number. Matching patients appear here.</div></div>
+                    <div id="findConfirm" class="find-confirm" hidden></div>
+                    <div class="find-add" id="findAdd">
+                        <div class="hint" id="findAddNote">"Add as new patient" unlocks after a name (3+ letters) and the phone number are entered.</div>
+                        <button type="button" class="btn" id="findAddBtn" disabled>Add as new patient</button>
+                    </div>
+                </div>
+
+                <?php if ($dupPatients): ?>
+                <!-- Server-side gate tripped: the submitted details match someone already on file. -->
+                <div class="find-confirm" id="dupPanel">
+                    <div><b>This looks like a patient who is already registered.</b> Open their record to raise the invoice, or confirm this is a different person.</div>
+                    <?php foreach ($dupPatients as $m): ?>
+                    <div class="find-row strong">
+                        <div class="find-who">
+                            <div class="find-nm"><?= htmlspecialchars($m['name']) ?></div>
+                            <div class="find-meta">Father: <?= htmlspecialchars($m['father'] ?: '—') ?> · DOB <?= htmlspecialchars($m['dob'] ?: '—') ?> · <?= htmlspecialchars($m['phone']) ?> · MRN <?= htmlspecialchars($m['mrn']) ?> · Last visit <?= htmlspecialchars($m['last_visit'] ?: '—') ?></div>
+                        </div>
+                        <button type="button" class="btn" onclick="openFollowup(<?= (int) $m['id'] ?>, <?= htmlspecialchars(json_encode($m['name']), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode($m['mrn']), ENT_QUOTES) ?>, <?= (int) $m['last_doctor_id'] ?>)">New invoice</button>
+                    </div>
+                    <?php endforeach; ?>
+                    <div><button type="button" class="btn secondary" id="dupConfirmBtn">This is a different person</button>
+                        <span class="hint" id="dupConfirmNote"></span></div>
+                </div>
+                <?php endif; ?>
+
                 <?php if ($error && isset($duplicateVisit)): ?>
                     <?php // Duplicate same-day visit — offer "go to it" or a deliberate override. ?>
                     <div class="alert error" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;">
@@ -1400,12 +1622,14 @@ require __DIR__ . '/partials/sidebar.php';
                             </form>
                         </span>
                     </div>
-                <?php elseif ($error): ?>
+                <?php elseif ($error && !$dupPatients): ?>
                     <div class="alert error"><?= htmlspecialchars($error) ?></div>
                 <?php endif; ?>
 
-        <form class="patient-form" method="POST" action="patients.php" id="patientForm">
+        <form class="patient-form" method="POST" action="patients.php" id="patientForm" <?= $showFind ? 'hidden' : '' ?>>
             <input type="hidden" name="action" value="register_patient">
+            <!-- Set to 1 once the desk confirms "different person" against a strong match. -->
+            <input type="hidden" name="confirm_new" id="confirmNew" value="">
             <!-- Booking-match guard state: booking_id = "Yes, this visit is that
                  appointment" (consumed at save); booking_dismissed = "No, separate
                  walk-in" (booking stays live). Both empty → the POST rejects and
@@ -1561,6 +1785,7 @@ require __DIR__ . '/partials/sidebar.php';
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
                     A unique MRN is generated on save and the visit goes straight to the doctor's queue.
                 </span>
+                <button type="button" class="btn secondary" id="backToFind">Back to search</button>
                 <a href="patients.php" class="btn secondary">Cancel</a>
                 <!-- Register-only is a distinct SUBMIT button: its name/value is sent ONLY
                      when it is the button that submits, so the server can never confuse a
@@ -2401,6 +2626,168 @@ phoneInput.addEventListener('change', regBookingCheck);
     }
 })();
 <?php endif; ?>
+
+// ================= Find-first registration =================
+// Restore what the desk typed after a failed submit (the form used to come back blank).
+<?php if ($repost): ?>
+(function () {
+    const r = <?= json_encode(array_intersect_key($repost, array_flip([
+        'name', 'father_name', 'email', 'dob', 'phone_cc', 'phone', 'gender', 'city_id', 'area_id',
+        'doctor_id', 'doctor_consult_type_id', 'payment_mode', 'discount_pct',
+    ]))) ?>;
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+    set('name', r.name); set('father_name', r.father_name); set('email', r.email);
+    if (r.dob) { set('dob', r.dob); document.getElementById('dob').dispatchEvent(new Event('change', { bubbles: true })); }
+    if (r.phone_cc) set('phone_cc', r.phone_cc);
+    set('phone', r.phone);
+    const radio = (name, v) => { const el = document.querySelector('input[name="' + name + '"][value="' + v + '"]'); if (el) el.checked = true; };
+    if (r.gender) radio('gender', r.gender);
+    if (r.payment_mode) radio('payment_mode', r.payment_mode);
+    set('discount_pct', r.discount_pct);
+    if (r.city_id && citySelect.querySelector('option[value="' + r.city_id + '"]')) {
+        citySelect.value = r.city_id; setFilled(citySelect);
+        citySelect.dispatchEvent(new Event('change'));
+        if (r.area_id && areaSelect.querySelector('option[value="' + r.area_id + '"]')) { areaSelect.value = r.area_id; setFilled(areaSelect); }
+    }
+    if (r.doctor_id && doctorSelect.querySelector('option[value="' + r.doctor_id + '"]')) {
+        doctorSelect.value = r.doctor_id; setFilled(doctorSelect);
+        bookingPreselectTypeId = r.doctor_consult_type_id || null;
+        doctorSelect.dispatchEvent(new Event('change'));
+    }
+})();
+<?php endif; ?>
+
+(function () {
+    const $ = id => document.getElementById(id);
+    const card = $('findCard'), form = $('patientForm');
+    const fName = $('f_name'), fDob = $('f_dob'), fPhone = $('f_phone'), fCc = $('f_cc');
+    const results = $('findResults'), head = $('findHead'), addBtn = $('findAddBtn'), addNote = $('findAddNote'), confirmBox = $('findConfirm');
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const localDigits = () => fPhone.value.replace(/\D/g, '').replace(/^0+/, '');
+    let matches = [], seq = 0, timer = null;
+
+    function fmtPhone(p) {
+        const d = (p || '').replace(/\D/g, '');
+        return d.length > 10 ? '+' + d.slice(0, d.length - 10) + ' ' + d.slice(-10, -7) + ' ' + d.slice(-7) : (p || '—');
+    }
+    function tag(label, lvl) { return '<span class="find-tag ' + (lvl === 2 ? 'hit' : lvl === 1 ? 'near' : '') + '">' + label + '</span>'; }
+    function row(m, i) {
+        const note = (m.ph === 2 && m.nm === 0) ? '<div class="find-note">Same phone, different name — could be family.</div>' : '';
+        return '<div class="find-row' + (m.strong ? ' strong' : '') + '"><div class="find-who">'
+            + '<div class="find-nm">' + esc(m.name) + '</div>'
+            + '<div class="find-meta">Father: ' + esc(m.father || '—') + ' · DOB ' + esc(m.dob || '—') + ' · ' + esc(fmtPhone(m.phone)) + ' · MRN ' + esc(m.mrn) + ' · Last visit ' + esc(m.last_visit || '—') + '</div>'
+            + note
+            + '<div class="find-tags">' + tag('Name ' + (m.nm === 2 ? 'match' : m.nm === 1 ? 'similar' : '—'), m.nm)
+            + tag('DOB ' + (m.db ? 'match' : '—'), m.db) + tag('Phone ' + (m.ph === 2 ? 'match' : m.ph === 1 ? 'partial' : '—'), m.ph) + '</div>'
+            + '</div><button type="button" class="btn' + (m.strong ? '' : ' secondary') + '" data-open="' + i + '">New invoice</button></div>';
+    }
+    function render() {
+        const any = fName.value.trim().length >= 2 || localDigits().length >= 4 || fDob.value;
+        if (!any) {
+            head.textContent = 'Matches';
+            results.innerHTML = '<div class="find-empty">Type a name, a date of birth or a phone number. Matching patients appear here.</div>';
+        } else if (!matches.length) {
+            head.textContent = 'No matches';
+            results.innerHTML = '<div class="find-empty">No patient matches these details.</div>';
+        } else {
+            head.textContent = matches.length + (matches.length === 1 ? ' match' : ' matches');
+            results.innerHTML = matches.map(row).join('');
+        }
+        const phoneOk = fCc.value === '+92' ? localDigits().length === 10 : localDigits().length >= 6;
+        const ok = fName.value.trim().length >= 3 && phoneOk;
+        addBtn.disabled = !ok;
+        addNote.textContent = ok
+            ? 'Not in the list? Add as new — the name, date of birth and phone carry over, nothing is typed twice.'
+            : '"Add as new patient" unlocks after a name (3+ letters) and the full phone number are entered.';
+    }
+    function search() {
+        confirmBox.hidden = true;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            const mine = ++seq;
+            const q = new URLSearchParams({ action: 'find_patients', n: fName.value.trim(), d: fDob.value, p: localDigits() });
+            fetch('patients.php?' + q.toString())
+                .then(r => r.json())
+                .then(res => { if (mine !== seq) return; matches = res.matches || []; render(); })
+                .catch(() => { if (mine !== seq) return; matches = []; render(); });
+        }, 250);
+        render();
+    }
+
+    // Phone: digits only, no leading zero, +92 capped at 10 — same rule as the form's own field.
+    fPhone.addEventListener('input', () => {
+        let d = localDigits();
+        if (fCc.value === '+92') d = d.slice(0, 10);
+        if (fPhone.value !== d) fPhone.value = d;
+        search();
+    });
+    fCc.addEventListener('change', () => { fPhone.dispatchEvent(new Event('input')); });
+    fName.addEventListener('input', search);
+    fDob.addEventListener('change', search);
+    fDob.addEventListener('input', search);
+
+    results.addEventListener('click', e => {
+        const b = e.target.closest('[data-open]'); if (!b) return;
+        const m = matches[+b.dataset.open];
+        openFollowup(m.id, m.name, m.mrn, m.last_doctor_id);
+    });
+
+    function startNew(confirmed) {
+        $('name').value = fName.value.trim().toUpperCase();
+        $('phone_cc').value = fCc.value;
+        phoneInput.value = localDigits();
+        phoneInput.dispatchEvent(new Event('input'));
+        const dobEl = $('dob'); dobEl.value = fDob.value; dobEl.dispatchEvent(new Event('change', { bubbles: true }));
+        $('confirmNew').value = confirmed ? '1' : '';
+        card.hidden = true; form.hidden = false;
+        // The booking guard used to fire when the phone was typed into the form; it is
+        // typed here now, so ask once the form opens.
+        if (typeof regBookingCheck === 'function') regBookingCheck();
+        const next = $('father_name'); if (next) next.focus();
+        window.scrollTo(0, 0);
+    }
+    addBtn.addEventListener('click', () => {
+        const strong = matches.filter(m => m.strong);
+        if (!strong.length) { startNew(false); return; }
+        const m = strong[0];
+        const why = [m.ph === 2 ? 'phone' : '', m.nm >= 1 ? 'name' : '', m.db ? 'date of birth' : ''].filter(Boolean).join(' and ');
+        confirmBox.innerHTML = '<div><b>This looks like an existing patient.</b> ' + esc(m.name) + ' (MRN ' + esc(m.mrn)
+            + ') matches on ' + esc(why) + '. Registering again creates a second record, and this choice is logged against your user.</div>'
+            + '<div class="row-acts"><button type="button" class="btn" data-act="open">Open ' + esc(m.name) + '</button>'
+            + '<button type="button" class="btn secondary" data-act="force">This is a different person, add new</button>'
+            + '<button type="button" class="btn secondary" data-act="cancel">Cancel</button></div>';
+        confirmBox.hidden = false;
+        confirmBox._m = m;
+    });
+    confirmBox.addEventListener('click', e => {
+        const a = e.target.closest('[data-act]'); if (!a) return;
+        const m = confirmBox._m;
+        if (a.dataset.act === 'open') openFollowup(m.id, m.name, m.mrn, m.last_doctor_id);
+        else if (a.dataset.act === 'force') startNew(true);
+        else confirmBox.hidden = true;
+    });
+
+    $('backToFind').addEventListener('click', () => {
+        form.hidden = true; card.hidden = false;
+        fName.focus(); search();
+    });
+
+    // Server-side gate re-render: the desk confirms "different person", then saves again.
+    const dupBtn = $('dupConfirmBtn');
+    if (dupBtn) dupBtn.addEventListener('click', () => {
+        $('confirmNew').value = '1';
+        $('dupConfirmNote').textContent = ' Confirmed — press Register again to save.';
+        dupBtn.disabled = true;
+    });
+
+    // Seed the search from whatever the form already holds (booking arrival, failed submit),
+    // so "Back to search" starts from the same details.
+    fName.value = ($('name').value || '').trim();
+    fCc.value = $('phone_cc').value || '+92';
+    fPhone.value = phoneInput.value || '';
+    fDob.value = $('dob').value || '';
+    if (fName.value || fPhone.value || fDob.value) search(); else render();
+})();
 </script>
 <?php endif; ?>
 <?php // One merged modal: In-Door is a route inside it, not a second dialog. ?>
