@@ -461,6 +461,44 @@ function stack_discount_pct(float $basePct, float $categoryPct): float {
 // Applies only to consult-types the admin flagged is_revisit_eligible.
 // ============================================================================
 
+// Follow-up pricing policy — admin-editable (Follow-up Pricing page). Falls back to
+// the original hard-coded values when the revisit_policy table hasn't been created
+// yet, so code can ship before the migration without changing any price.
+function revisit_policy(PDO $pdo): array {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = ['free_days' => 5, 'max_days' => 15, 'first_discount_pct' => 100.0,
+              'repeat_discount_pct' => 50.0, 'late_discount_pct' => 25.0, 'cross_discount_pct' => 50.0];
+    try {
+        $row = $pdo->query('SELECT free_days, max_days, first_discount_pct, repeat_discount_pct, late_discount_pct, cross_discount_pct FROM revisit_policy WHERE id = 1')->fetch();
+        if ($row) {
+            foreach ($cache as $k => $_) { $cache[$k] = is_float($cache[$k]) ? (float) $row[$k] : (int) $row[$k]; }
+        }
+    } catch (Throwable $e) { /* table not migrated yet — defaults stand */ }
+    return $cache;
+}
+
+// "Pay X%" wording used on quotes/slips: a 25% discount reads "75% follow-up".
+function revisit_pay_label(float $discountPct): string {
+    if ($discountPct >= 100) { return 'Free follow-up'; }
+    return rtrim(rtrim(number_format(100 - $discountPct, 2, '.', ''), '0'), '.') . '% follow-up';
+}
+
+// The CROSS_DOCTOR_HALF fee type exists only after sql/add_revisit_policy.sql ran.
+// Widening an ENUM needs a guard: a value the column lacks stores '' silently, so
+// until the column lists it we fall back to HALF_FOLLOWUP (same money, no split).
+function revisit_has_cross_type(PDO $pdo): bool {
+    static $has = null;
+    if ($has !== null) { return $has; }
+    try {
+        $st = $pdo->prepare("SELECT column_type FROM information_schema.columns
+                             WHERE table_schema = DATABASE() AND table_name = 'visits' AND column_name = 'consultation_fee_type'");
+        $st->execute();
+        $has = stripos((string) $st->fetchColumn(), 'CROSS_DOCTOR_HALF') !== false;
+    } catch (Throwable $e) { $has = false; }
+    return $has;
+}
+
 // Cross-doctor rule: a patient who paid FULL to doctor A and, while A's free
 // follow-up window (<= 5 days) is still open, consults a DIFFERENT doctor B pays
 // 50% of B's list fee. NO other discount stacks on it (callers skip the patient
@@ -468,7 +506,8 @@ function stack_discount_pct(float $basePct, float $categoryPct): float {
 // on A's side opens the window, and a voided bill never does. Returns null when
 // the rule doesn't apply, so the caller falls back to the FULL quote.
 function cross_doctor_half_fee(PDO $pdo, int $patientId, int $doctorId, float $fullFee): ?array {
-    $since = date('Y-m-d', strtotime('-5 days'));
+    $pol = revisit_policy($pdo);
+    $since = date('Y-m-d', strtotime('-' . $pol['free_days'] . ' days'));
     $st = $pdo->prepare("
         SELECT v.id, v.visit_date
         FROM visits v
@@ -485,11 +524,13 @@ function cross_doctor_half_fee(PDO $pdo, int $patientId, int $doctorId, float $f
     $other = $st->fetch();
     if (!$other) { return null; }
     $days = (int) (new DateTime($other['visit_date']))->diff(new DateTime(date('Y-m-d')))->days;
+    $disc = $pol['cross_discount_pct'];
     return [
-        'fee' => round($fullFee * 0.5, 2), 'discount_pct' => 50.0, 'fee_type' => 'HALF_FOLLOWUP',
-        'reason' => 'Seen by another doctor ' . $days . ' day(s) ago — 50% of this doctor\'s fee, no other discounts',
+        'fee' => round($fullFee * (1 - $disc / 100), 2), 'discount_pct' => $disc,
+        'fee_type' => revisit_has_cross_type($pdo) ? 'CROSS_DOCTOR_HALF' : 'HALF_FOLLOWUP',
+        'reason' => 'Seen by another doctor ' . $days . ' day(s) ago — ' . revisit_pay_label($disc) . ' of this doctor\'s fee, no other discounts',
         'anchor_visit_id' => (int) $other['id'], 'days_since' => $days,
-        'label' => '50% (seen by another doctor)', 'cross_doctor' => true,
+        'label' => 'Seen by another doctor — ' . revisit_pay_label($disc), 'cross_doctor' => true,
     ];
 }
 
@@ -542,13 +583,14 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
         return $full;
     }
 
-    if ($days > 15) {
+    $pol = revisit_policy($pdo);
+    if ($days > $pol['max_days']) {
         // Own window expired — this visit would be a fresh full anchor, unless the
-        // patient was seen by another doctor within the last 5 days.
+        // patient was seen by another doctor within the free window.
         return cross_doctor_half_fee($pdo, $patientId, $doctorId, $fullFee) ?? $full;
     }
 
-    if ($days <= 5) {
+    if ($days <= $pol['free_days']) {
         // Count paid follow-ups already taken in this window (after the anchor).
         $cnt = $pdo->prepare("
             SELECT COUNT(*) FROM visits v
@@ -561,25 +603,30 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
         $cnt->execute([$patientId, $doctorId, $consultTypeId, (int) $anchor['id'], $anchor['visit_date']]);
         $priorRevisits = (int) $cnt->fetchColumn();
 
+        // Tier = position, not percentage: the fee-type names are fixed in the ENUM,
+        // the discount behind each one is the admin's setting.
         if ($priorRevisits === 0) {
+            $d = $pol['first_discount_pct'];
             return [
-                'fee' => 0.0, 'discount_pct' => 100.0, 'fee_type' => 'FREE_FOLLOWUP',
-                'reason' => 'Free follow-up (1st within 5 days)', 'anchor_visit_id' => (int) $anchor['id'],
-                'days_since' => $days, 'label' => 'Free follow-up',
+                'fee' => round($fullFee * (1 - $d / 100), 2), 'discount_pct' => $d, 'fee_type' => 'FREE_FOLLOWUP',
+                'reason' => '1st follow-up within ' . $pol['free_days'] . ' days (' . revisit_pay_label($d) . ')',
+                'anchor_visit_id' => (int) $anchor['id'], 'days_since' => $days, 'label' => revisit_pay_label($d),
             ];
         }
+        $d = $pol['repeat_discount_pct'];
         return [
-            'fee' => round($fullFee * 0.5, 2), 'discount_pct' => 50.0, 'fee_type' => 'HALF_FOLLOWUP',
-            'reason' => 'Follow-up (2nd+ within 5 days, 50%)', 'anchor_visit_id' => (int) $anchor['id'],
-            'days_since' => $days, 'label' => '50% follow-up',
+            'fee' => round($fullFee * (1 - $d / 100), 2), 'discount_pct' => $d, 'fee_type' => 'HALF_FOLLOWUP',
+            'reason' => 'Follow-up (2nd+ within ' . $pol['free_days'] . ' days, ' . revisit_pay_label($d) . ')',
+            'anchor_visit_id' => (int) $anchor['id'], 'days_since' => $days, 'label' => revisit_pay_label($d),
         ];
     }
 
-    // 6–15 days → 75% of fee (25% discount).
+    // After the free window, up to max_days.
+    $d = $pol['late_discount_pct'];
     return [
-        'fee' => round($fullFee * 0.75, 2), 'discount_pct' => 25.0, 'fee_type' => 'THREE_QUARTER_FOLLOWUP',
-        'reason' => 'Follow-up (day 6–15, 75%)', 'anchor_visit_id' => (int) $anchor['id'],
-        'days_since' => $days, 'label' => '75% follow-up',
+        'fee' => round($fullFee * (1 - $d / 100), 2), 'discount_pct' => $d, 'fee_type' => 'THREE_QUARTER_FOLLOWUP',
+        'reason' => 'Follow-up (day ' . ($pol['free_days'] + 1) . '–' . $pol['max_days'] . ', ' . revisit_pay_label($d) . ')',
+        'anchor_visit_id' => (int) $anchor['id'], 'days_since' => $days, 'label' => revisit_pay_label($d),
     ];
 }
 

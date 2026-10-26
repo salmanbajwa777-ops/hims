@@ -83,6 +83,7 @@ try {
                SUM(CASE WHEN v.consultation_fee_type = 'FREE_FOLLOWUP' THEN 1 ELSE 0 END) AS free_n,
                SUM(CASE WHEN v.consultation_fee_type = 'HALF_FOLLOWUP' THEN 1 ELSE 0 END) AS half_n,
                SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'CROSS_DOCTOR_HALF' THEN 1 ELSE 0 END) AS cross_n,
                COUNT(*) AS n
         FROM visits v
         JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
@@ -98,6 +99,7 @@ try {
                SUM(CASE WHEN v.consultation_fee_type = 'FREE_FOLLOWUP' THEN 1 ELSE 0 END) AS free_n,
                SUM(CASE WHEN v.consultation_fee_type = 'HALF_FOLLOWUP' THEN 1 ELSE 0 END) AS half_n,
                SUM(CASE WHEN v.consultation_fee_type = 'THREE_QUARTER_FOLLOWUP' THEN 1 ELSE 0 END) AS tq_n,
+               SUM(CASE WHEN v.consultation_fee_type = 'CROSS_DOCTOR_HALF' THEN 1 ELSE 0 END) AS cross_n,
                COUNT(*) AS n
         FROM visits v
         JOIN bills b ON b.visit_id = v.id AND b.status = 'paid' AND b.voided_at IS NULL
@@ -106,8 +108,9 @@ try {
     $moC->execute([$doctorId, $moStart, $moEnd]);
 }
 $mo = $moC->fetch() ?: [];
+$rvPol = revisit_policy($pdo);
 $moConsultN = (int) ($mo['n'] ?? 0);
-$moRevisitN = (int) (($mo['free_n'] ?? 0) + ($mo['half_n'] ?? 0) + ($mo['tq_n'] ?? 0));
+$moRevisitN = (int) (($mo['free_n'] ?? 0) + ($mo['half_n'] ?? 0) + ($mo['tq_n'] ?? 0) + ($mo['cross_n'] ?? 0));
 $moRevisitRate = $moConsultN > 0 ? $moRevisitN / $moConsultN * 100 : 0.0;
 
 // ER admission money is deliberately EXCLUDED from the doctor's earnings figures
@@ -472,16 +475,20 @@ require __DIR__ . '/partials/head.php';
                     <div class="card">
                         <div class="rail-title"><span>Revisit mix — <?= date('F') ?></span><a class="card-link" href="doctor_analytics.php?view=revisits">Breakdown &rarr;</a></div>
                         <div class="rv-row">
-                            <div>Free follow-ups <div class="rv-note">1st within 5 days</div></div>
+                            <div>1st follow-ups <div class="rv-note"><?= revisit_pay_label($rvPol['first_discount_pct']) ?> · within <?= $rvPol['free_days'] ?> days</div></div>
                             <span class="badge-count tnum"><?= (int) ($mo['free_n'] ?? 0) ?></span>
                         </div>
                         <div class="rv-row">
-                            <div>50% follow-ups <div class="rv-note">2nd+ within 5 days</div></div>
+                            <div>Repeat follow-ups <div class="rv-note"><?= revisit_pay_label($rvPol['repeat_discount_pct']) ?> · 2nd+ within <?= $rvPol['free_days'] ?> days</div></div>
                             <span class="badge-count tnum"><?= (int) ($mo['half_n'] ?? 0) ?></span>
                         </div>
                         <div class="rv-row">
-                            <div>75% follow-ups <div class="rv-note">Day 6–15</div></div>
+                            <div>Late follow-ups <div class="rv-note"><?= revisit_pay_label($rvPol['late_discount_pct']) ?> · day <?= $rvPol['free_days'] + 1 ?>–<?= $rvPol['max_days'] ?></div></div>
                             <span class="badge-count tnum"><?= (int) ($mo['tq_n'] ?? 0) ?></span>
+                        </div>
+                        <div class="rv-row">
+                            <div>Other-doctor follow-ups <div class="rv-note"><?= revisit_pay_label($rvPol['cross_discount_pct']) ?> · seen by another doctor</div></div>
+                            <span class="badge-count tnum"><?= (int) ($mo['cross_n'] ?? 0) ?></span>
                         </div>
                         <div class="rev-total" style="font-size:12.5px"><span>Revisit rate</span><span class="tnum"><?= number_format($moRevisitRate, 1) ?>% (<?= $moRevisitN ?> / <?= $moConsultN ?>)</span></div>
                         <div class="build-notice" style="margin-top:10px">

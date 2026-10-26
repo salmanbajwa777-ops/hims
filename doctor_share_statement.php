@@ -65,7 +65,7 @@ $taxPct   = $doc ? (float) $doc['consult_tax_pct'] : 0.0;
 // ===========================================================================
 // OPD consultations, grouped by fee type so free/part-paid follow-ups show.
 // visits.consultation_fee_type is FULL | FREE_FOLLOWUP | HALF_FOLLOWUP |
-// THREE_QUARTER_FOLLOWUP (NULL on pre-revisit rows — treated as FULL).
+// THREE_QUARTER_FOLLOWUP | CROSS_DOCTOR_HALF (NULL on pre-revisit rows — treated as FULL).
 // ===========================================================================
 $opdRows = [];
 $opdGross = 0.0;
@@ -82,7 +82,7 @@ if ($doc) {
               AND b.status = 'paid' AND b.voided_at IS NULL
               AND b.paid_at >= ? AND b.paid_at < ?
             GROUP BY fee_type
-            ORDER BY FIELD(fee_type,'FULL','THREE_QUARTER_FOLLOWUP','HALF_FOLLOWUP','FREE_FOLLOWUP')
+            ORDER BY FIELD(fee_type,'FULL','THREE_QUARTER_FOLLOWUP','HALF_FOLLOWUP','CROSS_DOCTOR_HALF','FREE_FOLLOWUP')
         ");
         $q->execute([$doctorId, $from, $toExcl]);
         $opdRows = $q->fetchAll();
@@ -244,9 +244,10 @@ $netPayable = $split['doctor'] - $paidOut;
 
 $feeLabels = [
     'FULL'                   => 'Full consultation',
-    'THREE_QUARTER_FOLLOWUP' => 'Follow-up (75%)',
-    'HALF_FOLLOWUP'          => 'Follow-up (50%)',
-    'FREE_FOLLOWUP'          => 'Free follow-up',
+    'THREE_QUARTER_FOLLOWUP' => 'Late follow-up',
+    'HALF_FOLLOWUP'          => 'Repeat follow-up',
+    'FREE_FOLLOWUP'          => '1st follow-up',
+    'CROSS_DOCTOR_HALF'      => 'Other-doctor follow-up',
 ];
 
 // ---- A5 print view ---------------------------------------------------------

@@ -452,9 +452,10 @@ require __DIR__ . '/partials/head.php';
                             <?php endif; ?>
                             <?php
                             $feeBadges = [
-                                'FREE_FOLLOWUP' => ['Free follow-up', 'q-tag-free'],
-                                'HALF_FOLLOWUP' => ['50% follow-up', 'q-tag-revisit'],
-                                'THREE_QUARTER_FOLLOWUP' => ['75% follow-up', 'q-tag-revisit'],
+                                'FREE_FOLLOWUP' => ['1st follow-up', 'q-tag-free'],
+                                'HALF_FOLLOWUP' => ['Repeat follow-up', 'q-tag-revisit'],
+                                'THREE_QUARTER_FOLLOWUP' => ['Late follow-up', 'q-tag-revisit'],
+                                'CROSS_DOCTOR_HALF' => ['Other-doctor follow-up', 'q-tag-revisit'],
                             ];
                             if (isset($feeBadges[$v['consultation_fee_type'] ?? ''])):
                                 [$badgeText, $badgeClass] = $feeBadges[$v['consultation_fee_type']];

@@ -92,9 +92,10 @@ function qs_view(string $view, array $extra = []): string {
 
 $FEE_TYPE_LABELS = [
     'FULL' => 'Full',
-    'FREE_FOLLOWUP' => 'Revisit FREE',
-    'HALF_FOLLOWUP' => 'Revisit 50%',
-    'THREE_QUARTER_FOLLOWUP' => 'Revisit 75%',
+    'FREE_FOLLOWUP' => 'Revisit 1st',
+    'HALF_FOLLOWUP' => 'Revisit repeat',
+    'THREE_QUARTER_FOLLOWUP' => 'Revisit late',
+    'CROSS_DOCTOR_HALF' => 'Other-doctor',
 ];
 
 // Payment badge for a consultation bill row. paid → Paid; paid_amount short of
@@ -154,7 +155,7 @@ if ($view === 'patients') {
     // so the rate reflects the range, not the current payment lens. Uses the
     // unfiltered $patientRows only when no fee-type filter is active; with a
     // fee-type filter the summary is naturally scoped to what's shown.
-    $rvTierCounts = ['FREE_FOLLOWUP' => 0, 'HALF_FOLLOWUP' => 0, 'THREE_QUARTER_FOLLOWUP' => 0];
+    $rvTierCounts = ['FREE_FOLLOWUP' => 0, 'HALF_FOLLOWUP' => 0, 'THREE_QUARTER_FOLLOWUP' => 0, 'CROSS_DOCTOR_HALF' => 0];
     $rvFullCount = 0;
     foreach ($patientRows as $r) {
         $ft = $r['consultation_fee_type'];
@@ -902,7 +903,7 @@ require __DIR__ . '/partials/head.php';
                         <div class="lab"><span class="dotk" style="background:#9BA8AB"></span>Revisits</div>
                         <div class="val tnum"><?= fmt_amt($tot['revisit']) ?> PKR</div>
                         <div class="cnt tnum"><?= $tot['revisit_n'] ?> revisit<?= $tot['revisit_n'] === 1 ? '' : 's' ?>
-                            (<?= (int) ($revisitMix['FREE_FOLLOWUP'] ?? 0) ?> free · <?= (int) ($revisitMix['HALF_FOLLOWUP'] ?? 0) ?> half · <?= (int) ($revisitMix['THREE_QUARTER_FOLLOWUP'] ?? 0) ?> at 75%)</div>
+                            (<?= (int) ($revisitMix['FREE_FOLLOWUP'] ?? 0) ?> 1st · <?= (int) ($revisitMix['HALF_FOLLOWUP'] ?? 0) ?> repeat · <?= (int) ($revisitMix['THREE_QUARTER_FOLLOWUP'] ?? 0) ?> late · <?= (int) ($revisitMix['CROSS_DOCTOR_HALF'] ?? 0) ?> other-doctor)</div>
                     </div>
                 </div>
                 <div class="rev-total">
@@ -1070,9 +1071,10 @@ require __DIR__ . '/partials/head.php';
                         <div class="rv-lab">Revisit rate<div class="rv-sub tnum"><?= $rvCount ?> of <?= $rvTotal ?> consultations</div></div>
                     </div>
                     <div class="rv-tiers">
-                        <div class="rv-tier"><span class="dotk" style="background:var(--green)"></span>Free<b class="tnum"><?= $rvTierCounts['FREE_FOLLOWUP'] ?></b></div>
-                        <div class="rv-tier"><span class="dotk" style="background:#9BA8AB"></span>50%<b class="tnum"><?= $rvTierCounts['HALF_FOLLOWUP'] ?></b></div>
-                        <div class="rv-tier"><span class="dotk" style="background:#FF9500"></span>75%<b class="tnum"><?= $rvTierCounts['THREE_QUARTER_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:var(--green)"></span>1st<b class="tnum"><?= $rvTierCounts['FREE_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:#9BA8AB"></span>Repeat<b class="tnum"><?= $rvTierCounts['HALF_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:#FF9500"></span>Late<b class="tnum"><?= $rvTierCounts['THREE_QUARTER_FOLLOWUP'] ?></b></div>
+                        <div class="rv-tier"><span class="dotk" style="background:#7A6FD0"></span>Other Dr<b class="tnum"><?= $rvTierCounts['CROSS_DOCTOR_HALF'] ?></b></div>
                         <div class="rv-tier"><span class="dotk" style="background:var(--primary)"></span>Full<b class="tnum"><?= $rvFullCount ?></b></div>
                     </div>
                 </div>

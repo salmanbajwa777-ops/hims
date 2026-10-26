@@ -279,6 +279,7 @@ $sbGroups = [
                 ['slug' => 'ipd_formulary', 'label' => 'Drug Formulary', 'icon' => 'receipt', 'href' => 'ipd_formulary.php',
                  'perm' => 'IPD_MANAGE_FORMULARY'],
                 ['slug' => 'discount_categories', 'label' => 'Discount Categories', 'icon' => 'percent', 'href' => 'discount_categories.php'],
+                ['slug' => 'revisit_policy', 'label' => 'Follow-up Pricing', 'icon' => 'percent', 'href' => 'revisit_policy.php'],
                 ['slug' => 'expense_categories', 'label' => 'Expense Categories', 'icon' => 'wallet', 'href' => 'expense_categories.php'],
                 ['slug' => 'procedure_master', 'label' => 'Procedures & Dental Catalogue',  'icon' => 'receipt', 'href' => 'procedure_master.php'],
                 ['slug' => 'notification_settings', 'label' => 'Notifications', 'icon' => 'bell', 'href' => 'notification_settings.php'],

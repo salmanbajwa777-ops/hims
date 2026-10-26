@@ -64,8 +64,9 @@ function notify_invoice_raised(PDO $pdo, int $billId): void {
         if (!$docEmail) { return; }
 
         $feeLabels = [
-            'FULL' => 'Full consultation', 'FREE_FOLLOWUP' => 'Free follow-up',
-            'HALF_FOLLOWUP' => '50% follow-up', 'THREE_QUARTER_FOLLOWUP' => '75% follow-up',
+            'FULL' => 'Full consultation', 'FREE_FOLLOWUP' => '1st follow-up',
+            'HALF_FOLLOWUP' => 'Repeat follow-up', 'THREE_QUARTER_FOLLOWUP' => 'Late follow-up',
+            'CROSS_DOCTOR_HALF' => 'Other-doctor follow-up',
         ];
         // Coded token ("SB-1"). The email carries its own timestamp, so the number
         // restarting each session needs no extra qualifier here.

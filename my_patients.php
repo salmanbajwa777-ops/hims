@@ -64,10 +64,13 @@ $search = trim((string) ($_GET['q'] ?? ''));
 
 $sql = "
     SELECT se.id, se.event_type, se.note, se.occurred_at, se.business_date, se.amount, se.invoice_number, se.status,
-           p.name AS patient_name, p.mrn, p.dob, p.gender
+           p.name AS patient_name, p.mrn, p.dob, p.gender,
+           ob.invoice_number AS orig_invoice
     FROM shift_events se
     JOIN patients p ON p.id = se.patient_id
-    WHERE ((se.event_type = 'INVOICE' AND se.stream = 'OPD') OR se.event_type = 'REFUND')
+    LEFT JOIN refunds rf ON se.event_type = 'REFUND' AND se.reference_type = 'refund' AND rf.id = se.reference_id
+    LEFT JOIN bills ob ON ob.id = rf.bill_id
+    WHERE (se.event_type = 'REFUND' OR (se.stream = 'OPD' AND se.event_type IN ('INVOICE', 'DISCOUNT')))
       AND se.doctor_id = ? AND se.business_date BETWEEN ? AND ?
 ";
 $params = [$doctorId, $from, $to];
@@ -84,18 +87,51 @@ $rows = $q->fetchAll();
 // Summary strip.
 // Refund rows are money going back, not visits: they stay out of the visit
 // counts, but net off the fee total (their amount is already negative) unless
-// the refund was voided.
+// the refund was voided. DISCOUNT rows are informational only — the INVOICE
+// amount is already what was collected after the discount, so summing them
+// would double-count.
 $visitRows = array_filter($rows, fn($r) => $r['event_type'] === 'INVOICE');
 $uniquePatients = count(array_unique(array_map(fn($r) => $r['mrn'], $visitRows)));
 $totalVisits = count($visitRows);
-$feesEarned = array_sum(array_map(
-    fn($r) => ($r['event_type'] === 'REFUND' && $r['status'] === 'voided') ? 0 : (float) $r['amount'],
-    $rows
-));
-
-// Group rows by business_date for the day-separator presentation.
-$byDay = [];
+$feesEarned = 0.0;
+$refundsTotal = 0.0;
 foreach ($rows as $r) {
+    if ($r['event_type'] === 'INVOICE') {
+        $feesEarned += (float) $r['amount'];
+    } elseif ($r['event_type'] === 'REFUND' && $r['status'] !== 'voided') {
+        $feesEarned += (float) $r['amount'];
+        $refundsTotal += -(float) $r['amount'];
+    }
+}
+
+// Nest refunds + discounts under the invoice they belong to. A child whose
+// invoice isn't in this result set (other day outside the range) can't be
+// nested: a refund then stands alone as its own row (it is still money moved
+// on its day); an orphan discount is dropped (informational anyway).
+$invoiceIdx = [];
+foreach ($rows as $i => $r) {
+    if ($r['event_type'] === 'INVOICE' && $r['invoice_number'] !== null) {
+        $invoiceIdx[$r['invoice_number']] = $i;
+    }
+}
+$kids = [];       // parent row index => list of child rows
+$nested = [];     // row index => true when rendered under a parent
+foreach ($rows as $i => $r) {
+    if ($r['event_type'] === 'INVOICE') { continue; }
+    $parentKey = $r['event_type'] === 'REFUND' ? $r['orig_invoice'] : $r['invoice_number'];
+    if ($parentKey !== null && isset($invoiceIdx[$parentKey])) {
+        $kids[$invoiceIdx[$parentKey]][] = $r;
+        $nested[$i] = true;
+    } elseif ($r['event_type'] === 'DISCOUNT') {
+        $nested[$i] = true; // dropped
+    }
+}
+
+// Group top-level rows by business_date for the day-separator presentation.
+$byDay = [];
+foreach ($rows as $i => $r) {
+    if (isset($nested[$i])) { continue; }
+    $r['_i'] = $i;
     $byDay[$r['business_date']][] = $r;
 }
 
@@ -117,6 +153,16 @@ $headExtra = <<<CSS
 .mp-search input { padding: 8px 12px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 13px; min-width: 200px; }
 .mp-day-sep td { background: var(--neutral-bg); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); padding: 8px 16px; }
 .mp-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Refund / discount lines nested under their invoice. */
+tr.mp-has-kids > td { border-bottom: 0; }
+tr.mp-sub > td { padding: 5px 16px 6px 36px; font-size: 12.5px; color: var(--text-muted); }
+tr.mp-sub.mp-net > td { padding-top: 3px; padding-bottom: 10px; }
+tr.mp-sub.mp-net b { color: var(--text, inherit); }
+tr.mp-sub.void { opacity: .55; }
+tr.mp-sub > td { border-bottom: 0; }
+tr.mp-sub.mp-net > td { border-bottom: 1px solid var(--border); }
+.mp-neg { color: #A9111B; }
+.mp-disc { color: #8A6410; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
 .kpi { border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow-sm); }
@@ -161,7 +207,8 @@ $dsWaitingCount = 0;
     <div class="kpi-row">
         <div class="kpi total"><div class="k">Patients seen</div><div class="v"><?= $uniquePatients ?></div></div>
         <div class="kpi"><div class="k">Total visits</div><div class="v"><?= $totalVisits ?></div></div>
-        <div class="kpi"><div class="k">Fees (your invoices)</div><div class="v">Rs <?= number_format($feesEarned) ?></div></div>
+        <div class="kpi"><div class="k">Fees (net of refunds)</div><div class="v">Rs <?= number_format($feesEarned) ?></div></div>
+        <div class="kpi"><div class="k">Refunds given</div><div class="v mp-neg">Rs <?= number_format($refundsTotal) ?></div></div>
     </div>
 
     <div class="card">
@@ -177,10 +224,20 @@ $dsWaitingCount = 0;
                 <?php foreach ($byDay as $day => $dayRows): ?>
                 <tr class="mp-day-sep"><td colspan="5"><?= date('l, d M Y', strtotime($day)) ?></td></tr>
                 <?php foreach ($dayRows as $r): $age = my_patients_age($r['dob']); ?>
-                <?php $isRefund = $r['event_type'] === 'REFUND'; ?>
-                <tr<?= $isRefund ? ' style="background:var(--red-bg, #F9D9D6);' . ($r['status'] === 'voided' ? 'opacity:.55;' : '') . '"' : '' ?>>
+                <?php
+                $isRefund = $r['event_type'] === 'REFUND';
+                $myKids = $kids[$r['_i']] ?? [];
+                $refunded = 0.0; $discounted = 0.0;
+                foreach ($myKids as $k) {
+                    if ($k['status'] === 'voided') { continue; }
+                    if ($k['event_type'] === 'REFUND') { $refunded += -(float) $k['amount']; }
+                    else { $discounted += -(float) $k['amount']; }
+                }
+                $net = (float) $r['amount'] - $refunded;
+                ?>
+                <tr<?= $isRefund ? ' style="background:var(--red-bg, #F9D9D6);' . ($r['status'] === 'voided' ? 'opacity:.55;' : '') . '"' : '' ?><?= $myKids ? ' class="mp-has-kids"' : '' ?>>
                     <td style="font-weight:600;"><?= htmlspecialchars($r['patient_name']) ?>
-                        <?php if ($isRefund): ?><span class="muted" style="font-size:11px;font-weight:700;color:#A9111B;">REFUND<?= $r['note'] ? ' &middot; ' . htmlspecialchars($r['note']) : '' ?></span><?php endif; ?>
+                        <?php if ($isRefund): ?><span class="muted" style="font-size:11px;font-weight:700;color:#A9111B;">REFUND<?= $r['orig_invoice'] ? ' of ' . htmlspecialchars($r['orig_invoice']) : '' ?><?= $r['note'] ? ' &middot; ' . htmlspecialchars($r['note']) : '' ?></span><?php endif; ?>
                         <div class="muted mono" style="font-size:11.5px;"><?= htmlspecialchars($r['mrn']) ?><?= $age !== '' ? " &middot; {$age}y" : '' ?><?= $r['gender'] ? ' &middot; ' . htmlspecialchars($r['gender']) : '' ?></div>
                     </td>
                     <td class="mono"><?= htmlspecialchars($r['invoice_number'] ?? '—') ?></td>
@@ -188,6 +245,33 @@ $dsWaitingCount = 0;
                     <td><span class="status-pill <?= htmlspecialchars($r['status']) ?>"><?= htmlspecialchars(ucfirst($r['status'])) ?></span></td>
                     <td><span class="muted" title="Patient record view is coming soon">View</span></td>
                 </tr>
+                <?php foreach ($myKids as $k): $kRef = $k['event_type'] === 'REFUND'; $kVoid = $k['status'] === 'voided'; ?>
+                <tr class="mp-sub<?= $kVoid ? ' void' : '' ?>">
+                    <td colspan="5">
+                        <?php if ($kRef): ?>
+                        &#8617; Refunded <b class="mp-neg">&minus;Rs <?= number_format(-(float) $k['amount']) ?></b>
+                        <?php if ($k['business_date'] !== $r['business_date']): ?>on <?= date('d M', strtotime($k['business_date'])) ?> <?php endif; ?>at <?= date('g:i A', strtotime($k['occurred_at'])) ?>
+                        &middot; <span class="mono"><?= htmlspecialchars($k['invoice_number'] ?? '') ?></span>
+                        <?= $k['note'] ? '&middot; ' . htmlspecialchars($k['note']) : '' ?>
+                        <?php else: ?>
+                        % Discount <b class="mp-disc">&minus;Rs <?= number_format(-(float) $k['amount']) ?></b>
+                        <?= $k['note'] ? '&middot; ' . htmlspecialchars($k['note']) : '' ?>
+                        <?php endif; ?>
+                        <?= $kVoid ? '&middot; <i>voided</i>' : '' ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if ($refunded > 0): ?>
+                <tr class="mp-sub mp-net">
+                    <td colspan="3">Net received: <b>Rs <?= number_format(max($net, 0)) ?></b></td>
+                    <td colspan="2"><span class="status-pill pending"><?= $net <= 0 ? 'Fully refunded' : 'Partially refunded' ?></span></td>
+                </tr>
+                <?php elseif ($myKids): ?>
+                <tr class="mp-sub mp-net">
+                    <td colspan="3">Net received: <b>Rs <?= number_format($net) ?></b></td>
+                    <td colspan="2"><?php if ($discounted > 0): ?><span class="status-pill pending">Discounted</span><?php endif; ?></td>
+                </tr>
+                <?php endif; ?>
                 <?php endforeach; ?>
                 <?php endforeach; ?>
             </tbody>

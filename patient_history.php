@@ -75,9 +75,10 @@ if (!$rows) {
 }
 
 $feeLabels = [
-    'FREE_FOLLOWUP' => 'Free follow-up',
-    'HALF_FOLLOWUP' => '50% follow-up',
-    'THREE_QUARTER_FOLLOWUP' => '75% follow-up',
+    'FREE_FOLLOWUP' => '1st follow-up',
+    'HALF_FOLLOWUP' => 'Repeat follow-up',
+    'THREE_QUARTER_FOLLOWUP' => 'Late follow-up',
+    'CROSS_DOCTOR_HALF' => 'Other-doctor follow-up',
 ];
 
 foreach ($rows as $r):
