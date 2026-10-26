@@ -123,6 +123,10 @@ $sbGroups = [
     [
         'label' => 'Overview',
         'items' => [
+            // HAS a 'perm' so a MANAGER sees it as well as admin (OVERSIGHT_VIEW_TODAY,
+            // sql/add_today_screen.sql); everyone else never gets the key.
+            ['slug' => 'today', 'label' => 'Today', 'icon' => 'clock', 'href' => 'today.php',
+             'perm' => 'OVERSIGHT_VIEW_TODAY'],
             ['slug' => 'dashboard', 'label' => 'Dashboard', 'icon' => 'grid', 'href' => $sbHome],
         ],
     ],
