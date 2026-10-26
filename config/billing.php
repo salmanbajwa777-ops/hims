@@ -584,12 +584,10 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
     $today = new DateTime(date('Y-m-d'));
     $days = (int) $anchorDate->diff($today)->days;
 
-    if ($days === 0) {
-        // Anchor is TODAY: this is a deliberate second same-day consult ("Register
-        // anyway"), a separate paid sitting — never a free follow-up of itself.
-        return $full;
-    }
-
+    // $days === 0 (anchor is TODAY) falls through on purpose: a same-day return to the
+    // same doctor + type is day 0 of the free window, so it prices as a follow-up
+    // (1st free, repeats at the repeat rate). Reception can still tick the full-fee
+    // override for a genuinely separate sitting.
     $pol = revisit_policy($pdo);
     if ($days > $pol['max_days']) {
         // Own window expired — this visit would be a fresh full anchor, unless the
