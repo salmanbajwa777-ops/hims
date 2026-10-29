@@ -568,7 +568,9 @@ function revisit_consultation_fee(PDO $pdo, int $patientId, int $doctorId, int $
         WHERE v.patient_id = ? AND v.doctor_id = ? AND v.doctor_consult_type_id = ?
           AND v.consultation_fee_type = 'FULL'
           AND (b.id IS NULL OR b.voided_at IS NULL)
-          AND (v.disposition IS NULL OR v.disposition NOT IN ('IN_DOOR','SHORT_STAY'))   -- IPD shell visits are not consultations
+          -- IPD shell visits carry no consultation bill; a real OPD visit that was later admitted
+          -- (disposition flipped to IN_DOOR/SHORT_STAY) still has its paid bill and must anchor.
+          AND (v.disposition IS NULL OR v.disposition NOT IN ('IN_DOOR','SHORT_STAY') OR b.id IS NOT NULL)
         ORDER BY v.visit_date DESC, v.id DESC
         LIMIT 1
     ");
