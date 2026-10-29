@@ -169,11 +169,11 @@ table.ts tr:last-child td { border-bottom: none; }
 
 /* High-alert rows read differently at a glance, per spec 4.3. */
 tr.ts-high td { background: #FAE3BC; }
-.ts-hi-badge { display: inline-block; background: var(--danger); color: #CCD0CF; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; letter-spacing: .05em; vertical-align: middle; margin-left: 5px; }
+.ts-hi-badge { display: inline-block; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; letter-spacing: .05em; vertical-align: middle; margin-left: 5px; }
 
 /* Pending rows are visibly not-yet-live. */
 tr.ts-pending td { background: var(--warn-bg); opacity: .92; }
-.ts-pend-badge { display: inline-block; background: var(--warn); color: #CCD0CF; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px; letter-spacing: .04em; }
+.ts-pend-badge { display: inline-block; background: var(--warn); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px; letter-spacing: .04em; }
 tr.ts-stopped td { opacity: .62; }
 tr.ts-stopped .ts-generic, tr.ts-stopped .ts-brand { text-decoration: line-through; }
 .ts-reason { color: var(--danger); font-size: 12px; margin-top: 3px; }
@@ -194,7 +194,7 @@ tr.ts-stopped .ts-generic, tr.ts-stopped .ts-brand { text-decoration: line-throu
 .ts-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .ts-btn { border: 1px solid var(--border-strong); background: var(--card); border-radius: var(--radius-btn); padding: 4px 10px; font-size: var(--fs-btn-sm); font-weight: 600; cursor: pointer; color: var(--text-secondary); }
 .ts-btn:hover { background: var(--card-alt); }
-.ts-btn-ok { background: var(--ok); border-color: var(--ok); color: #CCD0CF; }
+.ts-btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
 .ts-btn-ok:hover { filter: brightness(1.08); background: var(--ok); }
 .ts-btn-danger { color: var(--danger); border-color: var(--danger); }
 .ts-btn-danger:hover { background: var(--danger-bg); }
@@ -232,8 +232,8 @@ dialog.ts-modal::backdrop { background: rgba(17,33,45,.45); }
     .ts-card { border: 1px solid #06141B; box-shadow: none; page-break-inside: avoid; margin-bottom: 10px; }
     .ts-allergy { border: 2px solid #06141B; }
     .ts-slot { border: 1px solid #4A5C6A; }
-    table.ts th { background: #CCD0CF !important; }
-    tr.ts-high td { background: #CCD0CF !important; }
+    table.ts th { background: #eee !important; }
+    tr.ts-high td { background: #f2f2f2 !important; }
     .ts-print-sign { display: block !important; margin-top: 26px; }
 }
 .ts-print-sign { display: none; }

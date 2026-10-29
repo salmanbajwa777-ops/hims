@@ -143,28 +143,28 @@ body { font-family: 'Lora', Georgia, serif; color: #11212D; margin: 0; padding: 
 .hdr { border-bottom: 2px solid #11212D; padding-bottom: 8px; margin-bottom: 12px;
        display: flex; justify-content: space-between; align-items: center; }
 .hdr .mark { display: flex; align-items: center; gap: 8px; }
-.clinic-logo { height: 30px; display: block; background: #CCD0CF; }
+.clinic-logo { height: 30px; display: block; background: transparent; }
 :root[data-paper="A5"] .clinic-logo { height: 24px; }
 .hdr .brand { font-size: 17px; font-weight: 700; letter-spacing: .02em; }
 .hdr .sheet { font-size: 12px; color: #253745; text-transform: uppercase; letter-spacing: .08em; }
 .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 14px; margin-bottom: 16px;
-        font-size: 11px; border-bottom: 1px solid #CCD0CF; padding-bottom: 10px; }
+        font-size: 11px; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
 .meta span { color: #4A5C6A; display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; }
 table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-th, td { padding: 5px 7px; border-bottom: 1px solid #CCD0CF; text-align: left; vertical-align: top; }
-th { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: #4A5C6A; background: #CCD0CF; }
+th, td { padding: 5px 7px; border-bottom: 1px solid #ccc; text-align: left; vertical-align: top; }
+th { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: #4A5C6A; background: #f4f4f0; }
 td.n, th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 td.w { white-space: nowrap; }
 tr.off td { color: #4A5C6A; }
 tr.off td.svc { text-decoration: line-through; }
-.note-block { border: 1px solid #CCD0CF; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px; page-break-inside: avoid; }
-.note-head { display: flex; justify-content: space-between; border-bottom: 1px solid #CCD0CF;
+.note-block { border: 1px solid #ccc; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px; page-break-inside: avoid; }
+.note-head { display: flex; justify-content: space-between; border-bottom: 1px solid #ddd;
              padding-bottom: 5px; margin-bottom: 6px; font-size: 11px; }
 .note-head b { font-size: 12.5px; }
 .f { margin-bottom: 5px; font-size: 11.5px; }
 .f span { color: #4A5C6A; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; display: block; }
 .pill { display: inline-block; padding: 1px 8px; border: 1px solid #9BA8AB; border-radius: 20px; font-size: 10px; }
-tr.daybreak td { background: #CCD0CF; font-weight: 700; font-size: 9.5px; text-transform: uppercase;
+tr.daybreak td { background: #f4f4f0; font-weight: 700; font-size: 9.5px; text-transform: uppercase;
                  letter-spacing: .06em; color: #253745; padding: 3px 7px; }
 .narr { white-space: pre-wrap; font-size: 12px; line-height: 1.65; }
 .sig { margin-top: 34px; display: flex; gap: 40px; }
@@ -173,15 +173,15 @@ tr.daybreak td { background: #CCD0CF; font-weight: 700; font-size: 9.5px; text-t
 .empty { padding: 24px; text-align: center; color: #4A5C6A; font-size: 11.5px; font-style: italic; }
 .tot { width: 50%; margin-left: auto; border-top: 1.5px solid #11212D; padding-top: 5px;
        display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; }
-.bar { background: #253745; color: #CCD0CF; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;
+.bar { background: #253745; color: #fff; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;
        font-family: system-ui, -apple-system, sans-serif; }
 .bar h1 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
 .bar label { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; font-size: 12.5px; cursor: pointer; }
 .bar .btns { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .bar .paper-pick { margin-left: 6px; padding-left: 12px; border-left: 1px solid rgba(204,208,207,.28); }
 .bar button { font: inherit; font-size: 12.5px; padding: 6px 14px; border-radius: 7px; cursor: pointer;
-              border: 1px solid rgba(204,208,207,.35); background: transparent; color: #CCD0CF; }
-.bar button.go { background: #CCD0CF; color: #253745; border-color: #CCD0CF; font-weight: 600; }
+              border: 1px solid rgba(204,208,207,.35); background: transparent; color: #fff; }
+.bar button.go { background: #fff; color: #253745; border-color: #fff; font-weight: 600; }
 @media print { .bar { display: none; } body { padding: 0; } }
 </style>
 </head>

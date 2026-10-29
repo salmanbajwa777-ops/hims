@@ -89,7 +89,7 @@ body { font-family: 'Lora', Georgia, serif; color: #11212D; margin: 0; padding: 
 .wrap { max-width: 148mm; margin: 0 auto; }
 :root[data-paper="A4"] .wrap { max-width: 186mm; }
 .hdr { border: 1.5px solid #11212D; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; text-align: center; }
-.clinic-logo { height: 34px; display: block; background: #CCD0CF; margin: 0 auto 2px; }
+.clinic-logo { height: 34px; display: block; background: transparent; margin: 0 auto 2px; }
 .hdr h1 { font-size: 18px; margin: 0 0 2px; letter-spacing: .02em; }
 .hdr .sub { font-size: 11px; color: #253745; }
 .meta { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }

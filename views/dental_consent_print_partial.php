@@ -48,7 +48,7 @@ $patientDobDisplay = $consent['dob'] ? date('d/m/Y', strtotime($consent['dob']))
         .band-1 { height: 38px; display: flex; align-items: center; }
         .band-2 { height: 30px; display: flex; flex-direction: column; justify-content: center; }
         .brandline { display: flex; align-items: center; gap: 4px; }
-        .clinic-logo { height: 38px; display: block; background: #fff; }
+        .clinic-logo { height: 38px; display: block; background: transparent; }
         .brandtext { display: flex; flex-direction: column; justify-content: center; height: 38px; }
         .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 23px; font-weight: bold; letter-spacing: .2px; color: #4A5C6A; white-space: nowrap; line-height: 1; }
         .website { font-family: Arial, Helvetica, sans-serif; font-size: 9px; font-weight: bold; letter-spacing: 2px; color: #4A5C6A; line-height: 1; margin-top: 3px; }
@@ -58,8 +58,8 @@ $patientDobDisplay = $consent['dob'] ? date('d/m/Y', strtotime($consent['dob']))
         .doctype { text-align: center; font-weight: bold; font-size: 15px; letter-spacing: 3px; margin: 6mm 0 4mm; }
 
         .pt { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-        .pt td { border: 1px solid #CCD0CF; padding: 2px 6px; height: 22px; vertical-align: middle; }
-        .pt td.k { background: #CCD0CF; font-weight: bold; width: 18%; }
+        .pt td { border: 1px solid #C8C8C8; padding: 2px 6px; height: 22px; vertical-align: middle; }
+        .pt td.k { background: #F4F4F4; font-weight: bold; width: 18%; }
         .pt td.v { font-weight: bold; width: 32%; }
 
         .sect { font-size: 11px; font-weight: bold; letter-spacing: 1.2px; margin: 6mm 0 2mm; text-transform: uppercase; border-bottom: 1px solid #9BA8AB; padding-bottom: 2px; }
@@ -70,12 +70,12 @@ $patientDobDisplay = $consent['dob'] ? date('d/m/Y', strtotime($consent['dob']))
         .body-text li { margin-bottom: 1.5mm; }
 
         .tbl { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-        .tbl td, .tbl th { border: 1px solid #CCD0CF; padding: 2px 6px; height: 21px; vertical-align: middle; }
-        .tbl th { background: #CCD0CF; font-weight: bold; text-align: left; }
+        .tbl td, .tbl th { border: 1px solid #C8C8C8; padding: 2px 6px; height: 21px; vertical-align: middle; }
+        .tbl th { background: #F4F4F4; font-weight: bold; text-align: left; }
         .tbl .num { text-align: right; }
         .tbl .ctr { text-align: center; }
-        .tbl tr.total td { background: #CCD0CF; font-weight: bold; border-top: 1.5px solid #06141B; }
-        .tbl tr.agreed td { background: #CCD0CF; font-weight: bold; font-size: 12px; height: 26px; border-top: 1.5px solid #06141B; border-bottom: 1.5px solid #06141B; }
+        .tbl tr.total td { background: #F4F4F4; font-weight: bold; border-top: 1.5px solid #06141B; }
+        .tbl tr.agreed td { background: #EDEDED; font-weight: bold; font-size: 12px; height: 26px; border-top: 1.5px solid #06141B; border-bottom: 1.5px solid #06141B; }
 
         .frozen-note { font-size: 9.5px; color: #253745; font-style: italic; margin-top: 2mm; }
 

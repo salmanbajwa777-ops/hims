@@ -71,7 +71,7 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
         .band-1 { height: 30px; display: flex; align-items: center; }
         .band-2 { height: 27px; display: flex; flex-direction: column; justify-content: center; margin-bottom: 3px; }
         .brandline { display: flex; align-items: center; gap: 3px; }
-        .clinic-logo { height: 30px; display: block; background: #fff; }
+        .clinic-logo { height: 30px; display: block; background: transparent; }
         .brandtext { display: flex; flex-direction: column; justify-content: center; height: 30px; }
         .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #4A5C6A; white-space: nowrap; line-height: 1; }
         .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A5C6A; line-height: 1; margin-top: 2px; }
@@ -79,20 +79,20 @@ if (($bill['status'] ?? '') === 'waived' || $grandTotal <= 0) {
         .tagline { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.15; white-space: nowrap; }
 
         .ids, .meta { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: auto; }
-        .ids td, .meta td { border: 1px solid #CCD0CF; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-        .ids td.k, .meta td.k { background: #CCD0CF; font-weight: bold; color: #06141B; width: 40%; }
+        .ids td, .meta td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+        .ids td.k, .meta td.k { background: #F4F4F4; font-weight: bold; color: #06141B; width: 40%; }
         .ids td.v, .meta td.v { font-weight: bold; }
 
         .doctype { text-align: center; font-weight: bold; font-size: 11px; letter-spacing: 2px; margin: 3mm 0 1mm; }
         .voidmark { text-align: center; font-size: 10px; font-weight: bold; letter-spacing: 1px; border: 1.5px solid #06141B; padding: 2px 6px; margin: 2mm auto 0; width: fit-content; }
 
         .fee-table { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: -1px; }
-        .fee-table td, .fee-table th { border: 1px solid #CCD0CF; padding: 0 6px; height: 18px; vertical-align: middle; }
-        .fee-table th { background: #CCD0CF; font-weight: bold; text-align: center; }
+        .fee-table td, .fee-table th { border: 1px solid #C8C8C8; padding: 0 6px; height: 18px; vertical-align: middle; }
+        .fee-table th { background: #F4F4F4; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: right; }
         .fee-table tr.sub td { font-weight: normal; }
-        .fee-table tr.total td { background: #CCD0CF; font-weight: bold; border-top: 1.5px solid #06141B; }
+        .fee-table tr.total td { background: #F4F4F4; font-weight: bold; border-top: 1.5px solid #06141B; }
 
         .quote { text-align: center; font-size: 9.5px; font-style: italic; font-weight: normal; margin-top: auto; padding-top: 5mm; }
         .foot { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #9BA8AB; margin-top: 1.5mm; padding-top: 2px; font-size: 7.5px; }

@@ -150,10 +150,10 @@ $pageSize = $isA4 ? 'A4' : 'A5';
            on overflow) so a long name or doctor can never make one row taller. */
         .ids, .meta { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: auto; }
         .ids td, .meta td {
-            border: 1px solid #CCD0CF; padding: 0 5px; height: 18px;
+            border: 1px solid #C8C8C8; padding: 0 5px; height: 18px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
         }
-        .ids td.k, .meta td.k { background: #CCD0CF; font-weight: bold; color: #06141B; width: 40%; }
+        .ids td.k, .meta td.k { background: #F4F4F4; font-weight: bold; color: #06141B; width: 40%; }
         .ids td.v, .meta td.v { font-weight: bold; }
 
         /* ---------- Fee line + vitals ---------- */
@@ -170,11 +170,11 @@ $pageSize = $isA4 ? 'A4' : 'A5';
            down the whole sheet. Only horizontal padding is kept. */
         .fee-table td, .fee-table th,
         .vitals-table td, .vitals-table th {
-            border: 1px solid #CCD0CF; padding: 0 6px; height: 18px; vertical-align: middle;
+            border: 1px solid #C8C8C8; padding: 0 6px; height: 18px; vertical-align: middle;
         }
         /* Heading cells share the same greyscale ground as the header tables' label
            column, so every heading on the sheet reads as one system: grey + bold. */
-        .fee-table th, .vitals-table th { background: #CCD0CF; font-weight: bold; text-align: center; }
+        .fee-table th, .vitals-table th { background: #F4F4F4; font-weight: bold; text-align: center; }
         .fee-table .desc { text-align: left; }
         .fee-table .num { text-align: center; }
         .vitals-table { margin-top: -1px; }

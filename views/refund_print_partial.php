@@ -53,7 +53,7 @@ $generatedByUpper = $uc($refund['generated_by_name']);
         /* Explicit white ground: the PNGs carry real transparency, and without it the
            print pipeline composites them against a shaded backdrop and a grey box
            appears behind the artwork. */
-        .clinic-logo { height: 28px; vertical-align: middle; margin-right: 4px; background: #fff; }
+        .clinic-logo { height: 28px; vertical-align: middle; margin-right: 4px; background: transparent; }
         /* Wordmark keeps the original spec's font and the logo art's teal. */
         .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; margin: 2px 0; letter-spacing: 1px; color: #4A5C6A; }
         .website { font-family: Arial, Helvetica, sans-serif; font-size: 9px; font-weight: bold; letter-spacing: 2px; margin-bottom: 2px; color: #4A5C6A; }
@@ -65,11 +65,11 @@ $generatedByUpper = $uc($refund['generated_by_name']);
         hr { border: none; border-top: 1px solid #06141B; margin: 4px 0; }
         .metadata-table { width: 100%; border: 1px solid #06141B; border-collapse: collapse; font-size: 10px; margin-bottom: 4px; }
         .metadata-table td { border: 1px solid #06141B; padding: 3px; vertical-align: top; }
-        .metadata-table td:first-child { width: 38%; background-color: #CCD0CF; font-weight: bold; }
+        .metadata-table td:first-child { width: 38%; background-color: #f0f0f0; font-weight: bold; }
         .amounts-table { width: 100%; border-collapse: collapse; border: 1px solid #06141B; font-size: 10px; margin-bottom: 4px; }
         .amounts-table td { border: 1px solid #06141B; padding: 3px; }
         .text-right { text-align: right; }
-        .amounts-table .net { background-color: #CCD0CF; font-weight: bold; border-top: 2px solid #06141B; font-size: 12px; }
+        .amounts-table .net { background-color: #f0f0f0; font-weight: bold; border-top: 2px solid #06141B; font-size: 12px; }
         .detail { font-size: 10px; margin: 2px 0; }
         .signatures { display: flex; gap: 8px; margin-top: 20px; }
         .sig { flex: 1; text-align: center; }

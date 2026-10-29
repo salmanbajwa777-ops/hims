@@ -81,24 +81,24 @@ $methodLabel = pay_method_label($r['payment_method']);
     .doctype { margin-top: 12px; display: flex; justify-content: space-between; align-items: baseline; }
     .doctype .t { font-size: 14px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
     .doctype .no { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .rows { margin-top: 10px; border: 1px solid #CCD0CF; border-radius: 4px; overflow: hidden; }
-    .row { display: flex; border-bottom: 1px solid #CCD0CF; }
+    .rows { margin-top: 10px; border: 1px solid #d8ddda; border-radius: 4px; overflow: hidden; }
+    .row { display: flex; border-bottom: 1px solid #e8ecea; }
     .row:last-child { border-bottom: none; }
-    .row .k { width: 38%; padding: 5px 8px; background: #CCD0CF; font-size: 10.5px; color: #4A5C6A; font-weight: 600; }
+    .row .k { width: 38%; padding: 5px 8px; background: #f4f6f5; font-size: 10.5px; color: #4A5C6A; font-weight: 600; }
     .row .v { flex: 1; padding: 5px 8px; font-size: 11.5px; font-weight: 600; }
     .amtbox { margin-top: 12px; border: 2px solid #4A5C6A; border-radius: 5px; padding: 9px 12px; display: flex; justify-content: space-between; align-items: baseline; }
     .amtbox .l { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #4A5C6A; }
     .amtbox .a { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .held { margin-top: 8px; display: flex; justify-content: space-between; font-size: 11.5px; padding: 6px 12px; background: #CCD0CF; border-radius: 4px; }
+    .held { margin-top: 8px; display: flex; justify-content: space-between; font-size: 11.5px; padding: 6px 12px; background: #f4f6f5; border-radius: 4px; }
     .held b { font-variant-numeric: tabular-nums; }
     .note { margin-top: 10px; font-size: 10px; color: #4A5C6A; line-height: 1.5; }
     .sigs { margin-top: 20px; display: flex; gap: 24px; }
     .sig { flex: 1; border-top: 1px solid #9BA8AB; padding-top: 4px; font-size: 9.5px; color: #4A5C6A; text-align: center; }
-    .foot { margin-top: 14px; border-top: 1px solid #CCD0CF; padding-top: 6px; font-size: 8.5px; color: #9BA8AB; display: flex; justify-content: space-between; }
+    .foot { margin-top: 14px; border-top: 1px solid #d8ddda; padding-top: 6px; font-size: 8.5px; color: #9BA8AB; display: flex; justify-content: space-between; }
     .void { position: fixed; top: 42%; left: 50%; transform: translate(-50%,-50%) rotate(-22deg); font-size: 62px; font-weight: 800; color: rgba(255,59,48,.16); letter-spacing: .1em; pointer-events: none; }
     @media print { .noprint { display: none; } }
     .noprint { text-align: center; margin: 14px 0; }
-    .noprint button { padding: 8px 20px; font: inherit; font-size: 13px; font-weight: 600; background: #4A5C6A; color: #CCD0CF; border: none; border-radius: 7px; cursor: pointer; }
+    .noprint button { padding: 8px 20px; font: inherit; font-size: 13px; font-weight: 600; background: #4A5C6A; color: #fff; border: none; border-radius: 7px; cursor: pointer; }
 </style>
 </head>
 <body onload="window.print()">

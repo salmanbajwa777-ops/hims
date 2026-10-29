@@ -74,7 +74,7 @@ $paymentModeDisplay = pay_method_label($payment['payment_method'] ?? '');
         .band-1 { height: 30px; display: flex; align-items: center; }
         .band-2 { height: 27px; display: flex; flex-direction: column; justify-content: center; margin-bottom: 3px; }
         .brandline { display: flex; align-items: center; gap: 3px; }
-        .clinic-logo { height: 30px; display: block; background: #fff; }
+        .clinic-logo { height: 30px; display: block; background: transparent; }
         .brandtext { display: flex; flex-direction: column; justify-content: center; height: 30px; }
         .clinic-name { font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; letter-spacing: .2px; color: #4A5C6A; white-space: nowrap; line-height: 1; }
         .website { font-family: Arial, Helvetica, sans-serif; font-size: 8px; font-weight: bold; letter-spacing: 1.7px; color: #4A5C6A; line-height: 1; margin-top: 2px; }
@@ -82,23 +82,23 @@ $paymentModeDisplay = pay_method_label($payment['payment_method'] ?? '');
         .tagline { font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; line-height: 1.15; white-space: nowrap; }
 
         .ids, .meta { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: auto; }
-        .ids td, .meta td { border: 1px solid #CCD0CF; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-        .ids td.k, .meta td.k { background: #CCD0CF; font-weight: bold; color: #06141B; width: 40%; }
+        .ids td, .meta td { border: 1px solid #C8C8C8; padding: 0 5px; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+        .ids td.k, .meta td.k { background: #F4F4F4; font-weight: bold; color: #06141B; width: 40%; }
         .ids td.v, .meta td.v { font-weight: bold; }
 
         .doctype { text-align: center; font-weight: bold; font-size: 11px; letter-spacing: 2px; margin: 3mm 0 1mm; }
         .voidmark { text-align: center; font-size: 10px; font-weight: bold; letter-spacing: 1px; border: 1.5px solid #06141B; padding: 2px 6px; margin: 2mm auto 0; width: fit-content; }
 
         .docrow { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: -1px; }
-        .docrow td { border: 1px solid #CCD0CF; padding: 0 6px; height: 18px; vertical-align: middle; }
-        .docrow td.k { background: #CCD0CF; font-weight: bold; width: 30%; }
+        .docrow td { border: 1px solid #C8C8C8; padding: 0 6px; height: 18px; vertical-align: middle; }
+        .docrow td.k { background: #F4F4F4; font-weight: bold; width: 30%; }
         .docrow td.v { font-weight: bold; }
 
         .fee-table { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 2mm; }
-        .fee-table td, .fee-table th { border: 1px solid #CCD0CF; padding: 0 6px; height: 19px; vertical-align: middle; }
-        .fee-table th { background: #CCD0CF; font-weight: bold; text-align: left; }
+        .fee-table td, .fee-table th { border: 1px solid #C8C8C8; padding: 0 6px; height: 19px; vertical-align: middle; }
+        .fee-table th { background: #F4F4F4; font-weight: bold; text-align: left; }
         .fee-table .num { text-align: right; }
-        .fee-table tr.paid td { background: #CCD0CF; font-weight: bold; border-top: 1.5px solid #06141B; border-bottom: 1.5px solid #06141B; font-size: 11px; height: 24px; }
+        .fee-table tr.paid td { background: #F4F4F4; font-weight: bold; border-top: 1.5px solid #06141B; border-bottom: 1.5px solid #06141B; font-size: 11px; height: 24px; }
         .fee-table tr.bal td { font-weight: bold; }
 
         .note { font-size: 8.5px; color: #253745; margin-top: 2mm; line-height: 1.4; }
