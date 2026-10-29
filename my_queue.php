@@ -332,6 +332,12 @@ $headExtra = <<<CSS
 .btn-hist:hover { background: #D2F0D9; }
 .btn-money { background: var(--danger-bg); color: var(--danger); border-color: #FF9500; }
 .btn-money:hover { background: #F9D9D6; }
+/* Refund: a small clay text link pushed to the far right of the name line, well
+   clear of the action grid. Padding gives a usable target without looking like a
+   button. Clay stays reserved for money-leaving actions. */
+.q-refund-link { margin-left: auto; color: var(--danger); font-size: 12px; font-weight: 600;
+                 text-decoration: underline; padding: 6px 4px; }
+.q-refund-link:hover { color: #8A1F18; }
 
 .wait-time { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .inline-form { display: inline; }
@@ -461,6 +467,15 @@ require __DIR__ . '/partials/head.php';
                                 [$badgeText, $badgeClass] = $feeBadges[$v['consultation_fee_type']];
                             ?><span class="q-tag <?= $badgeClass ?>"><?= $badgeText ?></span><?php endif; ?>
                             <?php if ($hasNote): ?><span class="q-tag q-tag-note">Note</span><?php endif; ?>
+                            <?php // Refund lives up here, away from the action row, as a quiet
+                                  // link. It used to be a full-size clay button next to Admit and
+                                  // was tapped by mistake. Hidden once the bill is fully refunded,
+                                  // so a settled row offers no dead action. refund.php is itself
+                                  // the confirmation step. ?>
+                            <?php if ($canDoctorRefund && !empty($v['bill_id']) && $v['bill_status'] === 'paid'
+                                      && refunded_total($pdo, (int) $v['bill_id']) < (float) $v['paid_amount']): ?>
+                                <a class="q-refund-link" href="refund.php?bill_id=<?= (int) $v['bill_id'] ?>">Refund</a>
+                            <?php endif; ?>
                         </div>
                         <div class="q-meta">
                             <?= $age !== null ? 'Age ' . $age . ' · ' : '' ?>
@@ -520,12 +535,6 @@ require __DIR__ . '/partials/head.php';
                                 <?php endif; ?>
                             <?php endif; ?>
 
-                            <?php // The ONLY clay control on this page. Hidden once the bill is
-                                  // fully refunded, so a settled row offers no dead action. ?>
-                            <?php if ($canDoctorRefund && !empty($v['bill_id']) && $v['bill_status'] === 'paid'
-                                      && refunded_total($pdo, (int) $v['bill_id']) < (float) $v['paid_amount']): ?>
-                                <a class="btn-ghost btn-money" href="refund.php?bill_id=<?= (int) $v['bill_id'] ?>">Refund</a>
-                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
