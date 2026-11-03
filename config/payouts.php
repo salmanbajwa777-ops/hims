@@ -603,3 +603,69 @@ function settle_payout(PDO $pdo, int $payoutId, int $userId, string $source = 'B
     }
     return [true, $msg];
 }
+
+/**
+ * Wipe a wrong SETTLED payout so the period can be generated again. Admin only.
+ *
+ * The normal rule is that a settled payout is never deleted — it moved cash and
+ * was reported on — and a mistake is corrected by a clawback on the next one.
+ * This is the escape hatch for a payout that was simply built wrong.
+ *
+ *  - The Doctor Shares expense it posted is SOFT-voided (same convention as the
+ *    expenses page), so the EXP- voucher stays on file and every money report
+ *    drops it.
+ *  - Its lines and the payout row are deleted, which frees every source bill
+ *    (the UNIQUE key would otherwise block them forever).
+ *  - Later DRAFTS for the same doctor are deleted with it: they were computed
+ *    against this payout (carry-forward, clawbacks) and would be stale.
+ *  - A later SETTLED payout blocks the reset. Its carried balance and clawbacks
+ *    point at this one, so reset the newest first.
+ *
+ * It cannot take back cash already handed over; the new payout is simply
+ * compared against whatever was really paid.
+ */
+function reset_payout(PDO $pdo, int $payoutId, int $userId, string $reason): array {
+    if (($_SESSION['base_role'] ?? '') !== 'ADMIN') {
+        return [false, 'Only an admin can delete a settled payout.'];
+    }
+    $reason = trim($reason);
+    if ($reason === '') {
+        return [false, 'Give a reason for deleting this payout.'];
+    }
+    try {
+        $q = $pdo->prepare('SELECT id, payout_number, doctor_id, status, expense_id, net_paid FROM doctor_payouts WHERE id = ?');
+        $q->execute([$payoutId]);
+        $p = $q->fetch();
+        if (!$p)                     { return [false, 'Payout not found.']; }
+        if ($p['status'] !== 'paid') { return [false, 'Only a settled payout can be deleted this way. Discard a draft instead.']; }
+
+        $later = $pdo->prepare("SELECT payout_number FROM doctor_payouts WHERE doctor_id = ? AND id > ? AND status = 'paid' ORDER BY id LIMIT 1");
+        $later->execute([(int) $p['doctor_id'], $payoutId]);
+        if ($n = $later->fetchColumn()) {
+            return [false, "A later payout ($n) is already settled. Delete the newest one first."];
+        }
+
+        $pdo->beginTransaction();
+
+        if (!empty($p['expense_id'])) {
+            $pdo->prepare('UPDATE expenses SET voided_at = NOW(), voided_by_id = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL')
+                ->execute([$userId, 'Payout ' . $p['payout_number'] . ' deleted: ' . $reason, (int) $p['expense_id']]);
+        }
+
+        // This payout plus every later draft for the doctor.
+        $ids = $pdo->prepare("SELECT id FROM doctor_payouts WHERE doctor_id = ? AND (id = ? OR (id > ? AND status = 'draft'))");
+        $ids->execute([(int) $p['doctor_id'], $payoutId, $payoutId]);
+        $ids = array_map('intval', $ids->fetchAll(PDO::FETCH_COLUMN));
+        $in  = implode(',', array_fill(0, count($ids), '?'));
+        $pdo->prepare("DELETE FROM doctor_payout_lines WHERE payout_id IN ($in)")->execute($ids);
+        $pdo->prepare("DELETE FROM doctor_payouts WHERE id IN ($in)")->execute($ids);
+
+        audit_log($pdo, 'payout_deleted', "Deleted settled payout {$p['payout_number']} (Rs " . number_format((float) $p['net_paid'], 2) . ") — $reason", $userId);
+        $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('[reset_payout] ' . $e->getMessage());
+        return [false, 'Could not delete that payout. Nothing was changed.'];
+    }
+    return [true, "Payout {$p['payout_number']} deleted and its Doctor Shares expense voided. Create the payout again for that period."];
+}

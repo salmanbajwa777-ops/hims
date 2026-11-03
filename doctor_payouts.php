@@ -72,6 +72,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         [$ok, $msg] = settle_payout($pdo, (int) ($_POST['payout_id'] ?? 0), $userId, $_POST['source'] ?? 'BANK');
         if ($ok) { $success = $msg; } else { $error = $msg; }
         $viewId = (int) ($_POST['payout_id'] ?? 0);
+    } elseif ($action === 'reset_payout') {
+        if (($impBlock = imp_block_money_action('Deleting a settled payout')) !== '') {
+            $error = $impBlock;
+        } else {
+            [$ok, $msg] = reset_payout($pdo, (int) ($_POST['payout_id'] ?? 0), $userId, $_POST['void_reason'] ?? '');
+            if ($ok) { $success = $msg; $viewId = 0; } else { $error = $msg; $viewId = (int) ($_POST['payout_id'] ?? 0); }
+        }
     } elseif ($action === 'void_payout') {
         $pid = (int) ($_POST['payout_id'] ?? 0);
         $reason = trim($_POST['void_reason'] ?? '');
@@ -429,8 +436,17 @@ $periodLabel = function ($start, $end) {
                             <button type="button" class="btn secondary" onclick="window.print()">Print</button>
                         </div>
                         <?php else: ?>
-                        <div class="no-print" style="margin-top:16px;">
+                        <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
                             <button type="button" class="btn secondary" onclick="window.print()">Print</button>
+                            <?php if ($view['status'] === 'paid' && ($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
+                            <form method="POST" action="doctor_payouts.php" style="margin:0;"
+                                  onsubmit="var r=prompt('Delete <?= htmlspecialchars($view['payout_number']) ?> completely and void its expense so it can be created again? It does NOT take back cash already paid. Reason:');if(!r){return false;}this.void_reason.value=r;return true;">
+                                <input type="hidden" name="action" value="reset_payout">
+                                <input type="hidden" name="payout_id" value="<?= (int) $view['id'] ?>">
+                                <input type="hidden" name="void_reason" value="">
+                                <button type="submit" class="btn secondary" style="color:#A9111B;border-color:#A9111B;">Delete and redo</button>
+                            </form>
+                            <?php endif; ?>
                         </div>
                         <?php endif; ?>
                     </div>
