@@ -436,10 +436,13 @@ function create_payout(PDO $pdo, int $doctorId, string $start, string $end, int 
     $noConsultRate = $rates['share_pct'] <= 0;
 
     $earnings  = payout_earning_lines($pdo, $doctorId, $start, $end, $rates);
-    $clawbacks = payout_clawback_lines($pdo, $doctorId);
-
-    $last = last_settled_payout($pdo, $doctorId);
-    $carriedIn = $last ? (float) $last['carried_out'] : 0.0;
+    // Business rule (owner, 2026-11-03): a payout is exactly what the period
+    // earned, net of same-day refunds. Refunds and voids happen the same day or
+    // not at all, so there is NOTHING to claw back and nothing is ever carried
+    // into the next month. payout_clawback_lines() and last_settled_payout() are
+    // deliberately not called; the columns stay (always 0) so old payouts render.
+    $clawbacks = [];
+    $carriedIn = 0.0;
 
     if (!$earnings && !$clawbacks && $carriedIn <= 0) {
         return [null, $noConsultRate
