@@ -146,13 +146,29 @@ try {
 
 $filtered = ($fDoctor > 0 || $fMonth !== '' || $fStatus !== '');
 
-$view = null; $viewLines = [];
+$view = null; $viewLines = []; $viewRefunds = 0.0;
 if ($viewId > 0 && $tablesReady) {
     try {
         $q = $pdo->prepare('SELECT p.*, u.name AS doctor_name FROM doctor_payouts p JOIN users u ON u.id = p.doctor_id WHERE p.id = ?');
         $q->execute([$viewId]);
         $view = $q->fetch() ?: null;
         if ($view) {
+            // The payout stores gross NET of refunds (that is what tax and the
+            // split ran on). Refunds are same-day only and locked once a payout
+            // covers them, so this live read equals what was netted. Display only.
+            try {
+                $rq = $pdo->prepare("
+                    SELECT COALESCE(SUM(r.amount), 0)
+                    FROM refunds r
+                    JOIN bills b  ON b.id = r.bill_id AND b.voided_at IS NULL
+                    JOIN visits v ON v.id = b.visit_id
+                    WHERE v.doctor_id = ? AND r.voided_at IS NULL
+                      AND b.paid_at >= ? AND b.paid_at < ?
+                ");
+                $rq->execute([(int) $view['doctor_id'], $view['period_start'] . ' 00:00:00',
+                              date('Y-m-d', strtotime($view['period_end'] . ' +1 day')) . ' 00:00:00']);
+                $viewRefunds = (float) $rq->fetchColumn();
+            } catch (PDOException $e) { /* no refunds table */ }
             $l = $pdo->prepare('SELECT * FROM doctor_payout_lines WHERE payout_id = ? ORDER BY line_kind, occurred_on, id');
             $l->execute([$viewId]);
             $viewLines = $l->fetchAll();
@@ -306,7 +322,7 @@ $periodLabel = function ($start, $end) {
                 <!-- Create -->
                 <div class="card no-print">
                     <div class="section-title">New Payout</div>
-                    <div class="section-sub">Earnings for the period, plus any adjustments carried over.</div>
+                    <div class="section-sub">Earnings for the period, net of same-day refunds. Nothing is carried over.</div>
                     <form method="POST" action="doctor_payouts.php">
                         <input type="hidden" name="action" value="create_payout">
                         <div class="f-group">
@@ -390,7 +406,9 @@ $periodLabel = function ($start, $end) {
                         </div>
 
                         <ul class="ladder">
-                            <li><span class="lbl">Gross fees generated</span><span class="amt"><?= $money($view['gross_amount']) ?></span></li>
+                            <li><span class="lbl">Gross fees collected</span><span class="amt"><?= $money((float) $view['gross_amount'] + $viewRefunds) ?></span></li>
+                            <li class="deduct"><span class="lbl">Less refunds<small>issued the same day, taken off before tax and the split</small></span><span class="amt">−<?= $money($viewRefunds) ?></span></li>
+                            <li><span class="lbl">Net collected</span><span class="amt"><?= $money($view['gross_amount']) ?></span></li>
                             <li class="deduct"><span class="lbl">Less tax withheld<small>deposited by the clinic</small></span><span class="amt">−<?= $money($view['tax_withheld']) ?></span></li>
                             <li><span class="lbl">Earned this period</span><span class="amt"><?= $money($view['earned_amount']) ?></span></li>
                             <?php if ((float) $view['clawback_amount'] > 0): ?>
