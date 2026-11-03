@@ -1638,6 +1638,60 @@ function require_day_open(PDO $pdo, ?string $date = null, ?int $userId = null): 
 // reporting a clean error rather than throwing.
 // ============================================================================
 
+// ---- Payout lock -----------------------------------------------------------
+// A doctor payout freezes the money it paid out, and the owner's rule is that
+// refunds and voids happen the same day or not at all. So once a bill is on a
+// payout (draft or settled) it can no longer be voided, and nothing can be
+// refunded or un-refunded against a period a payout already covers. Wrong
+// payout? An admin deletes it (doctor_payouts.php "Delete and redo") and the
+// bill is free again. Both helpers return null when the payout tables are
+// absent, so an unmigrated database behaves exactly as before.
+
+// Number of the payout this bill's earning line is on, or null.
+// $kind: 'OPD' (bills.id) or 'PROCEDURE' (procedure_bills.id).
+function bill_payout_number(PDO $pdo, string $kind, int $id): ?string {
+    try {
+        $match = $kind === 'PROCEDURE'
+            ? "l.source_type = 'PROCEDURE' AND l.source_id IN (SELECT i.id FROM procedure_bill_items i WHERE i.procedure_bill_id = ?)"
+            : "l.source_type = 'OPD' AND l.source_id = ?";
+        $q = $pdo->prepare("
+            SELECT p.payout_number
+            FROM doctor_payout_lines l
+            JOIN doctor_payouts p ON p.id = l.payout_id
+            WHERE l.line_kind = 'EARNING' AND p.status <> 'voided' AND $match
+            LIMIT 1
+        ");
+        $q->execute([$id]);
+        $n = $q->fetchColumn();
+        return $n ? (string) $n : null;
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
+// Number of a payout whose period already covers this OPD bill's paid date for
+// its doctor, or null. Catches the bill that has NO line (refunded in full), which
+// bill_payout_number() cannot see, so its refund cannot be voided back to life.
+function bill_period_payout(PDO $pdo, int $billId): ?string {
+    try {
+        $q = $pdo->prepare("
+            SELECT p.payout_number
+            FROM bills b
+            JOIN visits v ON v.id = b.visit_id
+            JOIN doctor_payouts p ON p.doctor_id = v.doctor_id AND p.status IN ('draft', 'paid')
+                 AND DATE(b.paid_at) BETWEEN p.period_start AND p.period_end
+                 AND p.created_at >= b.paid_at   -- a payout run BEFORE the bill was paid never saw it
+            WHERE b.id = ?
+            LIMIT 1
+        ");
+        $q->execute([$billId]);
+        $n = $q->fetchColumn();
+        return $n ? (string) $n : null;
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
 // Void a consultation bill (`bills`). The whole visit's money reverses because
 // every cash/revenue read filters status='paid' or the new voided_at IS NULL.
 function void_bill(PDO $pdo, int $billId, int $userId, string $reason): array {
@@ -1657,6 +1711,9 @@ function void_bill(PDO $pdo, int $billId, int $userId, string $reason): array {
     }
     if ($bill['voided_at'] !== null) {
         return [false, 'This invoice is already voided.'];
+    }
+    if ($pn = bill_payout_number($pdo, 'OPD', $billId)) {
+        return [false, "This invoice is already on doctor payout $pn and cannot be voided. An admin must delete that payout first."];
     }
     // Any refund already raised against this bill must be voided first, else the
     // net-collected math (paid − refunded) would go inconsistent.
@@ -1695,7 +1752,7 @@ function void_refund(PDO $pdo, int $refundId, int $userId, string $reason): arra
     // hasn't run yet — select it defensively so an unmigrated DB still voids.
     $hasDrawerCol = column_exists($pdo, 'refunds', 'paid_out_by_id');
     $drawerSelect = $hasDrawerCol ? 'paid_out_by_id, ' : '';
-    $stmt = $pdo->prepare("SELECT id, refund_number, refund_mode, created_at, generated_by_id, {$drawerSelect}voided_at
+    $stmt = $pdo->prepare("SELECT id, bill_id, refund_number, refund_mode, created_at, generated_by_id, {$drawerSelect}voided_at
                            FROM refunds WHERE id = ?");
     $stmt->execute([$refundId]);
     $r = $stmt->fetch();
@@ -1707,6 +1764,9 @@ function void_refund(PDO $pdo, int $refundId, int $userId, string $reason): arra
     }
     if ($r['voided_at'] !== null) {
         return [false, 'This refund is already voided.'];
+    }
+    if (!empty($r['bill_id']) && ($pn = bill_period_payout($pdo, (int) $r['bill_id']))) {
+        return [false, "The doctor's payout $pn already covers this invoice's date, so the refund cannot be voided. An admin must delete that payout first."];
     }
     // A cash refund left a specific drawer — refuse if THAT receptionist's shift
     // is closed (their signed tally already accounts for the refund). The drawer
@@ -1853,6 +1913,9 @@ function void_procedure_bill(PDO $pdo, int $procBillId, int $userId, string $rea
     }
     if ($pb['voided_at'] !== null) {
         return [false, 'This procedure bill is already voided.'];
+    }
+    if ($pn = bill_payout_number($pdo, 'PROCEDURE', $procBillId)) {
+        return [false, "This procedure bill is already on doctor payout $pn and cannot be voided. An admin must delete that payout first."];
     }
     // Voiding a settled bill changes a day's cash position — blocked once that
     // cashier's day is closed and signed.

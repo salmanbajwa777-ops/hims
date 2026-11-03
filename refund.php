@@ -140,6 +140,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
             $error = $dayLock;
         } elseif (!$bill || $bill['status'] !== 'paid') {
             $error = 'Only a paid invoice can be refunded.';
+        } elseif ($payoutNo = bill_period_payout($pdo, $billId)) {
+            $error = "The doctor's payout $payoutNo already covers this invoice's date. Refunds are same-day only, so this one cannot be issued. An admin must delete that payout first.";
         } elseif ($amount <= 0) {
             $error = 'Enter a refund amount greater than zero.';
         } elseif ($amount > $remaining) {

@@ -614,9 +614,11 @@ function settle_payout(PDO $pdo, int $payoutId, int $userId, string $source = 'B
  * was reported on — and a mistake is corrected by a clawback on the next one.
  * This is the escape hatch for a payout that was simply built wrong.
  *
- *  - The Doctor Shares expense it posted is SOFT-voided (same convention as the
- *    expenses page), so the EXP- voucher stays on file and every money report
- *    drops it.
+ *  - The Doctor Shares expense it posted is DELETED (not voided) along with the
+ *    payout, so the cost and the tax-register row are gone until the new payout
+ *    is settled and posts them again. The audit log keeps the voucher number
+ *    and amount. Refused if that month's books are closed, or the expense was
+ *    counter cash in a signed day.
  *  - Its lines and the payout row are deleted, which frees every source bill
  *    (the UNIQUE key would otherwise block them forever).
  *  - Later DRAFTS for the same doctor are deleted with it: they were computed
@@ -636,7 +638,7 @@ function reset_payout(PDO $pdo, int $payoutId, int $userId, string $reason): arr
         return [false, 'Give a reason for deleting this payout.'];
     }
     try {
-        $q = $pdo->prepare('SELECT id, payout_number, doctor_id, status, expense_id, net_paid FROM doctor_payouts WHERE id = ?');
+        $q = $pdo->prepare('SELECT id, payout_number, doctor_id, status, expense_id, net_paid, period_end FROM doctor_payouts WHERE id = ?');
         $q->execute([$payoutId]);
         $p = $q->fetch();
         if (!$p)                     { return [false, 'Payout not found.']; }
@@ -648,11 +650,38 @@ function reset_payout(PDO $pdo, int $payoutId, int $userId, string $reason): arr
             return [false, "A later payout ($n) is already settled. Delete the newest one first."];
         }
 
+        // The books for that month must be open. A closed month froze the
+        // doctor-share figure this payout contributed; reopen it on the P&L page.
+        $month = date('Y-m-01', strtotime($p['period_end']));
+        try {
+            $mc = $pdo->prepare('SELECT COUNT(*) FROM monthly_closings WHERE period_month = ? AND reopened_at IS NULL');
+            $mc->execute([$month]);
+            if ((int) $mc->fetchColumn() > 0) {
+                return [false, date('F Y', strtotime($month)) . ' is closed on the P&L page. Reopen that month first, then delete the payout.'];
+            }
+        } catch (PDOException $e) { /* monthly_closings not migrated: no closed months */ }
+
+        $exp = null;
+        if (!empty($p['expense_id'])) {
+            $e = $pdo->prepare('SELECT id, expense_number, amount, source, expense_date, posted_by_id FROM expenses WHERE id = ?');
+            $e->execute([(int) $p['expense_id']]);
+            $exp = $e->fetch() ?: null;
+            // Counter-cash payouts sit in a cashier's signed tally; refuse once that day is closed.
+            if ($exp && $exp['source'] === 'CASH_COUNTER') {
+                $dayLock = require_day_open($pdo, $exp['expense_date'], (int) $exp['posted_by_id']);
+                if ($dayLock) {
+                    return [false, $dayLock . ' Deleting this payout would change that day\'s signed cash tally.'];
+                }
+            }
+        }
+
         $pdo->beginTransaction();
 
-        if (!empty($p['expense_id'])) {
-            $pdo->prepare('UPDATE expenses SET voided_at = NOW(), voided_by_id = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL')
-                ->execute([$userId, 'Payout ' . $p['payout_number'] . ' deleted: ' . $reason, (int) $p['expense_id']]);
+        // The expense goes with the payout, so the doctor-share cost and the tax
+        // register (which reads the payout row) both disappear until the new
+        // payout is settled and posts them again.
+        if ($exp) {
+            $pdo->prepare('DELETE FROM expenses WHERE id = ?')->execute([(int) $exp['id']]);
         }
 
         // This payout plus every later draft for the doctor.
@@ -663,12 +692,13 @@ function reset_payout(PDO $pdo, int $payoutId, int $userId, string $reason): arr
         $pdo->prepare("DELETE FROM doctor_payout_lines WHERE payout_id IN ($in)")->execute($ids);
         $pdo->prepare("DELETE FROM doctor_payouts WHERE id IN ($in)")->execute($ids);
 
-        audit_log($pdo, 'payout_deleted', "Deleted settled payout {$p['payout_number']} (Rs " . number_format((float) $p['net_paid'], 2) . ") — $reason", $userId);
+        audit_log($pdo, 'payout_deleted', "Deleted settled payout {$p['payout_number']} (Rs " . number_format((float) $p['net_paid'], 2) . ')'
+            . ($exp ? ", expense {$exp['expense_number']} (Rs " . number_format((float) $exp['amount'], 2) . ') deleted' : '') . " — $reason", $userId);
         $pdo->commit();
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
         error_log('[reset_payout] ' . $e->getMessage());
         return [false, 'Could not delete that payout. Nothing was changed.'];
     }
-    return [true, "Payout {$p['payout_number']} deleted and its Doctor Shares expense voided. Create the payout again for that period."];
+    return [true, "Payout {$p['payout_number']} deleted along with its Doctor Shares expense. Create the payout again for that period."];
 }

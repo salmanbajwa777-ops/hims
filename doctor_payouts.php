@@ -440,7 +440,7 @@ $periodLabel = function ($start, $end) {
                             <button type="button" class="btn secondary" onclick="window.print()">Print</button>
                             <?php if ($view['status'] === 'paid' && ($_SESSION['base_role'] ?? '') === 'ADMIN'): ?>
                             <form method="POST" action="doctor_payouts.php" style="margin:0;"
-                                  onsubmit="var r=prompt('Delete <?= htmlspecialchars($view['payout_number']) ?> completely and void its expense so it can be created again? It does NOT take back cash already paid. Reason:');if(!r){return false;}this.void_reason.value=r;return true;">
+                                  onsubmit="var r=prompt('Delete <?= htmlspecialchars($view['payout_number']) ?> completely, including its Doctor Shares expense, so it can be created again? It does NOT take back cash already paid. Reason:');if(!r){return false;}this.void_reason.value=r;return true;">
                                 <input type="hidden" name="action" value="reset_payout">
                                 <input type="hidden" name="payout_id" value="<?= (int) $view['id'] ?>">
                                 <input type="hidden" name="void_reason" value="">
