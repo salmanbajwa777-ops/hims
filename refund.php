@@ -194,9 +194,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'issue
 
 // ---------------- Void a refund (admin-assignable permission) ----------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'void_refund') {
-    if (!has_permission('FINANCIAL_VOID_BILL')) {
+    // Admin only: the permission alone is grantable to other roles, a refund void
+    // reopens money already netted out of a doctor's payout.
+    if (!has_permission('FINANCIAL_VOID_BILL') || ($_SESSION['base_role'] ?? '') !== 'ADMIN') {
         http_response_code(403);
-        exit('You do not have permission to void a refund.');
+        exit('Only an admin can void a refund.');
     }
     if (($impBlock = imp_block_money_action('Voiding this refund')) !== '') {
         $error = $impBlock;
@@ -428,7 +430,7 @@ require __DIR__ . '/partials/impersonation_banner.php';
     <?php if ($history): ?>
     <div class="card">
         <div class="section-title">Earlier refunds on this invoice</div>
-        <?php $canVoid = has_permission('FINANCIAL_VOID_BILL'); ?>
+        <?php $canVoid = has_permission('FINANCIAL_VOID_BILL') && ($_SESSION['base_role'] ?? '') === 'ADMIN'; ?>
         <table>
             <thead><tr><th>Voucher</th><th>Amount</th><th>Reason</th><th>By</th><th>When</th><?php if ($canVoid): ?><th></th><?php endif; ?></tr></thead>
             <tbody>

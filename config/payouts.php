@@ -118,7 +118,9 @@ function payout_earning_lines(PDO $pdo, int $doctorId, string $start, string $en
     // ---- OPD consultations ----
     try {
         $q = $pdo->prepare("
-            SELECT b.id, b.paid_amount, DATE(b.paid_at) AS on_date, p.name AS patient
+            SELECT b.id, b.paid_amount, DATE(b.paid_at) AS on_date, p.name AS patient,
+                   COALESCE((SELECT SUM(r.amount) FROM refunds r
+                             WHERE r.bill_id = b.id AND r.voided_at IS NULL), 0) AS refunded
             FROM bills b
             JOIN visits v   ON v.id = b.visit_id
             LEFT JOIN patients p ON p.id = v.patient_id
@@ -133,7 +135,12 @@ function payout_earning_lines(PDO $pdo, int $doctorId, string $start, string $en
         ");
         $q->execute([$doctorId, $from, $to]);
         foreach ($q->fetchAll() as $r) {
-            $s = doctor_split((float) $r['paid_amount'], $rates['share_pct'], (bool) $rates['has_tax'], $rates['tax_pct']);
+            // Refunds come off the collected amount BEFORE tax and the split, the
+            // same rule the doctor dashboard uses (doctor_earned_for_month). A bill
+            // refunded in full nets to 0 and writes no line. A refund does not touch
+            // bills.paid_amount, so it has to be subtracted here.
+            $net = max(0.0, (float) $r['paid_amount'] - (float) $r['refunded']);
+            $s = doctor_split($net, $rates['share_pct'], (bool) $rates['has_tax'], $rates['tax_pct']);
             // Zero share = the doctor has no consult rate set. Freezing a Rs 0
             // line would consume this bill's UNIQUE key permanently, so once the
             // rate is corrected it could never be paid. Skip and leave it open.
@@ -282,6 +289,7 @@ function payout_clawback_lines(PDO $pdo, int $doctorId): array {
         $q = $pdo->prepare("
             SELECT l.source_id, l.gross, l.tax, l.doctor_share, l.occurred_on,
                    l.patient_name, l.payout_id, pay.payout_number,
+                   MAX(b.paid_amount) AS paid_amount,
                    COALESCE(SUM(r.amount), 0) AS refunded
             FROM doctor_payout_lines l
             JOIN doctor_payouts pay ON pay.id = l.payout_id
@@ -303,7 +311,14 @@ function payout_clawback_lines(PDO $pdo, int $doctorId): array {
             if ($paidGross <= 0) { continue; }
             // Proportion of the ORIGINAL gross that came back. Capped at 1 so an
             // over-refund cannot claw back more than was ever paid.
-            $ratio = min(1.0, (float) $r['refunded'] / $paidGross);
+            // Lines written since refunds were netted at payout time already carry
+            // paid_amount - refunds as their gross, so only the part of the refund
+            // NOT already taken off the line is clawed back. Older lines have
+            // gross = paid_amount, so this reduces to the full refund for them.
+            $alreadyNetted = max(0.0, (float) $r['paid_amount'] - $paidGross);
+            $outstanding = (float) $r['refunded'] - $alreadyNetted;
+            if ($outstanding <= 0.005) { continue; }
+            $ratio = min(1.0, $outstanding / $paidGross);
             $lines[] = [
                 'source_type' => 'OPD', 'source_id' => (int) $r['source_id'],
                 'occurred_on' => $r['occurred_on'], 'patient_name' => $r['patient_name'],
