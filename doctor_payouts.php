@@ -264,7 +264,11 @@ tr.grand-row td { font-weight: 800; border-top: 2px solid var(--border); }
 @media print {
     .sidebar, .mobile-bar, .header, .nav-group, .appbar, .no-print { display: none !important; }
     .main { margin: 0 !important; }
-    .card { box-shadow: none !important; border: 1px solid #CCD0CF; break-inside: avoid; }
+    .card { box-shadow: none !important; border: 1px solid #CCD0CF; }
+    /* The Lines card can run past a page. break-inside:avoid on it pushed the whole
+       card to page 2 and left page 1 blank under the summary; let it flow instead. */
+    tr { break-inside: avoid; }
+    thead { display: table-header-group; }
 }
 </style>
 CSS;
@@ -419,6 +423,55 @@ $periodLabel = function ($start, $end) {
                             <?php endif; ?>
                             <li class="final"><span class="lbl">Net payable</span><span class="amt"><?= $money($view['net_paid']) ?></span></li>
                         </ul>
+
+                        <?php
+                        // Where the earned figure came from, summed from this payout's own
+                        // frozen EARNING lines (so it can never disagree with the Lines table).
+                        // PROCEDURE gross is the amount left after disposables, because that is
+                        // what the line froze.
+                        $bySrc = [];
+                        foreach (['OPD' => 'Consultations (OPD)', 'IPD' => 'In-door daily rounds', 'PROCEDURE' => 'Procedures'] as $k => $lbl) {
+                            $bySrc[$k] = ['label' => $lbl, 'n' => 0, 'gross' => 0.0, 'tax' => 0.0, 'doctor' => 0.0];
+                        }
+                        foreach ($viewLines as $l) {
+                            if ($l['line_kind'] !== 'EARNING' || !isset($bySrc[$l['source_type']])) { continue; }
+                            $bySrc[$l['source_type']]['n']++;
+                            $bySrc[$l['source_type']]['gross']  += (float) $l['gross'];
+                            $bySrc[$l['source_type']]['tax']    += (float) $l['tax'];
+                            $bySrc[$l['source_type']]['doctor'] += (float) $l['doctor_share'];
+                        }
+                        $srcTot = ['n' => 0, 'gross' => 0.0, 'tax' => 0.0, 'doctor' => 0.0];
+                        foreach ($bySrc as $s) { foreach ($srcTot as $k => $_) { $srcTot[$k] += $s[$k]; } }
+                        ?>
+                        <?php if ($srcTot['n'] > 0): ?>
+                        <div class="section-title" style="font-size:14px;margin-top:18px;">Earned, by source</div>
+                        <table style="margin-bottom:6px;">
+                            <thead>
+                                <tr><th>Source</th><th class="num">Lines</th><th class="num">Gross</th><th class="num">Tax</th><th class="num">Doctor share</th></tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($bySrc as $s): if ($s['n'] === 0) { continue; } ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($s['label']) ?></td>
+                                    <td class="num"><?= (int) $s['n'] ?></td>
+                                    <td class="num"><?= $money($s['gross']) ?></td>
+                                    <td class="num"><?= $money($s['tax']) ?></td>
+                                    <td class="num"><?= $money($s['doctor']) ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                                <tr style="font-weight:700;">
+                                    <td>Total earned</td>
+                                    <td class="num"><?= (int) $srcTot['n'] ?></td>
+                                    <td class="num"><?= $money($srcTot['gross']) ?></td>
+                                    <td class="num"><?= $money($srcTot['tax']) ?></td>
+                                    <td class="num"><?= $money($srcTot['doctor']) ?></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <?php if ($bySrc['PROCEDURE']['n'] > 0): ?>
+                        <div class="muted-note">Procedure gross is after disposables, which the clinic keeps. Each procedure is split at its own rate, not the consultation rate.</div>
+                        <?php endif; ?>
+                        <?php endif; ?>
 
                         <?php if ((float) $view['carried_out'] > 0): ?>
                         <div class="warn-note" style="margin-top:14px;">
