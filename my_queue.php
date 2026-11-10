@@ -634,6 +634,24 @@ function mqHistory(patientId, patientName) {
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { mqClose('mqNoteModal'); mqClose('mqHistModal'); }
 });
+
+// Auto-refresh every 3 minutes so new patients appear without a manual reload.
+// Never refresh while a modal is open or a field is focused (would wipe a note
+// being typed); retry in 30s instead. location.replace does a GET, so a page
+// that was reached via POST is not re-submitted.
+(function () {
+    var EVERY = 3 * 60 * 1000, RETRY = 30 * 1000;
+    function busy() {
+        if (document.querySelector('.mq-modal.open, .admit-overlay.open')) { return true; }
+        var a = document.activeElement;
+        return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+    }
+    function tick() {
+        if (busy()) { setTimeout(tick, RETRY); return; }
+        location.replace(location.pathname + location.search);
+    }
+    setTimeout(tick, EVERY);
+})();
 </script>
 <script src="assets/js/date-picker.js?v=<?= @filemtime(__DIR__ . "/assets/js/date-picker.js") ?: 1 ?>"></script>
 </body>
