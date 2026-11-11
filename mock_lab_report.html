@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lab Report Mock</title>
+<style>
+:root{--bg:#f5f7f5;--card:#fff;--border:#e2e8e4;--ink:#1c2b23;--dim:#5c6d63;--faint:#8b9a91;--brand:#02624f;--brand-bg:#e6f2ef;--warn:#b42318;--warn-bg:#fdecea}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:20px;margin:0 0 2px}.sub{color:var(--dim);margin-bottom:14px}
+.note{background:#fff8e1;border:1px solid #f0dc9a;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:13px}
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tabs button{border:1px solid var(--border);background:#fff;padding:8px 14px;border-radius:8px;font:inherit;cursor:pointer}
+.tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.card h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim)}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1 1 180px}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+input,select,textarea{width:100%;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font:inherit;background:#fff}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px}
+.seg span{padding:7px 12px;cursor:pointer;background:#fff}.seg span.on{background:var(--brand-bg);color:var(--brand);font-weight:600}
+table.res{width:100%;border-collapse:collapse}
+table.res th{text-align:left;font-size:12px;color:var(--dim);padding:6px 6px;border-bottom:1px solid var(--border)}
+table.res td{padding:5px 6px;border-bottom:1px dotted var(--border);vertical-align:middle}
+table.res td.sec{background:#f0f3f1;font-weight:700;color:#7a1f1f}
+table.res input{padding:5px 7px}
+.flag{font-size:11px;font-weight:700;color:var(--warn);background:var(--warn-bg);border-radius:5px;padding:2px 6px}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
+.drop{border:2px dashed var(--border);border-radius:10px;padding:16px;text-align:center;color:var(--dim)}
+.hidden{display:none}
+/* ---------- the A4 report ---------- */
+.paper{width:794px;max-width:100%;min-height:1000px;margin:0 auto;background:#fff;border:1px solid #ccd;box-shadow:0 2px 10px #0002;padding:34px 40px 26px;position:relative;font-size:12.5px;color:#111}
+.ph{display:flex;align-items:center;gap:14px;padding-bottom:10px;border-bottom:3px solid var(--brand)}
+.ph img{width:62px;height:62px}.ph .n{font-size:26px;font-weight:800;color:var(--brand);line-height:1}.ph .t{color:#444;font-size:12px;margin-top:3px}
+.pi{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin:14px 0 10px}
+.pi div b{display:inline-block;min-width:96px}
+.bar{background:var(--brand);color:#fff;text-align:center;font-weight:700;padding:3px;margin-top:6px}
+.cols,.rr{display:grid;grid-template-columns:2.2fr 1fr .8fr 1.4fr;gap:6px;padding:4px 2px}
+.cols{font-weight:700;border-bottom:1px solid #999;margin-top:2px}
+.sect{background:#eee;border:1px solid #bbb;font-weight:700;color:#7a1f1f;padding:3px 6px;margin-top:8px}
+.sub1{font-weight:700;margin:8px 0 1px}.sub2{text-decoration:underline;margin:6px 0 0}
+.rr{border-bottom:1px dotted #aaa}.rr .v.o{font-weight:800}.rr .name{padding-left:10px}
+.nt{margin-top:8px;color:#222}
+.pf{position:absolute;left:40px;right:40px;bottom:20px;border-top:3px solid var(--brand);padding-top:6px;font-size:11px;color:#333;display:flex;justify-content:space-between}
+@media print{body{background:#fff}.wrap>*:not(.paper-host){display:none}.paper{border:0;box-shadow:0}}
+</style></head><body><div class="wrap">
+<h1>Lab Bills &amp; Results &rsaquo; Generate Report</h1>
+<div class="sub">MOCK for approval &mdash; admin only. Dummy data from the Premium Lab sample, re-branded Metacare. Nothing here is saved.</div>
+<div class="note"><b>Out of scope in this mock:</b> Generate Bill (sample comes later), age-band ranges, Last-Available column, doctor ordering UI.</div>
+
+<div class="tabs"><button class="on" data-t="entry">1 &middot; Order &amp; results</button><button data-t="prev">2 &middot; Report PDF preview</button></div>
+
+<div id="entry">
+ <div class="card"><h2>Patient</h2>
+  <div class="seg"><span class="on" data-p="ex">HIMS patient</span><span data-p="wk">Walk-in (type details)</span></div>
+  <div id="p-ex" class="row">
+   <div style="flex:2 1 300px"><label>Search patient (name / MR no / phone)</label><input value="Mustafa Babar &middot; 102-16-619"></div>
+   <div><label>Age / Gender</label><input value="7 yr(s) / Male" disabled></div>
+  </div>
+  <div id="p-wk" class="row hidden">
+   <div><label>Name</label><input placeholder="Full name"></div><div><label>Age</label><input placeholder="e.g. 7 yr"></div>
+   <div><label>Gender</label><select><option>Male</option><option>Female</option></select></div><div><label>Phone</label><input></div>
+  </div>
+  <div class="row" style="margin-top:10px">
+   <div><label>Referred by</label><select><option>Dr Salman Ahmad Bajwa</option><option>Other / none</option></select></div>
+   <div><label>Specimen date &amp; time</label><input type="datetime-local" value="2026-11-04T20:31"></div>
+   <div><label>Report date &amp; time</label><input type="datetime-local" value="2026-11-05T06:37"></div>
+  </div>
+ </div>
+
+ <div class="card"><h2>How are results coming in?</h2>
+  <div class="seg"><span class="on" data-m="type">Type results</span><span data-m="up">Upload lab PDF</span></div>
+  <div id="m-up" class="drop hidden">Drop the lab's result PDF here (stored against this order; attached to the report page)</div>
+  <div id="m-type">
+   <div class="row" style="margin-bottom:8px"><div style="flex:3 1 300px"><label>Add test (from catalogue &mdash; ranges prefill)</label><select><option>CRP &middot; C-Reactive Protein</option><option>CBC &middot; Complete Blood Picture</option><option>Dengue NS-1 Antigen (ELISA)</option></select></div><div style="flex:0 0 auto;align-self:end"><button class="btn ghost">+ Add</button></div></div>
+   <table class="res" id="rt"><thead><tr><th style="width:32%">Test</th><th style="width:16%">Result</th><th style="width:12%">Unit</th><th>Reference range</th><th style="width:60px">Flag</th></tr></thead><tbody></tbody></table>
+   <div style="margin-top:8px"><label>Note (printed under the results)</label><textarea rows="2">Please correlate with clinical data and other investigations.</textarea></div>
+   <p style="color:var(--dim);font-size:12px;margin:8px 0 0">Flag is automatic when a numeric result is outside the range (printed bold). Range text is editable per result.</p>
+  </div>
+ </div>
+ <button class="btn" onclick="show('prev')">Generate report &rarr;</button>
+</div>
+
+<div id="prev" class="hidden paper-host">
+ <div style="text-align:right;margin-bottom:10px"><button class="btn ghost" onclick="show('entry')">&larr; Back</button> <button class="btn" onclick="print()">Download PDF</button></div>
+ <div class="paper">
+  <div class="ph"><img src="assets/img/metacare_logo.png" alt=""><div><div class="n">Metacare Diagnostics</div><div class="t">Laboratory Services</div></div></div>
+  <div class="pi">
+   <div><b>Name:</b> Mustafa Babar</div><div><b>Age/Gender:</b> 7 yr(s) / Male</div>
+   <div><b>MR Number:</b> 102-16-619</div><div><b>Referred by:</b> Dr Salman Ahmad Bajwa</div>
+   <div><b>Specimen Date:</b> 04-Nov-2026 8:31 pm</div><div><b>Report Date:</b> 05-Nov-2026 6:37 am</div>
+  </div>
+  <div class="bar">Final Report</div>
+  <div class="cols"><div>Test Name</div><div>Results</div><div>Unit</div><div>Reference Ranges</div></div>
+  <div id="pv"></div>
+  <div class="nt">Please correlate with clinical data and other investigations.</div>
+  <div class="pf"><span>Polymedics, 2165-F, NPF, PWD Double Road, Islamabad, Pakistan. &middot; +92 51 5735006</span><span>Printed 11-Nov-2026</span></div>
+ </div>
+</div>
+</div>
+<script>
+const T=[
+ ['Hematology','Complete Blood Picture',[
+  ['WBC Count','13020','/cmm','4500-13500'],['RBC Count','4.13','mil/cmm','4.75-4.85'],['Hemoglobin Level','12.1','g/dL','12.0-14.4'],
+  ['Hematocrit','37','%','36-42'],['MCV','89','fL','75-87'],['MCH','29','pg','25-31'],['MCHC','33','g/dL','33-35'],['RDW-CV','13','%','11-16'],
+  ['Platelets','282000','/cmm','150000-450000'],['Mean Platelet Volume (MPV)','10.7','fL','7.2-11.7'],
+  ['#DLC'],['Neutrophils','86','%','30-60'],['Lymphocytes','12','%','25-55'],['Monocytes','1','%','4-5'],['Eosinophils','1','%','2-6'],
+  ['#Absolute DLC'],['Absolute Neutrophils','11197','/cmm','1400-8100'],['Absolute Lymphocytes','1562','/cmm','1125-7400'],
+  ['Absolute Monocytes','130','/cmm','90-1620'],['Absolute Eosinophils','130','/cmm','90-810']]],
+ ['Clinical Chemistry','C-Reactive Protein',[['CRP (Quantitative)','38.3','mg/L','Negative: 0 - 5 | Positive: >5','Positive']]],
+ ['Immunology','Dengue NS-1 Antigen (ELISA)',[['Dengue Virus NS1 (ELISA)','0.5','AU/ml','Negative: < 10 | Positive: =/> 10','Negative']]]];
+function out(v,r){const m=/^([\d.]+)-([\d.]+)$/.exec(r);if(!m)return false;return +v<+m[1]||+v>+m[2]}
+const fmt=r=>r.replace(' | ','<br>');
+let ent='',pv='';
+T.forEach(([sec,grp,rows])=>{
+ ent+=`<tr><td class="sec" colspan="5">${sec} &mdash; ${grp}</td></tr>`;pv+=`<div class="sect">${sec}</div><div class="sub1">${grp}</div>`;
+ rows.forEach(([n,v,u,r,w])=>{
+  if(n[0]=='#'){ent+=`<tr><td colspan="5"><u>${n.slice(1)}</u></td></tr>`;pv+=`<div class="sub2">${n.slice(1)}</div>`;return}
+  const o=r&&r.indexOf('|')<0?out(v.replace(/,/g,''),r):false;
+  ent+=`<tr><td>${n}</td><td><input value="${v}"></td><td><input value="${u}"></td><td><input value="${r}"></td><td>${o?'<span class="flag">OUT</span>':''}</td></tr>`;
+  pv+=`<div class="rr"><div class="name">${n}</div><div class="v ${o||w?'o':''}">${Number(v)>9999?Number(v).toLocaleString('en-US'):v}${w?'<br>'+w:''}</div><div>${u}</div><div>${fmt(r)}</div></div>`;
+ });
+});
+document.querySelector('#rt tbody').innerHTML=ent;document.getElementById('pv').innerHTML=pv;
+function show(id){['entry','prev'].forEach(x=>document.getElementById(x).classList.toggle('hidden',x!=id));
+ document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t==id));scrollTo(0,0)}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+document.querySelectorAll('.seg').forEach(s=>s.querySelectorAll('span').forEach(sp=>sp.onclick=()=>{
+ s.querySelectorAll('span').forEach(x=>x.classList.remove('on'));sp.classList.add('on');
+ if(sp.dataset.p){['ex','wk'].forEach(k=>document.getElementById('p-'+k).classList.toggle('hidden',k!=sp.dataset.p))}
+ if(sp.dataset.m){['type','up'].forEach(k=>document.getElementById('m-'+k).classList.toggle('hidden',k!=sp.dataset.m))}}));
+</script></body></html>

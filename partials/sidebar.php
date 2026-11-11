@@ -143,6 +143,14 @@ $sbGroups = [
              'perm' => 'RECEPTION_REGISTER_PATIENTS'],
             ['slug' => 'checkout',    'label' => 'Checkout & Billing','icon'=> 'receipt',  'href' => 'checkout.php',
              'perm' => 'RECEPTION_GENERATE_INVOICES'],
+            // Lab billing + reporting. ADMIN ONLY for now (no 'perm' key on
+            // purpose: 'roles' hides the whole parent from everyone else).
+            // Both pages are placeholders until the lab spec is written.
+            ['slug' => 'lab', 'label' => 'Lab Bills & Results', 'icon' => 'receipt', 'href' => '#',
+             'roles' => ['ADMIN'], 'children' => [
+                ['slug' => 'lab_bill',   'label' => 'Generate Bill',   'icon' => 'receipt', 'href' => 'lab_bill.php'],
+                ['slug' => 'lab_report', 'label' => 'Generate Report', 'icon' => 'chart',   'href' => 'lab_report.php'],
+            ]],
             ['slug' => 'admissions',  'label' => 'Admissions',      'icon' => 'bed',      'href' => 'admissions.php',
              'perm' => 'NURSING_RECORD_ADMISSIONS'],
             // Review queue for zero / short / discounted / left-before-treatment stay
