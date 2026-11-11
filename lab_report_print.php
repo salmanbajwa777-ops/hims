@@ -15,6 +15,7 @@ $rows = $st->fetchAll();
 if (!$rows) { exit('This order has no typed results to print.'); }
 $pt = lab_patient_block($o);
 $b = brand(null);
+$labAddr = $b['address_line1'] . ', ' . $b['address_line2']; // no clinic name: the lab footer shows the street address only
 $fmt = fn($t) => $t ? date('d-M-Y g:i a', strtotime($t)) : '';
 ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -66,7 +67,7 @@ foreach ($rows as $r) {
 }
 ?>
   <?php if (trim((string) $o['note']) !== ''): ?><div class="nt"><?= lab_h($o['note']) ?></div><?php endif; ?>
-  <div class="pfx"><span><?= lab_h($b['address']) ?> &middot; <?= lab_h($b['phone']) ?></span><span>Printed <?= date('d-M-Y') ?></span></div>
+  <div class="pfx"><span><?= lab_h($labAddr) ?> &middot; <?= lab_h($b['phone']) ?></span><span>Printed <?= date('d-M-Y') ?></span></div>
 </div>
-<div class="pf"><span><?= lab_h($b['address']) ?> &middot; <?= lab_h($b['phone']) ?></span><span>Printed <?= date('d-M-Y') ?></span></div>
+<div class="pf"><span><?= lab_h($labAddr) ?> &middot; <?= lab_h($b['phone']) ?></span><span>Printed <?= date('d-M-Y') ?></span></div>
 </body></html>
