@@ -58,3 +58,57 @@ Then: HTML mock of both pages + both PDFs -> approval -> `add_lab_module.sql` + 
   lab_report.php (list/enter/edit/attach PDF), lab_report_print.php, lab_file.php. Generate Bill still a placeholder.
   Deviation from draft: lab_orders has no status/external_lab_name; lab_results is a per-parameter snapshot table
   (replaces lab_order_items); lab_invoices deferred with the bill.
+
+## Generate Bill — DESIGN (draft 2026-11-11, from owner's sample: Premium Lab slip 2611-02385)
+Honours all locked decisions above: patient pays the lab directly, nothing feeds clinic income / Day Closing /
+doctor share / analytics, prices typed per bill, Metacare Diagnostics branding only.
+
+### What the sample has -> what we do
+| Sample element | Decision |
+|---|---|
+| Header: invoice no, Name, Ref By, Age/Gender, Contact, MR No | Same. From the order's patient (or walk-in fields); Ref By = `lab_orders.referred_by`. |
+| Token #, Panel (blank in sample) | DROPPED. |
+| Barcode of invoice no | DROPPED (consistent with "no QR code"). Say if you want it. |
+| "Lab Copy" tag | Print page has a Lab copy / Patient copy toggle; default Patient copy. |
+| Lines: Title, Process (Normal/Urgent), Reporting date/time, Sample no, Payable | All kept. Title = catalogue pick OR free text (catalogue has 3 tests, lab runs many). Sample no = typed text; lines sharing a value are one specimen. |
+| Total / Adjustment / Net / Received / Balance | Total = sum of lines, Net = Total - Adjustment, Balance = Net - Received, all computed at print. Only Adjustment and Received are stored (typed facts). |
+| Initial By + Init. Time | `created_by_id` name + `created_at`. |
+| Note lines + IntegCubes footer | Fixed Metacare note lines + contact from config/brand.php. No third-party footer. |
+
+### Data (new file sql/add_lab_billing.sql, run after add_lab_module.sql)
+- `lab_invoices`: id, order_id (UNIQUE, one invoice per order), invoice_no (VARCHAR, YYMM-NNNNN), adjustment DECIMAL(10,2) DEFAULT 0,
+  received DECIMAL(10,2) DEFAULT 0, created_by_id, created_at, updated_at. No total/net/balance columns.
+- `lab_invoice_lines`: id, invoice_id, test_id NULL, title (snapshot), process ENUM('Normal','Urgent'), reporting_at DATETIME NULL,
+  sample_no VARCHAR(30) NULL, amount DECIMAL(10,2), sort_order.
+- Invoice number: own counter in `lab_invoice_counters` (period 'YYMM', last_seq), incremented in the same transaction. Separate from `invoice_counters`.
+- Lines are not linked to `lab_results` rows. Bill and report share only the order.
+- Editing: invoice editable while open; every edit audit-logged. Delete = admin only, logged. (Same as other admin docs.)
+
+### Pages
+- `lab_bill.php`: list of orders with bill state; "Generate Bill" opens order (create order inline if none: patient search or walk-in).
+  Tick/type lines, type amount, process, reporting time, sample no; adjustment + received; live totals; Save, then Print PDF (`lab_bill_print.php`).
+- Reuses `lab_csrf()` and `lab_load_order()`. Admin-only gate unchanged.
+
+### Open decisions (need owner)
+1. Invoice no format: monthly reset (YYMM-00001) as I assumed, or running number (sample's 02385 looks running)?
+2. Is "Urgent" a real process type for Metacare, and does it change price? (Price is typed, so it is a label only.)
+3. Can an invoice be reprinted after edit, or freeze at first print? Recommend: editable, reprint shows current values, edits audit-logged.
+4. Partial payment later: is one `received` figure enough, or do you want a payments list (date + amount)? Recommend single figure.
+
+### Clarification 2026-11-11 (owner)
+- The clinic charges the patient and issues the invoice ON BEHALF of the lab. Payment is to the lab: it does NOT change clinic
+  financials (income, doctor share, analytics stay untouched). No barcode on the bill (confirmed).
+- PROPOSED, awaiting owner OK (amends decision 1): cash is physically collected by clinic staff, so it must be visible somewhere
+  or the drawer will not reconcile. Add a lab-collections tally, separate from clinic financials:
+  Collected (sum of `lab_invoices.received` per day/user) - Settled to lab (new admin-logged `lab_settlements`: date, amount, by)
+  = Outstanding held for Metacare. Day Closing shows one informational line only, never counted as clinic income.
+
+### Owner answers 2026-11-11 (LOCKED for Generate Bill)
+1. Invoice no: monthly sequence, format `MCD-01-0001` (MCD-<month>-<seq>), resets each month. Counter keyed by (year, month) so the DB
+   never collides; NOTE the printed number repeats a year later (Nov 2026 and Nov 2027 both start MCD-11-0001) -- owner to confirm OK.
+2. Urgent = manually typed label for now; prices manually typed. A set-prices table comes LATER (add `lab_tests.price` then).
+3. Invoices editable; reprint shows current values; edits audit-logged.
+4. Single `received` figure; `Balance due` = Net - Received, printed when > 0 (partial payment case).
+Still open: lab-collections tally (see Clarification above).
+Next: mock_lab_bill.html -> owner approval -> sql/add_lab_billing.sql + lab_bill.php + lab_bill_print.php.
+- Printed bill paper size: A5 (portrait assumed; owner to confirm). 3 test lines fit comfortably; ~12 lines max before it needs a second page.

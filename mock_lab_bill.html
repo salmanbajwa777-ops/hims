@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lab Bill Mock</title>
+<style>
+:root{--bg:#f5f7f5;--card:#fff;--border:#e2e8e4;--ink:#1c2b23;--dim:#5c6d63;--brand:#02624f;--brand-bg:#e6f2ef;--warn:#b42318}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:20px;margin:0 0 2px}.sub{color:var(--dim);margin-bottom:14px}
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tabs button{border:1px solid var(--border);background:#fff;padding:8px 14px;border-radius:8px;font:inherit;cursor:pointer}
+.tabs button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.card h2{font-size:13px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim)}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1 1 170px}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+input,select{width:100%;padding:8px 9px;border:1px solid var(--border);border-radius:7px;font:inherit;background:#fff}
+table.ln{width:100%;border-collapse:collapse}
+table.ln th{text-align:left;font-size:12px;color:var(--dim);padding:6px;border-bottom:1px solid var(--border)}
+table.ln td{padding:5px 4px;border-bottom:1px dotted var(--border)}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
+.tot{margin-left:auto;width:300px;margin-top:12px}.tot div{display:flex;justify-content:space-between;padding:3px 0}
+.tot .bal{color:var(--warn);font-weight:700}
+.hidden{display:none}
+@page{size:A5 portrait;margin:0}
+.paper{width:559px;max-width:100%;height:794px;margin:0 auto;background:#fff;border:1px solid #ccd;box-shadow:0 2px 10px #0002;padding:22px 26px 20px;position:relative;font-size:11px;color:#111;overflow:hidden}
+.ph{display:flex;align-items:center;gap:14px;padding-bottom:10px;border-bottom:3px solid var(--brand)}
+.ph img{width:48px;height:48px}.ph .n{font-size:20px;font-weight:800;color:var(--brand);line-height:1}.ph .t{color:#444;font-size:12px;margin-top:3px}
+.ph .r{margin-left:auto;text-align:right;color:#444;font-size:10px}
+.tags{display:flex;justify-content:space-between;margin:12px 0}
+.tag{border:1.5px solid #777;background:#eee;font-weight:700;padding:3px 12px;font-size:13px}
+.pi{display:grid;grid-template-columns:1fr 1fr;gap:3px 14px;margin:4px 0 8px}.pi b{display:inline-block;min-width:76px}
+table.b{width:100%;border-collapse:collapse}
+table.b th{text-align:left;border-top:1px solid #999;border-bottom:1px solid #999;padding:4px 3px}
+table.b td{padding:4px 3px;border-bottom:1px solid #ddd}.r{text-align:right}
+.ft{display:flex;justify-content:space-between;margin-top:10px}
+.ft .tt{width:210px}.tt div{display:flex;justify-content:space-between;padding:2px 0}.tt .bd{font-weight:700;color:#b42318}
+.note{margin-top:16px;font-size:10px;color:#7a1f1f;font-style:italic;font-weight:600}
+.pf{position:absolute;left:26px;right:26px;bottom:14px;border-top:3px solid var(--brand);padding-top:5px;font-size:9px;color:#333;display:flex;justify-content:space-between}
+</style></head><body><div class="wrap">
+<h1>Generate Lab Bill &mdash; MOCK</h1>
+<div class="sub">For approval. Admin only. Dummy data from the Premium Lab sample, re-branded Metacare. Nothing is saved.</div>
+<div class="tabs"><button class="on" data-t="f">1. Enter bill</button><button data-t="p">2. Printed bill</button></div>
+
+<div id="f">
+ <div class="card"><h2>Patient</h2><div class="row">
+  <div style="flex:2 1 300px"><label>Search patient (name / MR no / phone) or switch to walk-in</label><input value="Muhammad Ibrahim &middot; 102-17-804"></div>
+  <div><label>Referred by</label><input value="Dr Salman Ahmad Bajwa"></div>
+  <div><label>Invoice no (auto)</label><input value="MCD-11-0001" disabled></div></div></div>
+ <div class="card"><h2>Tests</h2>
+  <table class="ln"><thead><tr><th style="width:34%">Test (pick or type)</th><th>Process</th><th>Reporting date / time</th><th>Sample no</th><th class="r">Amount</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+  <p><button class="btn ghost" id="add">+ Add test</button></p>
+  <div class="row" style="margin-top:8px"><div><label>Adjustment (discount)</label><input id="adj" type="number" value="0"></div><div><label>Received</label><input id="rec" type="number" value="4600"></div></div>
+  <div class="tot"><div><span>Total</span><b id="t1"></b></div><div><span>Net amount</span><b id="t2"></b></div><div><span>Received</span><b id="t3"></b></div><div class="bal"><span>Balance due</span><b id="t4"></b></div></div>
+ </div>
+ <button class="btn" id="gen">Save &amp; generate PDF</button> <span style="color:var(--dim);font-size:12px">Editable later; reprint shows current values; edits are logged.</span>
+</div>
+
+<div id="p" class="hidden">
+ <p><select id="copy" style="width:auto"><option>Patient Copy</option><option>Lab Copy</option></select></p>
+ <div class="paper">
+  <div class="ph"><img src="assets/img/metacare_logo.png" alt=""><div><div class="n">Metacare Diagnostics</div><div class="t">Your Health Comes First</div></div>
+   <div class="r">Phone: +92 51 5735006<br>2165-F, NPF, PWD Double Road<br>Islamabad, Pakistan</div></div>
+  <div class="tags"><span class="tag">MCD-11-0001</span><span class="tag" id="ctag">Patient Copy</span></div>
+  <div class="pi">
+   <div><b>Name:</b> <strong>Muhammad Ibrahim</strong></div><div><b>Age / Gender:</b> 8 yr(s) / Male</div>
+   <div><b>Ref By:</b> Dr Salman Ahmad Bajwa</div><div><b>Contact No:</b> 03105445789</div>
+   <div></div><div><b>MR No:</b> 102-17-804</div></div>
+  <table class="b"><thead><tr><th>Title</th><th>Process</th><th>Reporting</th><th>Sample</th><th class="r">Payable</th></tr></thead><tbody id="pl"></tbody></table>
+  <div class="ft"><div style="font-size:11px"><b>Initial By:</b> Admin User<br><b>Init. Time:</b> 11-Nov-2026 6:58 pm</div>
+   <div class="tt"><div><b>Total:</b><span id="p1"></span></div><div><b>Adjustment:</b><span id="p5"></span></div><div><b>Net Amount:</b><span id="p2"></span></div><div><b>Received:</b><b id="p3"></b></div><div class="bd" id="pbrow"><b>Balance Due:</b><span id="p4"></span></div></div></div>
+  <div class="note">Note : Reporting time is subject to the sample submission.<br>&nbsp;&nbsp;&nbsp;&nbsp;Please bring this form to collect the reports.<br>&nbsp;&nbsp;&nbsp;&nbsp;For any query related to test results, please contact within 48 Hrs.</div>
+  <div class="pf"><span>Metacare Diagnostics</span><span>+92 51 5735006 &middot; 2165-F, NPF, PWD Double Road, Islamabad</span></div>
+ </div>
+</div>
+</div>
+<script>
+const data=[["Complete Blood Picture","Normal","2026-11-12T03:00","155580",950],["C-Reactive Protein","Normal","2026-11-12T03:00","155581",2000],["Dengue NS-1 Antigen (ELISA)","Normal","2026-11-12T19:00","155581",1650]];
+const rows=document.getElementById('rows'),n=x=>x?Number(x).toLocaleString():'-';
+function add(d){const tr=document.createElement('tr');d=d||["","Normal","","",""];
+ tr.innerHTML=`<td><input value="${d[0]}"></td><td><select><option>Normal</option><option${d[1]=='Urgent'?' selected':''}>Urgent</option></select></td><td><input type="datetime-local" value="${d[2]}"></td><td><input value="${d[3]}"></td><td><input type="number" class="a" value="${d[4]}" style="text-align:right"></td><td><button class="btn ghost x">&times;</button></td>`;
+ rows.appendChild(tr)}
+data.forEach(add);
+function calc(){let t=0;rows.querySelectorAll('.a').forEach(i=>t+=+i.value||0);const a=+adj.value||0,r=+rec.value||0,net=t-a,b=net-r;
+ t1.textContent=n(t);t2.textContent=n(net);t3.textContent=n(r);t4.textContent=n(b);return{t,a,net,r,b}}
+document.addEventListener('input',calc);calc();
+add_=document.getElementById('add');add_.onclick=()=>{add();calc()};
+rows.onclick=e=>{if(e.target.classList.contains('x')){e.target.closest('tr').remove();calc()}};
+function render(){const c=calc();pl.innerHTML='';rows.querySelectorAll('tr').forEach(tr=>{const v=[...tr.querySelectorAll('input,select')].map(x=>x.value);
+ const dt=v[2]?new Date(v[2]).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+ pl.insertAdjacentHTML('beforeend',`<tr><td>${v[0]}</td><td>${v[1]}</td><td>${dt}</td><td>${v[3]}</td><td class="r">${n(v[4])}</td></tr>`)});
+ p1.textContent=n(c.t);p5.textContent=n(c.a);p2.textContent=n(c.net);p3.textContent=n(c.r);p4.textContent=n(c.b);pbrow.style.display=c.b>0?'flex':'none'}
+function show(t){f.classList.toggle('hidden',t!='f');p.classList.toggle('hidden',t!='p');document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t==t));if(t=='p')render()}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+gen.onclick=()=>show('p');copy.onchange=()=>ctag.textContent=copy.value;
+</script></body></html>
