@@ -49,7 +49,7 @@ function lab_patient_block(array $o): array
 /** Order + joined patient columns, or null. */
 function lab_load_order(PDO $pdo, int $id): ?array
 {
-    $st = $pdo->prepare('SELECT o.*, p.name p_name, p.mrn p_mrn, p.dob p_dob, p.approx_age p_age, p.gender p_gender, p.phone p_phone
+    $st = $pdo->prepare('SELECT o.*, p.name p_name, p.mrn p_mrn, p.dob p_dob, p.gender p_gender, p.phone p_phone
                            FROM lab_orders o LEFT JOIN patients p ON p.id = o.patient_id WHERE o.id = ?');
     $st->execute([$id]);
     return $st->fetch() ?: null;
