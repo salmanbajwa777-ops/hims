@@ -86,6 +86,13 @@ $progressVals = ['IMPROVING','STABLE','SLOW','DETERIORATING','CRITICAL'];
 $nextReviewVals = ['EVENING','TOMORROW_AM','TOMORROW_PM','AFTER_48H','PRN'];
 // Keep POSTed values so a validation failure re-renders what was typed.
 $form = [];
+// Round date/time: defaults to now; a doctor may back-date to document a round
+// that was done but not charted. Bounded to [admitted_at, now]. created_at on
+// the row still records when it was really entered (audit trail).
+$admittedTs = strtotime($adm['admitted_at']);
+$roundMin = date('Y-m-d\TH:i', $admittedTs);
+$roundMax = date('Y-m-d\TH:i');
+$roundAtInput = $roundMax;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_round' && $canWrite && $isOpen) {
     $g = fn(string $k, int $max) => mb_substr(trim($_POST[$k] ?? ''), 0, $max);
     $form = [
@@ -100,9 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         'family_counselling'  => trim($_POST['family_counselling'] ?? ''),
         'next_review'         => $_POST['next_review'] ?? '',
     ];
+    $roundAtInput = trim($_POST['round_at'] ?? '') ?: $roundMax;
+    $roundTs = strtotime(str_replace('T', ' ', $roundAtInput));
 
     // ---- Minimum-to-save gate ----
-    if ($form['primary_diagnosis'] === '') {
+    if ($roundTs === false) {
+        $err = 'Round date/time is not valid.';
+    } elseif ($roundTs > time() + 60) {
+        $err = 'Round date/time cannot be in the future.';
+    } elseif ($roundTs < $admittedTs - 60) {
+        $err = 'Round date/time cannot be before the admission (' . date('d/m/Y H:i', $admittedTs) . ').';
+    } elseif ($form['primary_diagnosis'] === '') {
         $err = 'Primary Diagnosis is required.';
     } elseif (!in_array($form['progress'], $progressVals, true)) {
         $err = 'Select the Overall Clinical Progress.';
@@ -132,7 +147,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             // predicate sargable: DATE(visited_at) wrapped the column and could
             // never use an index, and this COUNT runs inside the write
             // transaction on every round note.
-            [$bdStart, $bdEnd] = business_day_window($pdo, business_day($pdo));
+            // Computed for the round's OWN business day, so a back-dated note
+            // is charged only if that day had no note yet (no double billing).
+            $visitedAt = date('Y-m-d H:i:s', $roundTs);
+            $roundDay = (int) ((new DateTime(date('Y-m-d', $roundTs)))
+                ->diff(new DateTime(date('Y-m-d', $admittedTs)))->days) + 1;
+            $isBackdated = $roundTs < time() - 3600;
+            [$bdStart, $bdEnd] = business_day_window($pdo, business_day($pdo, $visitedAt));
             $cnt = $pdo->prepare('SELECT COUNT(*) FROM ipd_doctor_visits
                                    WHERE admission_id = ? AND visited_at >= ? AND visited_at < ?');
             $cnt->execute([$admissionId, $bdStart, $bdEnd]);
@@ -144,9 +165,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                      primary_diagnosis, secondary_diagnosis, active_complaints, progress,
                      positive_findings, investigation_review, clinical_assessment, management_plan,
                      family_counselling, next_review, is_paid, visit_charge, entered_by_user_id)
-                VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ')->execute([
-                $admissionId, $uid, $hospitalDay,
+                $admissionId, $uid, $visitedAt, $roundDay,
                 $form['primary_diagnosis'],
                 $form['secondary_diagnosis'] ?: null,
                 $form['active_complaints'] ?: null,
@@ -163,14 +184,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             // Feed the flow sheet.
             $pdo->prepare('
                 INSERT INTO ipd_care_events (admission_id, event_type, ref_table, ref_id, note, logged_by_id, logged_by_role, event_at)
-                VALUES (?, \'DOCTOR_VISIT\', \'ipd_doctor_visits\', ?, ?, ?, ?, NOW())
+                VALUES (?, \'DOCTOR_VISIT\', \'ipd_doctor_visits\', ?, ?, ?, ?, ?)
             ')->execute([
                 $admissionId, $noteId,
-                'Daily round (Day ' . $hospitalDay . '): ' . $form['progress'],
-                $uid, $loggedRole,
+                'Daily round (Day ' . $roundDay . '): ' . $form['progress'] . ($isBackdated ? ' [back-dated]' : ''),
+                $uid, $loggedRole, $visitedAt,
             ]);
 
-            audit_log($pdo, 'ipd_ward_round_saved', "Daily round note #$noteId for IPD admission #$admissionId (day $hospitalDay, $form[progress])", $uid);
+            audit_log($pdo, 'ipd_ward_round_saved', "Daily round note #$noteId for IPD admission #$admissionId (day $roundDay, $form[progress])" . ($isBackdated ? " BACK-DATED to $visitedAt, entered " . date('Y-m-d H:i:s') : ''), $uid);
 
             $pdo->commit();
             header('Location: ipd_daily_round.php?id=' . $admissionId . '&saved=1');
@@ -312,6 +333,11 @@ require __DIR__ . '/partials/sidebar.php';
                 <input type="hidden" name="action" value="save_round">
 
                 <div class="card">
+                    <div class="wr-field" style="max-width:280px;">
+                        <label>Round date &amp; time</label>
+                        <input type="datetime-local" name="round_at" value="<?= htmlspecialchars($roundAtInput) ?>" min="<?= $roundMin ?>" max="<?= $roundMax ?>" required>
+                        <div class="doc-note">Change only to document a past round. Entry time is recorded separately.</div>
+                    </div>
                     <div class="two-col">
                         <div class="wr-field">
                             <label>Primary Diagnosis <span class="wr-req">*</span></label>
@@ -413,7 +439,8 @@ require __DIR__ . '/partials/sidebar.php';
                 <div class="note-top">
                     <div class="note-prog" style="color:<?= $pcol ?>;"><?= $glyph ?> <?= htmlspecialchars($plabel) ?></div>
                     <div class="note-meta">
-                        Day <?= (int) $n['hospital_day'] ?> &middot; <?= date('d/m/Y H:i', strtotime($n['visited_at'])) ?> &middot; <?= htmlspecialchars($n['author_name']) ?>
+                        Day <?= (int) $n['hospital_day'] ?> &middot; <?= date('d/m/Y H:i', strtotime($n['visited_at'])) ?> &middot;
+                        <?php if (!empty($n['created_at']) && strtotime($n['created_at']) - strtotime($n['visited_at']) > 3600): ?><span class="paid-chip no" title="Entered <?= date('d/m/Y H:i', strtotime($n['created_at'])) ?>">Back-dated</span> &middot;<?php endif; ?> <?= htmlspecialchars($n['author_name']) ?>
                         <?php if (!$hideMoney): ?>
                         &middot; <span class="paid-chip <?= $n['is_paid'] ? 'yes' : 'no' ?>"><?= $n['is_paid'] ? 'Paid' : 'Unpaid' ?></span>
                         <?php endif; ?>
