@@ -67,7 +67,7 @@ table.b td{padding:4px 3px;border-bottom:1px solid #ddd}.r{text-align:right}
   <?php endforeach; ?>
   </tbody></table>
   <div class="ft">
-    <div style="font-size:11px"><b>Initial By:</b> <?= lab_h($inv['by_name']) ?><br><b>Init. Time:</b> <?= lab_h(date('d-M-Y g:i a', strtotime($inv['created_at']))) ?></div>
+    <div style="font-size:11px"><b>Initial By:</b> <?= lab_h($inv['by_name']) ?></div>
     <div class="tt">
       <div><b>Total:</b><span><?= $n($total) ?></span></div>
       <div><b>Adjustment:</b><span><?= $n($adj) ?></span></div>

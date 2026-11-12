@@ -72,7 +72,7 @@ doctor share / analytics, prices typed per bill, Metacare Diagnostics branding o
 | "Lab Copy" tag | Print page has a Lab copy / Patient copy toggle; default Patient copy. |
 | Lines: Title, Process (Normal/Urgent), Reporting date/time, Sample no, Payable | All kept. Title = catalogue pick OR free text (catalogue has 3 tests, lab runs many). Sample no = typed text; lines sharing a value are one specimen. |
 | Total / Adjustment / Net / Received / Balance | Total = sum of lines, Net = Total - Adjustment, Balance = Net - Received, all computed at print. Only Adjustment and Received are stored (typed facts). |
-| Initial By + Init. Time | `created_by_id` name + `created_at`. |
+| Initial By | `created_by_id` name. Init. Time stamp removed from the print 2026-11-12. |
 | Note lines + IntegCubes footer | Fixed Metacare note lines + contact from config/brand.php. No third-party footer. |
 
 ### Data (new file sql/add_lab_billing.sql, run after add_lab_module.sql)
