@@ -71,6 +71,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
         if ($adj > $total) { throw new RuntimeException('Adjustment cannot be more than the total.'); }
         $net = $total - $adj;
         if ($rec > $net) { throw new RuntimeException('Received cannot be more than the net amount.'); }
+        // Invoice date: staff may back-date (charged earlier, documented at end of shift). Never future.
+        $nowTs = strtotime((string) $pdo->query('SELECT NOW()')->fetchColumn());
+        $bs = trim((string) ($_POST['billed_at'] ?? ''));
+        $billedTs = $bs !== '' ? strtotime($bs) : $nowTs;
+        if (!$billedTs) { throw new RuntimeException('Invoice date is not valid.'); }
+        if ($billedTs > $nowTs + 300) { throw new RuntimeException('Invoice date cannot be in the future.'); }
+        $billedAt = date('Y-m-d H:i:s', $billedTs);
+        $backNote = $nowTs - $billedTs > 3600 ? " [back-dated to $billedAt, entered " . date('Y-m-d H:i', $nowTs) . ']' : '';
+        $tooOld = fn($ts) => $nowTs - $ts > LAB_BACKDATE_DAYS * 86400;
 
         $pdo->beginTransaction();
         if ($invId) {
@@ -78,14 +87,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
             $inv = $st->fetch();
             if (!$inv) { throw new RuntimeException('Invoice not found.'); }
             $orderId = (int) $inv['order_id'];
+            $oldB = strtotime((string) ($inv['billed_at'] ?: $inv['created_at']));
+            if (date('Y-m-d H:i', $billedTs) !== date('Y-m-d H:i', $oldB) && $tooOld($billedTs)) {
+                throw new RuntimeException('Invoice date can be at most ' . LAB_BACKDATE_DAYS . ' days back.');
+            }
             $old = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM lab_invoice_lines WHERE invoice_id = ?'); $old->execute([$invId]);
             $oldTotal = (float) $old->fetchColumn();
-            $pdo->prepare('UPDATE lab_invoices SET adjustment=?, received=?, updated_at=NOW() WHERE id=?')->execute([$adj, $rec, $invId]);
+            $pdo->prepare('UPDATE lab_invoices SET adjustment=?, received=?, billed_at=?, updated_at=NOW() WHERE id=?')->execute([$adj, $rec, $billedAt, $invId]);
             $pdo->prepare('DELETE FROM lab_invoice_lines WHERE invoice_id = ?')->execute([$invId]);
             $audit = ['lab_invoice_edited', "Edited lab invoice {$inv['invoice_no']}: total " . lb_n($oldTotal) . ' -> ' . lb_n($total)
-                . ', adjustment ' . lb_n($inv['adjustment']) . ' -> ' . lb_n($adj) . ', received ' . lb_n($inv['received']) . ' -> ' . lb_n($rec)];
+                . ', adjustment ' . lb_n($inv['adjustment']) . ' -> ' . lb_n($adj) . ', received ' . lb_n($inv['received']) . ' -> ' . lb_n($rec) . $backNote];
             if ($orderId) { $pdo->prepare('UPDATE lab_orders SET referred_by=?, updated_at=NOW() WHERE id=?')->execute([$ref, $orderId]); }
         } else {
+            if ($tooOld($billedTs)) { throw new RuntimeException('Invoice date can be at most ' . LAB_BACKDATE_DAYS . ' days back.'); }
             if ($orderId) {
                 if (!lab_load_order($pdo, $orderId)) { throw new RuntimeException('Order not found.'); }
                 $dup = $pdo->prepare('SELECT id FROM lab_invoices WHERE order_id = ?'); $dup->execute([$orderId]);
@@ -110,15 +124,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
                 $orderId = (int) $pdo->lastInsertId();
             }
             // Next number for this month: the upsert takes the row lock, the SELECT reads the new value.
-            $ym = (string) $pdo->query("SELECT DATE_FORMAT(NOW(), '%y%m')")->fetchColumn();
+            $ym = date('ym', $billedTs); // number follows the invoice date's month
             $pdo->prepare('INSERT INTO lab_invoice_counters (period_ym, last_seq) VALUES (?, 1) ON DUPLICATE KEY UPDATE last_seq = last_seq + 1')->execute([$ym]);
             $q = $pdo->prepare('SELECT last_seq FROM lab_invoice_counters WHERE period_ym = ?'); $q->execute([$ym]);
             $seq = (int) $q->fetchColumn();
             $no = 'MCD-' . substr($ym, 2, 2) . '-' . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
-            $pdo->prepare('INSERT INTO lab_invoices (order_id, period_ym, seq, invoice_no, adjustment, received, created_by_id) VALUES (?,?,?,?,?,?,?)')
-                ->execute([$orderId, $ym, $seq, $no, $adj, $rec, $uid]);
+            $pdo->prepare('INSERT INTO lab_invoices (order_id, period_ym, seq, invoice_no, adjustment, received, billed_at, created_by_id) VALUES (?,?,?,?,?,?,?,?)')
+                ->execute([$orderId, $ym, $seq, $no, $adj, $rec, $billedAt, $uid]);
             $invId = (int) $pdo->lastInsertId();
-            $audit = ['lab_invoice_created', "Created lab invoice $no (order #$orderId): total " . lb_n($total) . ', received ' . lb_n($rec)];
+            $audit = ['lab_invoice_created', "Created lab invoice $no (order #$orderId): total " . lb_n($total) . ', received ' . lb_n($rec) . $backNote];
         }
         $ins = $pdo->prepare('INSERT INTO lab_invoice_lines (invoice_id, test_id, title, process, reporting_at, sample_no, amount, sort_order) VALUES (?,?,?,?,?,?,?,?)');
         foreach ($lines as $n => $ln) {
@@ -158,7 +172,7 @@ $doctors = $pdo->query("SELECT name FROM users WHERE base_role = 'DOCTOR' AND is
 
 $list = []; $unbilled = [];
 if (!$form) {
-    $list = $pdo->query('SELECT i.id, i.invoice_no, i.created_at, i.adjustment, i.received, COALESCE(p.name, o.walkin_name) pname, p.mrn,
+    $list = $pdo->query('SELECT i.id, i.invoice_no, i.created_at, i.billed_at, i.adjustment, i.received, COALESCE(p.name, o.walkin_name) pname, p.mrn,
                                 (SELECT COALESCE(SUM(l.amount),0) FROM lab_invoice_lines l WHERE l.invoice_id = i.id) total
                            FROM lab_invoices i JOIN lab_orders o ON o.id = i.order_id LEFT JOIN patients p ON p.id = o.patient_id
                           ORDER BY i.id DESC LIMIT 200')->fetchAll();
@@ -172,6 +186,7 @@ $P = $error ? $_POST : [];
 $isWalk = $error ? (($_POST['patient_mode'] ?? '') === 'wk') : false;
 $pre = [
     'referred_by' => $error ? ($_POST['referred_by'] ?? '') : ($order['referred_by'] ?? ''),
+    'billed_at' => $error ? ($_POST['billed_at'] ?? '') : date('Y-m-d\TH:i', strtotime($inv ? ((string) ($inv['billed_at'] ?: $inv['created_at'])) : 'now')),
     'adjustment' => $error ? ($_POST['adjustment'] ?? '0') : ($inv ? (float) $inv['adjustment'] : '0'),
     'received' => $error ? ($_POST['received'] ?? '0') : ($inv ? (float) $inv['received'] : '0'),
     'patient_id' => (int) ($_POST['patient_id'] ?? 0),
@@ -241,7 +256,8 @@ require __DIR__ . '/partials/sidebar.php';
             <tr>
                 <td style="padding:10px"><?= lab_h($r['invoice_no']) ?></td>
                 <td><?= lab_h($r['pname']) ?><?= $r['mrn'] ? ' <span style="color:#8b9a91">' . lab_h($r['mrn']) . '</span>' : ' <span style="color:#8b9a91">walk-in</span>' ?></td>
-                <td><?= lab_h(date('d-M-Y g:i a', strtotime($r['created_at']))) ?></td>
+                <td><?= lab_h(date('d-M-Y g:i a', strtotime($r['billed_at'] ?: $r['created_at']))) ?>
+                    <?php if ($r['billed_at'] && strtotime($r['created_at']) - strtotime($r['billed_at']) > 3600): ?><span style="font-size:11px;background:#fff3cd;color:#7a5b00;border-radius:5px;padding:1px 6px" title="Entered <?= lab_h(date('d-M-Y g:i a', strtotime($r['created_at']))) ?>">Back-dated</span><?php endif; ?></td>
                 <td style="text-align:right"><?= lb_n($net) ?></td>
                 <td style="text-align:right"><?= lb_n($r['received']) ?></td>
                 <td style="text-align:right;<?= $bal > 0 ? 'color:#b42318;font-weight:700' : '' ?>"><?= $bal > 0 ? lb_n($bal) : '—' ?></td>
@@ -293,6 +309,8 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="lr-row" style="margin-top:10px">
             <div><label>Referred by</label><input name="referred_by" list="docs" value="<?= lab_h($pre['referred_by']) ?>">
                 <datalist id="docs"><?php foreach ($doctors as $d): ?><option value="<?= lab_h($d) ?>"><?php endforeach; ?></datalist></div>
+            <div><label>Invoice date &amp; time (back-date up to <?= LAB_BACKDATE_DAYS ?> days)</label>
+                <input type="datetime-local" name="billed_at" value="<?= lab_h($pre['billed_at']) ?>"></div>
         </div>
     </div>
 
