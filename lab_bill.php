@@ -140,6 +140,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
         }
         $pdo->commit();
         audit_log($pdo, $audit[0], $audit[1], $uid);
+        // Rates staff ticked in the "save this rate?" prompt. Never blocks the bill (table may not exist yet).
+        $wantKeys = array_map('mb_strtolower', array_map('trim', (array) ($_POST['save_rate'] ?? [])));
+        if ($wantKeys) {
+            try {
+                $up = $pdo->prepare('INSERT INTO lab_test_rates (name_key, title, amount, updated_by_id) VALUES (?,?,?,?)
+                                     ON DUPLICATE KEY UPDATE title = VALUES(title), amount = VALUES(amount), updated_by_id = VALUES(updated_by_id)');
+                $saved = [];
+                foreach ($lines as $ln) {
+                    $k = mb_strtolower($ln['title']);
+                    if ($ln['amount'] > 0 && in_array($k, $wantKeys, true)) { $up->execute([$k, $ln['title'], $ln['amount'], $uid]); $saved[$k] = $ln['title'] . ' ' . lb_n($ln['amount']); }
+                }
+                if ($saved) { audit_log($pdo, 'lab_rate_saved', 'Saved lab rate(s): ' . implode(', ', $saved), $uid); }
+            } catch (Throwable $e) { /* rates table missing: bill is already saved */ }
+        }
         header('Location: lab_bill.php?id=' . $invId . '&saved=1');
         exit;
     } catch (Throwable $e) {
@@ -168,6 +182,8 @@ if ($orderParam) {
     }
 }
 $catNames = $pdo->query('SELECT name FROM lab_tests WHERE is_active = 1 ORDER BY sort_order, name')->fetchAll(PDO::FETCH_COLUMN);
+$rates = [];
+try { foreach ($pdo->query('SELECT name_key, amount FROM lab_test_rates') as $r) { $rates[$r['name_key']] = (float) $r['amount']; } } catch (Throwable $e) { /* table not created yet */ }
 $doctors = $pdo->query("SELECT name FROM users WHERE base_role = 'DOCTOR' AND is_active = 1 ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
 
 $list = []; $unbilled = [];
@@ -229,6 +245,10 @@ table.lr-res td{padding:4px 4px;border-bottom:1px dotted var(--border,#e2e8e4)}
 .lb-tot{margin-left:auto;width:300px;margin-top:12px}.lb-tot div{display:flex;justify-content:space-between;padding:3px 0}
 .lb-tot .bal{color:#b42318;font-weight:700}
 .hidden{display:none}
+.lb-modal{position:fixed;inset:0;background:#0006;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.lb-modal>div{background:#fff;border-radius:12px;padding:18px;max-width:460px;width:100%}
+.lb-modal label{display:flex;gap:8px;align-items:center;padding:6px 0;font-size:14px;color:inherit;cursor:pointer}
+.lb-modal label input{width:auto}
 </style>
 CSS;
 require __DIR__ . '/partials/head.php';
@@ -359,7 +379,37 @@ function calc(){
   document.getElementById('t1').textContent=fmt(t);document.getElementById('t2').textContent=fmt(net);
   document.getElementById('t3').textContent=fmt(r);document.getElementById('t4').textContent=fmt(net-r);
 }
+var RATES = <?= json_encode((object) $rates, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+// Auto-fill the amount from a saved rate. Never overwrites a typed amount (only an empty one, or one this script filled for the previous title).
+rows.addEventListener('change',function(e){
+  if(e.target.name!=='l[title][]')return;
+  var amt=e.target.closest('tr').querySelector('.amt'),r=RATES[e.target.value.trim().toLowerCase()];
+  if(r!==undefined&&(amt.value.trim()===''||amt.dataset.auto===amt.value)){amt.value=r;amt.dataset.auto=String(r);calc()}
+});
 INIT.forEach(addLine);calc();
+// On Save: offer to remember new / changed rates for next time.
+var lbForm=document.getElementById('lbForm'),lbSkip=false;
+lbForm.addEventListener('submit',function(e){
+  if(lbSkip||(e.submitter&&e.submitter.value==='delete'))return;
+  var cand={};
+  rows.querySelectorAll('tr').forEach(function(tr){
+    var t=tr.querySelector('[name="l[title][]"]').value.trim(),a=num(tr.querySelector('.amt').value);
+    if(!t||a<=0)return;
+    var old=RATES[t.toLowerCase()];
+    if(old===undefined||Math.abs(old-a)>0.004)cand[t.toLowerCase()]={t:t,a:a,old:old};
+  });
+  var keys=Object.keys(cand);if(!keys.length)return;
+  e.preventDefault();
+  var m=document.createElement('div');m.className='lb-modal';
+  var h='<div><b>Save these rates for future bills?</b><div style="color:#8b9a91;font-size:12px;margin:2px 0 8px">Saved rates fill in automatically next time; you can still change them on any bill.</div>';
+  keys.forEach(function(k){var c=cand[k];
+    h+='<label><input type="checkbox" checked value="'+esc(c.t)+'"><span>'+esc(c.t)+' &mdash; <b>'+fmt(c.a)+'</b> <span style="color:#8b9a91">'+(c.old===undefined?'(no saved rate)':'(saved: '+fmt(c.old)+')')+'</span></span></label>'});
+  h+='<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button type="button" class="lr-btn ghost" data-go="0">Save bill only</button><button type="button" class="lr-btn" data-go="1">Save bill &amp; rates</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.onclick=function(ev){var go=ev.target.dataset&&ev.target.dataset.go;if(go===undefined)return;
+    if(go==='1')m.querySelectorAll('input:checked').forEach(function(cb){var i=document.createElement('input');i.type='hidden';i.name='save_rate[]';i.value=cb.value;lbForm.appendChild(i)});
+    lbSkip=true;lbForm.submit()};
+});
 document.getElementById('addLine').onclick=function(){addLine();calc()};
 rows.onclick=function(e){if(e.target.classList.contains('rm')&&rows.children.length>1){e.target.closest('tr').remove();calc()}};
 document.getElementById('lbForm').addEventListener('input',calc);
