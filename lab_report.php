@@ -140,6 +140,16 @@ if (!$form) {
                            FROM lab_orders o LEFT JOIN patients p ON p.id = o.patient_id ORDER BY o.id DESC LIMIT 200')->fetchAll();
 }
 
+// Defaults come from the bill: specimen = booking time, report = latest per-test report time on the bill.
+// Only used until the report has its own saved times; both stay editable.
+$billSpec = $billRep = null;
+if ($order) {
+    $st = $pdo->prepare('SELECT COALESCE(i.billed_at, i.created_at) bt, (SELECT MAX(l.reporting_at) FROM lab_invoice_lines l WHERE l.invoice_id = i.id) rt FROM lab_invoices i WHERE i.order_id = ?');
+    $st->execute([$orderId]); $bi = $st->fetch();
+    if ($bi) { $billSpec = $bi['bt']; $billRep = $bi['rt'] ?: $bi['bt']; }
+}
+$fmtDt = fn($t) => date('Y-m-d\TH:i', $t ? strtotime($t) : time());
+
 // Pre-fill values (edit, or re-render after a validation error).
 $src = $error ? $_POST : [];
 $isWalk = $error ? (($_POST['patient_mode'] ?? '') === 'wk') : ($order && !$order['patient_id']);
@@ -151,8 +161,8 @@ $pre = [
     'w_gender' => $error ? ($_POST['w_gender'] ?? '') : ($order['walkin_gender'] ?? ''),
     'w_phone' => $error ? ($_POST['w_phone'] ?? '') : ($order['walkin_phone'] ?? ''),
     'referred_by' => $error ? ($_POST['referred_by'] ?? '') : ($order['referred_by'] ?? ''),
-    'specimen_at' => $error ? ($_POST['specimen_at'] ?? '') : ($order && $order['specimen_at'] ? date('Y-m-d\TH:i', strtotime($order['specimen_at'])) : date('Y-m-d\TH:i')),
-    'report_at' => $error ? ($_POST['report_at'] ?? '') : ($order && $order['report_at'] ? date('Y-m-d\TH:i', strtotime($order['report_at'])) : date('Y-m-d\TH:i')),
+    'specimen_at' => $error ? ($_POST['specimen_at'] ?? '') : ($order && $order['specimen_at'] ? date('Y-m-d\TH:i', strtotime($order['specimen_at'])) : $fmtDt($billSpec)),
+    'report_at' => $error ? ($_POST['report_at'] ?? '') : ($order && $order['report_at'] ? date('Y-m-d\TH:i', strtotime($order['report_at'])) : $fmtDt($billRep)),
     'note' => $error ? ($_POST['note'] ?? '') : ($order ? (string) $order['note'] : 'Please correlate with clinical data and other investigations.'),
 ];
 $initRows = [];
