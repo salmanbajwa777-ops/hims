@@ -1,0 +1,209 @@
+<!doctype html>
+<title>My Shift Log Mock</title>
+<style>
+  :root{
+    --sidebar-bg:#16261f; --sidebar-bg-2:#1c2f26; --sidebar-active:#4a8f6e;
+    --sidebar-text:#c9d6cd; --sidebar-text-dim:#7d9089; --sidebar-label:#6f8478;
+    --bg:#f5f7f5; --card:#ffffff; --border:#e2e8e4; --border-strong:#d3dbd5;
+    --ink:#1c2b23; --ink-dim:#5c6d63; --ink-faint:#8b9a91;
+    --accent:#1a7f7e; --accent-dim:#e6f2f1;
+    --paid:#1f8a5f; --paid-bg:#e7f5ee;
+    --pending:#b8860b; --pending-bg:#fbf3e0;
+    --void:#b23b3b; --void-bg:#fbe9e9;
+    --disc:#7c4ea8; --disc-bg:#f3ecfa;
+    --disch:#4c5bb2; --disch-bg:#eef0fb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px}
+  .app{display:flex;min-height:100vh}
+
+  aside{width:264px;flex:0 0 264px;background:var(--sidebar-bg);color:var(--sidebar-text);padding:20px 14px;display:flex;flex-direction:column;gap:20px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:#fff;padding:0 6px 4px}
+  .logo-mark{width:30px;height:30px;border-radius:9px;background:var(--sidebar-active);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#0e1a14}
+  .nav-group{display:flex;flex-direction:column;gap:2px}
+  .nav-group-label{font-size:10.5px;letter-spacing:.09em;font-weight:700;color:var(--sidebar-label);text-transform:uppercase;padding:6px 10px 4px}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;color:var(--sidebar-text);text-decoration:none;font-weight:600;font-size:13px}
+  .nav-item svg{width:16px;height:16px;flex:0 0 16px}
+  .nav-item.active{background:var(--sidebar-active);color:#fff}
+  .nav-item.new{background:var(--sidebar-bg-2);outline:1px dashed #4a8f6e88}
+  .nav-item .badge{margin-left:auto;background:#e0752c;color:#fff;font-size:10px;font-weight:800;border-radius:20px;padding:1px 6px}
+  .foot{margin-top:auto;font-size:12px;color:var(--sidebar-text-dim);padding:10px 6px;border-top:1px solid #ffffff14;line-height:1.5}
+  .foot b{color:#fff}
+
+  main{flex:1;padding:28px 34px;min-width:0}
+  .page-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px}
+  .page-head h1{margin:0;font-size:21px;letter-spacing:-.01em}
+  .page-head p{margin:2px 0 0;color:var(--ink-dim);font-size:13px}
+  .shift-banner{display:flex;align-items:center;gap:8px;background:var(--accent-dim);color:var(--accent);border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;margin:14px 0 18px;width:fit-content}
+  .shift-banner svg{width:14px;height:14px}
+  .shift-banner .sep{opacity:.5;font-weight:400}
+
+  .summary-row{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+  .stat{flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
+  .stat .num{font-size:21px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .stat .lbl{font-size:11px;color:var(--ink-dim);margin-top:2px;font-weight:600}
+  .stat.accent .num{color:var(--accent)}
+  .stat.warn .num{color:var(--pending)}
+
+  .filter-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:16px}
+  .chip-group{display:flex;gap:6px;background:#eef2ef;border-radius:10px;padding:3px}
+  .chip{border:0;background:transparent;padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--ink-dim);cursor:pointer}
+  .chip.active{background:var(--card);color:var(--accent);box-shadow:0 1px 2px #0001}
+  .search-mini{margin-left:auto;display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--border-strong);border-radius:9px;padding:7px 11px;font-size:12.5px;color:var(--ink-faint);min-width:190px}
+  .search-mini svg{width:14px;height:14px}
+
+  .table-card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+  .table-scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:760px}
+  thead th{text-align:left;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:#fafbfa;white-space:nowrap}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#fafbfa}
+  .pname{font-weight:700;color:var(--ink)}
+  .pmeta{color:var(--ink-faint);font-size:11.5px;margin-top:1px}
+  .time{font-variant-numeric:tabular-nums;color:var(--ink-dim);font-size:12.5px;white-space:nowrap}
+  .event-tag{font-weight:700;font-size:11px;padding:3px 9px;border-radius:7px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .event-tag svg{width:12px;height:12px}
+  .ev-invoice{background:var(--paid-bg);color:var(--paid)}
+  .ev-discount{background:var(--disc-bg);color:var(--disc)}
+  .ev-refund{background:var(--void-bg);color:var(--void)}
+  .ev-discharge{background:var(--disch-bg);color:var(--disch)}
+  .fee{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .fee.neg{color:var(--void)}
+  .linked{color:var(--ink-faint);font-size:11.5px}
+  .same-patient td:first-child{position:relative}
+  .same-patient td:first-child::before{content:"";position:absolute;left:6px;top:0;bottom:0;width:2px;background:var(--border-strong)}
+
+  @media (max-width:900px){
+    .app{flex-direction:column}
+    aside{width:100%;flex:none;flex-direction:row;flex-wrap:wrap;padding:14px}
+    main{padding:18px}
+    .search-mini{min-width:0;flex:1 1 100%}
+  }
+</style>
+
+<div class="app">
+  <aside>
+    <div class="brand"><span class="logo-mark">H</span> HIMS</div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Overview</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> Dashboard</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Workspace</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg> Patients</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2Z"/></svg> Checkout &amp; Billing</a>
+      <a class="nav-item new active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> My Shift Log<span class="badge">NEW</span></a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M3 16h18"/></svg> Admissions</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Day Closing</a>
+    </div>
+
+    <div class="foot">Signed in as <b>NIDA (RECEPTION)</b><br>Staff</div>
+  </aside>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>My Shift Log</h1>
+        <p>Everything you've billed, discounted, refunded or discharged today</p>
+      </div>
+    </div>
+
+    <div class="shift-banner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Today's shift &middot; Thu 25 Sep 2026 <span class="sep">&middot;</span> opened 09:02 AM <span class="sep">&middot;</span> not yet closed
+    </div>
+
+    <div class="summary-row">
+      <div class="stat accent"><div class="num">14</div><div class="lbl">Events logged</div></div>
+      <div class="stat"><div class="num">11</div><div class="lbl">Invoices raised</div></div>
+      <div class="stat warn"><div class="num">2</div><div class="lbl">Refunds issued</div></div>
+      <div class="stat"><div class="num">Rs 34,200</div><div class="lbl">Net collected</div></div>
+    </div>
+
+    <div class="filter-bar">
+      <div class="chip-group">
+        <button class="chip active">All events</button>
+        <button class="chip">Invoices</button>
+        <button class="chip">Discounts</button>
+        <button class="chip">Refunds</button>
+        <button class="chip">Discharges</button>
+      </div>
+      <div class="search-mini"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Search patient or invoice #&hellip;</div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Event</th><th>Patient</th><th>Reference</th><th>Amount</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr class="same-patient">
+            <td class="time">11:42 AM</td>
+            <td><span class="event-tag ev-invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2Z"/></svg>Invoice raised</span></td>
+            <td><div class="pname">Sana Tariq</div><div class="pmeta">MRN 00517</div></td>
+            <td class="linked">P-2026-0067</td>
+            <td class="fee">Rs 12,000</td>
+            <td><a href="#" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none">View</a></td>
+          </tr>
+          <tr class="same-patient">
+            <td class="time">12:15 PM</td>
+            <td><span class="event-tag ev-discount"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>Discount applied</span></td>
+            <td><div class="pname">Sana Tariq</div><div class="pmeta">MRN 00517</div></td>
+            <td class="linked">on P-2026-0067 &middot; 10% staff discount</td>
+            <td class="fee neg">&minus; Rs 1,200</td>
+            <td><a href="#" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none">View</a></td>
+          </tr>
+          <tr>
+            <td class="time">1:03 PM</td>
+            <td><span class="event-tag ev-invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2Z"/></svg>Invoice raised</span></td>
+            <td><div class="pname">Ayesha Khan</div><div class="pmeta">MRN 00482</div></td>
+            <td class="linked">A-2026-0412</td>
+            <td class="fee">Rs 2,000</td>
+            <td><a href="#" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none">View</a></td>
+          </tr>
+          <tr class="same-patient">
+            <td class="time">2:20 PM</td>
+            <td><span class="event-tag ev-refund"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v6h6"/></svg>Refund issued</span></td>
+            <td><div class="pname">Bilal Ahmed</div><div class="pmeta">MRN 00311</div></td>
+            <td class="linked">RF-2026-0031 &middot; Cash</td>
+            <td class="fee neg">&minus; Rs 2,000</td>
+            <td><a href="#" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none">View</a></td>
+          </tr>
+          <tr class="same-patient">
+            <td class="time">2:21 PM</td>
+            <td><span class="event-tag ev-invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2Z"/></svg>Invoice raised</span></td>
+            <td><div class="pname">Bilal Ahmed</div><div class="pmeta">MRN 00311</div></td>
+            <td class="linked">P-2026-0068 &middot; rebooked, revised procedure</td>
+            <td class="fee">Rs 9,500</td>
+            <td><a href="#" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none">View</a></td>
+          </tr>
+          <tr class="same-patient">
+            <td class="time">3:47 PM</td>
+            <td><span class="event-tag ev-discharge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M3 16h18"/></svg>Discharged</span></td>
+            <td><div class="pname">Hamid Raza</div><div class="pmeta">MRN 00276</div></td>
+            <td class="linked">Admission I-2026-0021 &middot; 3-day stay</td>
+            <td class="fee">Rs 18,000</td>
+            <td><a href="#" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none">View</a></td>
+          </tr>
+          <tr class="same-patient">
+            <td class="time">3:51 PM</td>
+            <td><span class="event-tag ev-discount"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>Discount applied</span></td>
+            <td><div class="pname">Hamid Raza</div><div class="pmeta">MRN 00276</div></td>
+            <td class="linked">on I-2026-0021 &middot; discharge lump-sum waiver</td>
+            <td class="fee neg">&minus; Rs 1,000</td>
+            <td><a href="#" style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none">View</a></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="foot-row" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;font-size:12px;color:var(--ink-dim)">
+        <span>Showing 7 of 14 events</span>
+        <span>Newest first &middot; same-patient events are rail-linked</span>
+      </div>
+    </div>
+  </main>
+</div>

@@ -1,0 +1,193 @@
+<!doctype html>
+<title>My Patients Mock</title>
+<style>
+  :root{
+    --sidebar-bg:#16261f; --sidebar-bg-2:#1c2f26; --sidebar-active:#4a8f6e;
+    --sidebar-text:#c9d6cd; --sidebar-text-dim:#7d9089; --sidebar-label:#6f8478;
+    --bg:#f5f7f5; --card:#ffffff; --border:#e2e8e4; --border-strong:#d3dbd5;
+    --ink:#1c2b23; --ink-dim:#5c6d63; --ink-faint:#8b9a91;
+    --accent:#1a7f7e; --accent-dim:#e6f2f1;
+    --paid:#1f8a5f; --paid-bg:#e7f5ee;
+    --pending:#b8860b; --pending-bg:#fbf3e0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px}
+  .app{display:flex;min-height:100vh}
+
+  /* ---------------- Sidebar (mirrors doctor_sidebar.php) ---------------- */
+  aside{width:264px;flex:0 0 264px;background:var(--sidebar-bg);color:var(--sidebar-text);padding:20px 14px;display:flex;flex-direction:column;gap:22px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:#fff;padding:0 6px 4px}
+  .logo-mark{width:30px;height:30px;border-radius:9px;background:var(--sidebar-active);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#0e1a14}
+  .nav-group{display:flex;flex-direction:column;gap:2px}
+  .nav-group-label{font-size:10.5px;letter-spacing:.09em;font-weight:700;color:var(--sidebar-label);text-transform:uppercase;padding:6px 10px 4px}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;color:var(--sidebar-text);text-decoration:none;font-weight:600;font-size:13.5px}
+  .nav-item svg{width:17px;height:17px;flex:0 0 17px}
+  .nav-item.active{background:var(--sidebar-active);color:#fff}
+  .nav-item.new{background:var(--sidebar-bg-2);outline:1px dashed #4a8f6e88}
+  .nav-item .badge{margin-left:auto;background:#e0752c;color:#fff;font-size:10.5px;font-weight:800;border-radius:20px;padding:1px 7px}
+  .foot{margin-top:auto;font-size:12px;color:var(--sidebar-text-dim);padding:10px 6px;border-top:1px solid #ffffff14;line-height:1.5}
+  .foot b{color:#fff}
+
+  /* ---------------- Content ---------------- */
+  main{flex:1;padding:28px 34px;min-width:0}
+  .page-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+  .page-head h1{margin:0;font-size:21px;letter-spacing:-.01em}
+  .page-head p{margin:2px 0 0;color:var(--ink-dim);font-size:13px}
+
+  .filter-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:16px}
+  .chip-group{display:flex;gap:6px;background:#eef2ef;border-radius:10px;padding:3px}
+  .chip{border:0;background:transparent;padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--ink-dim);cursor:pointer}
+  .chip.active{background:var(--card);color:var(--accent);box-shadow:0 1px 2px #0001}
+  .divider-v{width:1px;height:26px;background:var(--border-strong)}
+  .date-field{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border-strong);border-radius:9px;padding:7px 10px;font-size:12.5px;color:var(--ink)}
+  .date-field svg{width:14px;height:14px;color:var(--ink-faint)}
+  .to{color:var(--ink-faint);font-size:12px}
+  .search-mini{margin-left:auto;display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--border-strong);border-radius:9px;padding:7px 11px;font-size:12.5px;color:var(--ink-faint);min-width:190px}
+  .search-mini svg{width:14px;height:14px}
+  .btn{border:1px solid var(--border-strong);background:var(--card);border-radius:9px;padding:7px 13px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;display:flex;align-items:center;gap:6px}
+  .btn svg{width:14px;height:14px}
+
+  .summary-row{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+  .stat{flex:1;min-width:130px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
+  .stat .num{font-size:22px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .stat .lbl{font-size:11.5px;color:var(--ink-dim);margin-top:2px;font-weight:600}
+  .stat.accent .num{color:var(--accent)}
+
+  .table-card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);font-weight:700;padding:12px 16px;border-bottom:1px solid var(--border);background:#fafbfa}
+  tbody td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#fafbfa}
+  .pname{font-weight:700;color:var(--ink)}
+  .pmeta{color:var(--ink-faint);font-size:12px;margin-top:1px}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:700}
+  .pill.paid{background:var(--paid-bg);color:var(--paid)}
+  .pill.pending{background:var(--pending-bg);color:var(--pending)}
+  .pill.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .type-tag{background:var(--accent-dim);color:var(--accent);font-weight:700;font-size:11.5px;padding:3px 9px;border-radius:7px}
+  .fee{font-variant-numeric:tabular-nums;font-weight:700}
+  .day-sep td{background:#f7f8f7;padding:7px 16px;font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--ink-dim);text-transform:uppercase;border-bottom:1px solid var(--border)}
+  .foot-row{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;font-size:12px;color:var(--ink-dim)}
+
+  @media (max-width:900px){
+    .app{flex-direction:column}
+    aside{width:100%;flex:none;flex-direction:row;flex-wrap:wrap;padding:14px}
+    main{padding:18px}
+    .search-mini{min-width:0;flex:1 1 100%;order:5}
+  }
+</style>
+
+<div class="app">
+  <aside>
+    <div class="brand"><span class="logo-mark">H</span> HIMS</div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Clinical</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> My Console</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg> My Queue</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8"/><path d="M3 16h18"/></svg> In-Door (IPD)</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Records</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Find Patient</a>
+      <a class="nav-item new active" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> My Patients<span class="badge">NEW</span></a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> My Schedule</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Analytics</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4"/></svg> My Reports</a>
+    </div>
+
+    <div class="foot">Signed in as <b>DR SALMAN A BAJWA</b><br>Doctor</div>
+  </aside>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>My Patients</h1>
+        <p>Every patient you've seen, by visit date</p>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <div class="chip-group">
+        <button class="chip">Today</button>
+        <button class="chip">7 Days</button>
+        <button class="chip active">This Month</button>
+        <button class="chip">All Time</button>
+      </div>
+      <div class="divider-v"></div>
+      <div class="date-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> 01/09/2026</div>
+      <span class="to">to</span>
+      <div class="date-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> 25/09/2026</div>
+      <div class="search-mini"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Search by name or MRN&hellip;</div>
+      <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v14M6 11l6 6 6-6"/><path d="M4 21h16"/></svg> Export</button>
+    </div>
+
+    <div class="summary-row">
+      <div class="stat accent"><div class="num">37</div><div class="lbl">Patients seen</div></div>
+      <div class="stat"><div class="num">44</div><div class="lbl">Total visits</div></div>
+      <div class="stat"><div class="num">7</div><div class="lbl">Revisits (free)</div></div>
+      <div class="stat"><div class="num">Rs 96,600</div><div class="lbl">Fees earned</div></div>
+    </div>
+
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr><th>Token</th><th>Patient</th><th>Visit type</th><th>Fee</th><th>Payment</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr class="day-sep"><td colspan="6">Thursday, 25 Sep 2026</td></tr>
+          <tr>
+            <td>#12</td>
+            <td><div class="pname">Ayesha Khan</div><div class="pmeta">MRN 00482 &middot; 29y &middot; F</div></td>
+            <td><span class="type-tag">New Consult</span></td>
+            <td class="fee">Rs 2,000</td>
+            <td><span class="pill paid"><span class="dot"></span>Paid &middot; Cash</span></td>
+            <td><a href="#" class="btn" style="padding:5px 10px">View</a></td>
+          </tr>
+          <tr>
+            <td>#09</td>
+            <td><div class="pname">Bilal Ahmed</div><div class="pmeta">MRN 00311 &middot; 41y &middot; M</div></td>
+            <td><span class="type-tag" style="background:#eef2ef;color:var(--ink-dim)">Revisit</span></td>
+            <td class="fee">Rs 0</td>
+            <td><span class="pill paid"><span class="dot"></span>Paid &middot; Online</span></td>
+            <td><a href="#" class="btn" style="padding:5px 10px">View</a></td>
+          </tr>
+          <tr>
+            <td>#03</td>
+            <td><div class="pname">Sana Tariq</div><div class="pmeta">MRN 00517 &middot; 6y &middot; F</div></td>
+            <td><span class="type-tag">New Consult</span></td>
+            <td class="fee">Rs 2,000</td>
+            <td><span class="pill pending"><span class="dot"></span>Pending</span></td>
+            <td><a href="#" class="btn" style="padding:5px 10px">View</a></td>
+          </tr>
+          <tr class="day-sep"><td colspan="6">Wednesday, 24 Sep 2026</td></tr>
+          <tr>
+            <td>#18</td>
+            <td><div class="pname">Hamid Raza</div><div class="pmeta">MRN 00276 &middot; 55y &middot; M</div></td>
+            <td><span class="type-tag">Follow-up</span></td>
+            <td class="fee">Rs 1,500</td>
+            <td><span class="pill paid"><span class="dot"></span>Paid &middot; Cash</span></td>
+            <td><a href="#" class="btn" style="padding:5px 10px">View</a></td>
+          </tr>
+          <tr>
+            <td>#14</td>
+            <td><div class="pname">Mehak Fatima</div><div class="pmeta">MRN 00398 &middot; 33y &middot; F</div></td>
+            <td><span class="type-tag">New Consult</span></td>
+            <td class="fee">Rs 2,000</td>
+            <td><span class="pill paid"><span class="dot"></span>Paid &middot; Online</span></td>
+            <td><a href="#" class="btn" style="padding:5px 10px">View</a></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="foot-row">
+        <span>Showing 5 of 44 visits</span>
+        <span>Sorted by visit date, newest first</span>
+      </div>
+    </div>
+  </main>
+</div>
