@@ -182,7 +182,8 @@ $doctors = $pdo->query("SELECT name FROM users WHERE base_role = 'DOCTOR' AND is
 
 $list = []; $unbilled = [];
 if (!$form) {
-    $list = $pdo->query('SELECT i.id, i.invoice_no, i.created_at, i.billed_at, i.adjustment, i.received, COALESCE(p.name, o.walkin_name) pname, p.mrn,
+    $list = $pdo->query('SELECT i.id, i.invoice_no, i.created_at, i.billed_at, i.adjustment, i.received, i.order_id, COALESCE(p.name, o.walkin_name) pname, p.mrn,
+                                (SELECT COUNT(*) FROM lab_results r WHERE r.order_id = i.order_id) + (SELECT COUNT(*) FROM lab_result_files f WHERE f.order_id = i.order_id) nreport,
                                 (SELECT COALESCE(SUM(l.amount),0) FROM lab_invoice_lines l WHERE l.invoice_id = i.id) total
                            FROM lab_invoices i JOIN lab_orders o ON o.id = i.order_id LEFT JOIN patients p ON p.id = o.patient_id
                           ORDER BY i.id DESC LIMIT 200')->fetchAll();
@@ -259,7 +260,7 @@ require __DIR__ . '/partials/sidebar.php';
         <?php else: ?><a class="lr-btn" href="lab_bill.php?new=1">+ New bill</a><?php endif; ?>
     </div>
     <?php if ($error): ?><div class="lr-err"><?= lab_h($error) ?></div><?php endif; ?>
-    <?php if (isset($_GET['saved'])): ?><div class="lr-ok">Saved.</div><?php endif; ?>
+    <?php if (isset($_GET['saved'])): ?><div class="lr-ok">Saved.<?php if ($invId && !empty($inv['order_id'])): ?> Next: <a href="lab_report.php?id=<?= (int) $inv['order_id'] ?>"><strong>Generate report for this patient &rarr;</strong></a><?php endif; ?></div><?php endif; ?>
 
 <?php if (!$form): ?>
     <div class="lr-card" style="padding:0;overflow:auto">
@@ -275,7 +276,8 @@ require __DIR__ . '/partials/sidebar.php';
                 <td style="text-align:right"><?= lb_n($net) ?></td>
                 <td style="text-align:right"><?= lb_n($r['received']) ?></td>
                 <td style="text-align:right;<?= $bal > 0 ? 'color:#b42318;font-weight:700' : '' ?>"><?= $bal > 0 ? lb_n($bal) : '—' ?></td>
-                <td style="white-space:nowrap"><a href="lab_bill.php?id=<?= (int) $r['id'] ?>">Edit</a> &middot; <a href="lab_bill_print.php?id=<?= (int) $r['id'] ?>" target="_blank">Print</a></td>
+                <td style="white-space:nowrap"><a href="lab_bill.php?id=<?= (int) $r['id'] ?>">Edit</a> &middot; <a href="lab_bill_print.php?id=<?= (int) $r['id'] ?>" target="_blank">Print</a>
+                    &middot; <a href="lab_report.php?id=<?= (int) $r['order_id'] ?>"><?= (int) $r['nreport'] > 0 ? 'Edit report' : '<strong>Generate report</strong>' ?></a></td>
             </tr>
         <?php endforeach; ?>
         <?php if (!$list): ?><tr><td colspan="7" style="padding:18px;color:#8b9a91">No lab bills yet. Click “New bill”.</td></tr><?php endif; ?>
