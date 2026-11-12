@@ -7,7 +7,6 @@
 const LAB_NAME = 'Metacare Diagnostics';
 const LAB_TAGLINE = 'Laboratory Services';
 const LAB_MAX_PDF = 10485760; // 10 MB
-const LAB_BACKDATE_DAYS = 7;  // how far back a bill's date may be set (edit of an unchanged date is exempt)
 
 function lab_h($v): string { return htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8'); }
 

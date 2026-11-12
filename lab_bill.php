@@ -79,7 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
         if ($billedTs > $nowTs + 300) { throw new RuntimeException('Invoice date cannot be in the future.'); }
         $billedAt = date('Y-m-d H:i:s', $billedTs);
         $backNote = $nowTs - $billedTs > 3600 ? " [back-dated to $billedAt, entered " . date('Y-m-d H:i', $nowTs) . ']' : '';
-        $tooOld = fn($ts) => $nowTs - $ts > LAB_BACKDATE_DAYS * 86400;
 
         $pdo->beginTransaction();
         if ($invId) {
@@ -87,10 +86,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
             $inv = $st->fetch();
             if (!$inv) { throw new RuntimeException('Invoice not found.'); }
             $orderId = (int) $inv['order_id'];
-            $oldB = strtotime((string) ($inv['billed_at'] ?: $inv['created_at']));
-            if (date('Y-m-d H:i', $billedTs) !== date('Y-m-d H:i', $oldB) && $tooOld($billedTs)) {
-                throw new RuntimeException('Invoice date can be at most ' . LAB_BACKDATE_DAYS . ' days back.');
-            }
             $old = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM lab_invoice_lines WHERE invoice_id = ?'); $old->execute([$invId]);
             $oldTotal = (float) $old->fetchColumn();
             $pdo->prepare('UPDATE lab_invoices SET adjustment=?, received=?, billed_at=?, updated_at=NOW() WHERE id=?')->execute([$adj, $rec, $billedAt, $invId]);
@@ -99,7 +94,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
                 . ', adjustment ' . lb_n($inv['adjustment']) . ' -> ' . lb_n($adj) . ', received ' . lb_n($inv['received']) . ' -> ' . lb_n($rec) . $backNote];
             if ($orderId) { $pdo->prepare('UPDATE lab_orders SET referred_by=?, updated_at=NOW() WHERE id=?')->execute([$ref, $orderId]); }
         } else {
-            if ($tooOld($billedTs)) { throw new RuntimeException('Invoice date can be at most ' . LAB_BACKDATE_DAYS . ' days back.'); }
             if ($orderId) {
                 if (!lab_load_order($pdo, $orderId)) { throw new RuntimeException('Order not found.'); }
                 $dup = $pdo->prepare('SELECT id FROM lab_invoices WHERE order_id = ?'); $dup->execute([$orderId]);
@@ -329,7 +323,7 @@ require __DIR__ . '/partials/sidebar.php';
         <div class="lr-row" style="margin-top:10px">
             <div><label>Referred by</label><input name="referred_by" list="docs" value="<?= lab_h($pre['referred_by']) ?>">
                 <datalist id="docs"><?php foreach ($doctors as $d): ?><option value="<?= lab_h($d) ?>"><?php endforeach; ?></datalist></div>
-            <div><label>Invoice date &amp; time (back-date up to <?= LAB_BACKDATE_DAYS ?> days)</label>
+            <div><label>Invoice date &amp; time (any past date)</label>
                 <input type="datetime-local" name="billed_at" value="<?= lab_h($pre['billed_at']) ?>"></div>
         </div>
     </div>
