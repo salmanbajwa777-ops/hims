@@ -14,12 +14,14 @@ $st = $pdo->prepare('SELECT * FROM lab_results WHERE order_id = ? ORDER BY sort_
 $rows = $st->fetchAll();
 if (!$rows) { exit('This order has no typed results to print.'); }
 $pt = lab_patient_block($o);
+$ist = $pdo->prepare('SELECT invoice_no FROM lab_invoices WHERE order_id = ?'); $ist->execute([$id]);
+$invNo = (string) ($ist->fetchColumn() ?: '');
 $b = brand(null);
 $labAddr = $b['address_line1'] . ', ' . $b['address_line2']; // no clinic name: the lab footer shows the street address only
 $fmt = fn($t) => $t ? date('d-M-Y g:i a', strtotime($t)) : '';
 ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lab Report <?= lab_h($pt['name']) ?></title>
+<title><?= lab_h(trim(preg_replace('/[^A-Za-z0-9]+/', '_', 'Lab Report ' . $pt['name']), '_') . '_' . ($invNo ? $invNo : 'order') . '-' . $id . '_' . date('Ymd-Hi')) ?></title>
 <style>
 @page{size:A4;margin:12mm 12mm 26mm}
 *{box-sizing:border-box}
