@@ -317,6 +317,30 @@ function rmTest(a){var tid=a.closest('tr').dataset.tid;[].slice.call(tb.querySel
     h.innerHTML='<td class="sec" colspan="5">'+esc(x.section)+' &mdash; '+esc(x.test)+'</td><td class="sec"><a href="#" onclick="return rmTest(this)">&times;</a></td>';tb.appendChild(h);last=x.tid+'|'+x.test;lg=null}
   if(x.g&&x.g!==lg){var gr=document.createElement('tr');gr.dataset.tid=x.tid;gr.innerHTML='<td class="grp" colspan="6">'+esc(x.g)+'</td>';tb.appendChild(gr)}
   lg=x.g;addRow(x);tb.lastChild.dataset.tid=x.tid})})();
+// DLC % -> Absolute count (= % x TLC / 100). Fills only empty or previously auto-filled cells; manual entries are never overwritten.
+var ABS={'Neutrophils':'Absolute Neutrophils','Lymphocytes':'Absolute Lymphocytes','Monocytes':'Absolute Monocytes','Eosinophils':'Absolute Eosinophils','Basophils':'Absolute Basophils'};
+function rowByParam(scope,name){var f=null;[].slice.call(scope.querySelectorAll('tr')).forEach(function(r){var h=r.querySelector('input[name="r[param]\[\]"]');if(h&&h.value===name)f=r});return f}
+function calcAbs(tr){
+  var h=tr.querySelector('input[name="r[param]\[\]"]');if(!h)return;
+  var tid=tr.dataset.tid,scope=tb,n=h.value,rows=[].slice.call(tb.querySelectorAll('tr[data-tid="'+tid+'"]'));
+  var wrap={querySelectorAll:function(){return rows}};
+  var tlcRow=rowByParam(wrap,'WBC Count')||rowByParam(wrap,'TLC');
+  var tlc=tlcRow?parseFloat(tlcRow.querySelector('input[name="r[value][]"]').value.replace(/,/g,'')):NaN;
+  if(isNaN(tlc))return;
+  var targets=(n==='WBC Count'||n==='TLC')?Object.keys(ABS):(ABS[n]?[n]:[]);
+  targets.forEach(function(k){
+    var pr=rowByParam(wrap,k),ar=rowByParam(wrap,ABS[k]);if(!pr||!ar)return;
+    var pv=parseFloat(pr.querySelector('input[name="r[value][]"]').value),ai=ar.querySelector('input[name="r[value][]"]');
+    if(ai.value!==''&&ai.dataset.auto!=='1')return;
+    if(isNaN(pv)){if(ai.dataset.auto==='1'){ai.value='';ai.dataset.auto=''}return}
+    ai.value=Math.round(pv*tlc/100);ai.dataset.auto='1';
+  });
+}
+tb.addEventListener('input',function(e){
+  var t=e.target;if(t.name!=='r[value][]')return;
+  t.dataset.auto='';
+  calcAbs(t.closest('tr'));
+});
 document.getElementById('addBtn').onclick=function(){addTest(document.getElementById('addSel').value)};
 // Patient mode + search
 document.querySelectorAll('.lr-seg span').forEach(function(s){s.onclick=function(){
