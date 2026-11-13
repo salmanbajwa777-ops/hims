@@ -79,5 +79,5 @@ function brand(?string $specialty = null): array {
 // sql/add_doctor_specialty_categories.sql: only DENTAL swaps, every other value
 // falls back.
 function brand_logo(?string $specialty = null): string {
-    return $specialty === 'DENTAL' ? 'logo-dental.png' : 'logo-general.png';
+    return $specialty === 'DENTAL' ? 'logo-dental.svg' : 'logo-general.svg';
 }

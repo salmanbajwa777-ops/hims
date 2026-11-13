@@ -89,7 +89,7 @@ $n2 = fn(float $v) => number_format($v, 2);
 
         <div class="header">
             <h1 class="clinic-name">
-                <img class="clinic-logo" src="assets/images/logo-general.png" alt="">
+                <img class="clinic-logo" src="assets/images/logo-general.svg" alt="">
                 <?= $clinicName ?>
             </h1>
             <p class="website"><?= $clinicWebsite ?></p>

@@ -46,7 +46,7 @@ body{margin:0;background:#e9ecea;font:12.5px -apple-system,BlinkMacSystemFont,"S
 </style></head><body>
 <div class="bar"><button onclick="print()">Print / Save as PDF</button></div>
 <div class="paper">
-  <div class="ph"><img src="assets/img/metacare_logo.png" alt=""><div><div class="n"><?= lab_h(LAB_NAME) ?></div><div class="t"><?= lab_h(LAB_TAGLINE) ?></div></div></div>
+  <div class="ph"><img src="assets/img/metacare_logo.svg" alt=""><div><div class="n"><?= lab_h(LAB_NAME) ?></div><div class="t"><?= lab_h(LAB_TAGLINE) ?></div></div></div>
   <div class="pi">
     <div><b>Name:</b> <?= lab_h($pt['name']) ?></div><div><b>Age/Gender:</b> <?= lab_h($pt['agegender']) ?></div>
     <?php if ($pt['mrn']): ?><div><b>MR Number:</b> <?= lab_h($pt['mrn']) ?></div><?php else: ?><div></div><?php endif; ?>

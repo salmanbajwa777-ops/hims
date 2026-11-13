@@ -51,7 +51,7 @@ table.b td{padding:4px 3px;border-bottom:1px solid #ddd}.r{text-align:right}
 </style></head><body>
 <div class="bar"><button onclick="print()">Print / Save as PDF</button></div>
 <div class="paper">
-  <div class="ph"><img src="assets/img/metacare_logo.png" alt=""><div><div class="n"><?= lab_h(LAB_NAME) ?></div><div class="t">Your Health Comes First</div></div>
+  <div class="ph"><img src="assets/img/metacare_logo.svg" alt=""><div><div class="n"><?= lab_h(LAB_NAME) ?></div><div class="t">Your Health Comes First</div></div>
     <div class="r">Phone: <?= lab_h($b['phone']) ?><br><?= lab_h($b['address_line1']) ?><br><?= lab_h($b['address_line2']) ?></div></div>
   <div class="tags"><span class="tag"><?= lab_h($inv['invoice_no']) ?></span><span class="tag"><?= lab_h($copy) ?></span></div>
   <div class="pi">

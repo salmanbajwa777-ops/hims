@@ -21,7 +21,7 @@ $clinicPhone = $b['phone'];
 $clinicWebsite = $b['website'];
 
 // ER has no specialty/doctor — always the general logo.
-$logoFile = 'logo-general.png';
+$logoFile = 'logo-general.svg';
 
 $patientDobDisplay = $bill['dob'] ? date('d/m/Y', strtotime($bill['dob'])) : '';
 // Frozen at the first print so a duplicate repeats the original's footer rather
