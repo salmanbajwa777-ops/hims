@@ -23,7 +23,7 @@ $fmt = fn($t) => $t ? date('d-M-Y g:i a', strtotime($t)) : '';
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?= lab_h(trim(preg_replace('/[^A-Za-z0-9]+/', '_', 'Lab Report ' . $pt['name']), '_') . '_' . ($invNo ? $invNo : 'order') . '-' . $id . '_' . date('Ymd-Hi')) ?></title>
 <style>
-@page{size:A4;margin:12mm 12mm 26mm}
+@page{size:A4;margin:0}
 *{box-sizing:border-box}
 body{margin:0;background:#e9ecea;font:12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#111}
 .bar{max-width:794px;margin:10px auto;text-align:right}
@@ -41,11 +41,12 @@ body{margin:0;background:#e9ecea;font:12.5px -apple-system,BlinkMacSystemFont,"S
 .nt{margin-top:10px;white-space:pre-line}
 .pf{position:fixed;left:12mm;right:12mm;bottom:0;border-top:3px solid #02624f;padding-top:6px;font-size:11px;color:#333;display:flex;justify-content:space-between;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pfx{position:absolute;left:40px;right:40px;bottom:20px;border-top:3px solid #02624f;padding-top:6px;font-size:11px;color:#333;display:flex;justify-content:space-between}
-@media print{body{background:#fff}.bar,.pfx{display:none}.paper{width:auto;margin:0;padding:0;min-height:0}}
+table.wrap{width:100%;border-collapse:collapse}table.wrap td{padding:0}.sp-t,.sp-b{display:none}
+@media print{body{background:#fff}.bar,.pfx{display:none}.paper{width:auto;margin:0;padding:0 12mm;min-height:0}.sp-t{display:block;height:12mm}.sp-b{display:block;height:26mm}.pf{bottom:8mm}}
 @media screen{.pf{display:none}}
 </style></head><body>
 <div class="bar"><button onclick="print()">Print / Save as PDF</button></div>
-<div class="paper">
+<div class="paper"><table class="wrap"><thead><tr><td><div class="sp-t"></div></td></tr></thead><tfoot><tr><td><div class="sp-b"></div></td></tr></tfoot><tbody><tr><td>
   <div class="ph"><img src="assets/img/metacare_logo.svg" alt=""><div><div class="n"><?= lab_h(LAB_NAME) ?></div><div class="t"><?= lab_h(LAB_TAGLINE) ?></div></div></div>
   <div class="pi">
     <div><b>Name:</b> <?= lab_h($pt['name']) ?></div><div><b>Age/Gender:</b> <?= lab_h($pt['agegender']) ?></div>
@@ -70,6 +71,7 @@ foreach ($rows as $r) {
 ?>
   <?php if (trim((string) $o['note']) !== ''): ?><div class="nt"><?= lab_h($o['note']) ?></div><?php endif; ?>
   <div class="pfx"><span><?= lab_h($labAddr) ?> &middot; <?= lab_h($b['phone']) ?></span><span>Printed <?= date('d-M-Y') ?></span></div>
+</td></tr></tbody></table>
 </div>
 <div class="pf"><span><?= lab_h($labAddr) ?> &middot; <?= lab_h($b['phone']) ?></span><span>Printed <?= date('d-M-Y') ?></span></div>
 </body></html>
