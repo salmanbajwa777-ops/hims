@@ -2737,7 +2737,12 @@ phoneInput.addEventListener('change', regBookingCheck);
         $('phone_cc').value = fCc.value;
         phoneInput.value = localDigits();
         phoneInput.dispatchEvent(new Event('input'));
-        const dobEl = $('dob'); dobEl.value = fDob.value; dobEl.dispatchEvent(new Event('change', { bubbles: true }));
+        // date-picker.js swaps every date input for a dd/mm/yyyy text proxy and moves the id
+        // onto it, so $('dob') is the proxy by now. Writing an ISO value into the proxy gets
+        // rejected as unparseable and wiped. Write to the hidden native input instead; its
+        // change listener mirrors the value into the visible proxy.
+        const dobEl = $('dob'), dobNative = dobEl._native || dobEl;
+        dobNative.value = fDob.value; dobNative.dispatchEvent(new Event('change', { bubbles: true }));
         $('confirmNew').value = confirmed ? '1' : '';
         card.hidden = true; form.hidden = false;
         // The booking guard used to fire when the phone was typed into the form; it is
